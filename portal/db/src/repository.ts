@@ -47,6 +47,42 @@ export interface TenantCredential {
   updatedAt: string;
 }
 
+// Credential references (EPIC-001 SPEC.md §4.4): the job envelope and the child
+// context carry only this reference, never secret material. The worker-side
+// Resolve-TenantCredential (portal/workers/M365Portal.Workers/) resolves it
+// against the credential store inside the child process. Pure helpers only —
+// no Repository member, so existing implementations are unaffected.
+export type CredentialRef = string & { readonly __brand: "CredentialRef" };
+
+export class CredentialRefError extends Error {
+  readonly code = "credential.invalid_ref";
+
+  constructor(ref: string) {
+    super(`credential reference '${ref}' is not of the form tenants/{tenantId}/credential`);
+    this.name = "CredentialRefError";
+  }
+}
+
+export function formatCredentialRef(tenantId: string): CredentialRef {
+  return `tenants/${tenantId}/credential` as CredentialRef;
+}
+
+export function parseCredentialRef(ref: string): { tenantId: string } {
+  const match = /^tenants\/([^/]+)\/credential$/.exec(ref);
+  if (match === null) {
+    throw new CredentialRefError(ref);
+  }
+  return { tenantId: match[1] };
+}
+
+export function isCredentialRefForTenant(ref: string, tenantId: string): boolean {
+  try {
+    return parseCredentialRef(ref).tenantId === tenantId;
+  } catch {
+    return false;
+  }
+}
+
 export interface TenantGroup {
   id: string;
   name: string;
