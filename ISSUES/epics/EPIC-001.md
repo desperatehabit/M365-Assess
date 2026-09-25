@@ -28,6 +28,7 @@ children:
   - T-0014
   - T-0015
   - T-0016
+  - T-0017
 scope_kind: "epic"
 scope_note: "Rollup for Platform Foundation. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
