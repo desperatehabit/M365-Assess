@@ -166,3 +166,127 @@ Describe 'Invoke-M365Assessment - parameter validation' {
         }
     }
 }
+
+Describe 'Invoke-M365Assessment - RunContext (T-0003)' {
+    BeforeAll {
+        $script:functionAst = $script:ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq 'Invoke-M365Assessment'
+            },
+            $true
+        ) | Select-Object -First 1
+
+        $script:ctxParamsAssign = $script:functionAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                    $node.Left.VariablePath.UserPath -eq 'ctxParams'
+            },
+            $true
+        ) | Select-Object -First 1
+
+        $script:content = Get-Content -Path $script:scriptPath -Raw
+
+        . "$PSScriptRoot/../src/M365-Assess/Common/RunContext.ps1"
+    }
+
+    It 'builds exactly one RunContext per run' {
+        $calls = $script:functionAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.GetCommandName() -eq 'New-RunContext'
+            },
+            $true
+        )
+        $calls.Count | Should -Be 1 -Because 'one context per invocation is the T-0003 contract'
+    }
+
+    It 'threads the context into Connect-RequiredService' {
+        $calls = $script:functionAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.CommandAst] -and
+                    $node.GetCommandName() -eq 'Connect-RequiredService'
+            },
+            $true
+        )
+        $calls.Count | Should -BeGreaterThan 0
+        foreach ($call in $calls) {
+            $paramNames = @($call.CommandElements |
+                Where-Object { $_ -is [System.Management.Automation.Language.CommandParameterAst] } |
+                ForEach-Object { $_.ParameterName })
+            $paramNames | Should -Contain 'Context'
+        }
+    }
+
+    It 'builds the context from the CLI parameters' {
+        $script:ctxParamsAssign | Should -Not -BeNullOrEmpty
+        $hashtable = $script:ctxParamsAssign.Right.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.HashtableAst] },
+            $true
+        ) | Select-Object -First 1
+        $keys = @($hashtable.KeyValuePairs | ForEach-Object { $_.Item1.Value })
+        foreach ($key in @('TenantId', 'Auth', 'Sections', 'OutputFolder', 'Timestamp', 'GraphScopes', 'SectionScopeMap')) {
+            $keys | Should -Contain $key
+        }
+    }
+
+    It 'adopts the context assessment folder for CLI output layout' {
+        $script:content | Should -Match '\$assessmentFolder\s*=\s*\$ctx\.Output\.AssessmentFolder'
+        $script:content | Should -Match '\$ctx\.Output\.LogFilePath'
+    }
+
+    It 'derives the historical assessment folder and domain prefix' {
+        $ctxParams = @{
+            TenantId     = 'contoso.onmicrosoft.com'
+            Timestamp    = '20260101_120000'
+            OutputFolder = '.\M365-Assessment'
+            Sections     = @('Tenant', 'Identity')
+        }
+        $ctx = New-RunContext @ctxParams
+        $ctx.Output.DomainPrefix | Should -Be 'contoso'
+        $ctx.Output.AssessmentFolder | Should -Match 'Assessment_20260101_120000_contoso$'
+        $ctx.Output.LogFileName | Should -Be '_Assessment-Log_contoso.txt'
+    }
+
+    It 'routes service and issue state through the context' {
+        $script:content | Should -Not -Match '\$connectedServices'
+        $script:content | Should -Not -Match '\$failedServices'
+        $script:content | Should -Not -Match '\$issues\.'
+    }
+
+    It 'preserves the default section set and dispatch order' {
+        $sectionParam = $script:functionAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.ParameterAst] -and
+                    $node.Name.VariablePath.UserPath -eq 'Section'
+            },
+            $true
+        ) | Select-Object -First 1
+        $defaultSections = @($sectionParam.DefaultValue.SafeGetValue())
+        $defaultSections | Should -Be @('Tenant', 'Identity', 'Licensing', 'Email', 'Intune', 'Security', 'Collaboration', 'PowerBI', 'Hybrid')
+
+        $orderAssign = $script:functionAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.AssignmentStatementAst] -and
+                    $node.Left -is [System.Management.Automation.Language.VariableExpressionAst] -and
+                    $node.Left.VariablePath.UserPath -eq 'sectionOrder'
+            },
+            $true
+        ) | Select-Object -First 1
+        $orderArray = $orderAssign.Right.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.ArrayLiteralAst] },
+            $true
+        ) | Select-Object -First 1
+        $dispatchOrder = @($orderArray.Elements | ForEach-Object { $_.Value })
+        $dispatchOrder | Should -Be @('Tenant', 'Identity', 'Licensing', 'Email', 'Intune',
+            'Inventory', 'Security', 'Collaboration', 'PowerBI', 'Hybrid',
+            'ActiveDirectory', 'SOC2', 'ValueOpportunity')
+    }
+}

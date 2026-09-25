@@ -186,6 +186,7 @@
 # When dot-sourced by M365-Assess.psm1, InvocationName is '.' and this block is skipped.
 if ($MyInvocation.InvocationName -ne '.') {
     Get-ChildItem -Path "$PSScriptRoot\Orchestrator\*.ps1" | ForEach-Object { . $_.FullName }
+    . "$PSScriptRoot\Common\RunContext.ps1"
     . "$PSScriptRoot\Common\SecurityConfigHelper.ps1"
     . "$PSScriptRoot\Common\Resolve-DnsRecord.ps1"
     . "$PSScriptRoot\Common\Resolve-TenantIdentity.ps1"
@@ -198,8 +199,6 @@ if ($MyInvocation.InvocationName -ne '.') {
 
 function Invoke-M365Assessment {
 [CmdletBinding(DefaultParameterSetName = 'Interactive')]
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', 'connectedServices',
-    Justification = 'Used by Connect-RequiredService in Orchestrator/ via parent scope')]
 param(
     [Parameter()]
     [ValidateSet('Tenant', 'Identity', 'Licensing', 'Email', 'Intune', 'Security', 'Collaboration',
@@ -367,7 +366,7 @@ $ErrorActionPreference = 'Stop'
 # Version — read from module manifest (single source of truth)
 # ------------------------------------------------------------------
 $projectRoot = if ($PSCommandPath) { Split-Path -Parent $PSCommandPath } else { $PSScriptRoot }
-$script:AssessmentVersion = (Import-PowerShellDataFile -Path "$projectRoot/M365-Assess.psd1").ModuleVersion
+$AssessmentVersion = (Import-PowerShellDataFile -Path "$projectRoot/M365-Assess.psd1").ModuleVersion
 
 # #963: fail fast on unknown -HeadlineFramework ids, before any connection work
 if ($HeadlineFramework) {
@@ -636,23 +635,43 @@ if ($TenantId -and -not $PSBoundParameters.ContainsKey('M365Environment')) {
 }
 
 # ------------------------------------------------------------------
-# Create timestamped output folder
+# Build the single RunContext for this invocation (T-0003). $ctx is the
+# authoritative run state; the process-scope values assigned below are
+# compatibility projections for dot-sourced helpers and collectors that
+# still read process state (EPIC-001 SPEC.md §4.1).
 # ------------------------------------------------------------------
 $timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
 
-# Extract domain prefix for folder/file naming (Phase A: from TenantId)
-# Handles onmicrosoft domains (extract prefix) and custom domains (extract label before first dot).
-# GUIDs are left empty — Phase B resolves them after Graph connects.
-$script:domainPrefix = ''
-if ($TenantId -match '^([^.]+)\.onmicrosoft\.(com|us)$') {
-    $script:domainPrefix = $Matches[1]
+$ctxParams = @{
+    TenantId        = $TenantId
+    Auth            = @{
+        ClientId              = $ClientId
+        CertificateThumbprint = $CertificateThumbprint
+        Certificate           = $Certificate
+        CertificatePath       = $CertificatePath
+        CertificatePassword   = $CertificatePassword
+        ClientSecret          = $ClientSecret
+        UserPrincipalName     = $UserPrincipalName
+        ManagedIdentity       = [bool]$ManagedIdentity
+        UseDeviceCode         = [bool]$UseDeviceCode
+        M365Environment       = $M365Environment
+    }
+    Sections        = $Section
+    GraphScopes     = $graphScopes
+    SectionScopeMap = $sectionScopeMap
+    QuickScan       = [bool]$QuickScan
+    OutputFolder    = $OutputFolder
+    Timestamp       = $timestamp
+    ProjectRoot     = $projectRoot
 }
-elseif ($TenantId -match '^([^.]+)\.' -and $TenantId -notmatch '^[0-9a-f]{8}-') {
-    $script:domainPrefix = $Matches[1]
-}
+$ctx = New-RunContext @ctxParams
 
-$folderSuffix = if ($script:domainPrefix) { "_$($script:domainPrefix)" } else { '' }
-$assessmentFolder = Join-Path -Path $OutputFolder -ChildPath "Assessment_${timestamp}${folderSuffix}"
+# Compatibility projections for dot-sourced helpers (Write-AssessmentLog,
+# Show-AssessmentSummary) and collectors that still read process state.
+$script:domainPrefix = $ctx.Output.DomainPrefix
+$script:logFileName  = $ctx.Output.LogFileName
+$script:logFilePath  = $ctx.Output.LogFilePath
+$assessmentFolder    = $ctx.Output.AssessmentFolder
 
 try {
     $null = New-Item -Path $assessmentFolder -ItemType Directory -Force
@@ -665,17 +684,14 @@ catch {
 # ------------------------------------------------------------------
 # Initialize log file
 # ------------------------------------------------------------------
-$logFileSuffix = if ($script:domainPrefix) { "_$($script:domainPrefix)" } else { '' }
-$script:logFileName = "_Assessment-Log${logFileSuffix}.txt"
-$script:logFilePath = Join-Path -Path $assessmentFolder -ChildPath $script:logFileName
 $logHeaderLines = @(
     ('=' * 80)
     '  M365 Environment Assessment Log'
-    "  Version:  v$script:AssessmentVersion"
+    "  Version:  v$AssessmentVersion"
     "  Started:  $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     "  Tenant:   $TenantId"
     "  Cloud:    $M365Environment"
-    "  Domain:   $($script:domainPrefix)"
+    "  Domain:   $($ctx.Output.DomainPrefix)"
 )
 $logHeaderLines += @(
     "  Sections: $($Section -join ', ')"
@@ -689,13 +705,7 @@ Write-AssessmentLog -Level INFO -Message "Assessment started. Output folder: $as
 # ------------------------------------------------------------------
 # Show assessment header
 # ------------------------------------------------------------------
-Show-AssessmentHeader -TenantName $TenantId -OutputPath $assessmentFolder -LogPath $script:logFilePath -Version $script:AssessmentVersion
-
-# ------------------------------------------------------------------
-# Prepare service connections (lazy — connected per-section as needed)
-# ------------------------------------------------------------------
-$connectedServices = [System.Collections.Generic.HashSet[string]]::new()  # used by Connect-RequiredService via scope
-$failedServices = [System.Collections.Generic.HashSet[string]]::new()
+Show-AssessmentHeader -TenantName $TenantId -OutputPath $assessmentFolder -LogPath $script:logFilePath -Version $AssessmentVersion
 
 # ------------------------------------------------------------------
 # Module compatibility check — Graph SDK and EXO ship conflicting
@@ -725,6 +735,9 @@ if (-not $SkipConnection) {
         Write-Error "Connect-Service.ps1 not found at '$connectServicePath'."
         return
     }
+
+    $ctx.Scope.GraphScopes = @($graphScopes)
+    $ctx.Paths.ConnectServicePath = $connectServicePath
 }
 
 # Connect-RequiredService -- extracted to Orchestrator/Connect-RequiredService.ps1
@@ -733,7 +746,6 @@ if (-not $SkipConnection) {
 # Run collectors
 # ------------------------------------------------------------------
 $summaryResults = [System.Collections.Generic.List[PSCustomObject]]::new()
-$issues = [System.Collections.Generic.List[PSCustomObject]]::new()
 $overallStart = Get-Date
 
 
@@ -749,6 +761,7 @@ if (Test-Path -Path $progressHelper) {
         . $registryHelper
         $controlsDir = Join-Path -Path $projectRoot -ChildPath 'controls'
         $progressRegistry = Import-ControlRegistry -ControlsPath $controlsDir
+        $ctx.Registry.ControlRegistry = $progressRegistry
         # Exposed globally so dot-sourced collectors can resolve registry.remediation as fallback
         $global:M365AssessRegistry = $progressRegistry
         if ($progressRegistry.Count -gt 1) {
@@ -763,6 +776,7 @@ if (Test-Path -Path $progressHelper) {
             if (-not $SkipConnection) { $progressParams['Silent'] = $true }
             if ($QuickScan) { $progressParams['SeverityFilter'] = @('Critical', 'High') }
             Initialize-CheckProgress @progressParams
+            $ctx.Registry.ProgressState = $global:CheckProgressState
         }
     } else {
         Write-Warning "Import-ControlRegistry.ps1 not found - progress tracking disabled."
@@ -787,6 +801,7 @@ $sectionOrder = @(
     'ValueOpportunity'  # Must run last — reads adoption signals from all other sections
 )
 $Section = $sectionOrder | Where-Object { $_ -in $Section }
+$ctx.Scope.Sections = @($Section)
 
 # ------------------------------------------------------------------
 # DryRun — preview, then exit
@@ -797,7 +812,7 @@ if ($DryRun) {
     Write-Host ''
     Write-Host "  Tenant:       $TenantId" -ForegroundColor White
     Write-Host "  Environment:  $M365Environment" -ForegroundColor White
-    Write-Host "  Version:      v$script:AssessmentVersion" -ForegroundColor White
+    Write-Host "  Version:      v$AssessmentVersion" -ForegroundColor White
     Write-Host "  Output:       $assessmentFolder" -ForegroundColor White
     if ($QuickScan) { Write-Host '  Mode:         QuickScan (Critical + High only)' -ForegroundColor Yellow }
     Write-Host ''
@@ -822,10 +837,10 @@ if ($DryRun) {
     }
 
     # Check counts from progress state
-    if ($global:CheckProgressState) {
-        $totalChecks = $global:CheckProgressState.Total
-        $collectorCounts = $global:CheckProgressState.CollectorCounts
-        $labelMap = $global:CheckProgressState.LabelMap
+    if ($ctx.Registry.ProgressState) {
+        $totalChecks = $ctx.Registry.ProgressState.Total
+        $collectorCounts = $ctx.Registry.ProgressState.CollectorCounts
+        $labelMap = $ctx.Registry.ProgressState.LabelMap
         $checkNoun = if ($totalChecks -eq 1) { 'check' } else { 'checks' }
         Write-Host "  Security checks: $totalChecks $checkNoun queued" -ForegroundColor Cyan
         if ($collectorCounts) {
@@ -875,7 +890,7 @@ foreach ($sectionName in $Section) {
     # running collectors. Device code tokens expire mid-run for long assessments.
     # Only check if Graph was already connected in a prior section — on the first
     # Graph section the token cannot have expired yet (Connect-RequiredService runs below).
-    if (-not $SkipConnection -and $sectionServiceMap[$sectionName] -contains 'Graph' -and $connectedServices.Contains('Graph')) {
+    if (-not $SkipConnection -and $sectionServiceMap[$sectionName] -contains 'Graph' -and $ctx.Services.Connected.Contains('Graph')) {
         if (-not (Test-GraphTokenValid)) {
             Write-Warning "Graph token is no longer valid before starting $sectionName. Skipping section — re-run with Interactive or Certificate auth."
             foreach ($collector in $collectors) {
@@ -905,12 +920,16 @@ foreach ($sectionName in $Section) {
     $hasMixedRequirements        = $hasPerCollectorRequirements -and ($collectors | Where-Object { -not $_.ContainsKey('RequiredServices') }).Count -gt 0
     if (-not $SkipConnection -and (-not $hasPerCollectorRequirements -or $hasMixedRequirements)) {
         $sectionServices = $sectionServiceMap[$sectionName]
-        Connect-RequiredService -Services $sectionServices -SectionName $sectionName
+        Connect-RequiredService -Context $ctx -Services $sectionServices -SectionName $sectionName
+        $assessmentFolder    = $ctx.Output.AssessmentFolder
+        $script:domainPrefix = $ctx.Output.DomainPrefix
+        $script:logFileName  = $ctx.Output.LogFileName
+        $script:logFilePath  = $ctx.Output.LogFilePath
     }
 
     # Check if ALL section services failed — skip entire section if so
     $sectionServices = $sectionServiceMap[$sectionName]
-    $unavailableServices = @($sectionServices | Where-Object { $failedServices.Contains($_) })
+    $unavailableServices = @($sectionServices | Where-Object { $ctx.Services.Failed.Contains($_) })
     $allSectionServicesFailed = ($unavailableServices.Count -eq $sectionServices.Count -and $sectionServices.Count -gt 0 -and -not $SkipConnection)
 
     if ($allSectionServicesFailed) {
@@ -956,9 +975,13 @@ foreach ($sectionName in $Section) {
     foreach ($collector in $collectors) {
         # Per-collector service requirement: connect just-in-time, then check
         if ($collector.ContainsKey('RequiredServices') -and -not $SkipConnection) {
-            Connect-RequiredService -Services $collector.RequiredServices -SectionName $sectionName
+            Connect-RequiredService -Context $ctx -Services $collector.RequiredServices -SectionName $sectionName
+            $assessmentFolder    = $ctx.Output.AssessmentFolder
+            $script:domainPrefix = $ctx.Output.DomainPrefix
+            $script:logFileName  = $ctx.Output.LogFileName
+            $script:logFilePath  = $ctx.Output.LogFilePath
 
-            $collectorUnavailable = @($collector.RequiredServices | Where-Object { $failedServices.Contains($_) })
+            $collectorUnavailable = @($collector.RequiredServices | Where-Object { $ctx.Services.Failed.Contains($_) })
             if ($collectorUnavailable.Count -gt 0) {
                 $skipReason = "$($collectorUnavailable -join ', ') not connected"
                 $summaryResults.Add([PSCustomObject]@{
@@ -1163,7 +1186,7 @@ foreach ($sectionName in $Section) {
                 Write-AssessmentLog -Level WARN -Message $w.Message -Section $sectionName -Collector $collector.Label
                 if ($w.Message -match '401|403|Unauthorized|Forbidden|permission|consent') {
                     $hasPermissionWarning = $true
-                    $issues.Add([PSCustomObject]@{
+                    $ctx.Issues.Add([PSCustomObject]@{
                         Severity     = 'WARNING'
                         Section      = $sectionName
                         Collector    = $collector.Label
@@ -1173,7 +1196,7 @@ foreach ($sectionName in $Section) {
                     })
                 }
                 elseif ($w.Message -match 'Could not check|Could not retrieve|server side error|querying REST|Cannot index') {
-                    $issues.Add([PSCustomObject]@{
+                    $ctx.Issues.Add([PSCustomObject]@{
                         Severity     = 'INFO'
                         Section      = $sectionName
                         Collector    = $collector.Label
@@ -1210,7 +1233,7 @@ foreach ($sectionName in $Section) {
             if ($errorMessage -match '403|Forbidden|Insufficient privileges') {
                 $status = 'Skipped'
                 Write-AssessmentLog -Level WARN -Message "Insufficient permissions" -Section $sectionName -Collector $collector.Label -Detail $errorMessage
-                $issues.Add([PSCustomObject]@{
+                $ctx.Issues.Add([PSCustomObject]@{
                     Severity     = 'WARNING'
                     Section      = $sectionName
                     Collector    = $collector.Label
@@ -1222,7 +1245,7 @@ foreach ($sectionName in $Section) {
             elseif ($errorMessage -match 'not found|not installed|not connected') {
                 $status = 'Skipped'
                 Write-AssessmentLog -Level WARN -Message "Prerequisite not met" -Section $sectionName -Collector $collector.Label -Detail $errorMessage
-                $issues.Add([PSCustomObject]@{
+                $ctx.Issues.Add([PSCustomObject]@{
                     Severity     = 'WARNING'
                     Section      = $sectionName
                     Collector    = $collector.Label
@@ -1234,7 +1257,7 @@ foreach ($sectionName in $Section) {
             else {
                 $status = 'Failed'
                 Write-AssessmentLog -Level ERROR -Message "Collector failed" -Section $sectionName -Collector $collector.Label -Detail $_.Exception.ToString()
-                $issues.Add([PSCustomObject]@{
+                $ctx.Issues.Add([PSCustomObject]@{
                     Severity     = 'ERROR'
                     Section      = $sectionName
                     Collector    = $collector.Label
@@ -1292,7 +1315,7 @@ foreach ($sectionName in $Section) {
 
 # Deferred DNS checks -- extracted to Orchestrator/Invoke-DnsAuthentication.ps1
 if ($script:runDnsAuthentication) {
-    Invoke-DnsAuthentication -AssessmentFolder $assessmentFolder -ProjectRoot $projectRoot -SummaryResults $summaryResults -Issues $issues -DnsCollector $dnsCollector
+    Invoke-DnsAuthentication -AssessmentFolder $assessmentFolder -ProjectRoot $projectRoot -SummaryResults $summaryResults -Issues $ctx.Issues -DnsCollector $dnsCollector
 }
 # ------------------------------------------------------------------
 # Export assessment summary
@@ -1300,25 +1323,25 @@ if ($script:runDnsAuthentication) {
 $overallEnd = Get-Date
 $overallDuration = $overallEnd - $overallStart
 
-$summarySuffix = if ($script:domainPrefix) { "_$($script:domainPrefix)" } else { '' }
+$summarySuffix = if ($ctx.Output.DomainPrefix) { "_$($ctx.Output.DomainPrefix)" } else { '' }
 $summaryCsvPath = Join-Path -Path $assessmentFolder -ChildPath "_Assessment-Summary${summarySuffix}.csv"
 # Issue #867: prepend a comment header row so the version + timestamp travel
 # with the CSV. Lines starting with '#' are treated as comments by sensible
 # CSV parsers (pandas read_csv comment='#', PowerShell Import-Csv trips on
 # them but 99% of actual consumers use Excel/Python/Power BI which handle it).
-$summaryHeader = "# M365-Assess v$($script:AssessmentVersion) -- generated $((Get-Date).ToUniversalTime().ToString('o'))"
+$summaryHeader = "# M365-Assess v$($AssessmentVersion) -- generated $((Get-Date).ToUniversalTime().ToString('o'))"
 $summaryCsvBody = $summaryResults | ConvertTo-Csv -NoTypeInformation
 Set-Content -Path $summaryCsvPath -Value (@($summaryHeader) + @($summaryCsvBody)) -Encoding UTF8
 
 # ------------------------------------------------------------------
 # Export issue report (if any issues exist)
 # ------------------------------------------------------------------
-if ($issues.Count -gt 0) {
-    $issueFileSuffix = if ($script:domainPrefix) { "_$($script:domainPrefix)" } else { '' }
+if ($ctx.Issues.Count -gt 0) {
+    $issueFileSuffix = if ($ctx.Output.DomainPrefix) { "_$($ctx.Output.DomainPrefix)" } else { '' }
     $script:issueFileName = "_Assessment-Issues${issueFileSuffix}.log"
     $issueReportPath = Join-Path -Path $assessmentFolder -ChildPath $script:issueFileName
-    Export-IssueReport -Path $issueReportPath -Issues @($issues) -TenantName $TenantId -OutputPath $assessmentFolder -Version $script:AssessmentVersion
-    Write-AssessmentLog -Level INFO -Message "Issue report exported: $issueReportPath ($($issues.Count) issues)"
+    Export-IssueReport -Path $issueReportPath -Issues @($ctx.Issues) -TenantName $TenantId -OutputPath $assessmentFolder -Version $AssessmentVersion
+    Write-AssessmentLog -Level INFO -Message "Issue report exported: $issueReportPath ($($ctx.Issues.Count) issues)"
 }
 
 Write-AssessmentLog -Level INFO -Message "Assessment complete. Duration: $($overallDuration.ToString('mm\:ss')). Summary CSV: $summaryCsvPath"
@@ -1353,7 +1376,7 @@ if ($SaveBaseline) {
         -PrimaryDomain $tenantIdentity.PrimaryDomain `
         -Environment $tenantIdentity.Environment `
         -Sections @($sections | ForEach-Object { $_ }) `
-        -Version $script:AssessmentVersion `
+        -Version $AssessmentVersion `
         -RegistryVersion (Get-RegistryVersion -ProjectRoot $projectRoot)
     Write-AssessmentLog -Level INFO -Message "Baseline saved: $savedBaselineDir"
 }
@@ -1406,7 +1429,7 @@ if ($AutoBaseline) {
         -Environment $tenantIdentity.Environment `
         -Label $autoLabel `
         -Sections $sections `
-        -Version $script:AssessmentVersion `
+        -Version $AssessmentVersion `
         -RegistryVersion (Get-RegistryVersion -ProjectRoot $projectRoot)
     Write-AssessmentLog -Level INFO -Message "AutoBaseline saved: $autoLabel"
 
@@ -1448,7 +1471,7 @@ if (Test-Path -Path $reportScriptPath) {
         $reportParams = @{
             AssessmentFolder = $assessmentFolder
         }
-        if ($script:domainPrefix) { $reportParams['TenantName'] = $script:domainPrefix }
+        if ($ctx.Output.DomainPrefix) { $reportParams['TenantName'] = $ctx.Output.DomainPrefix }
         elseif ($TenantId)        { $reportParams['TenantName'] = $TenantId }
         $reportParams['ReportTheme']   = $ReportTheme
         $reportParams['ReportDensity'] = $ReportDensity
@@ -1477,7 +1500,7 @@ if (Test-Path -Path $reportScriptPath) {
         $msg = "HTML report generation failed: $($_.Exception.Message)"
         Write-AssessmentLog -Level WARN -Message $msg
         Write-Warning $msg
-        Write-Host "    See $script:logFilePath for the full error context." -ForegroundColor Yellow
+        Write-Host "    See $($ctx.Output.LogFilePath) for the full error context." -ForegroundColor Yellow
     }
 }
 
@@ -1514,10 +1537,10 @@ try {
             }
         }
 
-    $tenantNameForProv = if ($script:domainPrefix) { $script:domainPrefix } else { $TenantId }
+    $tenantNameForProv = if ($ctx.Output.DomainPrefix) { $ctx.Output.DomainPrefix } else { $TenantId }
     $provenance = [ordered]@{
         toolName              = 'M365-Assess'
-        toolVersion           = $script:AssessmentVersion
+        toolVersion           = $AssessmentVersion
         registryDataVersion   = $registryVersion
         generatedAtUtc        = (Get-Date).ToUniversalTime().ToString('o')
         tenantId              = if ($tenantIdentity -and $tenantIdentity.Guid) { $tenantIdentity.Guid } else { $TenantId }
@@ -1551,11 +1574,11 @@ if ($EvidencePackage) {
             $pkgParams = @{
                 AssessmentFolder = $assessmentFolder
             }
-            if ($script:domainPrefix) { $pkgParams['TenantName'] = $script:domainPrefix }
+            if ($ctx.Output.DomainPrefix) { $pkgParams['TenantName'] = $ctx.Output.DomainPrefix }
             elseif ($TenantId)        { $pkgParams['TenantName'] = $TenantId }
             if ($Redact) {
                 $pkgParams['Redact'] = $true
-                if ($script:domainPrefix) { $pkgParams['TenantDisplayName'] = $script:domainPrefix }
+                if ($ctx.Output.DomainPrefix) { $pkgParams['TenantDisplayName'] = $ctx.Output.DomainPrefix }
             }
             $packagePath = Export-EvidencePackage @pkgParams
             Write-AssessmentLog -Level INFO -Message "Evidence package written: $packagePath"
@@ -1570,7 +1593,7 @@ if ($EvidencePackage) {
 # Disconnect services
 # ------------------------------------------------------------------
 if (-not $SkipConnection) {
-    foreach ($svc in @($connectedServices)) {
+    foreach ($svc in @($ctx.Services.Connected)) {
         try {
             switch ($svc) {
                 'Graph' {
@@ -1596,7 +1619,7 @@ if (-not $SkipConnection) {
 # ------------------------------------------------------------------
 # Console summary
 # ------------------------------------------------------------------
-Show-AssessmentSummary -SummaryResults @($summaryResults) -Issues @($issues) -Duration $overallDuration -AssessmentFolder $assessmentFolder -SectionCount $Section.Count -Version $script:AssessmentVersion
+Show-AssessmentSummary -SummaryResults @($summaryResults) -Issues @($ctx.Issues) -Duration $overallDuration -AssessmentFolder $assessmentFolder -SectionCount $Section.Count -Version $AssessmentVersion
 
 # Summary is exported to _Assessment-Summary.csv for programmatic access
 
