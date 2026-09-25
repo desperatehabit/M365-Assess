@@ -1,0 +1,122 @@
+openapi: 3.1.0
+info:
+  title: M365-Assess Portal API
+  version: 1.0.0
+  description: >
+    Versioned portal API (ADR-0014 thin BFF). This document is the contracts
+    skeleton: it owns the shared error and cursor-pagination schemas, plus the
+    shared query parameters and security schemes. Route tickets publish their
+    path items and permissions through their route modules (EPIC-038) rather
+    than hand-editing this file, so `paths` starts empty by design.
+servers:
+  - url: /v1
+    description: Versioned API root.
+
+paths: {}
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Portal user session token.
+    apiKeyAuth:
+      type: apiKey
+      "in": header
+      name: X-API-Key
+      description: External API client key (EPIC-038).
+
+  parameters:
+    Cursor:
+      name: cursor
+      "in": query
+      required: false
+      description: >
+        Opaque cursor returned as `nextCursor` by the previous page. Clients
+        must treat it as opaque and must not parse it.
+      schema:
+        type: string
+    Limit:
+      name: limit
+      "in": query
+      required: false
+      description: Page size. Defaults to 100; hard maximum is 1000.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+
+  schemas:
+    ErrorDetail:
+      type: object
+      additionalProperties: true
+      description: >
+        A code-specific detail entry. The `code` on the parent error is stable;
+        detail shapes are documented per error code.
+      properties:
+        field:
+          type: string
+        reason:
+          type: string
+
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - code
+        - message
+        - correlationId
+      description: >
+        Structured error body (05-programming.md §3). Stable machine-readable
+        `code`, a client-safe `message`, optional per-code `details`, and the
+        `correlationId` used to trace the request in server logs. Never includes
+        stack traces or secrets.
+      properties:
+        code:
+          type: string
+          description: Stable machine-readable error code, e.g. `run.not_found`.
+          examples:
+            - run.not_found
+        message:
+          type: string
+          description: Human-readable message safe to show to the caller.
+        details:
+          type: array
+          items:
+            $ref: "#/components/schemas/ErrorDetail"
+        correlationId:
+          type: string
+          description: Correlates the response with server logs.
+
+    CursorPage:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - nextCursor
+      description: >
+        Cursor-paginated collection. Route tickets layer typed items onto this
+        shape with `allOf` (or `items` for a concrete collection) so pagination
+        stays defined in exactly one place.
+      properties:
+        items:
+          type: array
+          description: The page items.
+          items: {}
+        nextCursor:
+          type:
+            - string
+            - "null"
+          description: >
+            Opaque cursor for the next page, or `null` when this is the last
+            page. Clients pass it back as the `cursor` query parameter.
+
+  responses:
+    Error:
+      description: Structured error response.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"

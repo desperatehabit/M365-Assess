@@ -1,0 +1,35 @@
+{
+  "name": "@m365-assess/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Versioned job/result envelopes, progress events, and the OpenAPI skeleton.",
+  "type": "module",
+  "main": "./dist/envelope.js",
+  "types": "./dist/envelope.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/envelope.d.ts",
+      "import": "./dist/envelope.js"
+    },
+    "./events": {
+      "types": "./dist/events.d.ts",
+      "import": "./dist/events.js"
+    },
+    "./openapi": "./openapi/portal.v1.yaml"
+  },
+  "files": [
+    "dist",
+    "openapi"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0",
+    "yaml": "^2.9.1"
+  }
+}
