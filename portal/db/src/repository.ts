@@ -437,6 +437,53 @@ export type SiteOperationInput = Omit<
   Partial<Pick<SiteOperation, "by" | "at" | "result" | "createdAt" | "updatedAt">>;
 export type SiteOperationUpdate = Partial<Pick<SiteOperation, "state" | "result">>;
 
+export type TeamVisibility = "public" | "private";
+
+export interface TeamTemplate {
+  id: string;
+  name: string;
+  owners: string[];
+  members: string[];
+  visibility: TeamVisibility;
+  settings: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface TeamOperation {
+  id: string;
+  tenantId: string;
+  teamId: string;
+  operation: string;
+  state: string;
+  by: string | null;
+  at: string;
+  result: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TeamTemplateInput = Omit<
+  TeamTemplate,
+  "createdAt" | "updatedAt" | "deletedAt" | "owners" | "members" | "settings"
+> &
+  Partial<
+    Pick<
+      TeamTemplate,
+      "owners" | "members" | "settings" | "createdAt" | "updatedAt" | "deletedAt"
+    >
+  >;
+export type TeamTemplateUpdate = Partial<
+  Pick<TeamTemplate, "name" | "owners" | "members" | "visibility" | "settings">
+>;
+export type TeamOperationInput = Omit<
+  TeamOperation,
+  "createdAt" | "updatedAt" | "by" | "at" | "result"
+> &
+  Partial<Pick<TeamOperation, "by" | "at" | "result" | "createdAt" | "updatedAt">>;
+export type TeamOperationUpdate = Partial<Pick<TeamOperation, "state" | "result">>;
+
 export type TemplateItemSource = "local" | "community";
 export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
 
@@ -596,6 +643,27 @@ export interface Repository {
     operationId: string,
     update: SiteOperationUpdate,
   ): Promise<SiteOperation | undefined>;
+
+  createTeamTemplate(input: TeamTemplateInput): Promise<TeamTemplate>;
+  getTeamTemplate(
+    templateId: string,
+    options?: ListOptions,
+  ): Promise<TeamTemplate | undefined>;
+  listTeamTemplates(options?: ListOptions): Promise<TeamTemplate[]>;
+  updateTeamTemplate(
+    templateId: string,
+    update: TeamTemplateUpdate,
+  ): Promise<TeamTemplate | undefined>;
+  softDeleteTeamTemplate(templateId: string, options?: { now?: string }): Promise<boolean>;
+
+  createTeamOperation(input: TeamOperationInput): Promise<TeamOperation>;
+  getTeamOperation(tenantId: string, operationId: string): Promise<TeamOperation | undefined>;
+  listTeamOperations(tenantId: string): Promise<TeamOperation[]>;
+  updateTeamOperation(
+    tenantId: string,
+    operationId: string,
+    update: TeamOperationUpdate,
+  ): Promise<TeamOperation | undefined>;
 }
 
 export class SchemaVersionError extends Error {
