@@ -5,11 +5,17 @@
 $script:WorkerRepoRoot = Split-Path -Path (Split-Path -Path (Split-Path -Path $PSScriptRoot -Parent) -Parent) -Parent
 $script:RunContextScript = Join-Path -Path $script:WorkerRepoRoot -ChildPath 'src/M365-Assess/Common/RunContext.ps1'
 $script:DefaultAssessmentScript = Join-Path -Path $script:WorkerRepoRoot -ChildPath 'src/M365-Assess/Invoke-M365Assessment.ps1'
+$script:TenantCredentialScript = Join-Path -Path $PSScriptRoot -ChildPath 'Resolve-TenantCredential.ps1'
 
 if (-not (Test-Path -LiteralPath $script:RunContextScript -PathType Leaf)) {
     throw "M365Portal.Workers: RunContext script not found: $script:RunContextScript"
 }
 . $script:RunContextScript
+
+if (-not (Test-Path -LiteralPath $script:TenantCredentialScript -PathType Leaf)) {
+    throw "M365Portal.Workers: Resolve-TenantCredential script not found: $script:TenantCredentialScript"
+}
+. $script:TenantCredentialScript
 
 function Read-WorkerRunContext {
     <#
@@ -291,5 +297,7 @@ Export-ModuleMember -Function @(
     'Read-WorkerRunContext',
     'Get-WorkerArtifacts',
     'Write-WorkerResult',
-    'Invoke-WorkerAssessment'
+    'Invoke-WorkerAssessment',
+    'Resolve-TenantCredential',
+    'Protect-WorkerSecret'
 )
