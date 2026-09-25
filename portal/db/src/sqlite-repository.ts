@@ -3,6 +3,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import Database from "better-sqlite3";
 import {
   SchemaVersionError,
@@ -14,6 +15,14 @@ import {
   type AuditResult,
   type AuditActorType,
   type AuditSource,
+  type BrandingColors,
+  type BrandingConfig,
+  type BrandingConfigInput,
+  type BrandingFooter,
+  type BrandingPageNumbers,
+  type BrandingPreset,
+  type BrandingReportDefaults,
+  type BrandingWatermark,
   type Finding,
   type FindingInput,
   type FindingStatus,
@@ -131,6 +140,55 @@ function parseJsonArray(value: unknown): string[] {
 
 function stringifyJson(value: unknown): string | null {
   return value === null || value === undefined ? null : JSON.stringify(value);
+}
+
+function parseBrandingPresets(value: unknown): BrandingPreset[] {
+  if (value === null || value === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    return Array.isArray(parsed) ? (parsed as BrandingPreset[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function mapBrandingRow(row: Row): BrandingConfig {
+  return {
+    colors: (parseJson(row["colors"]) ?? {}) as unknown as BrandingColors,
+    logoRef: asNullableString(row["logoRef"]),
+    coverRef: asNullableString(row["coverRef"]),
+    watermark: (parseJson(row["watermark"]) ?? {}) as unknown as BrandingWatermark,
+    footer: (parseJson(row["footer"]) ?? {}) as unknown as BrandingFooter,
+    pageNumbers: (parseJson(row["pageNumbers"]) ?? {}) as unknown as BrandingPageNumbers,
+    presets: parseBrandingPresets(row["presets"]),
+    perReportDefaults: (parseJson(row["perReportDefaults"]) ??
+      {}) as Record<string, BrandingReportDefaults>,
+    updatedAt: asString(row["updatedAt"]),
+    updatedBy: asNullableString(row["updatedBy"]),
+  };
+}
+
+// Storage boundary for SPEC §11.2: only relative artifact-tier references are
+// persisted. Inline content (data: URLs), absolute paths, and remote URLs are
+// rejected so blobs can never land in the branding row.
+function assertBrandingAssetRef(
+  value: string | null | undefined,
+  field: string,
+): string | null {
+  if (value === null || value === undefined) return null;
+  if (
+    value.length === 0 ||
+    value.length > 512 ||
+    value.indexOf(String.fromCharCode(0)) !== -1 ||
+    value.includes("..") ||
+    value.startsWith("/") ||
+    value.includes("\\") ||
+    /\s/.test(value) ||
+    /^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(value)
+  ) {
+    throw new Error(`branding.${field} must be an asset reference, not inline content`);
+  }
+  return value;
 }
 
 export function loadMigrations(dir: string = DEFAULT_MIGRATIONS_DIR): Migration[] {
@@ -1501,6 +1559,99 @@ export class SqliteRepository implements Repository {
         .prepare(`SELECT * FROM alert_state_changes WHERE ${where.join(" AND ")} ORDER BY "at", id`)
         .all(...params) as Row[]
     ).map((row) => this.mapAlertStateChange(row));
+  }
+
+  private mapBranding(row: Row): BrandingConfig {
+    return mapBrandingRow(row);
+  }
+
+  async getBranding(): Promise<BrandingConfig | undefined> {
+    let row: Row | undefined;
+    try {
+      row = this.db
+        .prepare("SELECT * FROM branding_config WHERE id = 'default'")
+        .get() as Row | undefined;
+    } catch {
+      return undefined;
+    }
+    return row ? this.mapBranding(row) : undefined;
+  }
+
+  async upsertBranding(input: BrandingConfigInput): Promise<BrandingConfig> {
+    const updatedAt = input.updatedAt ?? nowIso();
+    const config: BrandingConfig = {
+      colors: input.colors,
+      logoRef: assertBrandingAssetRef(input.logoRef, "logoRef"),
+      coverRef: assertBrandingAssetRef(input.coverRef, "coverRef"),
+      watermark: input.watermark,
+      footer: input.footer,
+      pageNumbers: input.pageNumbers,
+      presets: input.presets,
+      perReportDefaults: input.perReportDefaults,
+      updatedAt,
+      updatedBy: input.updatedBy ?? null,
+    };
+    this.db.transaction(() => {
+      const before = this.db
+        .prepare("SELECT * FROM branding_config WHERE id = 'default'")
+        .get() as Row | undefined;
+      this.db
+        .prepare(
+          `INSERT INTO branding_config
+             (id, colors, logoRef, coverRef, watermark, footer, pageNumbers, presets, perReportDefaults, updatedAt, updatedBy)
+           VALUES
+             ('default', @colors, @logoRef, @coverRef, @watermark, @footer, @pageNumbers, @presets, @perReportDefaults, @updatedAt, @updatedBy)
+           ON CONFLICT(id) DO UPDATE SET
+             colors = excluded.colors,
+             logoRef = excluded.logoRef,
+             coverRef = excluded.coverRef,
+             watermark = excluded.watermark,
+             footer = excluded.footer,
+             pageNumbers = excluded.pageNumbers,
+             presets = excluded.presets,
+             perReportDefaults = excluded.perReportDefaults,
+             updatedAt = excluded.updatedAt,
+             updatedBy = excluded.updatedBy`,
+        )
+        .run({
+          colors: JSON.stringify(config.colors),
+          logoRef: config.logoRef,
+          coverRef: config.coverRef,
+          watermark: JSON.stringify(config.watermark),
+          footer: JSON.stringify(config.footer),
+          pageNumbers: JSON.stringify(config.pageNumbers),
+          presets: JSON.stringify(config.presets),
+          perReportDefaults: JSON.stringify(config.perReportDefaults),
+          updatedAt: config.updatedAt,
+          updatedBy: config.updatedBy,
+        });
+      this.db
+        .prepare(
+          `INSERT INTO audit_events
+             (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          updatedAt,
+          null,
+          "system",
+          null,
+          "branding.upsert",
+          "branding_config",
+          "default",
+          before ? JSON.stringify(mapBrandingRow(before)) : null,
+          JSON.stringify({ ...config, updatedBy: config.updatedBy }),
+          "success",
+          null,
+          "request",
+          null,
+          updatedAt,
+        );
+    })();
+    const persisted = await this.getBranding();
+    if (!persisted) throw new Error("branding config was not persisted");
+    return persisted;
   }
 }
 
