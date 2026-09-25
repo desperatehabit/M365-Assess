@@ -163,6 +163,7 @@ export interface AuditEvent {
 
 export type OffboardingJobState = "planned" | "running" | "completed" | "failed";
 export type OffboardingStepState = "pending" | "running" | "succeeded" | "failed" | "skipped";
+export type LinkRemovalJobState = "planned" | "running" | "completed" | "failed";
 
 export interface OffboardingJob {
   id: string;
@@ -182,6 +183,16 @@ export interface OffboardingStep {
   result: Record<string, unknown> | null;
   error: string | null;
   appliedAt: string | null;
+}
+
+export interface LinkRemovalJob {
+  id: string;
+  tenantId: string;
+  linkIds: string[];
+  state: LinkRemovalJobState;
+  results: Record<string, unknown> | null;
+  createdAt: string;
+  createdBy: string;
 }
 
 export type TenantInput = Omit<
@@ -246,6 +257,14 @@ export interface OffboardingStepUpdate {
   result?: Record<string, unknown> | null;
   error?: string | null;
   appliedAt?: string | null;
+}
+
+export type LinkRemovalJobInput = Omit<LinkRemovalJob, "createdAt" | "state" | "results"> &
+  Partial<Pick<LinkRemovalJob, "createdAt" | "state" | "results">>;
+
+export interface LinkRemovalJobUpdate {
+  state?: LinkRemovalJobState;
+  results?: Record<string, unknown> | null;
 }
 
 export type RemediationPlanMode = "manual" | "automated" | "mixed";
@@ -619,6 +638,15 @@ export interface Repository {
   getJob(jobId: string): Promise<Job | undefined>;
   listJobs(tenantId: string): Promise<Job[]>;
   updateJobState(jobId: string, state: JobState, update?: JobStateUpdate): Promise<Job | undefined>;
+
+  createLinkRemovalJob(input: LinkRemovalJobInput): Promise<LinkRemovalJob>;
+  getLinkRemovalJob(tenantId: string, jobId: string): Promise<LinkRemovalJob | undefined>;
+  listLinkRemovalJobs(tenantId: string): Promise<LinkRemovalJob[]>;
+  updateLinkRemovalJob(
+    tenantId: string,
+    jobId: string,
+    update: LinkRemovalJobUpdate,
+  ): Promise<LinkRemovalJob | undefined>;
 
   appendAuditEvent(input: AuditEventInput): Promise<AuditEvent>;
   listAuditEvents(tenantId?: string): Promise<AuditEvent[]>;
