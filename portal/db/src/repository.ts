@@ -661,6 +661,61 @@ export interface DomainCheckRangeOptions {
   to?: string;
 }
 
+// Instance branding (EPIC-037 SPEC.md §5): colours, logo/cover asset
+// references, watermark, footer, page numbers, presets, and per-report-type
+// defaults. Only logoRef/coverRef references are stored, never blobs; the
+// bytes live on the artifact tier (validated raster allow-list, SPEC §11.2).
+export interface BrandingColors {
+  primary: string;
+  secondary: string;
+}
+
+export interface BrandingWatermark {
+  enabled: boolean;
+  text: string;
+}
+
+export interface BrandingFooter {
+  show: boolean;
+  text: string;
+  coverText: string;
+}
+
+export interface BrandingPageNumbers {
+  show: boolean;
+}
+
+export interface BrandingPreset {
+  id: string;
+  name: string;
+  colors: BrandingColors;
+}
+
+export interface BrandingReportDefaults {
+  primary?: string;
+  secondary?: string;
+  logoRef?: string | null;
+  watermarkText?: string;
+  footerText?: string;
+  showPageNumbers?: boolean;
+}
+
+export interface BrandingConfig {
+  colors: BrandingColors;
+  logoRef: string | null;
+  coverRef: string | null;
+  watermark: BrandingWatermark;
+  footer: BrandingFooter;
+  pageNumbers: BrandingPageNumbers;
+  presets: BrandingPreset[];
+  perReportDefaults: Record<string, BrandingReportDefaults>;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
+export type BrandingConfigInput = Omit<BrandingConfig, "updatedAt"> &
+  Partial<Pick<BrandingConfig, "updatedAt">>;
+
 export type TemplateItemSource = "local" | "community";
 export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
 
@@ -861,6 +916,9 @@ export interface Repository {
     tenantId: string,
     options?: AlertStateChangeListOptions,
   ): Promise<AlertStateChange[]>;
+
+  getBranding(): Promise<BrandingConfig | undefined>;
+  upsertBranding(input: BrandingConfigInput): Promise<BrandingConfig>;
 }
 
 export class SchemaVersionError extends Error {
