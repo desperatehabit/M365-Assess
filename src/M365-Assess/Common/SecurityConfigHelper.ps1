@@ -19,7 +19,8 @@ function Initialize-SecurityConfig {
     .SYNOPSIS
         Creates the standard settings collection and CheckId counter for a security-config collector.
     .OUTPUTS
-        Hashtable with Settings (List[PSCustomObject]) and CheckIdCounter (hashtable).
+        Hashtable with Settings (List[PSCustomObject]), CheckIdCounter (hashtable),
+        and AdoptionSignals (hashtable).
     .EXAMPLE
         $ctx = Initialize-SecurityConfig
         $settings = $ctx.Settings
@@ -29,17 +30,57 @@ function Initialize-SecurityConfig {
     [OutputType([hashtable])]
     param()
 
-    if (-not $global:AdoptionSignals) { $global:AdoptionSignals = @{} }
-    $ctx = @{
-        Settings       = [System.Collections.Generic.List[PSCustomObject]]::new()
-        CheckIdCounter = @{}
+    # Adoption signals are shared across the collectors of a single run: they
+    # accumulate on the active RunContext (Registry.SecurityConfig) so the
+    # ValueOpportunity collector can read what earlier sections produced. Without
+    # a RunContext (standalone helper/test use) they stay local to the returned
+    # context, so sequential contexts never share signals.
+    $signals = @{}
+    $runContext = Get-Variable -Name 'ctx' -ValueOnly -ErrorAction SilentlyContinue
+    if ($runContext -and -not ($runContext -is [hashtable]) -and
+        $runContext.PSObject.Properties['Registry'] -and $runContext.Registry) {
+        $registry = $runContext.Registry
+        $existing = if ($registry.PSObject.Properties['SecurityConfig']) { $registry.SecurityConfig } else { $null }
+        if ($existing -and $existing.ContainsKey('AdoptionSignals')) {
+            $signals = $existing.AdoptionSignals
+        }
+        else {
+            $registry | Add-Member -NotePropertyName 'SecurityConfig' `
+                -NotePropertyValue @{ AdoptionSignals = $signals } -Force
+        }
     }
-    # #958 -- record the active context so the shared Add-Setting wrapper can find
-    # Settings + CheckIdCounter without each collector redefining a local wrapper.
-    # Dot-sourced per collector, so $script: is the collector's own scope and each
-    # Initialize-SecurityConfig call resets it; sequential collectors stay isolated.
-    $script:ActiveSecurityConfig = $ctx
+
+    $ctx = @{
+        Settings        = [System.Collections.Generic.List[PSCustomObject]]::new()
+        CheckIdCounter  = @{}
+        AdoptionSignals = $signals
+    }
+    # #958 -- the shared Add-Setting wrapper finds Settings + CheckIdCounter by the
+    # caller-visible $ctx this returns (see Get-ActiveSecurityContext); no process
+    # scope is touched, so sequential collectors stay isolated.
     $ctx
+}
+
+function Get-ActiveSecurityContext {
+    <#
+    .SYNOPSIS
+        Finds the security-config context created by Initialize-SecurityConfig.
+    .DESCRIPTION
+        Returns the caller-visible $ctx bound by the active collector, or $null
+        when no security context is in scope. Resolution walks the caller scope
+        chain (the same mechanism that lets collectors read the RunContext), so
+        no process-global state is needed and sequential contexts stay isolated.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param()
+
+    $candidate = Get-Variable -Name 'ctx' -ValueOnly -ErrorAction SilentlyContinue
+    if ($candidate -is [hashtable] -and
+        $candidate.ContainsKey('Settings') -and $candidate.ContainsKey('CheckIdCounter')) {
+        return $candidate
+    }
+    return $null
 }
 
 function Add-Setting {
@@ -48,8 +89,8 @@ function Add-Setting {
         Adds a finding to the active collector context (#958).
     .DESCRIPTION
         Canonical replacement for the ~60 per-collector local Add-Setting wrappers.
-        Pulls Settings + CheckIdCounter from the script-scoped active context that
-        Initialize-SecurityConfig records, then forwards every other argument to
+        Pulls Settings + CheckIdCounter from the active context that
+        Initialize-SecurityConfig creates, then forwards every other argument to
         Add-SecuritySetting. Call Initialize-SecurityConfig first.
     #>
     [CmdletBinding()]
@@ -110,12 +151,13 @@ function Add-Setting {
         [string]$Limitations = ''
     )
 
-    if (-not $script:ActiveSecurityConfig) {
+    $active = Get-ActiveSecurityContext
+    if (-not $active) {
         throw "Add-Setting was called before Initialize-SecurityConfig. Each collector must call Initialize-SecurityConfig before adding settings."
     }
 
-    Add-SecuritySetting -Settings $script:ActiveSecurityConfig.Settings `
-        -CheckIdCounter $script:ActiveSecurityConfig.CheckIdCounter @PSBoundParameters
+    Add-SecuritySetting -Settings $active.Settings `
+        -CheckIdCounter $active.CheckIdCounter -AdoptionSignals $active.AdoptionSignals @PSBoundParameters
 }
 
 function Add-SecuritySetting {
@@ -170,6 +212,10 @@ function Add-SecuritySetting {
     .PARAMETER Limitations
         Free-text note explaining caveats (e.g. 'Required Reports.Read.All which was not
         granted; counted user signins from /auditLogs/signIns instead').
+    .PARAMETER AdoptionSignals
+        Adoption-signal hashtable owned by the active security context. Add-Setting
+        supplies it; when omitted Add-SecuritySetting resolves the caller's active
+        context so direct callers keep accumulating signals.
     #>
     [CmdletBinding()]
     param(
@@ -235,7 +281,12 @@ function Add-SecuritySetting {
         [Nullable[double]]$Confidence = $null,
 
         [Parameter()]
-        [string]$Limitations = ''
+        [string]$Limitations = '',
+
+        # Adoption signals hashtable the active context owns. Add-Setting supplies
+        # it; direct callers let Add-SecuritySetting resolve the active context.
+        [Parameter()]
+        [hashtable]$AdoptionSignals
     )
 
     # D1 #785 -- validate Confidence range manually so the [Nullable[double]] default
@@ -282,13 +333,20 @@ function Add-SecuritySetting {
         Limitations        = $Limitations
     })
 
-    # Accumulate adoption signal for Value Opportunity analysis
+    # Accumulate adoption signal for Value Opportunity analysis. Add-Setting passes
+    # the active context's signals; direct callers resolve it from the caller scope.
     if ($CheckId) {
-        $global:AdoptionSignals[$subCheckId] = @{
-            Status       = $Status
-            Setting      = $Setting
-            CurrentValue = $CurrentValue
-            Category     = $Category
+        if (-not $PSBoundParameters.ContainsKey('AdoptionSignals')) {
+            $active = Get-ActiveSecurityContext
+            if ($active) { $AdoptionSignals = $active.AdoptionSignals }
+        }
+        if ($AdoptionSignals) {
+            $AdoptionSignals[$subCheckId] = @{
+                Status       = $Status
+                Setting      = $Setting
+                CurrentValue = $CurrentValue
+                Category     = $Category
+            }
         }
     }
 
@@ -344,7 +402,10 @@ function Get-AdoptionSignals {
     .DESCRIPTION
         Returns a thread-safe copy of the adoption signals hashtable that was
         passively populated by Add-SecuritySetting calls during the assessment.
-        Used by the Value Opportunity collectors to determine feature adoption.
+        Resolves the active security context from the caller scope, falling back
+        to the RunContext when only it is visible (e.g. the ValueOpportunity
+        collector). Used by the Value Opportunity collectors to determine feature
+        adoption.
     .EXAMPLE
         $signals = Get-AdoptionSignals
         $signals['ENTRA-PIM-001.1'].Status  # 'Pass' or 'Fail'
@@ -353,8 +414,19 @@ function Get-AdoptionSignals {
     [OutputType([hashtable])]
     param()
 
-    if ($global:AdoptionSignals) {
-        return $global:AdoptionSignals.Clone()
+    $active = Get-ActiveSecurityContext
+    if ($active) {
+        return $active.AdoptionSignals.Clone()
+    }
+
+    $runContext = Get-Variable -Name 'ctx' -ValueOnly -ErrorAction SilentlyContinue
+    if ($runContext -and -not ($runContext -is [hashtable]) -and
+        $runContext.PSObject.Properties['Registry'] -and $runContext.Registry) {
+        $registry = $runContext.Registry
+        if ($registry.PSObject.Properties['SecurityConfig'] -and
+            $registry.SecurityConfig.ContainsKey('AdoptionSignals')) {
+            return $registry.SecurityConfig.AdoptionSignals.Clone()
+        }
     }
     return @{}
 }

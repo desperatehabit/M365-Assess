@@ -66,7 +66,8 @@ Describe 'Add-Setting - centralized wrapper (#958)' {
     }
 
     It 'throws a clear error when called before Initialize-SecurityConfig' {
-        Remove-Variable -Name ActiveSecurityConfig -Scope Script -ErrorAction SilentlyContinue
+        # Remove the active context from scope so Add-Setting cannot resolve it.
+        $ctx = $null
         {
             Add-Setting -Category 'T' -Setting 'orphan' -CurrentValue 'x' -RecommendedValue 'y' -Status 'Pass'
         } | Should -Throw -ExpectedMessage '*Initialize-SecurityConfig*'
@@ -171,5 +172,74 @@ Describe 'Add-SecuritySetting - structured evidence schema (D1 #785)' {
             -Evidence ([PSCustomObject]@{ rawCount = 7 }) -ObservedValue '7'
         $ctx.Settings[0].Evidence.rawCount | Should -Be 7
         $ctx.Settings[0].ObservedValue     | Should -Be '7'
+    }
+}
+
+Describe 'SecurityConfigHelper - RunContext state (T-0004)' {
+    BeforeAll {
+        . "$PSScriptRoot/../../src/M365-Assess/Common/SecurityConfigHelper.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Common/RunContext.ps1"
+    }
+
+    It 'does not create process-global adoption or active-config state' {
+        Remove-Variable -Name AdoptionSignals -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name ActiveSecurityConfig -Scope Script -ErrorAction SilentlyContinue
+
+        & {
+            $ctx = Initialize-SecurityConfig
+            Add-Setting -Category 'T' -Setting 'no globals' -CurrentValue 'x' `
+                -RecommendedValue 'y' -Status 'Pass' -CheckId 'GLOBAL-001'
+        }
+
+        (Get-Variable -Name AdoptionSignals -Scope Global -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+        (Get-Variable -Name ActiveSecurityConfig -Scope Script -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
+    }
+
+    It 'keeps settings and signals isolated between sequential contexts' {
+        $first = Initialize-SecurityConfig
+        $ctx = $first
+        Add-Setting -Category 'T' -Setting 'first' -CurrentValue 'x' `
+            -RecommendedValue 'y' -Status 'Pass' -CheckId 'ISO-001'
+
+        $second = Initialize-SecurityConfig
+
+        $second.Settings.Count        | Should -Be 0
+        $second.AdoptionSignals.Count | Should -Be 0
+        $first.Settings.Count         | Should -Be 1
+        $first.AdoptionSignals.Count  | Should -Be 1
+    }
+
+    It 'shares signals across collectors that thread the same RunContext' {
+        $ctx = New-RunContext -TenantId 'contoso.onmicrosoft.com'
+
+        & {
+            $ctx = Initialize-SecurityConfig
+            Add-Setting -Category 'T' -Setting 'collector one' -CurrentValue 'x' `
+                -RecommendedValue 'y' -Status 'Pass' -CheckId 'SHARE-001'
+        }
+        & {
+            $ctx = Initialize-SecurityConfig
+            Add-Setting -Category 'T' -Setting 'collector two' -CurrentValue 'x' `
+                -RecommendedValue 'y' -Status 'Fail' -CheckId 'SHARE-002'
+        }
+
+        $signals = & { Get-AdoptionSignals }
+        $signals.Count              | Should -Be 2
+        $signals['SHARE-001.1'].Status | Should -Be 'Pass'
+        $signals['SHARE-002.1'].Status | Should -Be 'Fail'
+    }
+
+    It 'returns a clone of the RunContext-backed signals' {
+        $ctx = New-RunContext -TenantId 'contoso.onmicrosoft.com'
+        & {
+            $ctx = Initialize-SecurityConfig
+            Add-Setting -Category 'T' -Setting 'clone' -CurrentValue 'x' `
+                -RecommendedValue 'y' -Status 'Pass' -CheckId 'CLONE-001'
+        }
+
+        $clone = & { Get-AdoptionSignals }
+        $clone['INJECTED'] = @{ Status = 'Hacked' }
+
+        (& { Get-AdoptionSignals }).ContainsKey('INJECTED') | Should -Be $false
     }
 }
