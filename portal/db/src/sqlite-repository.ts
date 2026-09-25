@@ -37,6 +37,13 @@ import {
   type SiteOperation,
   type SiteOperationInput,
   type SiteOperationUpdate,
+  type TeamOperation,
+  type TeamOperationInput,
+  type TeamOperationUpdate,
+  type TeamTemplate,
+  type TeamTemplateInput,
+  type TeamTemplateUpdate,
+  type TeamVisibility,
   type Tenant,
   type TenantCredential,
   type TenantCredentialInput,
@@ -366,6 +373,35 @@ export class SqliteRepository implements Repository {
       id: asString(row["id"]),
       tenantId: asString(row["tenantId"]),
       siteId: asString(row["siteId"]),
+      operation: asString(row["operation"]),
+      state: asString(row["state"]),
+      by: asNullableString(row["by"]),
+      at: asString(row["at"]),
+      result: asNullableString(row["result"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapTeamTemplate(row: Row): TeamTemplate {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      owners: parseJsonArray(row["owners"]),
+      members: parseJsonArray(row["members"]),
+      visibility: asString(row["visibility"]) as TeamVisibility,
+      settings: parseJson(row["settings"]) ?? {},
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
+    };
+  }
+
+  private mapTeamOperation(row: Row): TeamOperation {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      teamId: asString(row["teamId"]),
       operation: asString(row["operation"]),
       state: asString(row["state"]),
       by: asNullableString(row["by"]),
@@ -1109,6 +1145,157 @@ export class SqliteRepository implements Repository {
       )
       .run(update.state ?? existing.state, result, nowIso(), operationId, tenantId);
     return this.getSiteOperation(tenantId, operationId);
+  }
+
+  private teamTemplateById(templateId: string): TeamTemplate | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM team_templates WHERE id = ?")
+      .get(templateId) as Row | undefined;
+    return row ? this.mapTeamTemplate(row) : undefined;
+  }
+
+  async createTeamTemplate(input: TeamTemplateInput): Promise<TeamTemplate> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO team_templates
+           (id, name, owners, members, visibility, settings, createdAt, updatedAt, deletedAt)
+         VALUES (@id, @name, @owners, @members, @visibility, @settings, @createdAt, @updatedAt, @deletedAt)`,
+      )
+      .run({
+        id: input.id,
+        name: input.name,
+        owners: JSON.stringify(input.owners ?? []),
+        members: JSON.stringify(input.members ?? []),
+        visibility: input.visibility,
+        settings: JSON.stringify(input.settings ?? {}),
+        createdAt,
+        updatedAt,
+        deletedAt: input.deletedAt ?? null,
+      });
+    const template = this.teamTemplateById(input.id);
+    if (!template) throw new Error(`team template ${input.id} was not persisted`);
+    return template;
+  }
+
+  async getTeamTemplate(
+    templateId: string,
+    options: ListOptions = {},
+  ): Promise<TeamTemplate | undefined> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM team_templates WHERE id = ?"
+      : "SELECT * FROM team_templates WHERE id = ? AND deletedAt IS NULL";
+    const row = this.db.prepare(sql).get(templateId) as Row | undefined;
+    return row ? this.mapTeamTemplate(row) : undefined;
+  }
+
+  async listTeamTemplates(options: ListOptions = {}): Promise<TeamTemplate[]> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM team_templates ORDER BY name"
+      : "SELECT * FROM team_templates WHERE deletedAt IS NULL ORDER BY name";
+    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapTeamTemplate(row));
+  }
+
+  async updateTeamTemplate(
+    templateId: string,
+    update: TeamTemplateUpdate,
+  ): Promise<TeamTemplate | undefined> {
+    const existing = this.teamTemplateById(templateId);
+    if (!existing) return undefined;
+    const owners = update.owners === undefined ? existing.owners : update.owners;
+    const members = update.members === undefined ? existing.members : update.members;
+    const settings = update.settings === undefined ? existing.settings : update.settings;
+    this.db
+      .prepare(
+        `UPDATE team_templates
+           SET name = ?, owners = ?, members = ?, visibility = ?, settings = ?, updatedAt = ?
+         WHERE id = ?`,
+      )
+      .run(
+        update.name ?? existing.name,
+        JSON.stringify(owners),
+        JSON.stringify(members),
+        update.visibility ?? existing.visibility,
+        JSON.stringify(settings),
+        nowIso(),
+        templateId,
+      );
+    return this.teamTemplateById(templateId);
+  }
+
+  async softDeleteTeamTemplate(
+    templateId: string,
+    options: { now?: string } = {},
+  ): Promise<boolean> {
+    const at = options.now ?? nowIso();
+    const result = this.db
+      .prepare(
+        "UPDATE team_templates SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+      )
+      .run(at, at, templateId);
+    return result.changes > 0;
+  }
+
+  async createTeamOperation(input: TeamOperationInput): Promise<TeamOperation> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO team_operations
+           (id, tenantId, teamId, operation, state, "by", "at", result, createdAt, updatedAt)
+         VALUES
+           (@id, @tenantId, @teamId, @operation, @state, @by, @at, @result, @createdAt, @updatedAt)`,
+      )
+      .run({
+        id: input.id,
+        tenantId: input.tenantId,
+        teamId: input.teamId,
+        operation: input.operation,
+        state: input.state,
+        by: input.by ?? null,
+        at: input.at ?? createdAt,
+        result: input.result ?? null,
+        createdAt,
+        updatedAt,
+      });
+    const operation = await this.getTeamOperation(input.tenantId, input.id);
+    if (!operation) throw new Error(`team operation ${input.id} was not persisted`);
+    return operation;
+  }
+
+  async getTeamOperation(
+    tenantId: string,
+    operationId: string,
+  ): Promise<TeamOperation | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM team_operations WHERE id = ? AND tenantId = ?")
+      .get(operationId, tenantId) as Row | undefined;
+    return row ? this.mapTeamOperation(row) : undefined;
+  }
+
+  async listTeamOperations(tenantId: string): Promise<TeamOperation[]> {
+    return (
+      this.db
+        .prepare('SELECT * FROM team_operations WHERE tenantId = ? ORDER BY "at", id')
+        .all(tenantId) as Row[]
+    ).map((row) => this.mapTeamOperation(row));
+  }
+
+  async updateTeamOperation(
+    tenantId: string,
+    operationId: string,
+    update: TeamOperationUpdate,
+  ): Promise<TeamOperation | undefined> {
+    const existing = await this.getTeamOperation(tenantId, operationId);
+    if (!existing) return undefined;
+    const result = update.result === undefined ? existing.result : update.result;
+    this.db
+      .prepare(
+        "UPDATE team_operations SET state = ?, result = ?, updatedAt = ? WHERE id = ? AND tenantId = ?",
+      )
+      .run(update.state ?? existing.state, result, nowIso(), operationId, tenantId);
+    return this.getTeamOperation(tenantId, operationId);
   }
 }
 
