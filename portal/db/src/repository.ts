@@ -3,6 +3,7 @@
 
 export type TenantSource = "direct" | "gdap";
 export type TenantStatus = "active" | "excluded" | "error";
+export type TenantGroupKind = "static" | "dynamic";
 export type RunTrigger = "manual" | "schedule" | "api";
 export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
 export type JobState = "queued" | "running" | "done" | "failed";
@@ -21,8 +22,12 @@ export interface Tenant {
   source: TenantSource;
   status: TenantStatus;
   excluded: boolean;
+  excludeReason: string | null;
+  excludeDate: string | null;
+  environment: string;
   lastRunAt: string | null;
   errorCount: number;
+  lastError: string | null;
   createdAt: string;
   updatedAt: string;
   deletedAt: string | null;
@@ -38,6 +43,43 @@ export interface TenantCredential {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantGroup {
+  id: string;
+  name: string;
+  kind: TenantGroupKind;
+  filter: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface TenantGroupMember {
+  groupId: string;
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TenantVariable {
+  id: string;
+  tenantId: string | null;
+  name: string;
+  value: string;
+  isSecret: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface GdapRelationship {
+  tenantId: string;
+  relationshipEnd: string | null;
+  delegatedPrivilegeStatus: string | null;
+  cpvConsentState: string | null;
+  lastSynced: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -119,10 +161,38 @@ export interface AuditEvent {
   createdAt: string;
 }
 
-export type TenantInput = Omit<Tenant, "createdAt" | "updatedAt" | "deletedAt"> &
-  Partial<Pick<Tenant, "createdAt" | "updatedAt" | "deletedAt">>;
+export type TenantInput = Omit<
+  Tenant,
+  | "createdAt"
+  | "updatedAt"
+  | "deletedAt"
+  | "environment"
+  | "excludeReason"
+  | "excludeDate"
+  | "lastError"
+> &
+  Partial<
+    Pick<
+      Tenant,
+      | "createdAt"
+      | "updatedAt"
+      | "deletedAt"
+      | "environment"
+      | "excludeReason"
+      | "excludeDate"
+      | "lastError"
+    >
+  >;
 export type TenantCredentialInput = Omit<TenantCredential, "createdAt" | "updatedAt"> &
   Partial<Pick<TenantCredential, "createdAt" | "updatedAt">>;
+export type TenantGroupInput = Omit<TenantGroup, "createdAt" | "updatedAt" | "deletedAt"> &
+  Partial<Pick<TenantGroup, "createdAt" | "updatedAt" | "deletedAt">>;
+export type TenantGroupMemberInput = Omit<TenantGroupMember, "createdAt" | "updatedAt"> &
+  Partial<Pick<TenantGroupMember, "createdAt" | "updatedAt">>;
+export type TenantVariableInput = Omit<TenantVariable, "createdAt" | "updatedAt"> &
+  Partial<Pick<TenantVariable, "createdAt" | "updatedAt">>;
+export type GdapRelationshipInput = Omit<GdapRelationship, "createdAt" | "updatedAt"> &
+  Partial<Pick<GdapRelationship, "createdAt" | "updatedAt">>;
 export type RunInput = Omit<Run, "createdAt" | "updatedAt"> &
   Partial<Pick<Run, "createdAt" | "updatedAt">>;
 export type RunSectionInput = Omit<RunSection, "createdAt" | "updatedAt"> &
@@ -136,6 +206,18 @@ export type AuditEventInput = Omit<AuditEvent, "createdAt"> &
 
 export interface ListOptions {
   includeDeleted?: boolean;
+}
+
+export interface TenantListOptions extends ListOptions {
+  status?: TenantStatus;
+  source?: TenantSource;
+  groupId?: string;
+  search?: string;
+}
+
+export interface TenantVariableListOptions {
+  tenantId?: string;
+  includeGlobal?: boolean;
 }
 
 export interface JobStateUpdate {
@@ -154,13 +236,32 @@ export interface Repository {
   close(): void;
 
   getTenant(tenantId: string, options?: ListOptions): Promise<Tenant | undefined>;
-  listTenants(options?: ListOptions): Promise<Tenant[]>;
+  listTenants(options?: TenantListOptions): Promise<Tenant[]>;
   upsertTenant(input: TenantInput): Promise<Tenant>;
   softDeleteTenant(tenantId: string, options?: { now?: string }): Promise<boolean>;
 
   getTenantCredential(tenantId: string): Promise<TenantCredential | undefined>;
   listTenantCredentials(tenantId: string): Promise<TenantCredential[]>;
   upsertTenantCredential(input: TenantCredentialInput): Promise<TenantCredential>;
+
+  getTenantGroup(groupId: string, options?: ListOptions): Promise<TenantGroup | undefined>;
+  listTenantGroups(options?: ListOptions): Promise<TenantGroup[]>;
+  upsertTenantGroup(input: TenantGroupInput): Promise<TenantGroup>;
+  softDeleteTenantGroup(groupId: string, options?: { now?: string }): Promise<boolean>;
+
+  addTenantGroupMember(input: TenantGroupMemberInput): Promise<TenantGroupMember>;
+  removeTenantGroupMember(groupId: string, tenantId: string): Promise<boolean>;
+  listTenantGroupMembers(groupId: string): Promise<TenantGroupMember[]>;
+  listTenantGroupsForTenant(tenantId: string): Promise<TenantGroup[]>;
+
+  getTenantVariable(variableId: string): Promise<TenantVariable | undefined>;
+  listTenantVariables(options?: TenantVariableListOptions): Promise<TenantVariable[]>;
+  upsertTenantVariable(input: TenantVariableInput): Promise<TenantVariable>;
+  deleteTenantVariable(variableId: string): Promise<boolean>;
+
+  getGdapRelationship(tenantId: string): Promise<GdapRelationship | undefined>;
+  listGdapRelationships(): Promise<GdapRelationship[]>;
+  upsertGdapRelationship(input: GdapRelationshipInput): Promise<GdapRelationship>;
 
   createRun(input: RunInput): Promise<Run>;
   getRun(tenantId: string, runId: string): Promise<Run | undefined>;

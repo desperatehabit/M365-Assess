@@ -14,6 +14,8 @@ import {
   type Finding,
   type FindingInput,
   type FindingStatus,
+  type GdapRelationship,
+  type GdapRelationshipInput,
   type Job,
   type JobInput,
   type JobState,
@@ -31,9 +33,18 @@ import {
   type Tenant,
   type TenantCredential,
   type TenantCredentialInput,
+  type TenantGroup,
+  type TenantGroupInput,
+  type TenantGroupKind,
+  type TenantGroupMember,
+  type TenantGroupMemberInput,
   type TenantInput,
+  type TenantListOptions,
   type TenantSource,
   type TenantStatus,
+  type TenantVariable,
+  type TenantVariableInput,
+  type TenantVariableListOptions,
 } from "./repository.js";
 
 type Row = Record<string, unknown>;
@@ -170,8 +181,12 @@ export class SqliteRepository implements Repository {
       source: asString(row["source"]) as TenantSource,
       status: asString(row["status"]) as TenantStatus,
       excluded: asBool(row["excluded"]),
+      excludeReason: asNullableString(row["excludeReason"]),
+      excludeDate: asNullableString(row["excludeDate"]),
+      environment: asString(row["environment"]),
       lastRunAt: asNullableString(row["lastRunAt"]),
       errorCount: asNumber(row["errorCount"]),
+      lastError: asNullableString(row["lastError"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
       deletedAt: asNullableString(row["deletedAt"]),
@@ -189,6 +204,51 @@ export class SqliteRepository implements Repository {
       environment: asString(row["environment"]),
       expiresOn: asNullableString(row["expiresOn"]),
       lastValidated: asNullableString(row["lastValidated"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapTenantGroup(row: Row): TenantGroup {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      kind: asString(row["kind"]) as TenantGroupKind,
+      filter: parseJson(row["filter"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
+    };
+  }
+
+  private mapTenantGroupMember(row: Row): TenantGroupMember {
+    return {
+      groupId: asString(row["groupId"]),
+      tenantId: asString(row["tenantId"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapTenantVariable(row: Row): TenantVariable {
+    return {
+      id: asString(row["id"]),
+      tenantId: asNullableString(row["tenantId"]),
+      name: asString(row["name"]),
+      value: asString(row["value"]),
+      isSecret: asBool(row["isSecret"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapGdapRelationship(row: Row): GdapRelationship {
+    return {
+      tenantId: asString(row["tenantId"]),
+      relationshipEnd: asNullableString(row["relationshipEnd"]),
+      delegatedPrivilegeStatus: asNullableString(row["delegatedPrivilegeStatus"]),
+      cpvConsentState: asNullableString(row["cpvConsentState"]),
+      lastSynced: asNullableString(row["lastSynced"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -289,11 +349,32 @@ export class SqliteRepository implements Repository {
     return row ? this.mapTenant(row) : undefined;
   }
 
-  async listTenants(options: ListOptions = {}): Promise<Tenant[]> {
-    const sql = options.includeDeleted
-      ? "SELECT * FROM tenants ORDER BY createdAt"
-      : "SELECT * FROM tenants WHERE deletedAt IS NULL ORDER BY createdAt";
-    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapTenant(row));
+  async listTenants(options: TenantListOptions = {}): Promise<Tenant[]> {
+    const where: string[] = [];
+    const params: unknown[] = [];
+    if (!options.includeDeleted) where.push("t.deletedAt IS NULL");
+    if (options.groupId !== undefined) {
+      where.push("t.id IN (SELECT tenantId FROM tenant_group_members WHERE groupId = ?)");
+      params.push(options.groupId);
+    }
+    if (options.status !== undefined) {
+      where.push("t.status = ?");
+      params.push(options.status);
+    }
+    if (options.source !== undefined) {
+      where.push("t.source = ?");
+      params.push(options.source);
+    }
+    if (options.search !== undefined && options.search.length > 0) {
+      const like = `%${options.search}%`;
+      where.push("(t.displayName LIKE ? OR t.defaultDomain LIKE ? OR t.id LIKE ?)");
+      params.push(like, like, like);
+    }
+    const sql =
+      "SELECT t.* FROM tenants t" +
+      (where.length > 0 ? ` WHERE ${where.join(" AND ")}` : "") +
+      " ORDER BY t.createdAt";
+    return (this.db.prepare(sql).all(...params) as Row[]).map((row) => this.mapTenant(row));
   }
 
   async upsertTenant(input: TenantInput): Promise<Tenant> {
@@ -302,9 +383,9 @@ export class SqliteRepository implements Repository {
     this.db
       .prepare(
         `INSERT INTO tenants
-           (id, displayName, defaultDomain, initialDomain, source, status, excluded, lastRunAt, errorCount, createdAt, updatedAt, deletedAt)
+           (id, displayName, defaultDomain, initialDomain, source, status, excluded, excludeReason, excludeDate, environment, lastRunAt, errorCount, lastError, createdAt, updatedAt, deletedAt)
          VALUES
-           (@id, @displayName, @defaultDomain, @initialDomain, @source, @status, @excludedFlag, @lastRunAt, @errorCount, @createdAt, @updatedAt, @deletedAt)
+           (@id, @displayName, @defaultDomain, @initialDomain, @source, @status, @excludedFlag, @excludeReason, @excludeDate, @environment, @lastRunAt, @errorCount, @lastError, @createdAt, @updatedAt, @deletedAt)
          ON CONFLICT(id) DO UPDATE SET
            displayName = excluded.displayName,
            defaultDomain = excluded.defaultDomain,
@@ -312,8 +393,12 @@ export class SqliteRepository implements Repository {
            source = excluded.source,
            status = excluded.status,
            excluded = excluded.excluded,
+           excludeReason = excluded.excludeReason,
+           excludeDate = excluded.excludeDate,
+           environment = excluded.environment,
            lastRunAt = excluded.lastRunAt,
            errorCount = excluded.errorCount,
+           lastError = excluded.lastError,
            updatedAt = excluded.updatedAt,
            deletedAt = excluded.deletedAt`,
       )
@@ -325,8 +410,12 @@ export class SqliteRepository implements Repository {
         source: input.source,
         status: input.status,
         excludedFlag: input.excluded ? 1 : 0,
+        excludeReason: input.excludeReason ?? null,
+        excludeDate: input.excludeDate ?? null,
+        environment: input.environment ?? "global",
         lastRunAt: input.lastRunAt ?? null,
         errorCount: input.errorCount,
+        lastError: input.lastError ?? null,
         createdAt,
         updatedAt,
         deletedAt: input.deletedAt ?? null,
@@ -402,6 +491,227 @@ export class SqliteRepository implements Repository {
     const credential = this.credentialById(input.id);
     if (!credential) throw new Error(`credential ${input.id} was not persisted`);
     return credential;
+  }
+
+  private tenantGroupById(id: string): TenantGroup | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM tenant_groups WHERE id = ?")
+      .get(id) as Row | undefined;
+    return row ? this.mapTenantGroup(row) : undefined;
+  }
+
+  async getTenantGroup(groupId: string, options: ListOptions = {}): Promise<TenantGroup | undefined> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM tenant_groups WHERE id = ?"
+      : "SELECT * FROM tenant_groups WHERE id = ? AND deletedAt IS NULL";
+    const row = this.db.prepare(sql).get(groupId) as Row | undefined;
+    return row ? this.mapTenantGroup(row) : undefined;
+  }
+
+  async listTenantGroups(options: ListOptions = {}): Promise<TenantGroup[]> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM tenant_groups ORDER BY name"
+      : "SELECT * FROM tenant_groups WHERE deletedAt IS NULL ORDER BY name";
+    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapTenantGroup(row));
+  }
+
+  async upsertTenantGroup(input: TenantGroupInput): Promise<TenantGroup> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO tenant_groups (id, name, kind, filter, createdAt, updatedAt, deletedAt)
+         VALUES (@id, @name, @kind, @filter, @createdAt, @updatedAt, @deletedAt)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           kind = excluded.kind,
+           filter = excluded.filter,
+           updatedAt = excluded.updatedAt,
+           deletedAt = excluded.deletedAt`,
+      )
+      .run({
+        id: input.id,
+        name: input.name,
+        kind: input.kind,
+        filter: stringifyJson(input.filter),
+        createdAt,
+        updatedAt,
+        deletedAt: input.deletedAt ?? null,
+      });
+    const group = this.tenantGroupById(input.id);
+    if (!group) throw new Error(`tenant group ${input.id} was not persisted`);
+    return group;
+  }
+
+  async softDeleteTenantGroup(groupId: string, options: { now?: string } = {}): Promise<boolean> {
+    const at = options.now ?? nowIso();
+    const result = this.db
+      .prepare(
+        "UPDATE tenant_groups SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+      )
+      .run(at, at, groupId);
+    return result.changes > 0;
+  }
+
+  async addTenantGroupMember(input: TenantGroupMemberInput): Promise<TenantGroupMember> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO tenant_group_members (groupId, tenantId, createdAt, updatedAt)
+         VALUES (@groupId, @tenantId, @createdAt, @updatedAt)
+         ON CONFLICT(groupId, tenantId) DO UPDATE SET updatedAt = excluded.updatedAt`,
+      )
+      .run({
+        groupId: input.groupId,
+        tenantId: input.tenantId,
+        createdAt,
+        updatedAt,
+      });
+    const row = this.db
+      .prepare("SELECT * FROM tenant_group_members WHERE groupId = ? AND tenantId = ?")
+      .get(input.groupId, input.tenantId) as Row | undefined;
+    if (!row) throw new Error(`tenant group member ${input.groupId}/${input.tenantId} was not persisted`);
+    return this.mapTenantGroupMember(row);
+  }
+
+  async removeTenantGroupMember(groupId: string, tenantId: string): Promise<boolean> {
+    const result = this.db
+      .prepare("DELETE FROM tenant_group_members WHERE groupId = ? AND tenantId = ?")
+      .run(groupId, tenantId);
+    return result.changes > 0;
+  }
+
+  async listTenantGroupMembers(groupId: string): Promise<TenantGroupMember[]> {
+    return (
+      this.db
+        .prepare("SELECT * FROM tenant_group_members WHERE groupId = ? ORDER BY tenantId")
+        .all(groupId) as Row[]
+    ).map((row) => this.mapTenantGroupMember(row));
+  }
+
+  async listTenantGroupsForTenant(tenantId: string): Promise<TenantGroup[]> {
+    return (
+      this.db
+        .prepare(
+          `SELECT g.* FROM tenant_groups g
+           JOIN tenant_group_members m ON m.groupId = g.id
+           WHERE m.tenantId = ? AND g.deletedAt IS NULL
+           ORDER BY g.name`,
+        )
+        .all(tenantId) as Row[]
+    ).map((row) => this.mapTenantGroup(row));
+  }
+
+  private tenantVariableById(id: string): TenantVariable | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM tenant_variables WHERE id = ?")
+      .get(id) as Row | undefined;
+    return row ? this.mapTenantVariable(row) : undefined;
+  }
+
+  async getTenantVariable(variableId: string): Promise<TenantVariable | undefined> {
+    return this.tenantVariableById(variableId);
+  }
+
+  async listTenantVariables(options: TenantVariableListOptions = {}): Promise<TenantVariable[]> {
+    if (options.tenantId === undefined) {
+      return (
+        this.db
+          .prepare("SELECT * FROM tenant_variables ORDER BY tenantId, name")
+          .all() as Row[]
+      ).map((row) => this.mapTenantVariable(row));
+    }
+    const sql = options.includeGlobal
+      ? "SELECT * FROM tenant_variables WHERE tenantId = ? OR tenantId IS NULL ORDER BY tenantId, name"
+      : "SELECT * FROM tenant_variables WHERE tenantId = ? ORDER BY name";
+    return (this.db.prepare(sql).all(options.tenantId) as Row[]).map((row) =>
+      this.mapTenantVariable(row),
+    );
+  }
+
+  async upsertTenantVariable(input: TenantVariableInput): Promise<TenantVariable> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO tenant_variables (id, tenantId, name, value, isSecret, createdAt, updatedAt)
+         VALUES (@id, @tenantId, @name, @value, @isSecretFlag, @createdAt, @updatedAt)
+         ON CONFLICT(id) DO UPDATE SET
+           tenantId = excluded.tenantId,
+           name = excluded.name,
+           value = excluded.value,
+           isSecret = excluded.isSecret,
+           updatedAt = excluded.updatedAt`,
+      )
+      .run({
+        id: input.id,
+        tenantId: input.tenantId ?? null,
+        name: input.name,
+        value: input.value,
+        isSecretFlag: input.isSecret ? 1 : 0,
+        createdAt,
+        updatedAt,
+      });
+    const variable = this.tenantVariableById(input.id);
+    if (!variable) throw new Error(`tenant variable ${input.id} was not persisted`);
+    return variable;
+  }
+
+  async deleteTenantVariable(variableId: string): Promise<boolean> {
+    const result = this.db.prepare("DELETE FROM tenant_variables WHERE id = ?").run(variableId);
+    return result.changes > 0;
+  }
+
+  private gdapRelationshipByTenant(tenantId: string): GdapRelationship | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM gdap_relationships WHERE tenantId = ?")
+      .get(tenantId) as Row | undefined;
+    return row ? this.mapGdapRelationship(row) : undefined;
+  }
+
+  async getGdapRelationship(tenantId: string): Promise<GdapRelationship | undefined> {
+    return this.gdapRelationshipByTenant(tenantId);
+  }
+
+  async listGdapRelationships(): Promise<GdapRelationship[]> {
+    return (
+      this.db
+        .prepare("SELECT * FROM gdap_relationships ORDER BY tenantId")
+        .all() as Row[]
+    ).map((row) => this.mapGdapRelationship(row));
+  }
+
+  async upsertGdapRelationship(input: GdapRelationshipInput): Promise<GdapRelationship> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO gdap_relationships
+           (tenantId, relationshipEnd, delegatedPrivilegeStatus, cpvConsentState, lastSynced, createdAt, updatedAt)
+         VALUES
+           (@tenantId, @relationshipEnd, @delegatedPrivilegeStatus, @cpvConsentState, @lastSynced, @createdAt, @updatedAt)
+         ON CONFLICT(tenantId) DO UPDATE SET
+           relationshipEnd = excluded.relationshipEnd,
+           delegatedPrivilegeStatus = excluded.delegatedPrivilegeStatus,
+           cpvConsentState = excluded.cpvConsentState,
+           lastSynced = excluded.lastSynced,
+           updatedAt = excluded.updatedAt`,
+      )
+      .run({
+        tenantId: input.tenantId,
+        relationshipEnd: input.relationshipEnd ?? null,
+        delegatedPrivilegeStatus: input.delegatedPrivilegeStatus ?? null,
+        cpvConsentState: input.cpvConsentState ?? null,
+        lastSynced: input.lastSynced ?? null,
+        createdAt,
+        updatedAt,
+      });
+    const relationship = this.gdapRelationshipByTenant(input.tenantId);
+    if (!relationship) {
+      throw new Error(`gdap relationship ${input.tenantId} was not persisted`);
+    }
+    return relationship;
   }
 
   async createRun(input: RunInput): Promise<Run> {
