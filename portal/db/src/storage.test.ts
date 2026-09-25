@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -10,6 +10,7 @@ import {
   type TenantInput,
 } from "./repository.js";
 import {
+  SCHEMA_VERSIONS_TABLE,
   loadMigrations,
   openSqliteRepository,
   runMigrations,
@@ -85,35 +86,42 @@ function auditEvent(id: string, tenantId: string): AuditEventInput {
 
 describe("migrations", () => {
   it("applies once, is re-runnable, and sets SchemaVersion", async () => {
+    const migrations = loadMigrations();
+    const target = Math.max(...migrations.map((migration) => migration.version));
     const filename = tempDbPath();
     const first = await openSqliteRepository({ filename });
-    expect(first.schemaVersion).toBe(1);
+    expect(first.schemaVersion).toBe(target);
     first.close();
 
     const raw = new Database(filename);
-    expect(raw.prepare("SELECT COUNT(*) AS c FROM schema_versions").get()).toMatchObject({ c: 1 });
+    expect(raw.prepare("SELECT COUNT(*) AS c FROM schema_versions").get()).toMatchObject({
+      c: migrations.length,
+    });
     raw.close();
 
     const second = await openSqliteRepository({ filename });
-    expect(second.schemaVersion).toBe(1);
+    expect(second.schemaVersion).toBe(target);
     second.close();
 
     const rawAgain = new Database(filename);
     expect(rawAgain.prepare("SELECT COUNT(*) AS c FROM schema_versions").get()).toMatchObject({
-      c: 1,
+      c: migrations.length,
     });
     expect(rawAgain.prepare("SELECT MAX(version) AS v FROM schema_versions").get()).toMatchObject({
-      v: 1,
+      v: target,
     });
     rawAgain.close();
   });
 
   it("is idempotent when runMigrations is invoked repeatedly", () => {
     const migrations = loadMigrations();
+    const target = Math.max(...migrations.map((migration) => migration.version));
     const db = new Database(":memory:");
-    expect(runMigrations(db, migrations)).toBe(1);
-    expect(runMigrations(db, migrations)).toBe(1);
-    expect(db.prepare("SELECT COUNT(*) AS c FROM schema_versions").get()).toMatchObject({ c: 1 });
+    expect(runMigrations(db, migrations)).toBe(target);
+    expect(runMigrations(db, migrations)).toBe(target);
+    expect(db.prepare("SELECT COUNT(*) AS c FROM schema_versions").get()).toMatchObject({
+      c: migrations.length,
+    });
     db.close();
   });
 
@@ -158,6 +166,139 @@ describe("migrations", () => {
     raw.close();
 
     await expect(openSqliteRepository({ filename })).rejects.toBeInstanceOf(SchemaVersionError);
+  });
+
+  it("loads every on-disk migration with a unique, strictly increasing version", () => {
+    const migrations = loadMigrations();
+    expect(migrations.length).toBeGreaterThan(0);
+    const versions = migrations.map((migration) => migration.version);
+    expect(new Set(versions).size).toBe(versions.length);
+    for (let i = 1; i < versions.length; i += 1) {
+      expect(versions[i]).toBeGreaterThan(versions[i - 1]);
+    }
+  });
+
+  it("rejects duplicate migration versions at load, naming both files", () => {
+    const dir = mkdtempSync(join(tmpdir(), "m365-dup-"));
+    tempDirs.push(dir);
+    writeFileSync(join(dir, "0001_a.sql"), "CREATE TABLE dup_a (id TEXT);");
+    writeFileSync(join(dir, "0001_b.sql"), "CREATE TABLE dup_b (id TEXT);");
+
+    let message = "";
+    try {
+      loadMigrations(dir);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toContain("duplicate migration version 1");
+    expect(message).toContain("0001_a.sql");
+    expect(message).toContain("0001_b.sql");
+  });
+
+  it("rejects duplicate migration versions passed to runMigrations", () => {
+    const db = new Database(":memory:");
+    const duplicates: Migration[] = [
+      { version: 1, name: "0001_a.sql", sql: "CREATE TABLE dup_a (id TEXT);" },
+      { version: 1, name: "0001_b.sql", sql: "CREATE TABLE dup_b (id TEXT);" },
+    ];
+    expect(() => runMigrations(db, duplicates)).toThrow(/duplicate migration version 1/);
+    db.close();
+  });
+
+  it("migrates databases carrying the legacy duplicate version rows without error", () => {
+    const migrations = loadMigrations();
+    const target = Math.max(...migrations.map((migration) => migration.version));
+    const sqlByName = new Map(migrations.map((migration) => [migration.name, migration.sql]));
+    const legacySql = (name: string): string =>
+      (sqlByName.get(name) ?? "").replace(/INSERT OR IGNORE INTO schema_versions[^;]*;/g, "");
+
+    const buildLegacyDb = (v2file: string, v3file: string, shadowed: string[]): Database.Database => {
+      const db = new Database(":memory:");
+      db.exec(SCHEMA_VERSIONS_TABLE);
+      const record = (version: number): void => {
+        db.prepare("INSERT INTO schema_versions (version, appliedAt) VALUES (?, ?)").run(
+          version,
+          "2026-01-01T00:00:00.000Z",
+        );
+      };
+      db.exec(legacySql("0001_init.sql"));
+      record(1);
+      db.exec(legacySql(v2file));
+      record(2);
+      db.exec(legacySql(v3file));
+      record(3);
+      for (const name of shadowed) db.exec(legacySql(name));
+      for (const migration of migrations) {
+        if (migration.version > 3 && migration.version < 59) {
+          db.exec(legacySql(migration.name));
+          record(migration.version);
+        }
+      }
+      return db;
+    };
+
+    const tableNames = (db: Database.Database): Set<string> =>
+      new Set(
+        (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
+          name: string;
+        }>).map((row) => row.name),
+      );
+    const tenantColumns = (db: Database.Database): string[] =>
+      (db.prepare("PRAGMA table_info(tenants)").all() as Array<{ name: string }>).map(
+        (row) => row.name,
+      );
+    const appliedVersions = (db: Database.Database): Set<number> =>
+      new Set(
+        (db.prepare("SELECT version FROM schema_versions").all() as Array<{ version: number }>).map(
+          (row) => Number(row.version),
+        ),
+      );
+
+    const cases: Array<{ v2: string; v3: string; shadowed: string[] }> = [
+      { v2: "0059_rbac.sql", v3: "0061_ca_templates.sql", shadowed: [] },
+      { v2: "0060_tenants.sql", v3: "0061_ca_templates.sql", shadowed: [] },
+      { v2: "0059_rbac.sql", v3: "0062_intune_templates.sql", shadowed: [] },
+      { v2: "0059_rbac.sql", v3: "0063_offboarding.sql", shadowed: [] },
+      { v2: "0060_tenants.sql", v3: "0062_intune_templates.sql", shadowed: [] },
+      { v2: "0060_tenants.sql", v3: "0063_offboarding.sql", shadowed: [] },
+      {
+        v2: "0059_rbac.sql",
+        v3: "0061_ca_templates.sql",
+        shadowed: ["0060_tenants.sql", "0062_intune_templates.sql", "0063_offboarding.sql"],
+      },
+    ];
+
+    for (const legacy of cases) {
+      const db = buildLegacyDb(legacy.v2, legacy.v3, legacy.shadowed);
+      const before = appliedVersions(db);
+      expect(before.has(2)).toBe(true);
+      expect(before.has(3)).toBe(true);
+      expect(before.has(59)).toBe(false);
+
+      expect(runMigrations(db, loadMigrations())).toBe(target);
+
+      expect(tableNames(db).has("roles")).toBe(true);
+      for (const table of [
+        "portal_users",
+        "tenant_groups",
+        "tenant_group_members",
+        "tenant_variables",
+        "gdap_relationships",
+        "ca_templates",
+        "ca_template_versions",
+        "intune_templates",
+        "offboarding_jobs",
+        "offboarding_steps",
+      ]) {
+        expect(tableNames(db).has(table)).toBe(true);
+      }
+      for (const column of ["excludeReason", "excludeDate", "environment", "lastError"]) {
+        expect(tenantColumns(db)).toContain(column);
+      }
+      const after = appliedVersions(db);
+      for (const version of [59, 60, 61, 62, 63]) expect(after.has(version)).toBe(true);
+      db.close();
+    }
   });
 });
 

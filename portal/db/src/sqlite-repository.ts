@@ -191,6 +191,19 @@ function assertBrandingAssetRef(
   return value;
 }
 
+function assertUniqueMigrationVersions(migrations: Migration[]): void {
+  const seen = new Map<number, string>();
+  for (const migration of migrations) {
+    const first = seen.get(migration.version);
+    if (first !== undefined) {
+      throw new Error(
+        `duplicate migration version ${migration.version}: ${first} and ${migration.name}`,
+      );
+    }
+    seen.set(migration.version, migration.name);
+  }
+}
+
 export function loadMigrations(dir: string = DEFAULT_MIGRATIONS_DIR): Migration[] {
   const migrations: Migration[] = [];
   for (const name of readdirSync(dir)) {
@@ -202,6 +215,7 @@ export function loadMigrations(dir: string = DEFAULT_MIGRATIONS_DIR): Migration[
     migrations.push({ version, name, sql: readFileSync(join(dir, name), "utf8") });
   }
   migrations.sort((a, b) => a.version - b.version);
+  assertUniqueMigrationVersions(migrations);
   return migrations;
 }
 
@@ -217,6 +231,7 @@ function readSchemaVersion(db: Database.Database): number {
  * schema version. Already-applied versions are skipped, so it is re-runnable.
  */
 export function runMigrations(db: Database.Database, migrations: Migration[]): number {
+  assertUniqueMigrationVersions(migrations);
   db.exec(SCHEMA_VERSIONS_TABLE);
   const applied = new Set<number>(
     (db.prepare("SELECT version FROM schema_versions").all() as Array<{ version: number }>).map(
@@ -225,13 +240,25 @@ export function runMigrations(db: Database.Database, migrations: Migration[]): n
   );
   for (const migration of migrations) {
     if (applied.has(migration.version)) continue;
-    db.transaction(() => {
-      db.exec(migration.sql);
+    try {
+      db.transaction(() => {
+        db.exec(migration.sql);
+        db.prepare(
+          "INSERT OR REPLACE INTO schema_versions (version, appliedAt) VALUES (?, ?)",
+        ).run(migration.version, nowIso());
+      })();
+    } catch (error) {
+      // Databases migrated before the 0002/0003 duplicates were renumbered already
+      // contain the tenant columns added below, so re-applying them under the new
+      // version number must not fail startup. Every other error still throws.
+      if (!(error instanceof Error) || !/duplicate column name/i.test(error.message)) {
+        throw error;
+      }
       db.prepare("INSERT OR REPLACE INTO schema_versions (version, appliedAt) VALUES (?, ?)").run(
         migration.version,
         nowIso(),
       );
-    })();
+    }
   }
   return readSchemaVersion(db);
 }
