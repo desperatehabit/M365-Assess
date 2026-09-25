@@ -612,6 +612,37 @@ export interface AlertStateChangeListOptions {
   incidentId?: string;
 }
 
+export type LicenseChangeAction = "assign" | "remove";
+
+export interface LicensePricing {
+  skuId: string;
+  tenantId: string | null;
+  skuPartNumber: string | null;
+  unitPrice: number;
+  currency: string;
+  updatedAt: string;
+}
+
+export interface LicenseChange {
+  id: string;
+  tenantId: string;
+  userId: string;
+  skuId: string;
+  action: LicenseChangeAction;
+  state: string;
+  by: string | null;
+  at: string;
+}
+
+export type LicensePricingInput = Omit<LicensePricing, "updatedAt" | "tenantId" | "skuPartNumber"> &
+  Partial<Pick<LicensePricing, "updatedAt" | "tenantId" | "skuPartNumber">>;
+export type LicenseChangeInput = Omit<LicenseChange, "by" | "at"> &
+  Partial<Pick<LicenseChange, "by" | "at">>;
+
+export interface LicenseChangeListOptions {
+  userId?: string;
+}
+
 export type TemplateItemSource = "local" | "community";
 export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
 
