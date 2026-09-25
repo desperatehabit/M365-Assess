@@ -248,6 +248,75 @@ export interface OffboardingStepUpdate {
   appliedAt?: string | null;
 }
 
+export type RemediationPlanMode = "manual" | "automated" | "mixed";
+export type RemediationActionState = "planned" | "approved" | "applied" | "failed" | "skipped";
+
+export interface RemediationPlan {
+  id: string;
+  tenantId: string;
+  runId: string;
+  findingIds: string[];
+  mode: RemediationPlanMode;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface RemediationAction {
+  id: string;
+  planId: string;
+  checkId: string;
+  command: string;
+  target: string | null;
+  state: RemediationActionState;
+  before: Record<string, unknown> | null;
+  after: Record<string, unknown> | null;
+  appliedAt: string | null;
+  appliedBy: string | null;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  correlationId: string | null;
+}
+
+export interface ManualInstruction {
+  checkId: string;
+  portalPath: string;
+  steps: string[];
+  notes: string | null;
+}
+
+export interface RemediationActionInput {
+  id: string;
+  checkId: string;
+  command: string;
+  target?: string | null;
+  state?: RemediationActionState;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  appliedAt?: string | null;
+  appliedBy?: string | null;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  correlationId?: string | null;
+}
+
+export type RemediationPlanInput = Omit<RemediationPlan, "createdAt"> &
+  Partial<Pick<RemediationPlan, "createdAt">> & {
+    actions?: RemediationActionInput[];
+  };
+
+export interface RemediationActionUpdate {
+  state?: RemediationActionState;
+  before?: Record<string, unknown> | null;
+  after?: Record<string, unknown> | null;
+  appliedAt?: string | null;
+  appliedBy?: string | null;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  correlationId?: string | null;
+}
+
+export type ManualInstructionInput = ManualInstruction;
+
 export type PortalUserStatus = "active" | "disabled";
 export type ScopeTargetType = "tenant" | "group" | "all";
 
