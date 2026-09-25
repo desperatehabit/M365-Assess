@@ -13,6 +13,8 @@ Get-ChildItem -Path "$PSScriptRoot\Orchestrator\*.ps1" | ForEach-Object { . $_.F
 . "$PSScriptRoot\Orchestrator\Compare-M365Baseline.ps1"
 # Dot-source the remediation write path -- kept out of the read-only collector scan
 . "$PSScriptRoot\Remediate\Resolve-Remediation.ps1"
+. "$PSScriptRoot\Remediate\Get-RemediationAllowlist.ps1"
+. "$PSScriptRoot\Remediate\Test-RemediationGate.ps1"
 . "$PSScriptRoot\Remediate\Invoke-M365Remediation.ps1"
 # Dot-source the main orchestrator to import Invoke-M365Assessment function
 . $PSScriptRoot\Invoke-M365Assessment.ps1
@@ -246,6 +248,8 @@ Export-ModuleMember -Function @(
     'ConvertFrom-RunContextJson'
     'Export-M365Remediation'
     'Resolve-Remediation'
+    'Get-RemediationAllowlist'
+    'Test-RemediationGate'
     'Invoke-M365Remediation'
     'Grant-M365AssessConsent'
     'New-M365ConnectionProfile'
