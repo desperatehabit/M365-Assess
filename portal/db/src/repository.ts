@@ -310,6 +310,32 @@ export interface PermissionRegistryEntry {
   updatedAt: string;
 }
 
+export type SharePointSiteType = "team" | "communication";
+
+export interface SharePointTemplate {
+  id: string;
+  name: string;
+  siteType: SharePointSiteType;
+  settings: Record<string, unknown>;
+  variables: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface SiteOperation {
+  id: string;
+  tenantId: string;
+  siteId: string;
+  operation: string;
+  state: string;
+  by: string | null;
+  at: string;
+  result: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type PortalUserInput = Omit<PortalUser, "createdAt" | "updatedAt"> &
   Partial<Pick<PortalUser, "createdAt" | "updatedAt">>;
 export type RoleInput = Omit<Role, "createdAt" | "updatedAt"> &
@@ -322,6 +348,25 @@ export type AccessIPRangeInput = Omit<AccessIPRange, "createdAt" | "updatedAt"> 
   Partial<Pick<AccessIPRange, "createdAt" | "updatedAt">>;
 export type PermissionRegistryInput = Omit<PermissionRegistryEntry, "createdAt" | "updatedAt"> &
   Partial<Pick<PermissionRegistryEntry, "createdAt" | "updatedAt">>;
+export type SharePointTemplateInput = Omit<
+  SharePointTemplate,
+  "createdAt" | "updatedAt" | "deletedAt" | "settings" | "variables"
+> &
+  Partial<
+    Pick<
+      SharePointTemplate,
+      "settings" | "variables" | "createdAt" | "updatedAt" | "deletedAt"
+    >
+  >;
+export type SharePointTemplateUpdate = Partial<
+  Pick<SharePointTemplate, "name" | "siteType" | "settings" | "variables">
+>;
+export type SiteOperationInput = Omit<
+  SiteOperation,
+  "createdAt" | "updatedAt" | "by" | "at" | "result"
+> &
+  Partial<Pick<SiteOperation, "by" | "at" | "result" | "createdAt" | "updatedAt">>;
+export type SiteOperationUpdate = Partial<Pick<SiteOperation, "state" | "result">>;
 
 export interface ListOptions {
   includeDeleted?: boolean;
@@ -399,6 +444,27 @@ export interface Repository {
 
   appendAuditEvent(input: AuditEventInput): Promise<AuditEvent>;
   listAuditEvents(tenantId?: string): Promise<AuditEvent[]>;
+
+  createSharePointTemplate(input: SharePointTemplateInput): Promise<SharePointTemplate>;
+  getSharePointTemplate(
+    templateId: string,
+    options?: ListOptions,
+  ): Promise<SharePointTemplate | undefined>;
+  listSharePointTemplates(options?: ListOptions): Promise<SharePointTemplate[]>;
+  updateSharePointTemplate(
+    templateId: string,
+    update: SharePointTemplateUpdate,
+  ): Promise<SharePointTemplate | undefined>;
+  softDeleteSharePointTemplate(templateId: string, options?: { now?: string }): Promise<boolean>;
+
+  createSiteOperation(input: SiteOperationInput): Promise<SiteOperation>;
+  getSiteOperation(tenantId: string, operationId: string): Promise<SiteOperation | undefined>;
+  listSiteOperations(tenantId: string): Promise<SiteOperation[]>;
+  updateSiteOperation(
+    tenantId: string,
+    operationId: string,
+    update: SiteOperationUpdate,
+  ): Promise<SiteOperation | undefined>;
 }
 
 export class SchemaVersionError extends Error {

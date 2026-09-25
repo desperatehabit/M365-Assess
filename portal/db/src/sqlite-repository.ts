@@ -30,6 +30,13 @@ import {
   type RunStatus,
   type RunTrigger,
   type Severity,
+  type SharePointSiteType,
+  type SharePointTemplate,
+  type SharePointTemplateInput,
+  type SharePointTemplateUpdate,
+  type SiteOperation,
+  type SiteOperationInput,
+  type SiteOperationUpdate,
   type Tenant,
   type TenantCredential,
   type TenantCredentialInput,
@@ -338,6 +345,34 @@ export class SqliteRepository implements Repository {
       source: asString(row["source"]) as AuditSource,
       correlationId: asNullableString(row["correlationId"]),
       createdAt: asString(row["createdAt"]),
+    };
+  }
+
+  private mapSharePointTemplate(row: Row): SharePointTemplate {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      siteType: asString(row["siteType"]) as SharePointSiteType,
+      settings: parseJson(row["settings"]) ?? {},
+      variables: parseJson(row["variables"]) ?? {},
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
+    };
+  }
+
+  private mapSiteOperation(row: Row): SiteOperation {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      siteId: asString(row["siteId"]),
+      operation: asString(row["operation"]),
+      state: asString(row["state"]),
+      by: asNullableString(row["by"]),
+      at: asString(row["at"]),
+      result: asNullableString(row["result"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
     };
   }
 
@@ -926,6 +961,154 @@ export class SqliteRepository implements Repository {
       ? this.db.prepare(sql).all()
       : this.db.prepare(sql).all(tenantId)) as Row[];
     return rows.map((row) => this.mapAuditEvent(row));
+  }
+
+  private sharePointTemplateById(templateId: string): SharePointTemplate | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM sharepoint_templates WHERE id = ?")
+      .get(templateId) as Row | undefined;
+    return row ? this.mapSharePointTemplate(row) : undefined;
+  }
+
+  async createSharePointTemplate(input: SharePointTemplateInput): Promise<SharePointTemplate> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO sharepoint_templates
+           (id, name, siteType, settings, variables, createdAt, updatedAt, deletedAt)
+         VALUES (@id, @name, @siteType, @settings, @variables, @createdAt, @updatedAt, @deletedAt)`,
+      )
+      .run({
+        id: input.id,
+        name: input.name,
+        siteType: input.siteType,
+        settings: JSON.stringify(input.settings ?? {}),
+        variables: JSON.stringify(input.variables ?? {}),
+        createdAt,
+        updatedAt,
+        deletedAt: input.deletedAt ?? null,
+      });
+    const template = this.sharePointTemplateById(input.id);
+    if (!template) throw new Error(`sharepoint template ${input.id} was not persisted`);
+    return template;
+  }
+
+  async getSharePointTemplate(
+    templateId: string,
+    options: ListOptions = {},
+  ): Promise<SharePointTemplate | undefined> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM sharepoint_templates WHERE id = ?"
+      : "SELECT * FROM sharepoint_templates WHERE id = ? AND deletedAt IS NULL";
+    const row = this.db.prepare(sql).get(templateId) as Row | undefined;
+    return row ? this.mapSharePointTemplate(row) : undefined;
+  }
+
+  async listSharePointTemplates(options: ListOptions = {}): Promise<SharePointTemplate[]> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM sharepoint_templates ORDER BY name"
+      : "SELECT * FROM sharepoint_templates WHERE deletedAt IS NULL ORDER BY name";
+    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapSharePointTemplate(row));
+  }
+
+  async updateSharePointTemplate(
+    templateId: string,
+    update: SharePointTemplateUpdate,
+  ): Promise<SharePointTemplate | undefined> {
+    const existing = this.sharePointTemplateById(templateId);
+    if (!existing) return undefined;
+    const settings = update.settings === undefined ? existing.settings : update.settings;
+    const variables = update.variables === undefined ? existing.variables : update.variables;
+    this.db
+      .prepare(
+        `UPDATE sharepoint_templates
+           SET name = ?, siteType = ?, settings = ?, variables = ?, updatedAt = ?
+         WHERE id = ?`,
+      )
+      .run(
+        update.name ?? existing.name,
+        update.siteType ?? existing.siteType,
+        JSON.stringify(settings),
+        JSON.stringify(variables),
+        nowIso(),
+        templateId,
+      );
+    return this.sharePointTemplateById(templateId);
+  }
+
+  async softDeleteSharePointTemplate(
+    templateId: string,
+    options: { now?: string } = {},
+  ): Promise<boolean> {
+    const at = options.now ?? nowIso();
+    const result = this.db
+      .prepare(
+        "UPDATE sharepoint_templates SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+      )
+      .run(at, at, templateId);
+    return result.changes > 0;
+  }
+
+  async createSiteOperation(input: SiteOperationInput): Promise<SiteOperation> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO site_operations
+           (id, tenantId, siteId, operation, state, "by", "at", result, createdAt, updatedAt)
+         VALUES
+           (@id, @tenantId, @siteId, @operation, @state, @by, @at, @result, @createdAt, @updatedAt)`,
+      )
+      .run({
+        id: input.id,
+        tenantId: input.tenantId,
+        siteId: input.siteId,
+        operation: input.operation,
+        state: input.state,
+        by: input.by ?? null,
+        at: input.at ?? createdAt,
+        result: input.result ?? null,
+        createdAt,
+        updatedAt,
+      });
+    const operation = await this.getSiteOperation(input.tenantId, input.id);
+    if (!operation) throw new Error(`site operation ${input.id} was not persisted`);
+    return operation;
+  }
+
+  async getSiteOperation(
+    tenantId: string,
+    operationId: string,
+  ): Promise<SiteOperation | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM site_operations WHERE id = ? AND tenantId = ?")
+      .get(operationId, tenantId) as Row | undefined;
+    return row ? this.mapSiteOperation(row) : undefined;
+  }
+
+  async listSiteOperations(tenantId: string): Promise<SiteOperation[]> {
+    return (
+      this.db
+        .prepare('SELECT * FROM site_operations WHERE tenantId = ? ORDER BY "at", id')
+        .all(tenantId) as Row[]
+    ).map((row) => this.mapSiteOperation(row));
+  }
+
+  async updateSiteOperation(
+    tenantId: string,
+    operationId: string,
+    update: SiteOperationUpdate,
+  ): Promise<SiteOperation | undefined> {
+    const existing = await this.getSiteOperation(tenantId, operationId);
+    if (!existing) return undefined;
+    const result = update.result === undefined ? existing.result : update.result;
+    this.db
+      .prepare(
+        "UPDATE site_operations SET state = ?, result = ?, updatedAt = ? WHERE id = ? AND tenantId = ?",
+      )
+      .run(update.state ?? existing.state, result, nowIso(), operationId, tenantId);
+    return this.getSiteOperation(tenantId, operationId);
   }
 }
 
