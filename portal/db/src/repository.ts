@@ -566,6 +566,52 @@ export type TeamOperationInput = Omit<
   Partial<Pick<TeamOperation, "by" | "at" | "result" | "createdAt" | "updatedAt">>;
 export type TeamOperationUpdate = Partial<Pick<TeamOperation, "state" | "result">>;
 
+export interface IncidentNote {
+  id: string;
+  tenantId: string;
+  incidentId: string;
+  body: string;
+  author: string | null;
+  at: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AlertStateChange {
+  id: string;
+  tenantId: string;
+  alertId: string | null;
+  incidentId: string | null;
+  from: string;
+  to: string;
+  by: string | null;
+  at: string;
+  reason: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type IncidentNoteInput = Omit<
+  IncidentNote,
+  "createdAt" | "updatedAt" | "author" | "at"
+> &
+  Partial<Pick<IncidentNote, "author" | "at" | "createdAt" | "updatedAt">>;
+export type AlertStateChangeInput = Omit<
+  AlertStateChange,
+  "createdAt" | "updatedAt" | "alertId" | "incidentId" | "by" | "at" | "reason"
+> &
+  Partial<
+    Pick<
+      AlertStateChange,
+      "alertId" | "incidentId" | "by" | "at" | "reason" | "createdAt" | "updatedAt"
+    >
+  >;
+
+export interface AlertStateChangeListOptions {
+  alertId?: string;
+  incidentId?: string;
+}
+
 export type TemplateItemSource = "local" | "community";
 export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
 
@@ -755,6 +801,17 @@ export interface Repository {
     operationId: string,
     update: TeamOperationUpdate,
   ): Promise<TeamOperation | undefined>;
+
+  createIncidentNote(input: IncidentNoteInput): Promise<IncidentNote>;
+  getIncidentNote(tenantId: string, noteId: string): Promise<IncidentNote | undefined>;
+  listIncidentNotes(tenantId: string, incidentId: string): Promise<IncidentNote[]>;
+
+  createAlertStateChange(input: AlertStateChangeInput): Promise<AlertStateChange>;
+  getAlertStateChange(tenantId: string, changeId: string): Promise<AlertStateChange | undefined>;
+  listAlertStateChanges(
+    tenantId: string,
+    options?: AlertStateChangeListOptions,
+  ): Promise<AlertStateChange[]>;
 }
 
 export class SchemaVersionError extends Error {

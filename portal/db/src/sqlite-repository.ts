@@ -6,6 +6,9 @@ import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import {
   SchemaVersionError,
+  type AlertStateChange,
+  type AlertStateChangeInput,
+  type AlertStateChangeListOptions,
   type AuditEvent,
   type AuditEventInput,
   type AuditResult,
@@ -16,6 +19,8 @@ import {
   type FindingStatus,
   type GdapRelationship,
   type GdapRelationshipInput,
+  type IncidentNote,
+  type IncidentNoteInput,
   type Job,
   type JobInput,
   type JobState,
@@ -423,6 +428,35 @@ export class SqliteRepository implements Repository {
       by: asNullableString(row["by"]),
       at: asString(row["at"]),
       result: asNullableString(row["result"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapIncidentNote(row: Row): IncidentNote {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      incidentId: asString(row["incidentId"]),
+      body: asString(row["body"]),
+      author: asNullableString(row["author"]),
+      at: asString(row["at"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapAlertStateChange(row: Row): AlertStateChange {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      alertId: asNullableString(row["alertId"]),
+      incidentId: asNullableString(row["incidentId"]),
+      from: asString(row["from"]),
+      to: asString(row["to"]),
+      by: asNullableString(row["by"]),
+      at: asString(row["at"]),
+      reason: asNullableString(row["reason"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -1366,6 +1400,107 @@ export class SqliteRepository implements Repository {
       )
       .run(update.state ?? existing.state, result, nowIso(), operationId, tenantId);
     return this.getTeamOperation(tenantId, operationId);
+  }
+
+  async createIncidentNote(input: IncidentNoteInput): Promise<IncidentNote> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO incident_notes
+           (id, tenantId, incidentId, body, author, "at", createdAt, updatedAt)
+         VALUES
+           (@id, @tenantId, @incidentId, @body, @author, @at, @createdAt, @updatedAt)`,
+      )
+      .run({
+        id: input.id,
+        tenantId: input.tenantId,
+        incidentId: input.incidentId,
+        body: input.body,
+        author: input.author ?? null,
+        at: input.at ?? createdAt,
+        createdAt,
+        updatedAt,
+      });
+    const note = await this.getIncidentNote(input.tenantId, input.id);
+    if (!note) throw new Error(`incident note ${input.id} was not persisted`);
+    return note;
+  }
+
+  async getIncidentNote(tenantId: string, noteId: string): Promise<IncidentNote | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM incident_notes WHERE id = ? AND tenantId = ?")
+      .get(noteId, tenantId) as Row | undefined;
+    return row ? this.mapIncidentNote(row) : undefined;
+  }
+
+  async listIncidentNotes(tenantId: string, incidentId: string): Promise<IncidentNote[]> {
+    return (
+      this.db
+        .prepare(
+          'SELECT * FROM incident_notes WHERE tenantId = ? AND incidentId = ? ORDER BY "at", id',
+        )
+        .all(tenantId, incidentId) as Row[]
+    ).map((row) => this.mapIncidentNote(row));
+  }
+
+  async createAlertStateChange(input: AlertStateChangeInput): Promise<AlertStateChange> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO alert_state_changes
+           (id, tenantId, alertId, incidentId, "from", "to", "by", "at", reason, createdAt, updatedAt)
+         VALUES
+           (@id, @tenantId, @alertId, @incidentId, @from, @to, @by, @at, @reason, @createdAt, @updatedAt)`,
+      )
+      .run({
+        id: input.id,
+        tenantId: input.tenantId,
+        alertId: input.alertId ?? null,
+        incidentId: input.incidentId ?? null,
+        from: input.from,
+        to: input.to,
+        by: input.by ?? null,
+        at: input.at ?? createdAt,
+        reason: input.reason ?? null,
+        createdAt,
+        updatedAt,
+      });
+    const change = await this.getAlertStateChange(input.tenantId, input.id);
+    if (!change) throw new Error(`alert state change ${input.id} was not persisted`);
+    return change;
+  }
+
+  async getAlertStateChange(
+    tenantId: string,
+    changeId: string,
+  ): Promise<AlertStateChange | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM alert_state_changes WHERE id = ? AND tenantId = ?")
+      .get(changeId, tenantId) as Row | undefined;
+    return row ? this.mapAlertStateChange(row) : undefined;
+  }
+
+  async listAlertStateChanges(
+    tenantId: string,
+    options: AlertStateChangeListOptions = {},
+  ): Promise<AlertStateChange[]> {
+    const where: string[] = ["tenantId = ?"];
+    const params: unknown[] = [tenantId];
+    if (options.alertId !== undefined) {
+      where.push("alertId = ?");
+      params.push(options.alertId);
+    }
+    if (options.incidentId !== undefined) {
+      where.push("incidentId = ?");
+      params.push(options.incidentId);
+    }
+    return (
+      this.db
+        .prepare(`SELECT * FROM alert_state_changes WHERE ${where.join(" AND ")} ORDER BY "at", id`)
+        .all(...params) as Row[]
+    ).map((row) => this.mapAlertStateChange(row));
   }
 }
 
