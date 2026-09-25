@@ -1,0 +1,28 @@
+export {
+  JobQueue,
+  fromPersistedRecord,
+  normalizePoolSize,
+  toPersistedState,
+  type JobQueueOptions,
+  type JobStatePersistence,
+  type PersistedJobInput,
+  type PersistedJobRecord,
+  type PersistedJobState,
+  type PersistedJobStateUpdate,
+  type QueuedJobState,
+  type RunWorkerFn,
+} from "./queue.js";
+export {
+  JobCancelledError,
+  JobTimeoutError,
+  WORKER_SCRIPT,
+  WorkerResultError,
+  buildWorkerArgs,
+  createSupervisorRunner,
+  resultFilePath,
+  superviseJob,
+  DEFAULT_JOB_TIMEOUT_MS,
+  type SpawnFn,
+  type SpawnedProcess,
+  type SuperviseJobOptions,
+} from "./supervisor.js";
