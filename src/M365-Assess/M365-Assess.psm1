@@ -17,6 +17,7 @@ Get-ChildItem -Path "$PSScriptRoot\Orchestrator\*.ps1" | ForEach-Object { . $_.F
 . "$PSScriptRoot\Remediate\Test-RemediationGate.ps1"
 . "$PSScriptRoot\Remediate\Get-RemediationCommand.ps1"
 . "$PSScriptRoot\Remediate\Invoke-RemediationAction.ps1"
+. "$PSScriptRoot\Remediate\Test-RemediationCommand.ps1"
 . "$PSScriptRoot\Remediate\Invoke-M365Remediation.ps1"
 # Dot-source the main orchestrator to import Invoke-M365Assessment function
 . $PSScriptRoot\Invoke-M365Assessment.ps1
@@ -254,6 +255,11 @@ Export-ModuleMember -Function @(
     'Test-RemediationGate'
     'Get-RemediationCommand'
     'Invoke-RemediationAction'
+    'Get-RemediationAutoCandidates'
+    'Test-RemediationCommand'
+    'Test-RemediationApplyEligibility'
+    'Set-RemediationValidationStatus'
+    'New-RemediationValidationDoc'
     'Invoke-M365Remediation'
     'Grant-M365AssessConsent'
     'New-M365ConnectionProfile'
