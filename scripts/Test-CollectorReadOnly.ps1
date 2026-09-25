@@ -37,6 +37,25 @@ param(
     [string[]]$Path
 )
 
+# Collector folders relative to repo root. SharePoint work lives in
+# Collaboration; there is no top-level SharePoint folder.
+#
+# Remediate/ is deliberately absent: remediation is the module's write path and
+# must not be constrained by the collector read-only scan (EPIC-006 SPEC.md
+# section 8). Do not add it here; tests/Smoke/Collector-ReadOnly.Tests.ps1 pins
+# the boundary.
+$script:DefaultCollectorFolders = @(
+    'src/M365-Assess/Entra'
+    'src/M365-Assess/Security'
+    'src/M365-Assess/Exchange-Online'
+    'src/M365-Assess/Purview'
+    'src/M365-Assess/Intune'
+    'src/M365-Assess/PowerBI'
+    'src/M365-Assess/Collaboration'
+    'src/M365-Assess/ActiveDirectory'
+    'src/M365-Assess/Inventory'
+)
+
 function Test-CollectorReadOnly {
     [CmdletBinding()]
     [OutputType([psobject[]])]
@@ -87,25 +106,11 @@ function Test-CollectorReadOnly {
 
     $forbiddenGraphMethods = @('POST', 'PATCH', 'DELETE', 'PUT')
 
-    # Collector folders relative to repo root. SharePoint work lives in
-    # Collaboration; there is no top-level SharePoint folder.
-    $defaultCollectorFolders = @(
-        'src/M365-Assess/Entra'
-        'src/M365-Assess/Security'
-        'src/M365-Assess/Exchange-Online'
-        'src/M365-Assess/Purview'
-        'src/M365-Assess/Intune'
-        'src/M365-Assess/PowerBI'
-        'src/M365-Assess/Collaboration'
-        'src/M365-Assess/ActiveDirectory'
-        'src/M365-Assess/Inventory'
-    )
-
     if ($Path) {
         $scanPaths = $Path
     }
     else {
-        $scanPaths = $defaultCollectorFolders | ForEach-Object {
+        $scanPaths = $script:DefaultCollectorFolders | ForEach-Object {
             Join-Path -Path $RepoRoot -ChildPath $_
         }
     }
