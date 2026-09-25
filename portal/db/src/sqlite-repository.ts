@@ -20,6 +20,10 @@ import {
   type JobInput,
   type JobState,
   type JobStateUpdate,
+  type LinkRemovalJob,
+  type LinkRemovalJobInput,
+  type LinkRemovalJobState,
+  type LinkRemovalJobUpdate,
   type ListOptions,
   type RemediationMode,
   type Repository,
@@ -332,6 +336,18 @@ export class SqliteRepository implements Repository {
       progress: parseJson(row["progress"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapLinkRemovalJob(row: Row): LinkRemovalJob {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      linkIds: parseJsonArray(row["linkIds"]),
+      state: asString(row["state"]) as LinkRemovalJobState,
+      results: parseJson(row["results"]),
+      createdAt: asString(row["createdAt"]),
+      createdBy: asString(row["createdBy"]),
     };
   }
 
@@ -955,6 +971,60 @@ export class SqliteRepository implements Repository {
       .prepare("UPDATE jobs SET state = ?, progress = ?, attempts = ?, updatedAt = ? WHERE id = ?")
       .run(state, stringifyJson(progress), attempts, nowIso(), jobId);
     return this.getJob(jobId);
+  }
+
+  async createLinkRemovalJob(input: LinkRemovalJobInput): Promise<LinkRemovalJob> {
+    const createdAt = input.createdAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO link_removal_jobs
+           (id, tenantId, linkIds, state, results, createdAt, createdBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.tenantId,
+        JSON.stringify(input.linkIds ?? []),
+        input.state ?? "planned",
+        stringifyJson(input.results),
+        createdAt,
+        input.createdBy,
+      );
+    const job = await this.getLinkRemovalJob(input.tenantId, input.id);
+    if (!job) throw new Error(`link removal job ${input.id} was not persisted`);
+    return job;
+  }
+
+  async getLinkRemovalJob(tenantId: string, jobId: string): Promise<LinkRemovalJob | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM link_removal_jobs WHERE id = ? AND tenantId = ?")
+      .get(jobId, tenantId) as Row | undefined;
+    return row ? this.mapLinkRemovalJob(row) : undefined;
+  }
+
+  async listLinkRemovalJobs(tenantId: string): Promise<LinkRemovalJob[]> {
+    return (
+      this.db
+        .prepare("SELECT * FROM link_removal_jobs WHERE tenantId = ? ORDER BY createdAt, id")
+        .all(tenantId) as Row[]
+    ).map((row) => this.mapLinkRemovalJob(row));
+  }
+
+  async updateLinkRemovalJob(
+    tenantId: string,
+    jobId: string,
+    update: LinkRemovalJobUpdate,
+  ): Promise<LinkRemovalJob | undefined> {
+    const existing = await this.getLinkRemovalJob(tenantId, jobId);
+    if (!existing) return undefined;
+    const state = update.state ?? existing.state;
+    const results = update.results === undefined ? existing.results : update.results;
+    this.db
+      .prepare(
+        "UPDATE link_removal_jobs SET state = ?, results = ? WHERE id = ? AND tenantId = ?",
+      )
+      .run(state, stringifyJson(results), jobId, tenantId);
+    return this.getLinkRemovalJob(tenantId, jobId);
   }
 
   async appendAuditEvent(input: AuditEventInput): Promise<AuditEvent> {
