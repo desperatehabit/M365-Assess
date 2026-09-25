@@ -204,6 +204,81 @@ export type JobInput = Omit<Job, "createdAt" | "updatedAt"> &
 export type AuditEventInput = Omit<AuditEvent, "createdAt"> &
   Partial<Pick<AuditEvent, "createdAt">>;
 
+export type PortalUserStatus = "active" | "disabled";
+export type ScopeTargetType = "tenant" | "group" | "all";
+
+export interface PortalUser {
+  id: string;
+  upn: string;
+  displayName: string | null;
+  status: PortalUserStatus;
+  preferences: Record<string, unknown> | null;
+  roleId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Role {
+  id: string;
+  name: string;
+  include: string[];
+  exclude: string[];
+  builtin: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface UserScope {
+  id: string;
+  userId: string;
+  targetType: ScopeTargetType;
+  targetId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiClient {
+  id: string;
+  name: string;
+  secretHash: string;
+  roles: string[];
+  ipRanges: string[];
+  rateLimit: number | null;
+  enabled: boolean;
+  lastUsedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AccessIPRange {
+  id: string;
+  cidr: string;
+  scope: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PermissionRegistryEntry {
+  endpoint: string;
+  permission: string;
+  functionality: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type PortalUserInput = Omit<PortalUser, "createdAt" | "updatedAt"> &
+  Partial<Pick<PortalUser, "createdAt" | "updatedAt">>;
+export type RoleInput = Omit<Role, "createdAt" | "updatedAt"> &
+  Partial<Pick<Role, "createdAt" | "updatedAt">>;
+export type UserScopeInput = Omit<UserScope, "createdAt" | "updatedAt"> &
+  Partial<Pick<UserScope, "createdAt" | "updatedAt">>;
+export type ApiClientInput = Omit<ApiClient, "createdAt" | "updatedAt"> &
+  Partial<Pick<ApiClient, "createdAt" | "updatedAt">>;
+export type AccessIPRangeInput = Omit<AccessIPRange, "createdAt" | "updatedAt"> &
+  Partial<Pick<AccessIPRange, "createdAt" | "updatedAt">>;
+export type PermissionRegistryInput = Omit<PermissionRegistryEntry, "createdAt" | "updatedAt"> &
+  Partial<Pick<PermissionRegistryEntry, "createdAt" | "updatedAt">>;
+
 export interface ListOptions {
   includeDeleted?: boolean;
 }
