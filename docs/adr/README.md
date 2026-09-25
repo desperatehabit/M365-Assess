@@ -42,6 +42,10 @@ When a later ADR overrides an earlier one, set the old one's status to `Supersed
 | [0011](0011-framework-definitions-auto-discovered.md) | Framework definitions are auto-discovered per-framework JSON files | Accepted | 2026-05-06 |
 | [0012](0012-tenant-identifier-dual-shape.md) | Tenant identity uses GUID for new artifacts but reads both legacy and GUID folder shapes | Accepted | 2026-05-06 |
 | [0013](0013-unified-cmdlet-with-auth-parameter-sets.md) | One cmdlet, five auth modes, dispatched via PowerShell parameter sets | Accepted | 2026-05-06 |
+| [0014](0014-thin-bff-over-powershell-workers.md) | The portal HTTP layer is a thin BFF; all domain work runs in PowerShell workers | Accepted | 2026-09-24 |
+| [0015](0015-sqlite-storage-behind-repository-interface.md) | Portal storage starts on SQLite behind a repository interface | Accepted | 2026-09-24 |
+| [0016](0016-pdf-via-headless-chromium.md) | Report PDFs render via headless Chromium over the existing HTML report | Accepted | 2026-09-24 |
+| [0017](0017-gdap-optional-tenant-source.md) | GDAP is an optional tenant source; direct onboarding ships first | Accepted | 2026-09-24 |
 
 ---
 

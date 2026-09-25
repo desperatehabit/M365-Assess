@@ -61,6 +61,7 @@ Authoritative references for specific topics. Read these when you need to know t
 | [`design/`](design/) | Frozen design handoff packages from claude.ai/design (framework redesign, finding-detail redesign) |
 | [`architecture/`](architecture/) | High-level architecture diagrams (placeholder; mostly empty) |
 | [`diagrams/`](diagrams/) | Mermaid diagrams (data flow, integration topology) |
+| [`portal-specs/`](portal-specs/) | Spec framework for the multi-tenant portal + remediation evolution — master guides, 41 feature epics, control remediation matrix, and CIPP/theme/fleet reference captures |
 
 ---
 

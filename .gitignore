@@ -1,5 +1,7 @@
 # AI assistants
 .claude/
+# Exceptions force-added for project tooling (git add -f):
+#   .claude/rules/, .claude/commands/, .claude/agents/
 .cursor/
 .copilot/
 .codeium/
@@ -68,3 +70,6 @@ npm-debug.log*
 *.suo
 *.user
 .superpowers/
+
+# Fleet orchestration runtime state (claims, logs, reports, generated configs)
+.fleet/

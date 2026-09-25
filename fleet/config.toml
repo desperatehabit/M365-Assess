@@ -1,0 +1,55 @@
+# M365-Assess portal fleet configuration.
+# No secrets live here. OpenCode is already authenticated; the fleet shells out
+# to it and inherits that auth.
+#
+# Ticket store: ISSUES/ (this repo). Epic rollups live in ISSUES/epics/ and are
+# refreshed from docs/portal-specs/01-feature-epics/EPIC-*/epic.md by
+# fleet/sync-epics.sh. Child tickets are authored per epic (see ISSUES/README.md).
+
+[paths]
+repo       = "/home/wcoulter/Projects/M365-Assess"
+docs       = "/home/wcoulter/Projects/M365-Assess"          # tickets live in the code repo
+ticket_dir = "ISSUES"                                       # relative to docs
+closed_dir = "ISSUES_CLOSED"                                # landed tickets are moved here
+worktrees  = "/home/wcoulter/Projects/.m365-fleet-wt"       # outside the repo on purpose
+
+[git]
+base_branch = "main"
+
+[model]
+# Cheap, fast worker for the mechanical majority.
+coder = "opencode-go/deepseek-v4.1-flash"
+# Escalation target for tickets Flash cannot close (see README "Escalating").
+escalate = "opencode-go/deepseek-v4-pro"
+
+[limits]
+workers           = 3      # concurrent OpenCode sessions. The portal work touches
+                           # few shared files early, but keep this modest until the
+                           # module's Pester suite proves stable under parallel QA.
+qa_workers        = 2      # concurrent QA suite runs. Each is its own worktree +
+                           # process, so state is isolated; 2 keeps CPU contention
+                           # down while the full suite runs per ticket.
+session_timeout_s = 1800   # per ticket
+session_startup_timeout_s = 180  # kill + retry a session that prints nothing
+                                 # this long (OpenCode intermittently hangs before
+                                 # creating the session).
+session_startup_retries   = 2
+test_timeout_s    = 2400   # the full Pester suite is large; give it room
+budget_usd        = 100.0  # hard stop for a single `run`
+scope_workers     = 6      # scoping sessions are read-only, so they cannot collide
+scope_timeout_s   = 600
+
+[tests]
+# M365-Assess is PowerShell 7 + Pester 5. There is no pytest.
+#
+# Agent-facing: fast feedback while it iterates. The coder is told to narrow this
+# to the relevant test file; running the whole suite every loop is slow.
+command           = 'pwsh -NoProfile -Command "Invoke-Pester -Path ./tests -Output Normal"'
+# QA-facing: Pester emits NUnit XML, but the fleet runner parses JUnit
+# (<testcase> with a <failure> child). run-pester-qa.ps1 runs the suite, converts
+# NUnit -> JUnit into {xml}, and exits non-zero on failure. QA compares this set
+# against the baseline recorded on main, so a suite that is already red does not
+# fail every ticket — only NEW failures count.
+qa_command        = 'pwsh -NoProfile -File /home/wcoulter/Projects/M365-Assess/fleet/lib/run-pester-qa.ps1 -XmlPath {xml}'
+allow_test_edits  = true
+default           = ["tests/"]
