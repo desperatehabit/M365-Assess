@@ -5,4 +5,5 @@ export * from "./remediation-repository.js";
 export * from "./sqlite-repository.js";
 export * from "./template-repository.js";
 export * from "./audit-repository.js";
+export * from "./domain-repository.js";
 export * from "./licensing-repository.js";

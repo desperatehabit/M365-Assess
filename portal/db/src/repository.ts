@@ -643,6 +643,24 @@ export interface LicenseChangeListOptions {
   userId?: string;
 }
 
+export interface DomainCheck {
+  id: string;
+  tenantId: string;
+  domain: string;
+  at: string;
+  records: Record<string, unknown>;
+  health: Record<string, unknown>;
+  recommendations: string[];
+}
+
+export type DomainCheckInput = Omit<DomainCheck, "at" | "records" | "health" | "recommendations"> &
+  Partial<Pick<DomainCheck, "at" | "records" | "health" | "recommendations">>;
+
+export interface DomainCheckRangeOptions {
+  from?: string;
+  to?: string;
+}
+
 export type TemplateItemSource = "local" | "community";
 export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
 
