@@ -4,6 +4,7 @@
 Get-ChildItem -Path "$PSScriptRoot\Orchestrator\*.ps1" | ForEach-Object { . $_.FullName }
 
 # Dot-source shared helpers needed by public cmdlets
+. "$PSScriptRoot\Common\RunContext.ps1"
 . "$PSScriptRoot\Common\SecurityConfigHelper.ps1"
 . "$PSScriptRoot\Common\Invoke-SafeGraphRequest.ps1"
 . "$PSScriptRoot\Common\Resolve-DnsRecord.ps1"
@@ -237,6 +238,9 @@ Export-ModuleMember -Function @(
     'Get-M365PowerBISecurityConfig'
     'Get-M365PurviewRetentionConfig'
     'Compare-M365Baseline'
+    'New-RunContext'
+    'ConvertTo-RunContextJson'
+    'ConvertFrom-RunContextJson'
     'Export-M365Remediation'
     'Grant-M365AssessConsent'
     'New-M365ConnectionProfile'
