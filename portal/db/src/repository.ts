@@ -238,6 +238,69 @@ export type JobInput = Omit<Job, "createdAt" | "updatedAt"> &
 export type AuditEventInput = Omit<AuditEvent, "createdAt"> &
   Partial<Pick<AuditEvent, "createdAt">>;
 
+export interface AuditSearch {
+  id: string;
+  tenantId: string;
+  name: string;
+  filters: Record<string, unknown>;
+  saved: boolean;
+  scheduleId: string | null;
+  lastRunAt: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface AuditCoverage {
+  tenantId: string;
+  auditEnabled: boolean;
+  lastSearchAt: string | null;
+  gaps: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebhookSubscription {
+  id: string;
+  tenantId: string;
+  resource: string;
+  expiresOn: string | null;
+  state: string;
+  notificationUrl: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AuditExclusionWindow {
+  id: string;
+  tenantId: string;
+  startsAt: string;
+  endsAt: string;
+  reason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export type AuditSearchInput = Omit<AuditSearch, "createdAt" | "updatedAt" | "deletedAt"> &
+  Partial<Pick<AuditSearch, "createdAt" | "updatedAt" | "deletedAt">>;
+export type AuditSearchUpdate = Partial<
+  Pick<AuditSearch, "name" | "filters" | "saved" | "scheduleId" | "lastRunAt">
+>;
+export type AuditCoverageInput = Omit<AuditCoverage, "createdAt" | "updatedAt"> &
+  Partial<Pick<AuditCoverage, "createdAt" | "updatedAt">>;
+export type WebhookSubscriptionInput = Omit<WebhookSubscription, "createdAt" | "updatedAt"> &
+  Partial<Pick<WebhookSubscription, "createdAt" | "updatedAt">>;
+export type AuditExclusionWindowInput = Omit<
+  AuditExclusionWindow,
+  "createdAt" | "updatedAt" | "deletedAt"
+> &
+  Partial<Pick<AuditExclusionWindow, "createdAt" | "updatedAt" | "deletedAt">>;
+export type AuditExclusionWindowUpdate = Partial<
+  Pick<AuditExclusionWindow, "startsAt" | "endsAt" | "reason">
+>;
+
 export interface OffboardingStepInput {
   order: number;
   action: string;
