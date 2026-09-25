@@ -368,6 +368,68 @@ export type SiteOperationInput = Omit<
   Partial<Pick<SiteOperation, "by" | "at" | "result" | "createdAt" | "updatedAt">>;
 export type SiteOperationUpdate = Partial<Pick<SiteOperation, "state" | "result">>;
 
+export type TemplateItemSource = "local" | "community";
+export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
+
+export interface TemplateRepo {
+  id: string;
+  url: string;
+  name: string;
+  types: string[];
+  writeAccess: boolean;
+  builtin: boolean;
+  signed: boolean;
+  reviewState: TemplateRepoReviewState;
+  trusted: boolean;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface TemplateLibraryItem {
+  id: string;
+  type: string;
+  name: string;
+  body: string;
+  source: TemplateItemSource;
+  repoId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface TemplatePackage {
+  id: string;
+  name: string;
+  version: string;
+  contents: string[];
+  source: TemplateItemSource;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export type TemplateRepoInput = Omit<TemplateRepo, "createdAt" | "updatedAt" | "deletedAt"> &
+  Partial<Pick<TemplateRepo, "createdAt" | "updatedAt" | "deletedAt">>;
+export type TemplateLibraryItemInput = Omit<
+  TemplateLibraryItem,
+  "createdAt" | "updatedAt" | "deletedAt"
+> &
+  Partial<Pick<TemplateLibraryItem, "createdAt" | "updatedAt" | "deletedAt">>;
+export type TemplatePackageInput = Omit<TemplatePackage, "createdAt" | "updatedAt" | "deletedAt"> &
+  Partial<Pick<TemplatePackage, "createdAt" | "updatedAt" | "deletedAt">>;
+
+export interface TemplateRepoListOptions extends ListOptions {
+  builtin?: boolean;
+  trusted?: boolean;
+}
+
+export interface TemplateLibraryItemListOptions extends ListOptions {
+  type?: string;
+  source?: TemplateItemSource;
+  repoId?: string;
+}
+
 export interface ListOptions {
   includeDeleted?: boolean;
 }
