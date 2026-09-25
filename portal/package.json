@@ -1,0 +1,20 @@
+{
+  "name": "m365-assess-portal",
+  "version": "0.0.0",
+  "private": true,
+  "description": "M365-Assess portal monorepo: thin BFF, contracts, web UI, and storage.",
+  "workspaces": [
+    "contracts",
+    "bff",
+    "web",
+    "db"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
