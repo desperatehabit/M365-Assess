@@ -17,10 +17,10 @@ worktrees  = "/home/wcoulter/Projects/.m365-fleet-wt"       # outside the repo o
 base_branch = "main"
 
 [model]
-# Cheap, fast worker for the mechanical majority.
-coder = "opencode-go/deepseek-v4.1-flash"
-# Escalation target for tickets Flash cannot close (see README "Escalating").
-escalate = "opencode-go/deepseek-v4-pro"
+# Worker model (Muse Spark 1.3 Free).
+coder = "opencode/muse-spark-1.3-contributor-free"
+# Retry/escalation target: same free model while paid-model credits are exhausted.
+escalate = "opencode/muse-spark-1.3-contributor-free"
 
 [limits]
 workers           = 3      # concurrent OpenCode sessions. The portal work touches

@@ -4,7 +4,7 @@
 Division of labour:
   this script   deterministic mechanics — tickets, worktrees, claims, commits
   OpenCode      the fix itself, one non-interactive session per ticket
-  Claude Code   judgment — QA review of the diff, escalation, landing
+  Muse Spark    judgment — QA review of the diff, escalation, landing
 
 Nothing here touches `main` except `land`, and `land` refuses a ticket that has
 not passed QA.
@@ -774,7 +774,7 @@ def qa_one(tid: str) -> dict:
 
 
 def cmd_qa(args) -> int:
-    """Mechanical QA gate. The judgment half is the Claude Code reviewer."""
+    """Mechanical QA gate. The judgment half is the Muse Spark reviewer."""
     ids = args.tickets.split(",") if args.tickets else [
         t["id"] for t in all_tickets() if t.get("status") == "fixed-unverified"
     ]
@@ -791,7 +791,7 @@ def cmd_qa(args) -> int:
                 print(f"             NEW FAIL {nf}")
             if r["verdict"] not in ("pass",):
                 exit_rc = 1
-    print("\nQA artifacts in .fleet/qa/. Have Claude review each diff before landing.")
+    print("\nQA artifacts in .fleet/qa/. Have Muse Spark review each diff before landing.")
     return exit_rc
 
 

@@ -137,7 +137,7 @@ fleet.py scope     investigate tickets that cite no file (read-only sessions)
 fleet.py plan      queue depth and file contention
 fleet.py run       worktree -> scoped OpenCode session -> commit on fleet/<ID>
 fleet.py qa        suite + scope check, one worktree per ticket, in parallel
-/fleet-qa          Claude reads the actual diff and judges it
+/fleet-qa          Muse Spark reads the actual diff and judges it
 fleet.py land      rebase, merge --no-ff into main, drop the worktree
 fleet.py close     move landed tickets into ISSUES_CLOSED/
 fleet.py index     regenerate TICKETS.md, the register you read
@@ -168,7 +168,7 @@ It is safe to re-run on a partly-done band — `run` only picks up tickets at `o
 If a run is interrupted, `python3 fleet/fleet.py clean` releases stuck claims and
 resets `in-progress` tickets back to `open`.
 
-From Claude Code, use `/fleet-run`, `/fleet-qa`, `/fleet-land` (thin wrappers in
+With Muse Spark, use `/fleet-run`, `/fleet-qa`, `/fleet-land` (thin wrappers in
 [`fleet/commands/`](commands/)) — they add the judgment half that the script
 cannot do. To use them as slash commands, copy them into `.claude/commands/`
 (gitignored in this repo) or symlink them.
@@ -205,7 +205,7 @@ back `BLOCKED` or fails QA twice, re-run it against that:
 
 ```bash
 python3 fleet/fleet.py run --retry --escalate --limit 5
-python3 fleet/fleet.py run --only T-0001 --model opencode-go/deepseek-v4-pro
+python3 fleet/fleet.py run --only T-0001 --model opencode/muse-spark-1.3-contributor-free
 ```
 
 `--retry` also picks up `needs-attention` and `qa-fail`, which `run` skips by default.
