@@ -197,6 +197,25 @@ if ($MyInvocation.InvocationName -ne '.') {
     . "$PSScriptRoot\Setup\Get-M365ConnectionProfile.ps1"
 }
 
+function Get-RedactedText {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [AllowEmptyString()]
+        [AllowNull()]
+        [string]$Text,
+
+        [AllowNull()]
+        [string]$Secret
+    )
+    if ([string]::IsNullOrEmpty($Text)) { return $Text }
+    $result = $Text
+    if (-not [string]::IsNullOrEmpty($Secret)) {
+        $result = $result.Replace($Secret, '<redacted>')
+    }
+    return $result
+}
+
 function Invoke-M365Assessment {
 [CmdletBinding(DefaultParameterSetName = 'Interactive')]
 param(
@@ -1062,7 +1081,14 @@ foreach ($sectionName in $Section) {
                 Write-Host "    Running in isolated process (assembly compatibility)..." -ForegroundColor Gray
                 Write-AssessmentLog -Level INFO -Message "Running $($collector.Label) in child process to avoid MSAL assembly conflict" -Section $sectionName -Collector $collector.Label
                 $childCsvPath = $csvPath
-                # Build a self-contained script that connects + runs the collector
+                # Build a self-contained script that connects + runs the collector.
+                # The client secret is NOT embedded here: it is passed to the child
+                # through an environment variable that only that process inherits, so
+                # no plaintext credential is ever serialized to a temp file on disk.
+                $childSecretPlain = $null
+                if ($ClientId -and $ClientSecret) {
+                    $childSecretPlain = [System.Net.NetworkCredential]::new('', $ClientSecret).Password
+                }
                 $scriptLines = [System.Collections.Generic.List[string]]::new()
                 $scriptLines.Add('$ErrorActionPreference = "Stop"')
                 # Call Connect-Service.ps1 directly (do NOT dot-source -- it has a
@@ -1081,10 +1107,8 @@ foreach ($sectionName in $Section) {
                     $scriptLines.Add("`$connectParams['CertificateThumbprint'] = '$CertificateThumbprint'")
                 }
                 elseif ($ClientId -and $ClientSecret) {
-                    # Convert SecureString to plain text for child process serialization
-                    $plainSecret = [System.Net.NetworkCredential]::new('', $ClientSecret).Password
                     $scriptLines.Add("`$connectParams['ClientId'] = '$ClientId'")
-                    $scriptLines.Add("`$connectParams['ClientSecret'] = (ConvertTo-SecureString '$plainSecret' -AsPlainText -Force)")
+                    $scriptLines.Add("`$connectParams['ClientSecret'] = (ConvertTo-SecureString `$env:M365ASSESS_PBI_SECRET -AsPlainText -Force)")
                 }
                 # On macOS/Linux, interactive browser auth hangs silently for Power BI.
                 # Force device code flow unless a service principal is configured.
@@ -1104,19 +1128,33 @@ foreach ($sectionName in $Section) {
                 Set-Content -Path $childScriptFile -Value ($scriptLines -join "`n") -Encoding UTF8
                 $childTimeoutSec = if ($UseDeviceCode -or (-not $IsWindows -and -not ($ClientId -and ($CertificateThumbprint -or $ClientSecret)))) { 120 } else { 90 }
                 $childNeedsConsole = $UseDeviceCode -or (-not $IsWindows -and -not ($ClientId -and ($CertificateThumbprint -or $ClientSecret)))
+                # Hand the secret to the child process through the environment; the
+                # variable is scoped to this script's process, inherited by the child,
+                # and restored immediately after the launch.
+                $priorChildSecret = $env:M365ASSESS_PBI_SECRET
+                if ($null -ne $childSecretPlain) {
+                    $env:M365ASSESS_PBI_SECRET = $childSecretPlain
+                }
                 try {
-                    if ($childNeedsConsole) {
-                        # Device code auth: don't redirect output so the user sees the
-                        # login prompt. Use a background job with timeout instead.
-                        $childProc = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-File', $childScriptFile `
-                            -NoNewWindow -PassThru
+                    try {
+                        if ($childNeedsConsole) {
+                            # Device code auth: don't redirect output so the user sees the
+                            # login prompt. Use a background job with timeout instead.
+                            $childProc = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-File', $childScriptFile `
+                                -NoNewWindow -PassThru
+                        }
+                        else {
+                            # Service principal / Windows interactive: redirect output for
+                            # clean console and capture errors.
+                            $childProc = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-File', $childScriptFile `
+                                -RedirectStandardOutput $childOutputFile -RedirectStandardError $childErrFile `
+                                -NoNewWindow -PassThru
+                        }
                     }
-                    else {
-                        # Service principal / Windows interactive: redirect output for
-                        # clean console and capture errors.
-                        $childProc = Start-Process -FilePath 'pwsh' -ArgumentList '-NoProfile', '-File', $childScriptFile `
-                            -RedirectStandardOutput $childOutputFile -RedirectStandardError $childErrFile `
-                            -NoNewWindow -PassThru
+                    finally {
+                        if ($null -ne $childSecretPlain) {
+                            $env:M365ASSESS_PBI_SECRET = $priorChildSecret
+                        }
                     }
 
                     $exited = $childProc.WaitForExit($childTimeoutSec * 1000)
@@ -1131,13 +1169,13 @@ foreach ($sectionName in $Section) {
                     if (-not $childNeedsConsole) {
                         $childStderrContent = if (Test-Path $childErrFile) { Get-Content -Path $childErrFile -Raw } else { '' }
                         if ($childStderrContent) {
-                            Write-AssessmentLog -Level WARN -Message "Child process stderr: $($childStderrContent.Trim())" -Section $sectionName -Collector $collector.Label
+                            Write-AssessmentLog -Level WARN -Message "Child process stderr: $((Get-RedactedText -Text $childStderrContent -Secret $childSecretPlain).Trim())" -Section $sectionName -Collector $collector.Label
                         }
                     }
 
                     if ($childProc.ExitCode -ne 0) {
                         $errDetail = if (-not $childNeedsConsole -and (Test-Path $childErrFile)) { (Get-Content -Path $childErrFile -Raw).Trim() } else { "Exit code $($childProc.ExitCode)" }
-                        throw "Child process failed: $errDetail"
+                        throw "Child process failed: $(Get-RedactedText -Text $errDetail -Secret $childSecretPlain)"
                     }
 
                     if (Test-Path -Path $childCsvPath) {
@@ -1150,9 +1188,16 @@ foreach ($sectionName in $Section) {
                     }
                 }
                 finally {
-                    Remove-Item -Path $childScriptFile -ErrorAction SilentlyContinue
-                    Remove-Item -Path $childOutputFile -ErrorAction SilentlyContinue
-                    Remove-Item -Path $childErrFile -ErrorAction SilentlyContinue
+                    # Scrub then delete the child artifacts on every exit path (success,
+                    # failure, timeout, Ctrl+C). The script file holds no secret now, but
+                    # the overwrite keeps no stale invocation behind on disk.
+                    foreach ($artifact in @($childScriptFile, $childOutputFile, $childErrFile)) {
+                        if (Test-Path -LiteralPath $artifact) {
+                            Set-Content -LiteralPath $artifact -Value '' -Encoding UTF8 -ErrorAction SilentlyContinue
+                        }
+                        Remove-Item -LiteralPath $artifact -ErrorAction SilentlyContinue
+                    }
+                    $childSecretPlain = $null
                 }
 
                 # Skip normal in-process execution

@@ -290,3 +290,79 @@ Describe 'Invoke-M365Assessment - RunContext (T-0003)' {
             'ActiveDirectory', 'SOC2', 'ValueOpportunity')
     }
 }
+
+Describe 'Invoke-M365Assessment - PowerBI child process credential handling (T-0005)' {
+    BeforeAll {
+        $script:content = Get-Content -Path $script:scriptPath -Raw
+        $script:functionAst = $script:ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq 'Invoke-M365Assessment'
+            },
+            $true
+        ) | Select-Object -First 1
+    }
+
+    It 'does not serialize a plaintext secret into the generated child script' {
+        $script:content | Should -Not -Match "ConvertTo-SecureString\s+'\$" `
+            -Because 'the secret must never be embedded as a literal in the temp script'
+        $script:content | Should -Not -Match 'plainSecret'
+    }
+
+    It 'passes the secret to the child through an environment variable' {
+        $script:content | Should -Match '\$env:M365ASSESS_PBI_SECRET\s*=\s*\$childSecretPlain'
+        $script:content | Should -Match 'ConvertTo-SecureString `\$env:M365ASSESS_PBI_SECRET -AsPlainText'
+    }
+
+    It 'has no literal secret in the ClientSecret script line' {
+        $secretLine = @($script:content -split "`n" |
+            Where-Object { $_ -match 'connectParams\[.ClientSecret.\]' })
+        $secretLine | Should -Not -BeNullOrEmpty
+        foreach ($line in $secretLine) {
+            $line | Should -Not -Match "ConvertTo-SecureString\s+'[^']" `
+                -Because 'the ClientSecret script line must read from the environment, not a literal'
+            $line | Should -Match '\$env:M365ASSESS_PBI_SECRET'
+        }
+    }
+
+    It 'scrubs and removes temp artifacts in a finally block' {
+        $finallyBlocks = $script:functionAst.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.TryStatementAst] -and
+                    $null -ne $node.Finally
+            },
+            $true
+        )
+        $cleanup = @($finallyBlocks | ForEach-Object { $_.Finally.Extent.Text } |
+            Where-Object { $_ -match 'childScriptFile' })
+        $cleanup | Should -Not -BeNullOrEmpty -Because 'the temp script must be cleaned up on every exit path'
+        foreach ($block in $cleanup) {
+            $block | Should -Match 'Remove-Item'
+        }
+    }
+
+    It 'redacts the secret from child stderr before logging' {
+        $script:content | Should -Match 'Get-RedactedText -Text \$childStderrContent -Secret \$childSecretPlain'
+        $script:content | Should -Match 'Get-RedactedText -Text \$errDetail -Secret \$childSecretPlain'
+    }
+
+    It 'defines Get-RedactedText helper that masks a supplied secret' {
+        $script:content | Should -Match 'function Get-RedactedText'
+        $helperAst = $script:ast.FindAll(
+            {
+                param($node)
+                $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                    $node.Name -eq 'Get-RedactedText'
+            },
+            $true
+        ) | Select-Object -First 1
+        $helperAst | Should -Not -BeNullOrEmpty
+        $helperBlock = [scriptblock]::Create($helperAst.Extent.Text)
+        . $helperBlock
+        $redacted = Get-RedactedText -Text 'failed with abc-123-secret in message' -Secret 'abc-123-secret'
+        $redacted | Should -Not -Match 'abc-123-secret'
+        $redacted | Should -Match '<redacted>'
+    }
+}
