@@ -161,6 +161,29 @@ export interface AuditEvent {
   createdAt: string;
 }
 
+export type OffboardingJobState = "planned" | "running" | "completed" | "failed";
+export type OffboardingStepState = "pending" | "running" | "succeeded" | "failed" | "skipped";
+
+export interface OffboardingJob {
+  id: string;
+  tenantId: string;
+  userIds: string[];
+  options: Record<string, unknown>;
+  state: OffboardingJobState;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface OffboardingStep {
+  jobId: string;
+  order: number;
+  action: string;
+  state: OffboardingStepState;
+  result: Record<string, unknown> | null;
+  error: string | null;
+  appliedAt: string | null;
+}
+
 export type TenantInput = Omit<
   Tenant,
   | "createdAt"
@@ -203,6 +226,27 @@ export type JobInput = Omit<Job, "createdAt" | "updatedAt"> &
   Partial<Pick<Job, "createdAt" | "updatedAt">>;
 export type AuditEventInput = Omit<AuditEvent, "createdAt"> &
   Partial<Pick<AuditEvent, "createdAt">>;
+
+export interface OffboardingStepInput {
+  order: number;
+  action: string;
+  state?: OffboardingStepState;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  appliedAt?: string | null;
+}
+
+export type OffboardingJobInput = Omit<OffboardingJob, "createdAt" | "state"> &
+  Partial<Pick<OffboardingJob, "createdAt" | "state">> & {
+    steps?: OffboardingStepInput[];
+  };
+
+export interface OffboardingStepUpdate {
+  state?: OffboardingStepState;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  appliedAt?: string | null;
+}
 
 export type PortalUserStatus = "active" | "disabled";
 export type ScopeTargetType = "tenant" | "group" | "all";
