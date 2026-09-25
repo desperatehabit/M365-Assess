@@ -17,6 +17,32 @@ Describe 'Test-CollectorReadOnly' {
         }
     }
 
+    Context 'remediation folder boundary (T-0101)' {
+        It 'scans exactly the nine collector folders' {
+            $script:DefaultCollectorFolders.Count | Should -Be 9
+        }
+
+        It 'never includes the Remediate folder in the scan list' {
+            @($script:DefaultCollectorFolders | Where-Object { $_ -match '(^|[\\/])Remediate([\\/]|$)' }) |
+                Should -BeNullOrEmpty
+        }
+
+        It 'does not report a mutating cmdlet under Remediate/ while the collector one still fires' {
+            $fakeRoot = Join-Path $TestDrive 'repo'
+            $entraDir = Join-Path $fakeRoot 'src/M365-Assess/Entra'
+            $remedDir = Join-Path $fakeRoot 'src/M365-Assess/Remediate'
+            New-Item -Path $entraDir -ItemType Directory -Force | Out-Null
+            New-Item -Path $remedDir -ItemType Directory -Force | Out-Null
+            Set-Content -Path (Join-Path $entraDir 'collector.ps1') -Value 'Set-MgUser -UserId deadbeef'
+            Set-Content -Path (Join-Path $remedDir 'Invoke-M365Remediation.ps1') -Value 'Set-MgUser -UserId deadbeef'
+
+            $result = Test-CollectorReadOnly -RepoRoot $fakeRoot -WarningAction SilentlyContinue
+            $result.Count | Should -Be 1
+            $result[0].File | Should -Match 'Entra'
+            $result[0].File | Should -Not -Match 'Remediate'
+        }
+    }
+
     Context 'when scanning a fixture with a tenant-mutating cmdlet' {
         BeforeAll {
             $script:violator = Join-Path $TestDrive 'Set-Violator.ps1'
