@@ -41,6 +41,9 @@ import {
   type ListOptions,
   type RemediationMode,
   type Repository,
+  assertValidRunStatus,
+  type RunRetentionOptions,
+  type RunRetentionResult,
   type Run,
   type RunInput,
   type RunSection,
@@ -366,8 +369,10 @@ export class SqliteRepository implements Repository {
     return {
       id: asString(row["id"]),
       tenantId: asString(row["tenantId"]),
+      parentRunId: asNullableString(row["parentRunId"]),
       trigger: asString(row["trigger"]) as RunTrigger,
       sections: parseJsonArray(row["sections"]),
+      options: parseJson(row["options"]),
       startedAt: asNullableString(row["startedAt"]),
       finishedAt: asNullableString(row["finishedAt"]),
       status: asString(row["status"]) as RunStatus,
@@ -921,19 +926,22 @@ export class SqliteRepository implements Repository {
   }
 
   async createRun(input: RunInput): Promise<Run> {
+    assertValidRunStatus(input.status);
     const createdAt = input.createdAt ?? nowIso();
     const updatedAt = input.updatedAt ?? nowIso();
     this.db
       .prepare(
         `INSERT INTO runs
-           (id, tenantId, trigger, sections, startedAt, finishedAt, status, artifactPath, summaryCounts, provenance, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           (id, tenantId, parentRunId, trigger, sections, options, startedAt, finishedAt, status, artifactPath, summaryCounts, provenance, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         input.id,
         input.tenantId,
+        input.parentRunId ?? null,
         input.trigger,
         JSON.stringify(input.sections ?? []),
+        stringifyJson(input.options),
         input.startedAt ?? null,
         input.finishedAt ?? null,
         input.status,
@@ -948,10 +956,96 @@ export class SqliteRepository implements Repository {
     return run;
   }
 
+  async createRunWithChildren(
+    parent: RunInput,
+    children: RunInput[],
+  ): Promise<{ parent: Run; children: Run[] }> {
+    assertValidRunStatus(parent.status);
+    for (const child of children) {
+      assertValidRunStatus(child.status);
+    }
+
+    return this.db.transaction(() => {
+      const parentCreatedAt = parent.createdAt ?? nowIso();
+      const parentUpdatedAt = parent.updatedAt ?? nowIso();
+      this.db
+        .prepare(
+          `INSERT INTO runs
+             (id, tenantId, parentRunId, trigger, sections, options, startedAt, finishedAt, status, artifactPath, summaryCounts, provenance, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          parent.id,
+          parent.tenantId,
+          parent.parentRunId ?? null,
+          parent.trigger,
+          JSON.stringify(parent.sections ?? []),
+          stringifyJson(parent.options),
+          parent.startedAt ?? null,
+          parent.finishedAt ?? null,
+          parent.status,
+          parent.artifactPath ?? null,
+          stringifyJson(parent.summaryCounts),
+          stringifyJson(parent.provenance),
+          parentCreatedAt,
+          parentUpdatedAt,
+        );
+
+      const persistedChildren: Run[] = [];
+      for (const child of children) {
+        const childCreatedAt = child.createdAt ?? nowIso();
+        const childUpdatedAt = child.updatedAt ?? nowIso();
+        const childParentRunId = child.parentRunId ?? parent.id;
+        this.db
+          .prepare(
+            `INSERT INTO runs
+               (id, tenantId, parentRunId, trigger, sections, options, startedAt, finishedAt, status, artifactPath, summaryCounts, provenance, createdAt, updatedAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            child.id,
+            child.tenantId,
+            childParentRunId,
+            child.trigger,
+            JSON.stringify(child.sections ?? []),
+            stringifyJson(child.options),
+            child.startedAt ?? null,
+            child.finishedAt ?? null,
+            child.status,
+            child.artifactPath ?? null,
+            stringifyJson(child.summaryCounts),
+            stringifyJson(child.provenance),
+            childCreatedAt,
+            childUpdatedAt,
+          );
+        const childRow = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(child.id) as Row;
+        persistedChildren.push(this.mapRun(childRow));
+      }
+
+      const parentRow = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(parent.id) as Row;
+      return {
+        parent: this.mapRun(parentRow),
+        children: persistedChildren,
+      };
+    })();
+  }
+
+  async createParentRunWithChildren(
+    parent: RunInput,
+    children: RunInput[],
+  ): Promise<{ parent: Run; children: Run[] }> {
+    return this.createRunWithChildren(parent, children);
+  }
+
   async getRun(tenantId: string, runId: string): Promise<Run | undefined> {
     const row = this.db
       .prepare("SELECT * FROM runs WHERE id = ? AND tenantId = ?")
       .get(runId, tenantId) as Row | undefined;
+    return row ? this.mapRun(row) : undefined;
+  }
+
+  async getRunById(runId: string): Promise<Run | undefined> {
+    const row = this.db.prepare("SELECT * FROM runs WHERE id = ?").get(runId) as Row | undefined;
     return row ? this.mapRun(row) : undefined;
   }
 
@@ -961,6 +1055,120 @@ export class SqliteRepository implements Repository {
         .prepare("SELECT * FROM runs WHERE tenantId = ? ORDER BY createdAt")
         .all(tenantId) as Row[]
     ).map((row) => this.mapRun(row));
+  }
+
+  async listChildRuns(parentRunId: string): Promise<Run[]> {
+    return (
+      this.db
+        .prepare("SELECT * FROM runs WHERE parentRunId = ? ORDER BY createdAt ASC")
+        .all(parentRunId) as Row[]
+    ).map((row) => this.mapRun(row));
+  }
+
+  async listRunsByParentId(parentRunId: string): Promise<Run[]> {
+    return this.listChildRuns(parentRunId);
+  }
+
+  async updateRun(
+    tenantId: string,
+    runId: string,
+    update: Partial<RunInput>,
+  ): Promise<Run | undefined> {
+    if (update.status !== undefined) {
+      assertValidRunStatus(update.status);
+    }
+    const current = await this.getRun(tenantId, runId);
+    if (!current) return undefined;
+    const updatedAt = update.updatedAt ?? nowIso();
+    const fields: string[] = ["updatedAt = ?"];
+    const values: unknown[] = [updatedAt];
+
+    if (update.status !== undefined) {
+      fields.push("status = ?");
+      values.push(update.status);
+    }
+    if (update.startedAt !== undefined) {
+      fields.push("startedAt = ?");
+      values.push(update.startedAt);
+    }
+    if (update.finishedAt !== undefined) {
+      fields.push("finishedAt = ?");
+      values.push(update.finishedAt);
+    }
+    if (update.artifactPath !== undefined) {
+      fields.push("artifactPath = ?");
+      values.push(update.artifactPath);
+    }
+    if (update.options !== undefined) {
+      fields.push("options = ?");
+      values.push(stringifyJson(update.options));
+    }
+    if (update.summaryCounts !== undefined) {
+      fields.push("summaryCounts = ?");
+      values.push(stringifyJson(update.summaryCounts));
+    }
+    if (update.provenance !== undefined) {
+      fields.push("provenance = ?");
+      values.push(stringifyJson(update.provenance));
+    }
+    if (update.parentRunId !== undefined) {
+      fields.push("parentRunId = ?");
+      values.push(update.parentRunId);
+    }
+
+    values.push(runId, tenantId);
+    this.db
+      .prepare(`UPDATE runs SET ${fields.join(", ")} WHERE id = ? AND tenantId = ?`)
+      .run(...values);
+    return this.getRun(tenantId, runId);
+  }
+
+  async enforceRetention(options: RunRetentionOptions): Promise<RunRetentionResult> {
+    let cutoffIso: string;
+    if (options.olderThan) {
+      cutoffIso =
+        options.olderThan instanceof Date
+          ? options.olderThan.toISOString()
+          : String(options.olderThan);
+    } else if (typeof options.retentionDays === "number") {
+      const ms = options.retentionDays * 86400 * 1000;
+      cutoffIso = new Date(Date.now() - ms).toISOString();
+    } else {
+      throw new Error("enforceRetention requires olderThan or retentionDays option");
+    }
+
+    const runsToPrune = this.db
+      .prepare(
+        "SELECT id, parentRunId FROM runs WHERE createdAt < ? OR (finishedAt IS NOT NULL AND finishedAt < ?)",
+      )
+      .all(cutoffIso, cutoffIso) as Array<{ id: string; parentRunId: string | null }>;
+
+    if (runsToPrune.length === 0) {
+      return { prunedRunsCount: 0 };
+    }
+
+    const runIds = runsToPrune.map((r) => r.id);
+
+    this.db.transaction(() => {
+      for (const id of runIds) {
+        this.db.prepare("DELETE FROM findings WHERE runId = ?").run(id);
+      }
+      for (const id of runIds) {
+        this.db.prepare("DELETE FROM run_sections WHERE runId = ?").run(id);
+      }
+      for (const id of runIds) {
+        this.db.prepare("DELETE FROM runs WHERE parentRunId = ?").run(id);
+      }
+      for (const id of runIds) {
+        this.db.prepare("DELETE FROM runs WHERE id = ?").run(id);
+      }
+    })();
+
+    return { prunedRunsCount: runIds.length };
+  }
+
+  async pruneRuns(options: RunRetentionOptions): Promise<RunRetentionResult> {
+    return this.enforceRetention(options);
   }
 
   async createRunSection(input: RunSectionInput): Promise<RunSection> {

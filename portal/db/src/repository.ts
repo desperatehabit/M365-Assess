@@ -5,7 +5,34 @@ export type TenantSource = "direct" | "gdap";
 export type TenantStatus = "active" | "excluded" | "error";
 export type TenantGroupKind = "static" | "dynamic";
 export type RunTrigger = "manual" | "schedule" | "api";
-export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type RunStatus = "queued" | "running" | "succeeded" | "failed" | "partial" | "cancelled";
+
+export const VALID_RUN_STATUSES: readonly RunStatus[] = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "partial",
+  "cancelled",
+] as const;
+
+export class InvalidRunStatusError extends Error {
+  readonly code = "run.invalid_status";
+  constructor(status: string) {
+    super(`invalid run status '${status}'; expected one of ${VALID_RUN_STATUSES.join(", ")}`);
+    this.name = "InvalidRunStatusError";
+  }
+}
+
+export function isValidRunStatus(status: unknown): status is RunStatus {
+  return typeof status === "string" && VALID_RUN_STATUSES.includes(status as RunStatus);
+}
+
+export function assertValidRunStatus(status: unknown): asserts status is RunStatus {
+  if (!isValidRunStatus(status)) {
+    throw new InvalidRunStatusError(String(status));
+  }
+}
 export type JobState = "queued" | "running" | "done" | "failed";
 export type FindingStatus = "Pass" | "Fail" | "Warning" | "Review" | "Info" | "Skipped";
 export type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
@@ -124,8 +151,10 @@ export interface GdapRelationship {
 export interface Run {
   id: string;
   tenantId: string;
+  parentRunId: string | null;
   trigger: RunTrigger;
   sections: string[];
+  options: Record<string, unknown> | null;
   startedAt: string | null;
   finishedAt: string | null;
   status: RunStatus;
@@ -265,7 +294,18 @@ export type TenantVariableInput = Omit<TenantVariable, "createdAt" | "updatedAt"
 export type GdapRelationshipInput = Omit<GdapRelationship, "createdAt" | "updatedAt"> &
   Partial<Pick<GdapRelationship, "createdAt" | "updatedAt">>;
 export type RunInput = Omit<Run, "createdAt" | "updatedAt"> &
-  Partial<Pick<Run, "createdAt" | "updatedAt">>;
+  Partial<Pick<Run, "createdAt" | "updatedAt" | "parentRunId" | "options">>;
+
+export interface RunRetentionOptions {
+  /** Maximum age of runs to retain in days. */
+  retentionDays?: number;
+  /** Explicit ISO timestamp or Date cutoff; runs older than this cutoff are pruned. */
+  olderThan?: string | Date;
+}
+
+export interface RunRetentionResult {
+  prunedRunsCount: number;
+}
 export type RunSectionInput = Omit<RunSection, "createdAt" | "updatedAt"> &
   Partial<Pick<RunSection, "createdAt" | "updatedAt">>;
 export type FindingInput = Omit<Finding, "createdAt" | "updatedAt"> &
@@ -875,8 +915,26 @@ export interface Repository {
   upsertGdapRelationship(input: GdapRelationshipInput): Promise<GdapRelationship>;
 
   createRun(input: RunInput): Promise<Run>;
+  createRunWithChildren(
+    parent: RunInput,
+    children: RunInput[],
+  ): Promise<{ parent: Run; children: Run[] }>;
+  createParentRunWithChildren(
+    parent: RunInput,
+    children: RunInput[],
+  ): Promise<{ parent: Run; children: Run[] }>;
   getRun(tenantId: string, runId: string): Promise<Run | undefined>;
+  getRunById(runId: string): Promise<Run | undefined>;
   listRuns(tenantId: string): Promise<Run[]>;
+  listChildRuns(parentRunId: string): Promise<Run[]>;
+  listRunsByParentId(parentRunId: string): Promise<Run[]>;
+  updateRun(
+    tenantId: string,
+    runId: string,
+    update: Partial<RunInput>,
+  ): Promise<Run | undefined>;
+  enforceRetention(options: RunRetentionOptions): Promise<RunRetentionResult>;
+  pruneRuns(options: RunRetentionOptions): Promise<RunRetentionResult>;
 
   createRunSection(input: RunSectionInput): Promise<RunSection>;
   listRunSections(tenantId: string, runId: string): Promise<RunSection[]>;
