@@ -3,6 +3,31 @@
 $script:RemediationRegistryPath = Join-Path -Path $PSScriptRoot -ChildPath '../controls/registry.json'
 $script:RemediationRegistryCache = @{}
 
+function Get-RemediationOptionalProperty {
+    <#
+    .SYNOPSIS
+        Reads an optional property without throwing under Set-StrictMode -Version Latest.
+    .DESCRIPTION
+        Registry entries legitimately omit optional fields (for example
+        remediation.notes). Direct property access on a PSCustomObject throws
+        PropertyNotFoundException under strict mode, so callers that harden with
+        Set-StrictMode need a safe lookup. Supports PSCustomObject and hashtable.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()][object]$Object,
+        [Parameter(Mandatory)][string]$Name
+    )
+    if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary]) {
+        if ($Object.Contains($Name)) { return $Object[$Name] }
+        return $null
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -ne $property) { return $property.Value }
+    return $null
+}
+
 function Resolve-Remediation {
     <#
     .SYNOPSIS
@@ -69,29 +94,37 @@ function Resolve-Remediation {
         $notes = $null
 
         if ($null -ne $entry) {
-            $remediation = $entry.remediation
+            $remediation = Get-RemediationOptionalProperty -Object $entry -Name 'remediation'
             if ($null -ne $remediation) {
-                $candidate = [string]$remediation.powershell.command
-                if (-not [string]::IsNullOrWhiteSpace($candidate)) {
-                    $command = $candidate
-                    $mode = 'automated'
-                }
-                elseif ($null -ne $remediation.portal) {
-                    $mode = 'manual'
-                }
-
-                if ($null -ne $remediation.portal) {
-                    $portalPath = [string]$remediation.portal.path
-                    $portalSteps = if ($remediation.portal.steps) { @($remediation.portal.steps) } else { @() }
+                $powershell = Get-RemediationOptionalProperty -Object $remediation -Name 'powershell'
+                if ($null -ne $powershell) {
+                    $candidate = [string](Get-RemediationOptionalProperty -Object $powershell -Name 'command')
+                    if (-not [string]::IsNullOrWhiteSpace($candidate)) {
+                        $command = $candidate
+                        $mode = 'automated'
+                    }
                 }
 
-                if (-not [string]::IsNullOrWhiteSpace($remediation.notes)) {
-                    $notes = [string]$remediation.notes
+                $portal = Get-RemediationOptionalProperty -Object $remediation -Name 'portal'
+                if ($null -ne $portal) {
+                    if ($mode -ne 'automated') { $mode = 'manual' }
+                    $portalPath = [string](Get-RemediationOptionalProperty -Object $portal -Name 'path')
+                    $portalStepsRaw = Get-RemediationOptionalProperty -Object $portal -Name 'steps'
+                    $portalSteps = if ($portalStepsRaw) { @($portalStepsRaw) } else { @() }
+                }
+
+                $notesValue = Get-RemediationOptionalProperty -Object $remediation -Name 'notes'
+                if (-not [string]::IsNullOrWhiteSpace($notesValue)) {
+                    $notes = [string]$notesValue
                 }
             }
 
-            if ($entry.licensing -and -not [string]::IsNullOrWhiteSpace($entry.licensing.minimum)) {
-                $licenseMinimum = [string]$entry.licensing.minimum
+            $licensing = Get-RemediationOptionalProperty -Object $entry -Name 'licensing'
+            if ($null -ne $licensing) {
+                $minimum = Get-RemediationOptionalProperty -Object $licensing -Name 'minimum'
+                if (-not [string]::IsNullOrWhiteSpace($minimum)) {
+                    $licenseMinimum = [string]$minimum
+                }
             }
         }
 
