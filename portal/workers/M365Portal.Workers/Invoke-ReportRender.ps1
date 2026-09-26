@@ -6,6 +6,9 @@ $script:PinnedChromiumVersion = '153.0.8010.36'
 $script:DefaultRenderTimeoutSec = 120
 $script:DefaultRenderMemoryLimitMB = 2048
 
+# T-0086: branding injection is applied before Chromium prints (SPEC §4.4).
+. (Join-Path $PSScriptRoot 'Get-BrandingStyles.ps1')
+
 function Get-PinnedChromiumVersion {
     <#
     .SYNOPSIS
@@ -153,7 +156,10 @@ function Invoke-ReportRender {
         [int]$MemoryLimitMB = 2048,
 
         [Parameter()]
-        [switch]$SkipVersionCheck
+        [switch]$SkipVersionCheck,
+
+        [Parameter()]
+        [PSCustomObject]$BrandingConfig = $null
     )
 
     if (-not $ChromiumVersion) {
@@ -165,8 +171,11 @@ function Invoke-ReportRender {
 
     $stagedTempHtml = $false
     if ($PSCmdlet.ParameterSetName -eq 'ByContent') {
+        # Inject branding into inline content before staging so the branded
+        # HTML is what Chromium receives.
+        $brandedContent = Inject-BrandingIntoHtml -HtmlContent $HtmlContent -BrandingConfig $BrandingConfig
         $HtmlPath = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("m365-report-render-{0}.html" -f [guid]::NewGuid().ToString('N'))
-        Set-Content -LiteralPath $HtmlPath -Value $HtmlContent -Encoding UTF8
+        Set-Content -LiteralPath $HtmlPath -Value $brandedContent -Encoding UTF8
         $stagedTempHtml = $true
     }
 
@@ -174,7 +183,15 @@ function Invoke-ReportRender {
         if (-not (Test-Path -LiteralPath $HtmlPath -PathType Leaf)) {
             throw [System.IO.FileNotFoundException]::new("render.invalid_input: report HTML not found: $HtmlPath")
         }
-        Test-ReportRenderInput -HtmlContent (Get-Content -LiteralPath $HtmlPath -Raw -Encoding UTF8)
+        $rawHtml = Get-Content -LiteralPath $HtmlPath -Raw -Encoding UTF8
+        Test-ReportRenderInput -HtmlContent $rawHtml
+
+        # For file-path renders, apply branding after validation so the
+        # marker check succeeds against our own HTML before injection.
+        if ($PSCmdlet.ParameterSetName -eq 'ByPath') {
+            $brandedHtml = Inject-BrandingIntoHtml -HtmlContent $rawHtml -BrandingConfig $BrandingConfig
+            Set-Content -LiteralPath $HtmlPath -Value $brandedHtml -Encoding UTF8
+        }
 
         $resolvedChromium = Resolve-RenderChromiumPath -ChromiumPath $ChromiumPath
         if (-not $SkipVersionCheck) {
