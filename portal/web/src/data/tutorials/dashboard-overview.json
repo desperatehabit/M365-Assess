@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "tourId": "dashboard-overview",
+  "title": "Dashboard Overview Tour",
+  "description": "Guided walkthrough highlighting key tenant posture widgets and security metrics.",
+  "steps": [
+    {
+      "step": 1,
+      "widgetId": "TenantInfoCard",
+      "tutorialMarker": "widget-tenant-info",
+      "target": "[data-tutorial='widget-tenant-info']",
+      "title": "Tenant Overview",
+      "content": "View verified domains, directory synchronization state, and the latest assessment date."
+    },
+    {
+      "step": 2,
+      "widgetId": "TenantMetricsGrid",
+      "tutorialMarker": "widget-tenant-metrics",
+      "target": "[data-tutorial='widget-tenant-metrics']",
+      "title": "Key Metrics Grid",
+      "content": "At-a-glance pass, fail, and review counters across all evaluated controls."
+    },
+    {
+      "step": 3,
+      "widgetId": "AssessmentCard",
+      "tutorialMarker": "widget-assessment",
+      "target": "[data-tutorial='widget-assessment']",
+      "title": "Latest Assessment",
+      "content": "Headline posture score and pass/fail summary from the most recent assessment run."
+    },
+    {
+      "step": 4,
+      "widgetId": "AlertsOverviewCard",
+      "tutorialMarker": "widget-alerts-overview",
+      "target": "[data-tutorial='widget-alerts-overview']",
+      "title": "Security Alerts",
+      "content": "Distribution of open critical, high, medium, and low security alerts."
+    },
+    {
+      "step": 5,
+      "widgetId": "SecureScoreCard",
+      "tutorialMarker": "widget-secure-score",
+      "target": "[data-tutorial='widget-secure-score']",
+      "title": "Microsoft Secure Score",
+      "content": "Track Microsoft Secure Score percentage and benchmark comparison."
+    },
+    {
+      "step": 6,
+      "widgetId": "AuthMethodCard",
+      "tutorialMarker": "widget-auth-methods",
+      "target": "[data-tutorial='widget-auth-methods']",
+      "title": "Authentication Methods",
+      "content": "Analyze passwordless, phishing-resistant, Authenticator app, and legacy auth usage."
+    },
+    {
+      "step": 7,
+      "widgetId": "MFACard",
+      "tutorialMarker": "widget-mfa",
+      "target": "[data-tutorial='widget-mfa']",
+      "title": "MFA Adoption",
+      "content": "Monitor multi-factor authentication registration and enforcement rates."
+    },
+    {
+      "step": 8,
+      "widgetId": "LicenseCard",
+      "tutorialMarker": "widget-licenses",
+      "target": "[data-tutorial='widget-licenses']",
+      "title": "License Utilization",
+      "content": "Identify assigned versus purchased seats and license waste across top SKUs."
+    }
+  ]
+}
