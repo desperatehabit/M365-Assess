@@ -18,6 +18,7 @@ if (-not (Test-Path -LiteralPath $script:TenantCredentialScript -PathType Leaf))
 . $script:TenantCredentialScript
 
 . (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-ReportRender.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-SandboxedScript.ps1')
 
 function Read-WorkerRunContext {
     <#
@@ -309,5 +310,7 @@ Export-ModuleMember -Function @(
     'Resolve-TenantCredential',
     'Protect-WorkerSecret',
     'Invoke-ReportRender',
-    'Get-PinnedChromiumVersion'
+    'Get-PinnedChromiumVersion',
+    'Invoke-SandboxedScript',
+    'Test-SandboxedScript'
 )
