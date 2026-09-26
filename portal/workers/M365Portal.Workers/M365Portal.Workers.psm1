@@ -17,6 +17,8 @@ if (-not (Test-Path -LiteralPath $script:TenantCredentialScript -PathType Leaf))
 }
 . $script:TenantCredentialScript
 
+. (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-ReportRender.ps1')
+
 function Read-WorkerRunContext {
     <#
     .SYNOPSIS
@@ -97,6 +99,8 @@ function Write-WorkerResult {
         Per-tenant output folder receiving result.json.
     .PARAMETER JobId
         Job id from the supervisor.
+    .PARAMETER JobType
+        Job type for the envelope. Defaults to assessment; the render worker passes report.
     .PARAMETER TenantId
         Tenant the assessment ran against.
     .PARAMETER RunId
@@ -134,6 +138,10 @@ function Write-WorkerResult {
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
         [string]$JobId,
+
+        [Parameter()]
+        [ValidateSet('assessment', 'standards', 'drift', 'baseline', 'backup', 'remediation', 'custom-script', 'report')]
+        [string]$JobType = 'assessment',
 
         [Parameter(Mandatory)]
         [ValidateNotNullOrEmpty()]
@@ -182,7 +190,7 @@ function Write-WorkerResult {
     $envelope = [ordered]@{
         schemaVersion = 'v1'
         jobId         = $JobId
-        jobType       = 'assessment'
+        jobType       = $JobType
         tenantId      = $TenantId
         runId         = $RunId
         requestId     = $RequestId
@@ -299,5 +307,7 @@ Export-ModuleMember -Function @(
     'Write-WorkerResult',
     'Invoke-WorkerAssessment',
     'Resolve-TenantCredential',
-    'Protect-WorkerSecret'
+    'Protect-WorkerSecret',
+    'Invoke-ReportRender',
+    'Get-PinnedChromiumVersion'
 )
