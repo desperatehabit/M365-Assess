@@ -1,10 +1,19 @@
 "use client";
 
-// Tenant and Group multi-selector (EPIC-003 SPEC.md §3.2, T-0050).
+// Tenant and Group multi-selector (EPIC-003 SPEC.md §3.2, EPIC-004 SPEC.md §6, T-0050, T-0067).
 // Lists tenants and groups from EPIC-002, enforces RBAC tenant scope (never
-// offers out-of-scope tenants), and strictly uses report theme tokens.
+// offers out-of-scope tenants), emits typed {label, value, type} options,
+// and strictly uses report theme tokens.
 
 import React, { useState, useMemo, type CSSProperties, type ReactElement } from "react";
+
+export type TenantSelectionType = "tenant" | "group" | "global";
+
+export interface TypedTenantOption {
+  readonly label: string;
+  readonly value: string;
+  readonly type: TenantSelectionType;
+}
 
 export interface TenantOption {
   readonly id: string;
@@ -19,13 +28,18 @@ export interface TenantGroupOption {
 }
 
 export interface TenantMultiSelectProps {
-  readonly selectedTenantIds: readonly string[];
-  readonly selectedGroupIds: readonly string[];
-  readonly onSelectionChange: (tenantIds: string[], groupIds: string[]) => void;
+  readonly selectedTenantIds?: readonly string[];
+  readonly selectedGroupIds?: readonly string[];
+  readonly selectedGlobal?: boolean;
+  readonly onSelectionChange?: (tenantIds: string[], groupIds: string[]) => void;
+  readonly onTypedSelectionChange?: (selectedOptions: readonly TypedTenantOption[]) => void;
   readonly tenants?: readonly TenantOption[];
   readonly groups?: readonly TenantGroupOption[];
   readonly allowedTenantIds?: readonly string[]; // RBAC scope filter: if provided, only these tenants may be shown
+  readonly allowGlobal?: boolean; // Whether global fleet scope can be selected
   readonly loading?: boolean;
+  readonly className?: string;
+  readonly style?: CSSProperties;
 }
 
 const containerStyle: CSSProperties = {
@@ -113,16 +127,24 @@ const badgeStyle: CSSProperties = {
 };
 
 export function TenantMultiSelect({
-  selectedTenantIds,
-  selectedGroupIds,
+  selectedTenantIds = [],
+  selectedGroupIds = [],
+  selectedGlobal = false,
   onSelectionChange,
+  onTypedSelectionChange,
   tenants = [],
   groups = [],
   allowedTenantIds,
+  allowGlobal = false,
   loading = false,
+  className,
+  style,
 }: TenantMultiSelectProps): ReactElement {
   const [search, setSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"tenants" | "groups">("tenants");
+  const [activeTab, setActiveTab] = useState<"tenants" | "groups" | "global">("tenants");
+  const [internalGlobal, setInternalGlobal] = useState<boolean>(selectedGlobal);
+
+  const isGlobalActive = allowGlobal && (selectedGlobal || internalGlobal);
 
   // Filter tenants according to caller's RBAC scope (never offers out-of-scope tenants)
   const scopedTenants = useMemo(() => {
@@ -150,26 +172,57 @@ export function TenantMultiSelect({
     );
   }, [groups, search]);
 
-  const handleToggleTenant = (id: string): void => {
-    if (selectedTenantIds.includes(id)) {
-      onSelectionChange(
-        selectedTenantIds.filter((t) => t !== id),
-        [...selectedGroupIds],
-      );
-    } else {
-      onSelectionChange([...selectedTenantIds, id], [...selectedGroupIds]);
+  const buildTypedOptions = (
+    tenantIds: readonly string[],
+    groupIds: readonly string[],
+    globalSelected: boolean,
+  ): TypedTenantOption[] => {
+    const result: TypedTenantOption[] = [];
+    if (globalSelected) {
+      result.push({ label: "All Tenants (Global)", value: "global", type: "global" });
     }
+    for (const gid of groupIds) {
+      const g = groups.find((grp) => grp.id === gid);
+      result.push({
+        label: g?.name || gid,
+        value: gid,
+        type: "group",
+      });
+    }
+    for (const tid of tenantIds) {
+      const t = scopedTenants.find((tnt) => tnt.id === tid);
+      result.push({
+        label: t?.displayName || t?.defaultDomain || tid,
+        value: tid,
+        type: "tenant",
+      });
+    }
+    return result;
+  };
+
+  const handleToggleTenant = (id: string): void => {
+    const nextTenantIds = selectedTenantIds.includes(id)
+      ? selectedTenantIds.filter((t) => t !== id)
+      : [...selectedTenantIds, id];
+
+    onSelectionChange?.(nextTenantIds, [...selectedGroupIds]);
+    onTypedSelectionChange?.(buildTypedOptions(nextTenantIds, selectedGroupIds, isGlobalActive));
   };
 
   const handleToggleGroup = (id: string): void => {
-    if (selectedGroupIds.includes(id)) {
-      onSelectionChange(
-        [...selectedTenantIds],
-        selectedGroupIds.filter((g) => g !== id),
-      );
-    } else {
-      onSelectionChange([...selectedTenantIds], [...selectedGroupIds, id]);
-    }
+    const nextGroupIds = selectedGroupIds.includes(id)
+      ? selectedGroupIds.filter((g) => g !== id)
+      : [...selectedGroupIds, id];
+
+    onSelectionChange?.([...selectedTenantIds], nextGroupIds);
+    onTypedSelectionChange?.(buildTypedOptions(selectedTenantIds, nextGroupIds, isGlobalActive));
+  };
+
+  const handleToggleGlobal = (): void => {
+    const nextGlobal = !isGlobalActive;
+    setInternalGlobal(nextGlobal);
+    onSelectionChange?.([...selectedTenantIds], [...selectedGroupIds]);
+    onTypedSelectionChange?.(buildTypedOptions(selectedTenantIds, selectedGroupIds, nextGlobal));
   };
 
   const selectedTenantItems = useMemo(() => {
@@ -187,10 +240,29 @@ export function TenantMultiSelect({
   }, [selectedGroupIds, groups]);
 
   return (
-    <div style={containerStyle} data-testid="tenant-multi-select">
+    <div
+      style={{ ...containerStyle, ...style }}
+      className={className}
+      data-testid="tenant-multi-select"
+    >
       {/* Selected Chips */}
-      {(selectedTenantItems.length > 0 || selectedGroupItems.length > 0) && (
+      {(isGlobalActive || selectedTenantItems.length > 0 || selectedGroupItems.length > 0) && (
         <div style={chipContainerStyle}>
+          {isGlobalActive && (
+            <span style={chipStyle} data-testid="selected-global-chip">
+              <span style={badgeStyle}>Scope</span>
+              <span>All Tenants (Global)</span>
+              <button
+                type="button"
+                style={removeBtnStyle}
+                onClick={handleToggleGlobal}
+                aria-label="Remove global scope selection"
+              >
+                ×
+              </button>
+            </span>
+          )}
+
           {selectedGroupItems.map((g) => (
             <span key={g.id} style={chipStyle} data-testid={`selected-group-chip-${g.id}`}>
               <span style={badgeStyle}>Group</span>
@@ -259,23 +331,68 @@ export function TenantMultiSelect({
         >
           Groups ({groups.length})
         </button>
+
+        {allowGlobal && (
+          <button
+            type="button"
+            onClick={() => setActiveTab("global")}
+            style={{
+              padding: "6px 12px",
+              borderRadius: "6px",
+              border: "1px solid var(--border)",
+              background: activeTab === "global" ? "var(--accent-soft)" : "var(--surface)",
+              color: activeTab === "global" ? "var(--accent-text, var(--text))" : "var(--text-soft)",
+              cursor: "pointer",
+              fontWeight: 500,
+              fontSize: "13px",
+            }}
+            data-testid="tab-global"
+          >
+            Global
+          </button>
+        )}
       </div>
 
-      <input
-        type="text"
-        placeholder={`Search ${activeTab}...`}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={inputStyle}
-        data-testid="tenant-search-input"
-        aria-label={`Search ${activeTab}`}
-      />
+      {activeTab !== "global" && (
+        <input
+          type="text"
+          placeholder={`Search ${activeTab}...`}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={inputStyle}
+          data-testid="tenant-search-input"
+          aria-label={`Search ${activeTab}`}
+        />
+      )}
 
       {/* Selectable list */}
       <div style={listWrapperStyle} role="listbox">
         {loading && (
           <div style={{ padding: "16px", textAlign: "center", color: "var(--text-soft)", fontSize: "13px" }}>
             Loading...
+          </div>
+        )}
+
+        {!loading && activeTab === "global" && (
+          <div
+            style={itemStyle(isGlobalActive)}
+            onClick={handleToggleGlobal}
+            role="option"
+            aria-selected={isGlobalActive}
+            data-testid="option-global"
+          >
+            <div>
+              <div style={{ fontWeight: 500, fontSize: "13px" }}>All Tenants (Global Fleet Scope)</div>
+              <div style={{ fontSize: "11px", color: "var(--text-soft)" }}>
+                Target all {scopedTenants.length} tenants in your scope
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={isGlobalActive}
+              onChange={() => {}}
+              style={{ cursor: "pointer" }}
+            />
           </div>
         )}
 
@@ -317,7 +434,7 @@ export function TenantMultiSelect({
                 <input
                   type="checkbox"
                   checked={isSelected}
-                  onChange={() => {}} // handled by parent div
+                  onChange={() => {}}
                   style={{ cursor: "pointer" }}
                 />
               </div>
@@ -348,7 +465,7 @@ export function TenantMultiSelect({
                 <input
                   type="checkbox"
                   checked={isSelected}
-                  onChange={() => {}} // handled by parent div
+                  onChange={() => {}}
                   style={{ cursor: "pointer" }}
                 />
               </div>
