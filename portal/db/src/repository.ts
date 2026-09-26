@@ -69,10 +69,11 @@ export function formatCredentialRef(tenantId: string): CredentialRef {
 
 export function parseCredentialRef(ref: string): { tenantId: string } {
   const match = /^tenants\/([^/]+)\/credential$/.exec(ref);
-  if (match === null) {
+  const tenantId = match?.[1];
+  if (!tenantId) {
     throw new CredentialRefError(ref);
   }
-  return { tenantId: match[1] };
+  return { tenantId };
 }
 
 export function isCredentialRefForTenant(ref: string, tenantId: string): boolean {

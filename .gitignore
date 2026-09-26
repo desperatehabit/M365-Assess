@@ -59,8 +59,9 @@ Modules/
 # Bundled native DLLs (spike/experiment artifacts — never committed)
 src/M365-Assess/lib/
 
-# Node (report build tooling)
+# Node (report build tooling and portal)
 node_modules/
+dist/
 npm-debug.log*
 
 # IDE

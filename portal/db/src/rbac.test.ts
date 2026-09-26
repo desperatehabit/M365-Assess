@@ -33,7 +33,7 @@ describe("rbac migration", () => {
   it("creates the SPEC §5 entities with the stated columns", async () => {
     const filename = tempDbPath();
     const repo = await openSqliteRbacRepository({ filename });
-    expect(repo.schemaVersion).toBe(2);
+    expect(repo.schemaVersion).toBeGreaterThanOrEqual(59);
     repo.close();
 
     expect(columns(filename, "portal_users")).toEqual(

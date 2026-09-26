@@ -334,7 +334,7 @@ function cloneTemplate(row: IntuneTemplate): IntuneTemplate {
 
 type Row = Record<string, unknown>;
 
-const MIGRATION_URL = new URL("../../../db/migrations/0003_intune_templates.sql", import.meta.url);
+const MIGRATION_URL = new URL("../../../db/migrations/0062_intune_templates.sql", import.meta.url);
 
 export function intuneTemplateMigrationSql(): string {
   return readFileSync(fileURLToPath(MIGRATION_URL), "utf8");

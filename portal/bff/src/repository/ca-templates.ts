@@ -299,7 +299,7 @@ export class InMemoryCaTemplateRepository implements CaTemplateRepository {
 
 type Row = Record<string, unknown>;
 
-const MIGRATION_URL = new URL("../../../db/migrations/0003_ca_templates.sql", import.meta.url);
+const MIGRATION_URL = new URL("../../../db/migrations/0061_ca_templates.sql", import.meta.url);
 
 export function caTemplateMigrationSql(): string {
   return readFileSync(fileURLToPath(MIGRATION_URL), "utf8");

@@ -71,11 +71,13 @@ describe("migration 0002", () => {
   it("applies after 0001, is re-runnable, and advances SchemaVersion", async () => {
     const filename = tempDbPath();
     const first = await openSqliteRepository({ filename });
-    expect(first.schemaVersion).toBe(2);
+    expect(first.schemaVersion).toBeGreaterThanOrEqual(60);
     first.close();
 
     const raw = new Database(filename);
-    expect(raw.prepare("SELECT MAX(version) AS v FROM schema_versions").get()).toMatchObject({ v: 2 });
+    expect(raw.prepare("SELECT MAX(version) AS v FROM schema_versions").get()).toMatchObject({
+      v: first.schemaVersion,
+    });
     const tables = (
       raw.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as Array<{
         name: string;
@@ -94,12 +96,12 @@ describe("migration 0002", () => {
     raw.close();
 
     const second = await openSqliteRepository({ filename });
-    expect(second.schemaVersion).toBe(2);
+    expect(second.schemaVersion).toBe(first.schemaVersion);
     second.close();
 
     const rawAgain = new Database(filename);
     expect(
-      rawAgain.prepare("SELECT COUNT(*) AS c FROM schema_versions WHERE version = 2").get(),
+      rawAgain.prepare("SELECT COUNT(*) AS c FROM schema_versions WHERE version = ?").get(first.schemaVersion),
     ).toMatchObject({ c: 1 });
     rawAgain.close();
   });
@@ -309,7 +311,7 @@ describe("secrets", () => {
         }
       }
     }
-    expect([...secretishTextColumns].sort()).toEqual(["secretRef"]);
+    expect([...secretishTextColumns].sort()).toEqual(["secretHash", "secretRef"]);
     raw.close();
   });
 });

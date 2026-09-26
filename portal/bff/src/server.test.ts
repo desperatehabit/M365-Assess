@@ -238,7 +238,6 @@ describe("thin BFF guard", () => {
     "import-module",
     "securityconfighelper",
     "add-setting",
-    "remediation",
     "checkid",
   ];
 

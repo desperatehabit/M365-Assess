@@ -91,11 +91,10 @@ describe("migration 0004", () => {
     const migrations = loadMigrations();
     const db = new Database(":memory:");
     try {
-      runMigrations(
-        db,
-        migrations.filter((migration) => migration.version <= 2),
-      );
-      expect(db.prepare("SELECT MAX(version) AS v FROM schema_versions").get()).toMatchObject({ v: 2 });
+      const priorMigrations = migrations.filter((migration) => migration.version < 4);
+      const priorMax = Math.max(...priorMigrations.map((m) => m.version));
+      runMigrations(db, priorMigrations);
+      expect(db.prepare("SELECT MAX(version) AS v FROM schema_versions").get()).toMatchObject({ v: priorMax });
 
       const target = migrations.reduce((max, migration) => Math.max(max, migration.version), 0);
       expect(runMigrations(db, migrations)).toBe(target);
