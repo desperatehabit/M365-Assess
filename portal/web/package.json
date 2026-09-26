@@ -1,0 +1,25 @@
+{
+  "name": "@m365-assess/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Next.js web UI for M365-Assess portal",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --environment jsdom"
+  },
+  "dependencies": {
+    "@m365-assess/contracts": "*"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.2.0",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^26.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.0"
+  }
+}
