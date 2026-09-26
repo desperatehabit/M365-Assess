@@ -19,6 +19,7 @@ if (-not (Test-Path -LiteralPath $script:TenantCredentialScript -PathType Leaf))
 
 . (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-ReportRender.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-SandboxedScript.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'Write-RunProgress.ps1')
 
 function Read-WorkerRunContext {
     <#
@@ -312,5 +313,11 @@ Export-ModuleMember -Function @(
     'Invoke-ReportRender',
     'Get-PinnedChromiumVersion',
     'Invoke-SandboxedScript',
-    'Test-SandboxedScript'
+    'Test-SandboxedScript',
+    'Write-RunProgress',
+    'Reset-RunProgressSequence',
+    'Register-RunProgressBridge',
+    'Complete-RunProgressBridge',
+    'Step-RunSectionProgress',
+    'Get-RunProgressSection'
 )
