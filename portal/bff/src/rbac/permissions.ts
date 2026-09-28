@@ -49,6 +49,9 @@ import { INTUNE_TEMPLATE_PERMISSIONS } from "../routes/intune-templates.js";
 import { CREDENTIALS_OPENAPI } from "../routes/credentials.js";
 import { DEVICE_BITLOCKER_OPENAPI } from "../routes/device-bitlocker.js";
 import { DEVICE_LAPS_OPENAPI } from "../routes/device-laps.js";
+import { DEVICES_OPENAPI } from "../routes/devices.js";
+import { DEVICE_DETAIL_OPENAPI } from "../routes/device-detail.js";
+import { DEVICE_ACTIONS_OPENAPI } from "../routes/device-actions.js";
 import {
   ASSIGNMENT_FILTER_PATH,
   ASSIGNMENT_FILTER_PERMISSIONS,
@@ -607,6 +610,11 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   // EPIC-018 device key reveal (T-0820).
   ...registryEntriesFromOpenApi(DEVICE_BITLOCKER_OPENAPI),
   ...registryEntriesFromOpenApi(DEVICE_LAPS_OPENAPI),
+  // EPIC-018 device management (T-0341/T-0342/T-0344/T-0345). The destructive
+  // actions route shares the sync/retire path, so one entry covers both.
+  ...registryEntriesFromOpenApi(DEVICES_OPENAPI),
+  ...registryEntriesFromOpenApi(DEVICE_DETAIL_OPENAPI),
+  ...registryEntriesFromOpenApi(DEVICE_ACTIONS_OPENAPI),
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

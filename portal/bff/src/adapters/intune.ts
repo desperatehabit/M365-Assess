@@ -8,6 +8,10 @@ import type { IntuneTemplate } from "../repository/intune-templates.js";
 import type { ReusableSettingTemplate } from "../repository/reusable-setting-templates.js";
 import type { CredentialStoreRow } from "../routes/credentials.js";
 import type { BitLockerKeysProvider, BitLockerKeysResult } from "../routes/device-bitlocker.js";
+import type { DeviceActionProvider } from "../routes/device-actions.js";
+import type { DestructiveActionProvider } from "../routes/device-actions-destructive.js";
+import type { DeviceDetailProvider } from "../routes/device-detail.js";
+import type { DevicesPage, DevicesProvider } from "../routes/devices.js";
 import type { LapsCredentialsProvider, LapsCredentialsResult } from "../routes/device-laps.js";
 import type {
   AssignmentFilterProvider,
@@ -42,6 +46,10 @@ export interface IntuneProviders {
   readonly reusableSettings: ReusableSettingsProvider;
   readonly assignmentFilters: AssignmentFilterProvider;
   readonly compare: ComparePolicyProvider;
+  readonly devices: DevicesProvider;
+  readonly deviceDetail: DeviceDetailProvider;
+  readonly deviceActions: DeviceActionProvider;
+  readonly destructiveActions: DestructiveActionProvider;
   readonly bitlocker: BitLockerKeysProvider;
   readonly laps: LapsCredentialsProvider;
 }
@@ -177,6 +185,43 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
         const detail = await call<ComparePolicy | null>("get-intune-policies.ps1", tenantId, { kind, policyId });
         return detail ?? undefined;
       },
+    },
+
+    devices: {
+      listDevices: (tenantId, filter) =>
+        call<DevicesPage>("get-managed-devices.ps1", tenantId, {
+          ...(filter.platform ? { platform: filter.platform } : {}),
+          ...(filter.compliance ? { compliance: filter.compliance } : {}),
+          ...(filter.ownership ? { ownership: filter.ownership } : {}),
+          ...(filter.lastCheckIn ? { lastCheckIn: filter.lastCheckIn } : {}),
+          ...(filter.encrypted !== undefined ? { encrypted: String(filter.encrypted) } : {}),
+          ...(filter.search ? { search: filter.search } : {}),
+          top: filter.limit,
+          ...(filter.cursor ? { cursor: filter.cursor } : {}),
+        }),
+    },
+
+    deviceDetail: {
+      getDevice: (tenantId, deviceId) =>
+        call<Awaited<ReturnType<DeviceDetailProvider["getDevice"]>>>("get-managed-device.ps1", tenantId, { deviceId }),
+    },
+
+    deviceActions: {
+      applyAction: (tenantId, deviceId, action, reason) =>
+        call<Awaited<ReturnType<DeviceActionProvider["applyAction"]>>>(
+          "invoke-device-action.ps1",
+          tenantId,
+          { deviceId, action, ...(reason ? { reason } : {}) },
+        ),
+    },
+
+    destructiveActions: {
+      applyAction: (tenantId, deviceId, action, reason) =>
+        call<Awaited<ReturnType<DestructiveActionProvider["applyAction"]>>>(
+          "invoke-device-wipe.ps1",
+          tenantId,
+          { deviceId, action, ...(reason ? { reason } : {}) },
+        ),
     },
 
     bitlocker: {

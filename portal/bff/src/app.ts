@@ -154,6 +154,7 @@ import { testPortalAccess } from "./rbac/test-portal-access.js";
 import { SqliteCaTemplateRepository } from "./repository/ca-templates.js";
 import { SqliteGroupTemplateRepository } from "./repository/group-templates.js";
 import { SqliteDeviceActionRepository } from "./repository/device-actions.js";
+import { SqliteDeviceActionPolicyRepository } from "./repository/device-action-policies.js";
 import { SqliteIntuneTemplateRepository } from "./repository/intune-templates.js";
 import { SqliteKeyAccessAuditRepository } from "./repository/key-access-audit.js";
 import { SqliteReusableSettingTemplateRepository } from "./repository/reusable-setting-templates.js";
@@ -176,8 +177,12 @@ import { createCredentialRoutes } from "./routes/credentials.js";
 import { createDashboardLayoutRoutes } from "./routes/dashboard-layout.js";
 import { createDashboardRoutes, type DashboardRoutesStore } from "./routes/dashboard.js";
 import { DEVICE_ACTIONS_HISTORY_OPENAPI, createDeviceActionsHistoryRoute } from "./routes/device-actions-history.js";
+import { DEVICE_ACTIONS_PERMISSION, createDeviceActionsRoute } from "./routes/device-actions.js";
+import { DEVICE_DESTRUCTIVE_ACTIONS_PERMISSION, createDestructiveActionsRoute } from "./routes/device-actions-destructive.js";
 import { DEVICE_BITLOCKER_PERMISSION, createDeviceBitLockerRoute } from "./routes/device-bitlocker.js";
+import { DEVICE_DETAIL_READ_PERMISSION, createDeviceDetailRoute } from "./routes/device-detail.js";
 import { DEVICE_LAPS_PERMISSION, createDeviceLapsRoute } from "./routes/device-laps.js";
+import { DEVICES_READ_PERMISSION, createDevicesListRoute } from "./routes/devices.js";
 import { DRIFT_BULK_PERMISSIONS, createDriftBulkRoutes } from "./routes/drift-bulk.js";
 import { DRIFT_DENY_PERMISSIONS, createDriftDenyRoutes } from "./routes/drift-deny.js";
 import { createDriftReportRoutes } from "./routes/drift-report.js";
@@ -887,9 +892,26 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
 
     // EPIC-018 devices (T-0820). These modules check permissions but not tenant scope,
     // and the history route checks neither, so each is guarded here.
+    guardRoute(createDevicesListRoute({ provider: intune.devices, resolveCaller, authorize: authorizeCaller }), DEVICES_READ_PERMISSION),
+    ...createDeviceDetailRoute({ provider: intune.deviceDetail, resolveCaller, authorize: authorizeCaller }).map((r) =>
+      guardRoute(r, DEVICE_DETAIL_READ_PERMISSION),
+    ),
     ...createDeviceActionsHistoryRoute({ store: new SqliteDeviceActionRepository(db, schemaVersion) }).map((r) =>
       guardRoute(r, DEVICE_ACTIONS_HISTORY_OPENAPI.paths["/tenants/{tenantId}/devices/{deviceId}/actions"].get.permission),
     ),
+    ...createDeviceActionsRoute({
+      provider: intune.deviceActions,
+      store: new SqliteDeviceActionRepository(db, schemaVersion),
+      resolveCaller,
+      authorize: authorizeCaller,
+    }).map((r) => guardRoute(r, DEVICE_ACTIONS_PERMISSION)),
+    ...createDestructiveActionsRoute({
+      provider: intune.destructiveActions,
+      store: new SqliteDeviceActionRepository(db, schemaVersion),
+      policyStore: new SqliteDeviceActionPolicyRepository(db, schemaVersion),
+      resolveCaller,
+      authorize: authorizeCaller,
+    }).map((r) => guardRoute(r, DEVICE_DESTRUCTIVE_ACTIONS_PERMISSION)),
     ...createDeviceBitLockerRoute({ keys: intune.bitlocker, audit: keyAudit, authorize: authorizeContext, actor: actorOf }).map(
       (r) => guardRoute(r, DEVICE_BITLOCKER_PERMISSION),
     ),
