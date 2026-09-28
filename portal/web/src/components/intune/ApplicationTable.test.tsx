@@ -4,10 +4,11 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import {
-  APPLICATION_ACTIONS_PENDING,
   ApplicationTable,
   ApplicationsPage,
   allowedApplicationActions,
+  templateFromApp,
+  type IntuneAppDetail,
   type IntuneAppItem,
 } from "./ApplicationTable";
 
@@ -99,9 +100,9 @@ describe("ApplicationTable (T-0325)", () => {
     expect(screen.getByRole("button", { name: "View detected 7-Zip" })).toBeTruthy();
   });
 
-  it("disables pending actions with their reason instead of calling out", () => {
+  it("disables unavailable actions with their reason instead of calling out", () => {
     const onAction = vi.fn();
-    render(<ApplicationTable apps={[APPS[0]!]} unavailable={APPLICATION_ACTIONS_PENDING} onAction={onAction} />);
+    render(<ApplicationTable apps={[APPS[0]!]} unavailable={{ delete: "Deleting an app is not available yet" }} onAction={onAction} />);
     const del = screen.getByRole("button", { name: "Delete 7-Zip" }) as HTMLButtonElement;
     expect(del.disabled).toBe(true);
     expect(del.title).toMatch(/not available yet/);
@@ -204,5 +205,152 @@ describe("ApplicationsPage (T-0325)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Detected apps" }));
     await screen.findByTestId("detected-row-d1");
     expect(screen.queryByRole("button", { name: /Create app from detected/ })).toBeNull();
+  });
+});
+
+const DETAIL: IntuneAppDetail = {
+  id: "app-1",
+  appType: "win32",
+  displayName: "7-Zip",
+  description: "Archiver",
+  publisher: "Igor Pavlov",
+  runAsAccount: "system",
+  assignmentCount: 2,
+  installCommandLine: "7z.exe /S",
+  uninstallCommandLine: "uninstall.exe /S",
+  deviceRestartBehavior: "suppress",
+  applicableArchitectures: ["x64"],
+  minimumSupportedWindowsRelease: "21H2",
+  detectionRules: [{ type: "file", path: "C:\\Program Files\\7-Zip", fileOrFolderName: "7z.exe", comparisonValue: null }],
+};
+
+describe("templateFromApp (T-0843)", () => {
+  it("names a Win32 package through %PackageId% and drops empty rule fields", () => {
+    const body = templateFromApp(DETAIL, "7-Zip template");
+    expect(body).toMatchObject({
+      name: "7-Zip template",
+      appType: "win32",
+      config: { packageId: "%PackageId%", installCommandLine: "7z.exe /S", deviceRestartBehavior: "suppress", applicableArchitectures: ["x64"] },
+      variables: [{ name: "PackageId" }],
+    });
+    expect((body["config"] as { detectionRules: unknown[] }).detectionRules).toEqual([{ type: "file", path: "C:\\Program Files\\7-Zip", fileOrFolderName: "7z.exe" }]);
+  });
+
+  it("keeps a Store app's package identifier and needs no variables", () => {
+    const body = templateFromApp({ ...DETAIL, appType: "store", packageIdentifier: "9WZDNCRFJ3PZ" }, "CP");
+    expect(body).toEqual({
+      name: "CP",
+      appType: "store",
+      config: { displayName: "7-Zip", publisher: "Igor Pavlov", description: "Archiver", runAsAccount: "system", packageIdentifier: "9WZDNCRFJ3PZ" },
+      variables: [],
+    });
+  });
+});
+
+describe("ApplicationsPage row actions (T-0843)", () => {
+  type Call = { url: string; method: string; body: unknown };
+  function stubApi(overrides: (call: Call) => Response | undefined = () => undefined) {
+    const calls: Call[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const call = { url: String(url), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : undefined };
+        calls.push(call);
+        const custom = overrides(call);
+        if (custom) return custom;
+        if (call.url.endsWith("/apps/app-1") && call.method === "GET") return jsonResponse(DETAIL);
+        if (call.url.endsWith("/apps/app-1") && call.method === "PATCH") {
+          const preview = (call.body as { preview: boolean }).preview;
+          return jsonResponse({ applied: !preview, plan: { changedFields: ["displayName"], before: DETAIL, after: { ...DETAIL, displayName: "7-Zip 24" } } });
+        }
+        if (call.url.endsWith("/apps/app-1") && call.method === "DELETE") return jsonResponse({ applied: true });
+        if (call.url.endsWith("/v1/app-templates")) return jsonResponse({ id: "tpl-1", name: (call.body as { name: string }).name }, 201);
+        return jsonResponse({ view: "catalog", tenantId: TENANT, totalCount: 2, items: APPS, unsupported: [], nextCursor: null });
+      }),
+    );
+    return calls;
+  }
+
+  it("renders no pending actions any more", async () => {
+    stubApi();
+    render(<ApplicationsPage tenantId={TENANT} navigate={vi.fn()} />);
+    await screen.findByTestId("app-row-app-1");
+    for (const label of ["Update", "Clone to template", "Delete"]) {
+      expect((screen.getByRole("button", { name: `${label} 7-Zip` }) as HTMLButtonElement).disabled).toBe(false);
+    }
+  });
+
+  it("updates an app through preview then save", async () => {
+    const calls = stubApi();
+    render(<ApplicationsPage tenantId={TENANT} navigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Update 7-Zip" }));
+    const dialog = await screen.findByRole("dialog", { name: "Update app" });
+    const name = await within(dialog).findByDisplayValue("7-Zip");
+    expect((within(dialog).getByRole("button", { name: "Save" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(name, { target: { value: "7-Zip 24" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Preview" }));
+    expect((await within(dialog).findByRole("status", { name: "Update preview" })).textContent).toMatch(/displayName/);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Update app" })).toBeNull());
+    const patches = calls.filter((c) => c.method === "PATCH");
+    expect(patches.map((c) => c.body)).toEqual([
+      { changes: { displayName: "7-Zip 24" }, preview: true },
+      { changes: { displayName: "7-Zip 24" }, preview: false },
+    ]);
+    expect((await screen.findByRole("status", { name: "Notice" })).textContent).toBe("Updated 7-Zip 24.");
+  });
+
+  it("deletes with the typed name and warns about assignments", async () => {
+    const calls = stubApi();
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("7-Zip");
+    render(<ApplicationsPage tenantId={TENANT} navigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 7-Zip" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "DELETE")).toBe(true));
+    expect(prompt.mock.calls[0]![0]).toMatch(/2 assignment/);
+    expect(calls.find((c) => c.method === "DELETE")!.body).toEqual({ confirmName: "7-Zip" });
+    expect((await screen.findByRole("status", { name: "Notice" })).textContent).toBe("Deleted 7-Zip.");
+    prompt.mockRestore();
+  });
+
+  it("does nothing when the delete prompt is cancelled", async () => {
+    const calls = stubApi();
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue(null);
+    render(<ApplicationsPage tenantId={TENANT} navigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 7-Zip" }));
+    expect(calls.some((c) => c.method === "DELETE")).toBe(false);
+    prompt.mockRestore();
+  });
+
+  it("surfaces the API's refusal of a mistyped name", async () => {
+    stubApi((call) =>
+      call.method === "DELETE" ? jsonResponse({ code: "intune.app.confirmation_required", message: "type the app name '7-Zip' to confirm deletion" }, 400) : undefined,
+    );
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("7-zip");
+    render(<ApplicationsPage tenantId={TENANT} navigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Delete 7-Zip" }));
+    expect((await screen.findByRole("status", { name: "Notice" })).textContent).toMatch(/to confirm deletion/);
+    prompt.mockRestore();
+  });
+
+  it("clones an app to an application template", async () => {
+    const calls = stubApi();
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("7-Zip standard");
+    render(<ApplicationsPage tenantId={TENANT} navigate={vi.fn()} />);
+    fireEvent.click(await screen.findByRole("button", { name: "Clone to template 7-Zip" }));
+    expect((await screen.findByRole("status", { name: "Notice" })).textContent).toMatch(/Saved '7-Zip standard'.*PackageId/);
+    const post = calls.find((c) => c.url.endsWith("/v1/app-templates"))!;
+    expect(post.body).toMatchObject({ name: "7-Zip standard", appType: "win32", config: { packageId: "%PackageId%" } });
+    prompt.mockRestore();
+  });
+});
+
+
+describe("kit tokens (T-0843)", () => {
+  it("uses kit tokens, not literal colours, in the table and the detected drawer", async () => {
+    const { container } = render(<ApplicationTable apps={APPS} unsupported={[{ appType: "office", count: 1 }]} error={null} />);
+    fireEvent.click(screen.getByRole("button", { name: "View 7-Zip" }));
+    for (const style of container.innerHTML.match(/style="[^"]*"/g) ?? []) {
+      expect(/#[0-9a-fA-F]{3,6}\b/.test(style), style).toBe(false);
+    }
   });
 });

@@ -45,8 +45,8 @@ const drawerStyle: CSSProperties = {
   width: "560px",
   maxWidth: "95vw",
   height: "100%",
-  background: "var(--bg, #ffffff)",
-  color: "var(--text, #111827)",
+  background: "var(--bg)",
+  color: "var(--text)",
   boxShadow: "-4px 0 24px rgba(0,0,0,0.12)",
   display: "flex",
   flexDirection: "column",
@@ -54,7 +54,7 @@ const drawerStyle: CSSProperties = {
 
 const cellStyle: CSSProperties = {
   padding: "8px 10px",
-  borderBottom: "1px solid var(--border, #e5e7eb)",
+  borderBottom: "1px solid var(--border)",
   textAlign: "left",
   fontSize: "13px",
   verticalAlign: "top",
@@ -63,10 +63,10 @@ const cellStyle: CSSProperties = {
 const buttonStyle: CSSProperties = {
   padding: "3px 8px",
   fontSize: "12px",
-  border: "1px solid var(--border, #e5e7eb)",
+  border: "1px solid var(--border)",
   borderRadius: "4px",
-  background: "var(--bg, #ffffff)",
-  color: "var(--text, #111827)",
+  background: "var(--bg)",
+  color: "var(--text)",
   cursor: "pointer",
 };
 
@@ -137,7 +137,7 @@ export function DetectedAppsDrawer({
         <header
           style={{
             padding: "20px 24px 16px",
-            borderBottom: "1px solid var(--border, #e5e7eb)",
+            borderBottom: "1px solid var(--border)",
             display: "flex",
             justifyContent: "space-between",
             alignItems: "flex-start",
@@ -145,7 +145,7 @@ export function DetectedAppsDrawer({
         >
           <div>
             <h3 style={{ margin: 0, fontSize: "17px" }}>Detected apps</h3>
-            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--text-muted, #6b7280)" }}>
+            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "var(--muted)" }}>
               Software Intune discovered on managed devices.
             </p>
           </div>
@@ -162,22 +162,22 @@ export function DetectedAppsDrawer({
             onChange={(e) => setSearch(e.target.value)}
             style={{
               padding: "6px 10px",
-              border: "1px solid var(--border, #e5e7eb)",
+              border: "1px solid var(--border)",
               borderRadius: "6px",
               fontSize: "13px",
-              background: "var(--bg, #ffffff)",
-              color: "var(--text, #111827)",
+              background: "var(--bg)",
+              color: "var(--text)",
             }}
           />
           {error && (
-            <div role="alert" style={{ color: "var(--danger, #b91c1c)", fontSize: "13px" }}>
+            <div role="alert" style={{ color: "var(--danger-text)", fontSize: "13px" }}>
               {error}
             </div>
           )}
-          {loading && <div style={{ color: "var(--text-muted, #6b7280)", fontSize: "13px" }}>Loading detected apps…</div>}
+          {loading && <div style={{ color: "var(--muted)", fontSize: "13px" }}>Loading detected apps…</div>}
           {!loading && !error && result && (
             <>
-              <div style={{ fontSize: "12px", color: "var(--text-muted, #6b7280)" }}>
+              <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                 {result.totalCount} detected app{result.totalCount === 1 ? "" : "s"}
               </div>
               <table style={{ width: "100%", borderCollapse: "collapse" }} aria-label="Detected apps list">
@@ -193,7 +193,7 @@ export function DetectedAppsDrawer({
                 <tbody>
                   {result.items.length === 0 ? (
                     <tr>
-                      <td colSpan={canCreate ? 5 : 4} style={{ ...cellStyle, textAlign: "center", color: "var(--text-muted, #6b7280)" }}>
+                      <td colSpan={canCreate ? 5 : 4} style={{ ...cellStyle, textAlign: "center", color: "var(--muted)" }}>
                         No detected apps match.
                       </td>
                     </tr>
@@ -203,7 +203,7 @@ export function DetectedAppsDrawer({
                         <td style={cellStyle}>
                           <div style={{ fontWeight: 500 }}>{app.displayName}</div>
                           {app.publisher && (
-                            <div style={{ fontSize: "12px", color: "var(--text-muted, #6b7280)" }}>{app.publisher}</div>
+                            <div style={{ fontSize: "12px", color: "var(--muted)" }}>{app.publisher}</div>
                           )}
                         </td>
                         <td style={cellStyle}>{app.version ?? "—"}</td>
