@@ -14,6 +14,8 @@ export const JOB_TYPES = [
   "backup",
   "remediation",
   "report",
+  // EPIC-017 app upload queue (T-0323 runner, T-0842).
+  "app-upload",
 ] as const;
 
 export type JobType = (typeof JOB_TYPES)[number];

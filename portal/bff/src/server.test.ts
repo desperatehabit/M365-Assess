@@ -415,3 +415,89 @@ describe("thin BFF guard", () => {
     }
   });
 });
+
+describe("streaming seam (T-0842)", () => {
+  it("hands a rawBody route the unparsed request stream, past the JSON size cap", async () => {
+    const { text } = await import("node:stream/consumers");
+    let received = "";
+    const route: Route = {
+      method: "POST",
+      path: "/v1/upload",
+      rawBody: true,
+      handler: async (ctx) => {
+        expect(ctx.body).toBeUndefined();
+        received = await text(ctx.requestStream!);
+        return { status: 201, body: { size: received.length } };
+      },
+    };
+    const baseUrl = await startServer({ routes: [route], maxBodyBytes: 8 });
+    const payload = "x".repeat(64);
+    const response = await fetch(`${baseUrl}/v1/upload`, { method: "POST", headers: { "Content-Type": "application/json" }, body: payload });
+    expect(response.status).toBe(201);
+    expect(received).toBe(payload);
+    expect(await response.json()).toEqual({ size: 64 });
+  });
+
+  it("gives ordinary routes no request stream and keeps the JSON cap", async () => {
+    let seen: RequestContext | undefined;
+    const route: Route = { method: "POST", path: "/v1/json", handler: (ctx) => ((seen = ctx), { status: 200 }) };
+    const baseUrl = await startServer({ routes: [route], maxBodyBytes: 8 });
+    const tooBig = await fetch(`${baseUrl}/v1/json`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ a: "long value" }) });
+    expect(tooBig.status).toBe(413);
+    await fetch(`${baseUrl}/v1/json`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+    expect(seen?.requestStream).toBeUndefined();
+  });
+
+  it("streams a response body with its content length and type", async () => {
+    const { Readable } = await import("node:stream");
+    const route: Route = {
+      method: "GET",
+      path: "/v1/download",
+      handler: () => ({ status: 200, stream: Readable.from([Buffer.from("hello "), Buffer.from("world")]), contentLength: 11, contentType: "application/octet-stream" }),
+    };
+    const baseUrl = await startServer({ routes: [route] });
+    const response = await fetch(`${baseUrl}/v1/download`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-length")).toBe("11");
+    expect(response.headers.get("content-type")).toBe("application/octet-stream");
+    expect(response.headers.get("x-correlation-id")).toBeTruthy();
+    expect(await response.text()).toBe("hello world");
+  });
+
+  it("cuts the connection when a streamed body fails mid-way", async () => {
+    const { Readable } = await import("node:stream");
+    const route: Route = {
+      method: "GET",
+      path: "/v1/broken",
+      handler: () => {
+        const stream = new Readable({
+          read() {
+            this.push(Buffer.from("partial"));
+            this.destroy(new Error("disk read failed"));
+          },
+        });
+        return { status: 200, stream, contentLength: 1000 };
+      },
+    };
+    const baseUrl = await startServer({ routes: [route] });
+    // Depending on timing the cut lands before the headers or during the body; either way
+    // the client must see a failure, never a complete-looking response.
+    await expect(fetch(`${baseUrl}/v1/broken`).then((r) => r.text())).rejects.toThrow();
+  });
+
+  it("returns a JSON error from a rawBody route that throws before reading", async () => {
+    const route: Route = {
+      method: "POST",
+      path: "/v1/upload",
+      rawBody: true,
+      handler: () => {
+        throw new AppError("upload.refused", "no", 403);
+      },
+    };
+    const baseUrl = await startServer({ routes: [route] });
+    const response = await fetch(`${baseUrl}/v1/upload`, { method: "POST", body: "abc" });
+    expect(response.status).toBe(403);
+    expect(response.headers.get("connection")).toBe("close");
+    expect(await response.json()).toMatchObject({ code: "upload.refused" });
+  });
+});

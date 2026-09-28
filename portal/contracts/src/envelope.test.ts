@@ -112,6 +112,12 @@ describe("envelope round-trip", () => {
     expect(parseJobEnvelope(serializeEnvelope(job))).toEqual(job);
   });
 
+  it("accepts the app-upload job type and its progress events (T-0842)", () => {
+    expect(parseJobEnvelope({ ...job, jobType: "app-upload" }).jobType).toBe("app-upload");
+    expect(parseProgressEvent({ ...event, jobType: "app-upload" }).jobType).toBe("app-upload");
+    expect(() => parseJobEnvelope({ ...job, jobType: "app-uploads" })).toThrow(EnvelopeValidationError);
+  });
+
   it("round-trips a ResultEnvelope", () => {
     expect(parseResultEnvelope(serializeEnvelope(result))).toEqual(result);
   });

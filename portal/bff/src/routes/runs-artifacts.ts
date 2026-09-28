@@ -4,6 +4,7 @@
 // Access is strictly tenant-scoped and audited.
 
 import { randomUUID } from "node:crypto";
+import type { Readable } from "node:stream";
 import { finished } from "node:stream/promises";
 import { AppError } from "../errors.js";
 import {
@@ -85,7 +86,7 @@ export interface RunsArtifactsListResponse {
 }
 
 export interface RunsArtifactDownloadResponse extends RouteResponse {
-  readonly stream?: unknown;
+  readonly stream?: Readable;
   readonly size?: number;
   readonly name?: string;
 }
@@ -311,9 +312,13 @@ export function createRunsArtifactsDownloadRoute(options: RunsArtifactsRouteOpti
         });
       }
 
+      // The server pipes `stream` to the client (T-0842); before that seam existed it
+      // ignored the field and sent a JSON null.
       const response: RunsArtifactDownloadResponse = {
         status: 200,
         contentType,
+        contentLength: stat.size,
+        headers: { "Content-Disposition": `attachment; filename="${fileName}"` },
         size: stat.size,
         name: fileName,
         stream,

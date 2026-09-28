@@ -7,6 +7,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { createRequire } from "node:module";
+import type { Readable } from "node:stream";
 import { AppError, ErrorCodes, normalizeError, toErrorBody } from "./errors.js";
 import type { TenantScope } from "./rbac/scope.js";
 
@@ -43,6 +44,11 @@ export interface RequestContext {
   /** Parsed JSON request body; undefined when the request carried none. */
   readonly body?: unknown;
   /**
+   * The unread request body, for routes that set `rawBody` (large uploads). The route owns
+   * it: read it, or leave it and the connection closes after the response.
+   */
+  readonly requestStream?: Readable;
+  /**
    * The authenticated caller, or null when anonymous. Undefined when the server was
    * built without authenticators (tests and the unauthenticated dev server).
    */
@@ -53,6 +59,10 @@ export interface RouteResponse {
   readonly status: number;
   readonly body?: unknown;
   readonly raw?: string | Buffer;
+  /** A body streamed to the client (large downloads); takes precedence over `raw` and `body`. */
+  readonly stream?: Readable;
+  /** Sent as Content-Length with `stream` when known. */
+  readonly contentLength?: number;
   readonly contentType?: string;
   readonly headers?: Record<string, string | number | readonly string[]>;
 }
@@ -63,6 +73,11 @@ export interface Route {
   readonly method: string;
   readonly path: string;
   readonly handler: RouteHandler;
+  /**
+   * Skip JSON parsing (and its size cap) and hand the route the request stream as
+   * `requestStream`. For streamed uploads that enforce their own limit.
+   */
+  readonly rawBody?: boolean;
 }
 
 export interface BuildServerOptions {
@@ -128,6 +143,19 @@ function sendResponse(res: ServerResponse, result: RouteResponse, correlationId:
         res.setHeader(key, value);
       }
     }
+  }
+  if (result.stream !== undefined) {
+    const stream = result.stream;
+    res.statusCode = result.status;
+    res.setHeader("Content-Type", result.contentType ?? "application/octet-stream");
+    if (result.contentLength !== undefined) res.setHeader("Content-Length", result.contentLength);
+    res.setHeader("X-Correlation-Id", correlationId);
+    // A read failure mid-stream cannot become a JSON error once headers are out: cut the
+    // connection so the client sees a truncated response rather than a short "success".
+    stream.on("error", () => res.destroy());
+    res.on("close", () => stream.destroy());
+    stream.pipe(res);
+    return;
   }
   if (result.raw !== undefined) {
     res.statusCode = result.status;
@@ -225,7 +253,11 @@ async function handleRequest(
         continue;
       }
       const caller = await resolveCaller(req, options.authenticators);
-      const body = await readJsonBody(req, options.maxBodyBytes ?? MAX_JSON_BODY_BYTES);
+      if (route.rawBody) {
+        // An error from here on may leave body bytes unread; close rather than drain them.
+        res.setHeader("Connection", "close");
+      }
+      const body = route.rawBody ? undefined : await readJsonBody(req, options.maxBodyBytes ?? MAX_JSON_BODY_BYTES);
       const result = await route.handler({
         correlationId,
         method,
@@ -234,6 +266,7 @@ async function handleRequest(
         headers: routeHeaders(req.headers),
         params,
         ...(body !== undefined ? { body } : {}),
+        ...(route.rawBody ? { requestStream: req } : {}),
         ...(caller !== undefined ? { caller } : {}),
       });
       sendResponse(res, result, correlationId);
