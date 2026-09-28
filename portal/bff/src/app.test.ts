@@ -866,3 +866,128 @@ describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", 
     expect((await operator.post("/v1/baselines", { name: "X" })).status).toBe(403);
   });
 });
+
+describe("EPIC-017 routes (T-0844)", () => {
+  const CATALOG = { tenantId: "t-a", view: "catalog", totalCount: 1, items: { id: "app-1", displayName: "7-Zip" }, unsupported: [], nextCursor: null };
+
+  function runner(overrides: Record<string, (job: Record<string, unknown>) => unknown> = {}) {
+    const calls: { entrypoint: string; job: Record<string, unknown> }[] = [];
+    const run: WorkerRunner = async (entrypoint, job) => {
+      const j = job as Record<string, unknown>;
+      calls.push({ entrypoint, job: j });
+      const custom = overrides[entrypoint];
+      if (custom) return custom(j) as never;
+      if (entrypoint === "get-intune-apps.ps1") return CATALOG as never;
+      if (entrypoint === "get-intune-app-status.ps1") return { items: [] } as never;
+      if (entrypoint === "queue-intune-app-upload.ps1") return { state: "succeeded", appId: "graph-app-1", steps: [{ step: "createApp", status: "succeeded" }] } as never;
+      if (entrypoint === "import-autopilot-devices.ps1") return { totalCount: 0, items: null, nextCursor: null } as never;
+      if (entrypoint === "set-enrollment-profile.ps1") return { preview: true, applied: false, plan: { action: "create" }, auditEvent: null } as never;
+      return {} as never;
+    };
+    return { run, calls };
+  }
+
+  async function until<T>(read: () => Promise<T>, done: (value: T) => boolean): Promise<T> {
+    for (let i = 0; i < 100; i++) {
+      const value = await read();
+      if (done(value)) return value;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    throw new Error("condition not met");
+  }
+
+  it("serves the app list through the worker, normalising a one-item list", async () => {
+    const { run, calls } = runner();
+    const api = await adminWithTenant(run);
+    const res = await api.get("/v1/tenants/t-a/apps?type=win32");
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { items: unknown[] }).items).toEqual([{ id: "app-1", displayName: "7-Zip" }]);
+    expect(calls.at(-1)).toMatchObject({ entrypoint: "get-intune-apps.ps1", job: { tenantId: "t-a", view: "catalog", appType: "win32", credential: { credentialRef: "tenants/t-a/credential" } } });
+  });
+
+  it("dispatches the fixed /apps/* paths before /apps/:appId", async () => {
+    const { run, calls } = runner();
+    const api = await adminWithTenant(run);
+    expect((await api.get("/v1/tenants/t-a/apps/queue")).status).toBe(200);
+    expect((await api.get("/v1/tenants/t-a/apps/status")).status).toBe(200);
+    expect(calls.some((c) => c.entrypoint === "set-intune-app.ps1")).toBe(false);
+  });
+
+  it("queues a Store upload and runs it to success on the app-upload queue", async () => {
+    const { run, calls } = runner();
+    const db = new Database(":memory:");
+    const api = await adminWithTenant(run, "admin", db);
+    const res = await api.post("/v1/tenants/t-a/apps/upload", { appType: "store", packageIdentifier: "9WZDNCRFJ3PZ", displayName: "Company Portal", publisher: "Microsoft" });
+    expect(res.status).toBe(202);
+    const { deploymentId } = (await res.json()) as { deploymentId: string };
+    const queue = await until(
+      async () => (await (await api.get("/v1/tenants/t-a/apps/queue")).json()) as { items: { deploymentId: string; state: string; appId: string | null }[] },
+      (q) => q.items[0]?.state === "succeeded",
+    );
+    expect(queue.items[0]).toMatchObject({ deploymentId, state: "succeeded", appId: "graph-app-1" });
+    const upload = calls.find((c) => c.entrypoint === "queue-intune-app-upload.ps1")!;
+    expect(upload.job).toMatchObject({ tenantId: "t-a", deploymentId, appType: "store", credential: { credentialRef: "tenants/t-a/credential" } });
+    expect(db.prepare("SELECT type FROM jobs").all()).toEqual([{ type: "app-upload" }]);
+    const actions = (db.prepare("SELECT action FROM audit_events WHERE action LIKE 'intune.app.upload.%' ORDER BY rowid").all() as { action: string }[]).map((r) => r.action);
+    expect(actions).toEqual(["intune.app.upload.queued", "intune.app.upload.uploading", "intune.app.upload.committing", "intune.app.upload.succeeded"]);
+  });
+
+  it("answers package operations with 503 until a signing secret is configured", async () => {
+    const api = await adminWithTenant(runner().run);
+    const upload = await api.post("/v1/tenants/t-a/apps/upload", {
+      appType: "win32",
+      packageId: "pkg-1",
+      displayName: "7-Zip",
+      publisher: "Igor Pavlov",
+      installCommandLine: "7z.exe /S",
+      uninstallCommandLine: "u.exe",
+      detectionRules: [{ type: "file", path: "C:\\x", fileOrFolderName: "a.exe" }],
+    });
+    expect(upload.status).toBe(503);
+    expect(((await upload.json()) as { code: string }).code).toBe("app-package.unconfigured");
+  });
+
+  it("serves Autopilot reads and enrollment previews, and keeps writes from read-only callers", async () => {
+    const { run } = runner();
+    const db = new Database(":memory:");
+    const admin = await adminWithTenant(run, "admin", db);
+    expect((await admin.get("/v1/tenants/t-a/autopilot/devices")).status).toBe(200);
+    const preview = await admin.post("/v1/tenants/t-a/enrollment-profiles", {
+      platform: "android-enterprise",
+      profile: { displayName: "Kiosk", enrollmentMode: "corporateOwnedDedicatedDevice" },
+      preview: true,
+    });
+    expect(preview.status).toBe(200);
+    const operator = await serve("operator", db, run);
+    expect((await operator.get("/v1/tenants/t-a/apps")).status).toBe(200);
+    expect((await operator.post("/v1/app-templates", { name: "x", appType: "store", config: { displayName: "x" } })).status).toBe(403);
+  });
+});
+
+describe("EPIC-017 package routes with a secret (T-0844)", () => {
+  it("accepts a package upload when M365_BFF_APP_PACKAGE_SECRET is set", async () => {
+    const { mkdtempSync, rmSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const storage = mkdtempSync(path.join(tmpdir(), "bff-apps-"));
+    const cfg = { ...config({ devIdentityRole: "admin" }), artifactPath: storage, appPackageSecret: "s".repeat(32) };
+    const db = new Database(":memory:");
+    const app = createApp(cfg, { db, workerRunner: async () => ({}) as never });
+    const server = buildServer({ routes: app.routes, authenticators: app.authenticators });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      await fetch(`${base}/v1/tenants`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id: "t-a", displayName: "Contoso" }) });
+      const res = await fetch(`${base}/v1/tenants/t-a/apps/packages?fileName=7zip.intunewin`, {
+        method: "POST",
+        headers: { "content-type": "application/octet-stream" },
+        body: "package-bytes",
+      });
+      expect(res.status).toBe(201);
+      expect(((await res.json()) as { size: number }).size).toBe(13);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      app.close();
+      rmSync(storage, { recursive: true, force: true });
+    }
+  });
+});

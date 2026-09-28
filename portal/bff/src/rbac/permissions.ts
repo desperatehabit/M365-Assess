@@ -73,6 +73,36 @@ import {
   REUSABLE_SETTINGS_SYNC_PATH,
 } from "../routes/intune-reusable-settings.js";
 import { INTUNE_TEMPLATE_DEPLOY_PATH } from "../routes/intune-templates-deploy.js";
+import { APP_PACKAGES_UPLOAD_PATH, APP_PACKAGE_DOWNLOAD_PATH } from "../routes/app-packages.js";
+import { APP_TEMPLATES_PATH, APP_TEMPLATE_DEPLOY_PATH, APP_TEMPLATE_PATH } from "../routes/application-templates.js";
+import {
+  AUTOPILOT_DEVICES_PATH,
+  AUTOPILOT_DEVICE_PATH,
+  AUTOPILOT_IMPORT_PATH,
+  AUTOPILOT_PROFILES_PATH,
+  AUTOPILOT_READ_PERMISSION,
+  AUTOPILOT_TEMPLATES_PATH,
+  AUTOPILOT_TEMPLATE_PATH,
+  AUTOPILOT_WRITE_PERMISSION,
+} from "../routes/autopilot.js";
+import {
+  AUTOPILOT_PROFILES_WRITE_PATH,
+  AUTOPILOT_PROFILE_ASSIGNMENTS_PATH,
+  AUTOPILOT_PROFILE_WRITE_PATH,
+  AUTOPILOT_TEMPLATE_DEPLOY_PATH,
+} from "../routes/autopilot-profiles-write.js";
+import {
+  ENROLLMENT_PROFILES_PATH,
+  ENROLLMENT_PROFILE_ASSIGN_PATH,
+  ENROLLMENT_PROFILE_PATH,
+  ENROLLMENT_TEMPLATES_PATH,
+  ENROLLMENT_TEMPLATE_PATH,
+} from "../routes/enrollment-profiles.js";
+import { INTUNE_APP_STATUS_PATH } from "../routes/intune-app-status.js";
+import { INTUNE_APPS_PATH, INTUNE_APPS_READ_PERMISSION, INTUNE_APPS_WRITE_PERMISSION } from "../routes/intune-apps.js";
+import { INTUNE_APP_ASSIGN_PATH } from "../routes/intune-apps-assign.js";
+import { INTUNE_APP_PATH } from "../routes/intune-apps-crud.js";
+import { INTUNE_APPS_QUEUE_PATH, INTUNE_APPS_QUEUE_RERUN_PATH, INTUNE_APPS_UPLOAD_PATH } from "../routes/intune-apps-queue.js";
 import { GDAP_OPENAPI } from "../routes/gdap.js";
 import { ONBOARD_OPENAPI } from "../routes/onboard.js";
 import { TENANT_GROUPS_OPENAPI } from "../routes/tenant-groups.js";
@@ -426,6 +456,50 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "POST", path: INTUNE_CRUD_BASE_PATH, permission: INTUNE_WRITE_PERMISSION },
   { method: "PATCH", path: INTUNE_CRUD_ITEM_PATH, permission: INTUNE_WRITE_PERMISSION },
   { method: "DELETE", path: INTUNE_CRUD_ITEM_PATH, permission: INTUNE_WRITE_PERMISSION },
+  // EPIC-017 apps, Autopilot, and enrollment (T-0844), in mount order: fixed /apps/*
+  // paths before /apps/:appId. The package download is authenticated by its signed URL,
+  // not a caller; its entry records the data class it serves.
+  { method: "POST", path: APP_PACKAGES_UPLOAD_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: APP_PACKAGE_DOWNLOAD_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "POST", path: INTUNE_APPS_UPLOAD_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: INTUNE_APPS_QUEUE_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "POST", path: INTUNE_APPS_QUEUE_RERUN_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: INTUNE_APP_STATUS_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "GET", path: INTUNE_APPS_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "POST", path: INTUNE_APP_ASSIGN_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: INTUNE_APP_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "PATCH", path: INTUNE_APP_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "DELETE", path: INTUNE_APP_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: APP_TEMPLATES_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "POST", path: APP_TEMPLATES_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: APP_TEMPLATE_PATH, permission: INTUNE_APPS_READ_PERMISSION },
+  { method: "PATCH", path: APP_TEMPLATE_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "DELETE", path: APP_TEMPLATE_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "POST", path: APP_TEMPLATE_DEPLOY_PATH, permission: INTUNE_APPS_WRITE_PERMISSION },
+  { method: "GET", path: AUTOPILOT_DEVICES_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "GET", path: AUTOPILOT_DEVICE_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "GET", path: AUTOPILOT_PROFILES_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "POST", path: AUTOPILOT_IMPORT_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "GET", path: AUTOPILOT_TEMPLATES_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "POST", path: AUTOPILOT_TEMPLATES_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "GET", path: AUTOPILOT_TEMPLATE_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "PATCH", path: AUTOPILOT_TEMPLATE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "DELETE", path: AUTOPILOT_TEMPLATE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "POST", path: AUTOPILOT_PROFILES_WRITE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "PATCH", path: AUTOPILOT_PROFILE_WRITE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "DELETE", path: AUTOPILOT_PROFILE_WRITE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "POST", path: AUTOPILOT_PROFILE_ASSIGNMENTS_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "POST", path: AUTOPILOT_TEMPLATE_DEPLOY_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "GET", path: ENROLLMENT_PROFILES_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "POST", path: ENROLLMENT_PROFILES_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "PATCH", path: ENROLLMENT_PROFILE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "DELETE", path: ENROLLMENT_PROFILE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "POST", path: ENROLLMENT_PROFILE_ASSIGN_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "GET", path: ENROLLMENT_TEMPLATES_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "POST", path: ENROLLMENT_TEMPLATES_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "GET", path: ENROLLMENT_TEMPLATE_PATH, permission: AUTOPILOT_READ_PERMISSION },
+  { method: "PATCH", path: ENROLLMENT_TEMPLATE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
+  { method: "DELETE", path: ENROLLMENT_TEMPLATE_PATH, permission: AUTOPILOT_WRITE_PERMISSION },
   // EPIC-004 dashboards and EPIC-005 reports (T-0823). /widgets precedes /:tenantId.
   { method: "GET", path: DASHBOARD_WIDGETS_PATH, permission: DASHBOARD_READ_PERMISSION },
   { method: "GET", path: DASHBOARD_TENANT_PATH, permission: DASHBOARD_READ_PERMISSION },

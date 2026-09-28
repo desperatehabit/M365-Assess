@@ -72,6 +72,29 @@ import {
 import { createGroupProviders } from "./adapters/groups.js";
 import { createIntuneProviders } from "./adapters/intune.js";
 import {
+  APP_UPLOAD_JOB_TYPE,
+  createAppUploadQueue,
+  createAppUploadRunner,
+  createIntuneAppProviders,
+  createTemplateVariableReader,
+  unconfiguredPackageStore,
+} from "./adapters/intune-apps.js";
+import { SqliteAppDeploymentRepository } from "./repository/app-deployments.js";
+import { SqliteApplicationTemplateRepository } from "./repository/application-templates.js";
+import { SqliteAutopilotProfileTemplateRepository } from "./repository/autopilot-profiles.js";
+import { SqliteEnrollmentProfileTemplateRepository } from "./repository/enrollment-profile-templates.js";
+import { createAppPackageRoutes } from "./routes/app-packages.js";
+import { createApplicationTemplateRoutes } from "./routes/application-templates.js";
+import { createAutopilotRoutes } from "./routes/autopilot.js";
+import { createAutopilotProfileWriteRoutes } from "./routes/autopilot-profiles-write.js";
+import { createEnrollmentProfileRoutes } from "./routes/enrollment-profiles.js";
+import { createIntuneAppStatusRoutes } from "./routes/intune-app-status.js";
+import { createIntuneAppsRoutes } from "./routes/intune-apps.js";
+import { createIntuneAppAssignRoute } from "./routes/intune-apps-assign.js";
+import { createIntuneAppCrudRoutes } from "./routes/intune-apps-crud.js";
+import { createIntuneAppsQueueRoutes } from "./routes/intune-apps-queue.js";
+import { AppPackageStore } from "./storage/app-packages.js";
+import {
   createGeneratedReportStore,
   createReportRunReader,
   createUnavailableRenderQueue,
@@ -430,6 +453,36 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const roles = createRoleProviders(tenantWorker);
   const jitRepo = new SqliteJitRepository(db, schemaVersion);
 
+  // EPIC-017 Intune apps, Autopilot, and enrollment (T-0844). App uploads run on their own
+  // queue so their lifecycle events stay out of the assessment-run progress hub; the Queued
+  // Applications page reads the AppDeployment rows instead. Package routes answer 503 until
+  // M365_BFF_APP_PACKAGE_SECRET is set.
+  const intuneApps = createIntuneAppProviders(tenantWorker);
+  const allows = (c: unknown, permission: string) => canAccess(c as RequestCaller, permission);
+  const appDeployments = new SqliteAppDeploymentRepository(db, schemaVersion);
+  const appPackages = config.appPackageSecret
+    ? new AppPackageStore({
+        artifactRoot: config.artifactPath,
+        signingSecret: config.appPackageSecret,
+        maxBytes: config.appPackageMaxBytes,
+      })
+    : unconfiguredPackageStore(config.appPackageMaxBytes);
+  const appUploadJobs = new JobQueue({
+    persistence: createJobPersistence(repo),
+    poolSize: 1,
+    runWorker: createJobDispatcher({
+      [APP_UPLOAD_JOB_TYPE]: createAppUploadRunner({
+        call: tenantWorker,
+        repository: appDeployments,
+        packages: appPackages,
+        packageBaseUrl: config.workerBaseUrl,
+        recordAudit,
+      }),
+    }),
+  });
+  const appUploadQueue = createAppUploadQueue(appUploadJobs);
+  const autopilotTemplates = new SqliteAutopilotProfileTemplateRepository(db, schemaVersion);
+
   // EPIC-001/003 runs: the job queue supervises run-tenant.ps1 under the artifact root,
   // and every queue and worker progress event goes through the hub, which records run
   // and section state and serves the progress stream. A finished run's findings are
@@ -699,6 +752,49 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     }),
     ...createIntunePoliciesRoutes({ provider: intune.policies, ...caller }),
     ...createIntuneCrudRoutes({ provider: intune.crud, ...caller }),
+
+    // EPIC-017 apps (T-0844). Fixed /apps/* paths come before /apps/:appId, which would
+    // otherwise capture them.
+    ...createAppPackageRoutes({ packages: appPackages, resolveCaller, authorize: allows, recordAudit }),
+    ...createIntuneAppsQueueRoutes({
+      repository: appDeployments,
+      packages: appPackages,
+      queue: appUploadQueue,
+      resolveCaller,
+      authorize: allows,
+      recordAudit,
+    }),
+    ...createIntuneAppStatusRoutes({ provider: intuneApps.status, resolveCaller, authorize: allows }),
+    ...createIntuneAppsRoutes({ provider: intuneApps.apps, ...caller }),
+    createIntuneAppAssignRoute({ provider: intuneApps.assign, resolveCaller, authorize: allows, recordAudit }),
+    ...createIntuneAppCrudRoutes({ provider: intuneApps.crud, resolveCaller, authorize: allows, recordAudit }),
+    ...createApplicationTemplateRoutes({
+      templates: new SqliteApplicationTemplateRepository(db, schemaVersion),
+      deployments: appDeployments,
+      packages: appPackages,
+      queue: appUploadQueue,
+      preflight: intuneApps.templatePreflight,
+      variables: createTemplateVariableReader(createTenantVariableStore(repo)),
+      resolveCaller,
+      authorize: allows,
+      recordAudit,
+    }),
+    // EPIC-017 Autopilot and enrollment (T-0844).
+    ...createAutopilotRoutes({ provider: intuneApps.autopilot, templates: autopilotTemplates, resolveCaller, authorize: allows, recordAudit }),
+    ...createAutopilotProfileWriteRoutes({
+      provider: intuneApps.autopilotWrite,
+      templates: autopilotTemplates,
+      resolveCaller,
+      authorize: allows,
+      recordAudit,
+    }),
+    ...createEnrollmentProfileRoutes({
+      provider: intuneApps.enrollment,
+      templates: new SqliteEnrollmentProfileTemplateRepository(db, schemaVersion),
+      resolveCaller,
+      authorize: allows,
+      recordAudit,
+    }),
 
     // EPIC-011 users, offboarding, BEC, and user templates (T-0818).
     ...createTenantUsersRoute({

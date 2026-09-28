@@ -22,6 +22,13 @@ describe("AppNav", () => {
     expect(activeHref("/runsx")).toBeNull();
   });
 
+  it("links the EPIC-017 app pages, with the queue winning over its parent (T-0844)", () => {
+    expect(activeHref("/intune/applications")).toBe("/intune/applications");
+    expect(activeHref("/intune/applications/upload")).toBe("/intune/applications");
+    expect(activeHref("/intune/applications/queue")).toBe("/intune/applications/queue");
+    expect(activeHref("/intune/status")).toBe("/intune/status");
+  });
+
   it("links each page once", () => {
     const hrefs = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
     expect(new Set(hrefs).size).toBe(hrefs.length);

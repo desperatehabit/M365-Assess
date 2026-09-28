@@ -88,6 +88,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/intune/policies/compare", label: "Compare" },
       { href: "/intune/templates", label: "Templates" },
       { href: "/intune/assignment-filters", label: "Assignment filters" },
+      // EPIC-017 (T-0844). Add app and Assign are reached from these pages.
+      { href: "/intune/applications", label: "Applications" },
+      { href: "/intune/applications/queue", label: "Queued applications" },
+      { href: "/intune/status", label: "Deployment status" },
     ],
   },
   {
