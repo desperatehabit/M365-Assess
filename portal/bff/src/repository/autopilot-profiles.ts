@@ -95,7 +95,8 @@ function validateGroupTag(tag: unknown): string | null {
   return tag.trim();
 }
 
-function validateProfile(profile: unknown): string {
+/** Validates a deployment-profile body; returns its JSON. Shared with the live-profile write routes (T-0845). */
+export function validateAutopilotProfile(profile: unknown): string {
   if (profile === null || typeof profile !== "object" || Array.isArray(profile)) {
     throw new AutopilotProfileValidationError("profileJson must be a JSON object", "profileJson");
   }
@@ -167,7 +168,7 @@ export class SqliteAutopilotProfileTemplateRepository implements AutopilotProfil
 
   async create(input: AutopilotProfileTemplateInput): Promise<AutopilotProfileTemplate> {
     const name = validateName(input.name);
-    const profile = validateProfile(input.profileJson);
+    const profile = validateAutopilotProfile(input.profileJson);
     const groupTag = validateGroupTag(input.groupTag);
     try {
       this.db
@@ -189,7 +190,7 @@ export class SqliteAutopilotProfileTemplateRepository implements AutopilotProfil
     const current = await this.get(id);
     if (!current) return undefined;
     const name = patch.name === undefined ? current.name : validateName(patch.name);
-    const profile = validateProfile(patch.profileJson ?? current.profileJson);
+    const profile = validateAutopilotProfile(patch.profileJson ?? current.profileJson);
     const groupTag = patch.groupTag === undefined ? current.groupTag : validateGroupTag(patch.groupTag);
     try {
       this.db
