@@ -3,7 +3,7 @@ id: "EPIC-018"
 source: "docs/portal-specs/01-feature-epics/EPIC-018-device-actions/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "epic"
+status: "closed"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,7 @@ children:
   - T-0348
   - T-0349
   - T-0350
+  - T-0848
 scope_kind: "epic"
 scope_note: "Rollup for Device Actions & BitLocker. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -43,6 +44,12 @@ list above names them in dependency order.
 
 ## Acceptance
 
-- [ ] SPEC.md sections 2-9 complete and approved.
-- [ ] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [ ] All children closed before this epic is considered done.
+- [x] SPEC.md sections 2-9 complete and approved.
+- [x] Child tickets authored in `tickets/` with non-empty `scope:`.
+- [x] All children closed before this epic is considered done.
+
+## Resolution
+
+Closed 2026-09-28: T-0341–T-0350 plus follow-up T-0848 landed. Every Graph call is
+mocked; live-tenant verification is T-0848 (as T-0814 is for EPIC-016 and T-0847 for
+EPIC-017).
