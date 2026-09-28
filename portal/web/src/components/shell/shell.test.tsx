@@ -27,6 +27,10 @@ describe("AppNav", () => {
     expect(activeHref("/intune/applications/upload")).toBe("/intune/applications");
     expect(activeHref("/intune/applications/queue")).toBe("/intune/applications/queue");
     expect(activeHref("/intune/status")).toBe("/intune/status");
+    expect(activeHref("/intune/applications/templates")).toBe("/intune/applications/templates");
+    expect(activeHref("/intune/autopilot/add")).toBe("/intune/autopilot");
+    expect(activeHref("/intune/autopilot/profiles")).toBe("/intune/autopilot/profiles");
+    expect(activeHref("/intune/enrollment")).toBe("/intune/enrollment");
   });
 
   it("links each page once", () => {

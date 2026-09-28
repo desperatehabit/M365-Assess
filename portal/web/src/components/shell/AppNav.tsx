@@ -91,6 +91,10 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       // EPIC-017 (T-0844). Add app and Assign are reached from these pages.
       { href: "/intune/applications", label: "Applications" },
       { href: "/intune/applications/queue", label: "Queued applications" },
+      { href: "/intune/applications/templates", label: "Application templates" },
+      { href: "/intune/autopilot", label: "Autopilot devices" },
+      { href: "/intune/autopilot/profiles", label: "Autopilot profiles" },
+      { href: "/intune/enrollment", label: "Enrollment profiles" },
       { href: "/intune/status", label: "Deployment status" },
     ],
   },
