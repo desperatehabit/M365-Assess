@@ -24,6 +24,8 @@ children:
   - T-0329
   - T-0330
   - T-0842
+  - T-0843
+  - T-0844
 scope_kind: "epic"
 scope_note: "Rollup for Intune Apps & Autopilot. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
