@@ -50,8 +50,8 @@ list above names them in dependency order.
 ## Progress
 
 - 2026-09-28: T-0363 and T-0368 closed 2026-09-25 (persistence + CRUD for templates and CVE
-  exceptions). T-0366 (TVM read API) and T-0369 (CVE Management page) landed this session.
+  exceptions). T-0366 (TVM read API), T-0369 (CVE Management page), and T-0367
+  (vulnerabilities page) landed this session.
 - **Blocked:** T-0361 (and downstream T-0362, T-0364, T-0365, T-0370) waits on T-0814 —
   live-tenant verification of the EPIC-16 Graph calls. No test tenant is available yet, so
-  T-0814 stays open and the fleet holds those tickets. T-0367 unblocks once T-0366's route is
-  mounted (its page ticket is written against the T-0366 API).
+  T-0814 stays open and the fleet holds those tickets.
