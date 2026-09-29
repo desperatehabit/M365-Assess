@@ -58,7 +58,7 @@ Describe 'Get-BitLockerKeys worker (T-0346)' {
                     $id = ($Uri -split '/')[-1] -split '\?' | Select-Object -First 1
                     return @{ key = "recovery-key-for-$id"; createdDateTime = '2026-01-01T00:00:00Z' }
                 }
-                return @{ value = @(@{ id = 'key-1' }, @{ id = 'key-2' }) }
+                return @{ value = @(@{ id = 'key-1'; deviceId = 'device-1' }, @{ id = 'key-2'; deviceId = 'device-1' }) }
             }
         }
 
@@ -80,6 +80,13 @@ Describe 'Get-BitLockerKeys worker (T-0346)' {
             Should -Invoke Invoke-MgGraphRequest -Times 3 -Exactly -ParameterFilter { $Method -eq 'GET' }
             Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -ParameterFilter { $Method -ne 'GET' }
             Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*informationProtection/bitlocker/recoveryKeys*' }
+        }
+
+        It 'filters the list by deviceId and selects the key on the detail' {
+            $null = Get-BitLockerKeys -TenantId 'tenant-a' -DeviceId 'device-1'
+
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*recoveryKeys*' -and $Uri -like '*$filter*' -and $Uri -like "*deviceId eq 'device-1'*" }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*recoveryKeys/key-1*' -and $Uri -like '*$select=key,createdDateTime*' }
         }
 
         It 'returns an empty key list when the device has no recovery keys' {

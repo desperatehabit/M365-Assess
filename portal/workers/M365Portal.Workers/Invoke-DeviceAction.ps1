@@ -33,18 +33,9 @@ function Invoke-DeviceAction {
         'retire' { "/v1.0/deviceManagement/managedDevices/$DeviceId/retire" }
     }
 
-    $body = $null
-    if ($Action -eq 'retire' -and -not [string]::IsNullOrWhiteSpace($Reason)) {
-        $body = @{ reason = $Reason } | ConvertTo-Json -Compress
-    }
-
     $params = @{
         Method = 'POST'
         Uri    = $actionUri
-    }
-    if ($body) {
-        $params['Body'] = $body
-        $params['ContentType'] = 'application/json'
     }
 
     try {

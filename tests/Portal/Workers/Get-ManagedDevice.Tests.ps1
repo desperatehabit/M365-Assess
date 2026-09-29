@@ -76,8 +76,8 @@ Describe 'Get-ManagedDevice worker (T-0342)' {
                     isEncrypted = $true
                     model = 'Surface Pro 9'
                     manufacturer = 'Microsoft'
-                    storageSpace = 256000000000
-                    totalStorageSpace = 512000000000
+                    freeStorageSpaceInBytes = 256000000000
+                    totalStorageSpaceInBytes = 512000000000
                     phoneNumber = ''
                     imei = ''
                 }
@@ -97,6 +97,8 @@ Describe 'Get-ManagedDevice worker (T-0342)' {
             $result.overview.encrypted | Should -BeTrue
             $result.hardware.model | Should -Be 'Surface Pro 9'
             $result.hardware.manufacturer | Should -Be 'Microsoft'
+            $result.hardware.storageSpace | Should -Be 256000000000
+            $result.hardware.totalStorage | Should -Be 512000000000
             $result.software | Should -HaveCount 1
             $result.software[0].displayName | Should -Be 'Microsoft Edge'
             $result.policies | Should -HaveCount 1
@@ -111,6 +113,13 @@ Describe 'Get-ManagedDevice worker (T-0342)' {
 
             Should -Invoke Invoke-MgGraphRequest -Times 4 -Exactly -ParameterFilter { $Method -eq 'GET' }
             Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -ParameterFilter { $Method -ne 'GET' }
+        }
+
+        It 'selects the v1.0 storage property names' {
+            $null = Get-ManagedDevice -TenantId 'tenant-a' -DeviceId 'device-1'
+
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*freeStorageSpaceInBytes*' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*totalStorageSpaceInBytes*' }
         }
 
         It 'requires the tenant and device identifiers' {
