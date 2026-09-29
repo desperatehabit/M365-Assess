@@ -1,3 +1,5 @@
+import { Readable } from "node:stream";
+import { text } from "node:stream/consumers";
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.js";
 import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
@@ -12,7 +14,6 @@ import {
   type RunAuditEventInput,
   type RunEventsRecord,
   type RunEventsStore,
-  type RunsEventsRequestContext,
 } from "./runs-events.js";
 import { parseProgressEvent } from "@m365-assess/contracts/events";
 
@@ -46,7 +47,7 @@ function unprivilegedCaller(): Caller {
   return { roles: [], tenantScope: ALL_TENANTS };
 }
 
-function createContext(runId: string, extra: Partial<RunsEventsRequestContext> = {}): RunsEventsRequestContext {
+function createContext(runId: string): RequestContext {
   return {
     correlationId: "corr-1",
     method: "GET",
@@ -54,8 +55,15 @@ function createContext(runId: string, extra: Partial<RunsEventsRequestContext> =
     query: new URLSearchParams(),
     headers: {},
     params: { runId },
-    ...extra,
   };
+}
+
+async function waitFor(condition: () => boolean, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (!condition()) {
+    if (Date.now() - start > timeoutMs) throw new Error("timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
 }
 
 describe("runs-events route (GET /v1/runs/:runId/events)", () => {
@@ -151,6 +159,7 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
 
     const response = await route.handler(createContext(RUN_ID));
     expect(response.status).toBe(200);
+    await text(response.stream!);
 
     expect(store.audits).toHaveLength(1);
     expect(store.audits[0]).toMatchObject({
@@ -229,7 +238,7 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
     expect(result.status).toBe(200);
     expect(result.contentType).toBe("text/event-stream; charset=utf-8");
 
-    const rawStream = typeof result.raw === "string" ? result.raw : result.raw?.toString("utf8") ?? "";
+    const rawStream = await text(result.stream!);
     const parsedBlocks = parseSseStream(rawStream);
 
     expect(parsedBlocks).toHaveLength(5);
@@ -251,7 +260,7 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
     expect(parsedEvents[4]?.state).toBe("succeeded");
   });
 
-  it("pushes real-time events to sink callback and handles failed terminal close", async () => {
+  it("writes each event to the stream as the hub publishes it, before the run completes", async () => {
     const store = new FakeRunEventsStore();
     store.runs.set(RUN_ID, {
       id: RUN_ID,
@@ -266,42 +275,56 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
       resolveCaller: () => adminCaller(),
     });
 
-    const realTimeChunks: string[] = [];
-    const ctx = createContext(RUN_ID, {
-      sink: (chunk) => realTimeChunks.push(chunk),
-    });
-
-    setTimeout(async () => {
-      await hub.publish({
-        runId: RUN_ID,
-        tenantId: TENANT_1,
-        jobId: "job-1",
-        state: "running",
-        section: "Security",
-        sectionState: "running",
-      });
-      await hub.publish({
-        runId: RUN_ID,
-        tenantId: TENANT_1,
-        jobId: "job-1",
-        state: "failed",
-        section: "Security",
-        sectionState: "failed",
-        message: "Assessment execution failed",
-      });
-    }, 10);
-
-    const result = await route.handler(ctx);
+    const result = await route.handler(createContext(RUN_ID));
     expect(result.status).toBe(200);
-    expect(realTimeChunks).toHaveLength(2);
 
-    const parsedFirst = parseProgressEvent(parseSseStream(realTimeChunks[0]!)[0]!.data);
-    const parsedSecond = parseProgressEvent(parseSseStream(realTimeChunks[1]!)[0]!.data);
+    const received: string[] = [];
+    const done = (async () => {
+      for await (const chunk of result.stream!) {
+        received.push(chunk.toString());
+      }
+    })();
+    const buffer = () => received.join("");
 
-    expect(parsedFirst.sequence).toBe(0);
-    expect(parsedFirst.section).toBe("Security");
-    expect(parsedSecond.sequence).toBe(1);
-    expect(parsedSecond.state).toBe("failed");
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_1,
+      jobId: "job-1",
+      state: "running",
+      section: "Security",
+      sectionState: "running",
+    });
+    await waitFor(() => buffer().includes('"section":"Security"'));
+    expect(buffer()).not.toContain("Assessment execution failed");
+
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_1,
+      jobId: "job-1",
+      state: "running",
+      section: "Security",
+      sectionState: "running",
+      completed: 1,
+      total: 2,
+    });
+    await waitFor(() => buffer().includes('"completed":1'));
+
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_1,
+      jobId: "job-1",
+      state: "failed",
+      section: "Security",
+      sectionState: "failed",
+      message: "Assessment execution failed",
+    });
+    await waitFor(() => buffer().includes("Assessment execution failed"));
+    await done;
+
+    const parsed = parseSseStream(buffer()).map((b) => parseProgressEvent(b.data));
+    expect(parsed.map((e) => e.sequence)).toEqual([0, 1, 2]);
+    expect(parsed[0]?.section).toBe("Security");
+    expect(parsed[2]?.state).toBe("failed");
   });
 
   it("replays full past history for late-connecting subscribers", async () => {
@@ -333,7 +356,7 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
     });
 
     const response = await route.handler(createContext(RUN_ID));
-    const events = parseSseStream(response.raw as string).map((b) => parseProgressEvent(b.data));
+    const events = parseSseStream(await text(response.stream!)).map((b) => parseProgressEvent(b.data));
 
     expect(events).toHaveLength(2);
     expect(events[0]?.state).toBe("running");
@@ -364,7 +387,7 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
     });
 
     const response = await route.handler(createContext(RUN_ID));
-    const raw = response.raw as string;
+    const raw = await text(response.stream!);
 
     expect(raw).not.toContain("operator.jane@acme.corp");
     expect(raw).toContain("[redacted-email]");

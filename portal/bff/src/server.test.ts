@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_HOST,
   DEFAULT_PORT,
@@ -20,7 +20,10 @@ import {
   paginate,
   parsePagination,
 } from "./pagination.js";
-import { tenantScope } from "./rbac/scope.js";
+import { ALL_TENANTS, tenantScope } from "./rbac/scope.js";
+import { ProgressEventHub } from "./sse/hub.js";
+import { createRunsEventsRoute, parseSseStream, type RunEventsRecord, type RunEventsStore } from "./routes/runs-events.js";
+import { parseProgressEvent } from "@m365-assess/contracts/events";
 import {
   OPENAPI_ROUTE,
   PAYLOAD_TOO_LARGE,
@@ -499,5 +502,102 @@ describe("streaming seam (T-0842)", () => {
     expect(response.status).toBe(403);
     expect(response.headers.get("connection")).toBe("close");
     expect(await response.json()).toMatchObject({ code: "upload.refused" });
+  });
+});
+
+describe("run events SSE (T-0832)", () => {
+  const TENANT = "11111111-1111-1111-1111-111111111111";
+  const RUN_ID = "run-events-1";
+
+  class FakeRunEventsStore implements RunEventsStore {
+    async getRunById(runId: string): Promise<RunEventsRecord | undefined> {
+      return { id: runId, tenantId: TENANT, status: "running" };
+    }
+  }
+
+  function eventsRoute(hub: ProgressEventHub): Route {
+    return createRunsEventsRoute({
+      hub,
+      store: new FakeRunEventsStore(),
+      resolveCaller: () => ({ roles: ["admin"], tenantScope: ALL_TENANTS }),
+    });
+  }
+
+  const decoder = new TextDecoder();
+
+  async function readSseBlock(reader: ReadableStreamDefaultReader<Uint8Array>): Promise<string> {
+    let buffer = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) return buffer;
+      buffer += decoder.decode(value, { stream: true });
+      if (buffer.includes("\n\n")) return buffer;
+    }
+  }
+
+  it("delivers progress events as they are published and sends nothing further after the terminal event", async () => {
+    const hub = new ProgressEventHub();
+    const baseUrl = await startServer({ routes: [eventsRoute(hub)] });
+
+    // A chunked SSE response flushes its headers with the first event, so the
+    // request only resolves once something is published.
+    const responsePromise = fetch(`${baseUrl}/v1/runs/${RUN_ID}/events`);
+    await hub.publish({ runId: RUN_ID, tenantId: TENANT, jobId: "job-1", state: "running", message: "first" });
+    const response = await responsePromise;
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream; charset=utf-8");
+    expect(response.headers.get("cache-control")).toBe("no-cache");
+    expect(response.headers.get("content-length")).toBeNull();
+    const reader = response.body!.getReader();
+
+    const first = await readSseBlock(reader);
+    expect(first).toContain("event: progress");
+    expect(first).toContain('"state":"running"');
+    expect(first).toContain("first");
+
+    await hub.publish({ runId: RUN_ID, tenantId: TENANT, jobId: "job-1", state: "succeeded", message: "done" });
+    const second = await readSseBlock(reader);
+    expect(second).toContain('"state":"succeeded"');
+
+    expect((await reader.read()).done).toBe(true);
+  });
+
+  it("replays past events to a late-connecting client and ends after the terminal event", async () => {
+    const hub = new ProgressEventHub();
+    await hub.publish({ runId: RUN_ID, tenantId: TENANT, jobId: "job-1", state: "running" });
+    await hub.publish({ runId: RUN_ID, tenantId: TENANT, jobId: "job-1", state: "succeeded" });
+    const baseUrl = await startServer({ routes: [eventsRoute(hub)] });
+
+    const response = await fetch(`${baseUrl}/v1/runs/${RUN_ID}/events`);
+    const events = parseSseStream(await response.text()).map((block) => parseProgressEvent(block.data));
+
+    expect(events.map((event) => event.state)).toEqual(["running", "succeeded"]);
+  });
+
+  it("unsubscribes from the hub when the client disconnects", async () => {
+    const hub = new ProgressEventHub();
+    const activeUnsubscribes = new Set<() => void>();
+    const subscribe = hub.subscribe.bind(hub);
+    hub.subscribe = (runId, subscriber) => {
+      const unsubscribe = subscribe(runId, subscriber);
+      activeUnsubscribes.add(unsubscribe);
+      return () => {
+        activeUnsubscribes.delete(unsubscribe);
+        unsubscribe();
+      };
+    };
+    const baseUrl = await startServer({ routes: [eventsRoute(hub)] });
+
+    const controller = new AbortController();
+    const responsePromise = fetch(`${baseUrl}/v1/runs/${RUN_ID}/events`, { signal: controller.signal });
+    await hub.publish({ runId: RUN_ID, tenantId: TENANT, jobId: "job-1", state: "running" });
+    const response = await responsePromise;
+    const reader = response.body!.getReader();
+
+    await vi.waitFor(() => expect(activeUnsubscribes.size).toBe(1));
+    controller.abort();
+    await vi.waitFor(() => expect(activeUnsubscribes.size).toBe(0), { timeout: 5000 });
+    await reader.cancel().catch(() => {});
   });
 });

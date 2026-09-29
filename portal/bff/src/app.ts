@@ -246,8 +246,6 @@ import type { RequestAuthenticator, RequestCaller, RequestContext, Route } from 
 import { ProgressEventHub } from "./sse/hub.js";
 
 export const DATABASE_FILE = "portal.db";
-/** How long one progress request waits for events before returning (see T-0832). */
-export const RUN_EVENTS_TIMEOUT_MS = 25_000;
 export const RUN_WORKER = "run-tenant.ps1";
 export const UNAUTHENTICATED = "auth.unauthenticated";
 
@@ -597,7 +595,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createRunsDetailRoutes({ store: runStore, ...caller }),
     ...createRunsActionsRoutes({ store: runStore, queue: runQueue, eventHub: hub, readBody, ...caller }),
     ...createRunsArtifactsRoutes({ store: runStore, artifactRoot: config.artifactPath, ...caller }),
-    createRunsEventsRoute({ hub, store: runStore, timeoutMs: RUN_EVENTS_TIMEOUT_MS, ...caller }),
+    createRunsEventsRoute({ hub, store: runStore, ...caller }),
 
     // EPIC-004 dashboards (T-0823). The layout routes come first: /v1/dashboard/:tenantId
     // would otherwise capture /v1/dashboard/layout.
