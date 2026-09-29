@@ -156,3 +156,105 @@ describe("CA change history (T-0819)", () => {
     expect(one).toMatchObject({ tenantId: "t-a", policyId: "pol-1", totalCount: 2 });
   });
 });
+
+function mergeHarness(respond: (entrypoint: string, job: Record<string, unknown>) => unknown) {
+  const db = new Database(":memory:");
+  const version = runMigrations(db, loadMigrations());
+  const repo = new SqliteRepository(db, version, "memory");
+  const record = createAuditSink(repo);
+  const run: WorkerRunner = async (entrypoint, job) => respond(entrypoint, job as Record<string, unknown>) as never;
+  const providers = createCaProviders(run, credentials, db);
+  return { providers, record };
+}
+
+function auditRecord(overrides: Partial<CaPolicyChangeRecord> & { id: string; policyId: string }): CaPolicyChangeRecord {
+  return {
+    tenantId: "t-a",
+    policyName: "Require MFA",
+    timestamp: "2026-09-01T00:00:00Z",
+    initiatedBy: "admin@contoso.com",
+    action: "ca.policy.create",
+    source: "directoryAudit",
+    ...overrides,
+  };
+}
+
+function workerResponse(items: readonly CaPolicyChangeRecord[]) {
+  return { tenantId: "t-a", totalCount: items.length, items };
+}
+
+describe("CA change history merge (T-0830)", () => {
+  it("merges a portal row with a directory audit inside the window, keeping before/after and the audit's initiatedBy", async () => {
+    const { providers, record } = mergeHarness(() =>
+      workerResponse([auditRecord({ id: "audit-1", policyId: "pol-1", timestamp: "2026-09-01T00:00:30Z" })]),
+    );
+    await record({ id: "e1", tenantId: "t-a", action: "ca.policy.create", targetId: "pol-1", actor: "u1", timestamp: "2026-09-01T00:00:00Z", after: { displayName: "Require MFA" } });
+
+    const history = await providers.coverage.getHistory("t-a");
+    expect(history.totalCount).toBe(1);
+    expect(history.items[0]).toMatchObject({
+      id: "e1",
+      source: "merged",
+      initiatedBy: "admin@contoso.com",
+      policyId: "pol-1",
+      after: { displayName: "Require MFA" },
+    });
+  });
+
+  it("keeps the portal row and the audit apart when they fall outside the merge window", async () => {
+    const { providers, record } = mergeHarness(() =>
+      workerResponse([auditRecord({ id: "audit-1", policyId: "pol-1", timestamp: "2026-09-01T01:00:00Z" })]),
+    );
+    await record({ id: "e1", tenantId: "t-a", action: "ca.policy.create", targetId: "pol-1", actor: "u1", timestamp: "2026-09-01T00:00:00Z" });
+
+    const history = await providers.coverage.getHistory("t-a");
+    expect(history.totalCount).toBe(2);
+    expect(history.items.find((i) => i.id === "e1")).toMatchObject({ source: "portal", initiatedBy: "u1" });
+    expect(history.items.find((i) => i.id === "audit-1")).toMatchObject({ source: "directoryAudit", initiatedBy: "admin@contoso.com" });
+  });
+
+  it("includes changes that exist only in directory audits", async () => {
+    const { providers } = mergeHarness(() =>
+      workerResponse([auditRecord({ id: "audit-1", policyId: "pol-2", timestamp: "2026-09-01T00:00:00Z", action: "ca.policy.delete" })]),
+    );
+
+    const history = await providers.coverage.getHistory("t-a");
+    expect(history.totalCount).toBe(1);
+    expect(history.items[0]).toMatchObject({ id: "audit-1", source: "directoryAudit", policyId: "pol-2", action: "ca.policy.delete" });
+  });
+
+  it("sorts the merged history newest first", async () => {
+    const { providers, record } = mergeHarness(() =>
+      workerResponse([auditRecord({ id: "audit-1", policyId: "pol-1", timestamp: "2026-09-03T00:00:00Z", action: "ca.policy.delete" })]),
+    );
+    await record({ id: "e1", tenantId: "t-a", action: "ca.policy.create", targetId: "pol-1", actor: "u1", timestamp: "2026-09-01T00:00:00Z" });
+    await record({ id: "e2", tenantId: "t-a", action: "ca.policy.update", targetId: "pol-1", actor: "u1", timestamp: "2026-09-02T00:00:00Z" });
+
+    const history = await providers.coverage.getHistory("t-a");
+    expect(history.items.map((i) => i.id)).toEqual(["audit-1", "e2", "e1"]);
+  });
+
+  it("does not merge audits across policies", async () => {
+    const { providers, record } = mergeHarness(() =>
+      workerResponse([auditRecord({ id: "audit-1", policyId: "pol-2", timestamp: "2026-09-01T00:00:30Z" })]),
+    );
+    await record({ id: "e1", tenantId: "t-a", action: "ca.policy.create", targetId: "pol-1", actor: "u1", timestamp: "2026-09-01T00:00:00Z" });
+
+    const history = await providers.coverage.getHistory("t-a");
+    expect(history.totalCount).toBe(2);
+    expect(history.items.find((i) => i.id === "e1")).toMatchObject({ source: "portal" });
+    expect(history.items.find((i) => i.id === "audit-1")).toMatchObject({ source: "directoryAudit" });
+  });
+
+  it("passes the policyId filter to the worker", async () => {
+    const calls: { entrypoint: string; job: Record<string, unknown> }[] = [];
+    const { providers } = mergeHarness((entrypoint, job) => {
+      calls.push({ entrypoint, job });
+      return workerResponse([]);
+    });
+
+    await providers.coverage.getHistory("t-a", { policyId: "pol-1" });
+    expect(calls[0]?.entrypoint).toBe("get-ca-history.ps1");
+    expect(calls[0]?.job).toMatchObject({ policyId: "pol-1" });
+  });
+});

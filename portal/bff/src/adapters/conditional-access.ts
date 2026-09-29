@@ -32,7 +32,7 @@ import type {
 } from "../routes/ca-templates-deploy.js";
 import type { CredentialStoreRow } from "../routes/credentials.js";
 import type { CaPolicyPayload } from "../domain/ca-policy-validation.js";
-import { createTenantWorker, raiseWorkerError, type WorkerRunner } from "./workers.js";
+import { createTenantWorker, raiseWorkerError, type TenantWorkerCall, type WorkerRunner } from "./workers.js";
 
 export interface CaProviders {
   readonly policies: CaPoliciesProvider;
@@ -99,6 +99,72 @@ export function readCaHistory(db: Database.Database, tenantId: string, policyId?
       after,
     };
   });
+  return { tenantId, ...(policyId ? { policyId } : {}), totalCount: items.length, items };
+}
+
+/**
+ * A portal write and the directory audit it triggers land seconds apart, but
+ * Entra ingests audits asynchronously and clocks skew, so the merge window is
+ * generous. Beyond it the two are shown as separate records.
+ */
+const MERGE_WINDOW_MS = 5 * 60 * 1000;
+
+/** The get-ca-history worker's response: directory-audit change records. */
+interface CaHistoryWorkerResponse {
+  readonly tenantId: string;
+  readonly totalCount: number;
+  readonly items: readonly CaPolicyChangeRecord[];
+}
+
+function parseTimestampMs(value: string): number {
+  const ms = Date.parse(value);
+  return Number.isNaN(ms) ? 0 : ms;
+}
+
+/**
+ * CA change history merged from both sources (SPEC §4.4, §11.4): the portal's
+ * own before/after audit_events rows plus directory audits for changes made
+ * outside the portal. A portal row and a directory audit for the same policy
+ * within MERGE_WINDOW_MS collapse into one "merged" record that keeps the
+ * portal's before/after and the audit's initiatedBy. Newest first.
+ */
+export async function readMergedCaHistory(
+  db: Database.Database,
+  call: TenantWorkerCall,
+  tenantId: string,
+  policyId?: string,
+): Promise<CaHistoryResponse> {
+  const portal = readCaHistory(db, tenantId, policyId);
+
+  const worker = await call<CaHistoryWorkerResponse>("get-ca-history.ps1", tenantId, policyId ? { policyId } : {});
+  const audits = (worker?.items ?? []).filter(
+    (record): record is CaPolicyChangeRecord & { source: "directoryAudit" } => record.source === "directoryAudit",
+  );
+
+  const claimed = new Set<number>();
+  const mergedRows = portal.items.map((row): CaPolicyChangeRecord => {
+    let best = -1;
+    let bestDelta = Number.POSITIVE_INFINITY;
+    audits.forEach((audit, index) => {
+      if (claimed.has(index) || audit.policyId !== row.policyId) return;
+      const delta = Math.abs(parseTimestampMs(audit.timestamp) - parseTimestampMs(row.timestamp));
+      if (delta <= MERGE_WINDOW_MS && delta < bestDelta) {
+        best = index;
+        bestDelta = delta;
+      }
+    });
+    if (best < 0) return row;
+    claimed.add(best);
+    const audit = audits[best];
+    if (!audit) return row;
+    return { ...row, source: "merged", initiatedBy: audit.initiatedBy };
+  });
+
+  const auditOnly = audits.filter((_, index) => !claimed.has(index));
+  const items = [...mergedRows, ...auditOnly].sort(
+    (a, b) => parseTimestampMs(b.timestamp) - parseTimestampMs(a.timestamp) || b.id.localeCompare(a.id),
+  );
+
   return { tenantId, ...(policyId ? { policyId } : {}), totalCount: items.length, items };
 }
 
@@ -185,7 +251,7 @@ export function createCaProviders(
 
     coverage: {
       getCoverage: (tenantId) => call<CaCoverageResponse>("get-ca-coverage.ps1", tenantId, {}),
-      getHistory: async (tenantId, filter) => readCaHistory(db, tenantId, filter?.policyId),
+      getHistory: async (tenantId, filter) => readMergedCaHistory(db, call, tenantId, filter?.policyId),
     },
 
     reportOnly: {
