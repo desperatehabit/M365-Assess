@@ -892,7 +892,7 @@ describe("EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824)", () 
     expect(await plan.json()).toMatchObject({ code: "remediation.no_run" });
   });
 
-  it("stores schedules, lists them, and refuses run-now with 501", async () => {
+  it("stores schedules, lists them, and runs an assessment schedule now (T-0840)", async () => {
     const admin = await adminWithTenant(runner);
     const created = await admin.post("/v1/schedules", {
       id: "sch-1",
@@ -906,9 +906,8 @@ describe("EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824)", () 
     expect(created.status).toBe(201);
     expect(JSON.stringify(await (await admin.get("/v1/schedules")).json())).toContain("sch-1");
     const runNow = await admin.post("/v1/schedules/sch-1/run-now", {});
-    expect(runNow.status).toBe(501);
-    expect(await runNow.json()).toMatchObject({ code: "jobs.dispatch_unavailable" });
-    expect(await (await admin.get("/v1/schedules/sch-1/history")).json()).toMatchObject({ scheduleId: "sch-1", runs: [] });
+    expect(runNow.status).toBe(202);
+    expect(await (await admin.get("/v1/schedules/sch-1/history")).json()).toMatchObject({ scheduleId: "sch-1" });
   });
 
   it("registers scripts for admins and refuses them to read-only callers", async () => {
