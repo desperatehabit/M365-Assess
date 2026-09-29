@@ -93,6 +93,8 @@ import {
   type TenantGroupMember,
   type TenantGroupMemberInput,
   type TenantInput,
+  type TenantLicenseInventory,
+  type TenantLicenseInventoryInput,
   type TenantListOptions,
   type TenantSource,
   type TenantStatus,
@@ -435,6 +437,19 @@ export class SqliteRepository implements Repository {
       name: asString(row["name"]),
       value: asString(row["value"]),
       isSecret: asBool(row["isSecret"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapTenantLicenseInventory(row: Row): TenantLicenseInventory {
+    return {
+      tenantId: asString(row["tenantId"]),
+      skuId: asString(row["skuId"]),
+      skuPartNumber: asNullableString(row["skuPartNumber"]),
+      enabledUnits: asNumber(row["enabledUnits"]),
+      consumedUnits: asNumber(row["consumedUnits"]),
+      lastSynced: asString(row["lastSynced"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -1010,6 +1025,74 @@ export class SqliteRepository implements Repository {
   async deleteTenantVariable(variableId: string): Promise<boolean> {
     const result = this.db.prepare("DELETE FROM tenant_variables WHERE id = ?").run(variableId);
     return result.changes > 0;
+  }
+
+  private upsertInventoryRow(
+    input: TenantLicenseInventoryInput,
+    createdAt: string,
+    updatedAt: string,
+  ): TenantLicenseInventory {
+    this.db
+      .prepare(
+        `INSERT INTO tenant_license_inventory
+           (tenantId, skuId, skuPartNumber, enabledUnits, consumedUnits, lastSynced, createdAt, updatedAt)
+         VALUES
+           (@tenantId, @skuId, @skuPartNumber, @enabledUnits, @consumedUnits, @lastSynced, @createdAt, @updatedAt)
+         ON CONFLICT(tenantId, skuId) DO UPDATE SET
+           skuPartNumber = excluded.skuPartNumber,
+           enabledUnits = excluded.enabledUnits,
+           consumedUnits = excluded.consumedUnits,
+           lastSynced = excluded.lastSynced,
+           updatedAt = excluded.updatedAt`,
+      )
+      .run({
+        tenantId: input.tenantId,
+        skuId: input.skuId,
+        skuPartNumber: input.skuPartNumber ?? null,
+        enabledUnits: input.enabledUnits ?? 0,
+        consumedUnits: input.consumedUnits ?? 0,
+        lastSynced: input.lastSynced,
+        createdAt,
+        updatedAt,
+      });
+    const row = this.db
+      .prepare("SELECT * FROM tenant_license_inventory WHERE tenantId = ? AND skuId = ?")
+      .get(input.tenantId, input.skuId) as Row | undefined;
+    if (!row) {
+      throw new Error(`tenant license inventory ${input.tenantId}/${input.skuId} was not persisted`);
+    }
+    return this.mapTenantLicenseInventory(row);
+  }
+
+  async upsertTenantLicenseInventory(
+    input: TenantLicenseInventoryInput,
+  ): Promise<TenantLicenseInventory> {
+    return this.upsertInventoryRow(input, input.createdAt ?? nowIso(), input.updatedAt ?? nowIso());
+  }
+
+  async listTenantLicenseInventory(tenantId?: string): Promise<TenantLicenseInventory[]> {
+    const sql =
+      tenantId === undefined
+        ? "SELECT * FROM tenant_license_inventory ORDER BY tenantId, skuId"
+        : "SELECT * FROM tenant_license_inventory WHERE tenantId = ? ORDER BY skuId";
+    const rows = (
+      tenantId === undefined
+        ? this.db.prepare(sql).all()
+        : this.db.prepare(sql).all(tenantId)
+    ) as Row[];
+    return rows.map((row) => this.mapTenantLicenseInventory(row));
+  }
+
+  async replaceTenantLicenseInventory(
+    tenantId: string,
+    inputs: readonly TenantLicenseInventoryInput[],
+  ): Promise<TenantLicenseInventory[]> {
+    return this.db.transaction(() => {
+      this.db.prepare("DELETE FROM tenant_license_inventory WHERE tenantId = ?").run(tenantId);
+      return inputs.map((input) =>
+        this.upsertInventoryRow({ ...input, tenantId }, input.createdAt ?? nowIso(), input.updatedAt ?? nowIso()),
+      );
+    })();
   }
 
   private gdapRelationshipByTenant(tenantId: string): GdapRelationship | undefined {

@@ -21,22 +21,29 @@ export function createTenantStore(repo: SqliteRepository): TenantStore {
 }
 
 /**
- * Group-filter candidates: every live tenant with its non-secret variables. No table
- * records which SKUs a tenant holds (license_pricing is price overrides, not inventory),
- * so `skus` is empty and SKU-filtered groups resolve to no tenants until a license
- * inventory exists (T-0828).
+ * Group-filter candidates: every live tenant with its non-secret variables and the
+ * SKU ids from the per-tenant license inventory (T-0828). Tenants with no inventory
+ * rows yet keep `skus: []`, so SKU-filtered groups resolve to the tenants holding
+ * that SKU once a sync has populated the inventory.
  */
 async function listFilterCandidates(repo: SqliteRepository): Promise<FilterTenantSnapshot[]> {
-  const [tenants, variables] = await Promise.all([
+  const [tenants, variables, inventory] = await Promise.all([
     repo.listTenants(),
     repo.listTenantVariables({ includeGlobal: false }),
+    repo.listTenantLicenseInventory(),
   ]);
+  const skusByTenant = new Map<string, string[]>();
+  for (const item of inventory) {
+    const skus = skusByTenant.get(item.tenantId) ?? [];
+    skus.push(item.skuId);
+    skusByTenant.set(item.tenantId, skus);
+  }
   return tenants.map((tenant) => {
     const vars: Record<string, string> = {};
     for (const v of variables) {
       if (v.tenantId === tenant.id && !v.isSecret) vars[v.name] = v.value;
     }
-    return { id: tenant.id, skus: [], variables: vars };
+    return { id: tenant.id, skus: skusByTenant.get(tenant.id) ?? [], variables: vars };
   });
 }
 

@@ -1,6 +1,10 @@
 import { SqliteRepository, loadMigrations, runMigrations } from "@m365-assess/db";
 import Database from "better-sqlite3";
 import { describe, expect, it, vi } from "vitest";
+import {
+  parseTenantGroupFilter,
+  resolveTenantGroupMembers,
+} from "../domain/tenant-group-filter.js";
 import type { CredentialRecord } from "../routes/credentials.js";
 import type { TenantRecord } from "../routes/tenants.js";
 import {
@@ -126,6 +130,40 @@ describe("tenant group store adapter (T-0822)", () => {
     const candidates = await createTenantGroupStore(repo).listCandidates();
     expect(candidates.find((c) => c.id === "t-a")).toEqual({ id: "t-a", skus: [], variables: { region: "eu" } });
     expect(candidates.find((c) => c.id === "t-b")).toEqual({ id: "t-b", skus: [], variables: {} });
+  });
+
+  it("carries each tenant's SKU ids from the license inventory and resolves SKU-filtered groups", async () => {
+    const { repo } = openRepos();
+    await repo.upsertTenant(tenant("t-a"));
+    await repo.upsertTenant(tenant("t-b"));
+    await repo.upsertTenantLicenseInventory({
+      tenantId: "t-a",
+      skuId: "ENTERPRISEPREMIUM",
+      skuPartNumber: "ENTERPRISEPREMIUM",
+      enabledUnits: 25,
+      consumedUnits: 17,
+      lastSynced: NOW,
+    });
+    await repo.upsertTenantLicenseInventory({
+      tenantId: "t-b",
+      skuId: "EMS",
+      skuPartNumber: "EMS",
+      enabledUnits: 10,
+      consumedUnits: 4,
+      lastSynced: NOW,
+    });
+
+    const candidates = await createTenantGroupStore(repo).listCandidates();
+    expect(candidates.find((c) => c.id === "t-a")?.skus).toEqual(["ENTERPRISEPREMIUM"]);
+    expect(candidates.find((c) => c.id === "t-b")?.skus).toEqual(["EMS"]);
+
+    const members = resolveTenantGroupMembers(parseTenantGroupFilter({ sku: "EMS" }), candidates);
+    expect(members).toEqual(["t-b"]);
+    expect(resolveTenantGroupMembers(parseTenantGroupFilter({ sku: "ENTERPRISEPREMIUM" }), candidates))
+      .toEqual(["t-a"]);
+    expect(resolveTenantGroupMembers(parseTenantGroupFilter({ sku: "MISSING" }), candidates)).toEqual(
+      [],
+    );
   });
 });
 
