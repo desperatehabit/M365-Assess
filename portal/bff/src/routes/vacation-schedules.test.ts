@@ -142,7 +142,7 @@ class FakeScheduler implements VacationJobScheduler {
 }
 
 function readCaller(): VacationCaller {
-  return { tenantScope: tenantScope([TENANT]), permissions: ["mailboxes.read"] };
+  return { tenantScope: tenantScope([TENANT]), permissions: ["Mailboxes.Mailbox.Read"] };
 }
 
 function writeCaller(): VacationCaller {
@@ -416,7 +416,7 @@ describe("Vacation schedule routes (T-0386)", () => {
     expect(apply.outcome.alert?.severity).toBe("High");
   });
 
-  it("rejects callers missing mailboxes.vacation with 403", async () => {
+  it("rejects callers missing Mailboxes.Vacation.ReadWrite with 403", async () => {
     const routes = createVacationScheduleRoutes({
       store: new FakeVacationStore(),
       apply: new FakeApplyProvider(),

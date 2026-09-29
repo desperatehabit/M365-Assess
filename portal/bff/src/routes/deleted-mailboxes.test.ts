@@ -164,7 +164,7 @@ describe("Soft-deleted mailbox view and restore routes (T-0388)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects list callers missing mailboxes.read with 403", async () => {
+  it("rejects list callers missing Mailboxes.Mailbox.Read with 403", async () => {
     const routes = createDeletedMailboxRoutes({
       provider: new FakeDeletedMailboxesProvider(),
       resolveCaller: () => ({
@@ -184,7 +184,7 @@ describe("Soft-deleted mailbox view and restore routes (T-0388)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects restore callers missing mailboxes.write with 403", async () => {
+  it("rejects restore callers missing Mailboxes.Mailbox.ReadWrite with 403", async () => {
     const routes = createDeletedMailboxRoutes({
       provider: new FakeDeletedMailboxesProvider(),
       resolveCaller: () => ({

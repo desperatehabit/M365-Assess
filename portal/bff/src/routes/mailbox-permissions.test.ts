@@ -230,7 +230,7 @@ describe("Mailbox permission routes (T-0384)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailboxes.permissions with 403", async () => {
+  it("rejects callers missing Mailboxes.Permission.ReadWrite with 403", async () => {
     const routes = createMailboxPermissionRoutes({
       provider: new FakeMailboxPermissionsProvider(),
       resolveCaller: () => ({

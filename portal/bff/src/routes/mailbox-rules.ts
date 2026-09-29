@@ -20,7 +20,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const MAILBOX_RULES_BASE_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId/rules";
 export const MAILBOX_RULE_ITEM_PATH =
   "/v1/tenants/:tenantId/mailboxes/:mailboxId/rules/:ruleId";
-export const MAILBOX_RULES_READ_PERMISSION = "mailboxes.read";
+export const MAILBOX_RULES_READ_PERMISSION = "Mailboxes.Mailbox.Read";
 export const MAILBOX_RULES_UNAUTHENTICATED = "request.unauthenticated";
 export const MAILBOX_RULE_CONFIRM_REQUIRED = "mailbox.rule_confirm_required";
 
@@ -188,7 +188,7 @@ async function requireRulesRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(MAILBOX_RULES_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
   }
 }
 
@@ -206,7 +206,7 @@ async function requireRulesWrite(
     permissions.includes(MAILBOXES_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.ReadWrite", 403);
   }
 }
 
@@ -462,7 +462,7 @@ export const MAILBOX_RULES_OPENAPI = {
         responses: {
           "200": { description: "The mailbox inbox rules with forwarding config." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
           "404": { description: "The mailbox was not found." },
         },
       },
@@ -480,7 +480,7 @@ export const MAILBOX_RULES_OPENAPI = {
           "201": { description: "The created rule with before/after and audit event." },
           "400": { description: "Validation failed, or a forwarding-enabling change lacks confirm:true." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -499,7 +499,7 @@ export const MAILBOX_RULES_OPENAPI = {
           "200": { description: "Edit plan preview, applied result, or structured no-op." },
           "400": { description: "Validation failed, or a forwarding-enabling change lacks confirm:true." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
           "404": { description: "The rule was not found." },
         },
       },
@@ -517,7 +517,7 @@ export const MAILBOX_RULES_OPENAPI = {
           "200": { description: "Delete plan preview or applied result with before/after and audit event." },
           "400": { description: "Confirmation is missing for the removal." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
           "404": { description: "The rule was not found." },
         },
       },

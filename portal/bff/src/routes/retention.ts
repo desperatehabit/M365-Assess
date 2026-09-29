@@ -18,8 +18,8 @@ export const RETENTION_TAG_ITEM_PATH = "/v1/tenants/:tenantId/retention/tags/:ta
 export const RETENTION_ASSIGN_PATH = "/v1/tenants/:tenantId/retention/assign";
 export const RETENTION_ASSIGN_BULK_PATH = "/v1/tenants/:tenantId/retention/assign/bulk";
 
-export const RETENTION_READ_PERMISSION = "mailboxes.read";
-export const RETENTION_WRITE_PERMISSION = "mailboxes.write";
+export const RETENTION_READ_PERMISSION = "Mailboxes.Mailbox.Read";
+export const RETENTION_WRITE_PERMISSION = "Mailboxes.Mailbox.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const RETENTION_UNAUTHENTICATED = "request.unauthenticated";
 export const RETENTION_NOT_FOUND = "retention.not_found";
@@ -258,7 +258,7 @@ async function requireRetentionRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(RETENTION_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
   }
 }
 
@@ -276,7 +276,7 @@ async function requireRetentionWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.ReadWrite", 403);
   }
 }
 
@@ -572,7 +572,7 @@ export const RETENTION_OPENAPI = {
         responses: {
           "200": { description: "The live retention policies." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
         },
       },
     },
@@ -588,7 +588,7 @@ export const RETENTION_OPENAPI = {
         responses: {
           "200": { description: "The live retention tags." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -604,7 +604,7 @@ export const RETENTION_OPENAPI = {
           "201": { description: "The created tag with before/after and audit event." },
           "400": { description: "name, type, or retentionDays failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -622,7 +622,7 @@ export const RETENTION_OPENAPI = {
           "200": { description: "Edit plan preview or the applied tag with before/after and audit event." },
           "400": { description: "No editable field was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -639,7 +639,7 @@ export const RETENTION_OPENAPI = {
           "200": { description: "Assignment plan preview or the applied result with before/after and audit event." },
           "400": { description: "mailboxId, tagId, or confirm failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -656,7 +656,7 @@ export const RETENTION_OPENAPI = {
           "200": { description: "Bulk plan preview or per-mailbox results with audit events." },
           "400": { description: "mailboxIds, tagId, or confirm failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
         },
       },
     },
