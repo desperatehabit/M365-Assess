@@ -17,10 +17,11 @@ worktrees  = "/home/wcoulter/Projects/.m365-fleet-wt"       # outside the repo o
 base_branch = "main"
 
 [model]
-# Worker model (Muse Spark 1.3 Free).
-coder = "opencode/muse-spark-1.3-contributor-free"
+# Worker model (LongCat 2.5 Preview Free — Muse Spark 1.3 sessions stall without
+# responding as of 2026-09-28; switch back when it recovers).
+coder = "opencode/longcat-2.5-preview-free"
 # Retry/escalation target: same free model while paid-model credits are exhausted.
-escalate = "opencode/muse-spark-1.3-contributor-free"
+escalate = "opencode/longcat-2.5-preview-free"
 
 [limits]
 workers           = 3      # concurrent OpenCode sessions. The portal work touches
