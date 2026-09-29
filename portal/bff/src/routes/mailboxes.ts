@@ -383,3 +383,249 @@ export const MAILBOXES_OPENAPI = {
     },
   },
 } as const;
+
+// Shared-mailbox create/convert writes (EPIC-020 SPEC.md §2 US-2, §3.2, §4.1,
+// §5, §6; T-0382). POST /v1/tenants/:tenantId/mailboxes creates a shared
+// mailbox; POST /v1/tenants/:tenantId/mailboxes/:mailboxId/convert converts an
+// existing mailbox to shared. Each runs form → plan preview → apply through
+// the EPIC-006 gated executor: `preview` (or ?preview=true) returns the worker
+// plan with no tenant write, otherwise the worker applies with before/after
+// capture and returns one AuditEvent, recorded by the app audit sink. Mailbox
+// objects stay live in EXO; the MailboxOperation row persists through
+// @m365-assess/db mailbox-repository (wired by a later ticket).
+export const MAILBOX_CREATE_PATH = "/v1/tenants/:tenantId/mailboxes";
+export const MAILBOX_CONVERT_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId/convert";
+export const MAILBOXES_WRITE_PERMISSION = "mailboxes.write";
+export const MAILBOXES_APPLY_PERMISSION = "Remediation.Apply";
+
+export interface MailboxWritePlan {
+  readonly action: "create" | "convert";
+  readonly mailboxId?: string;
+  readonly targetName: string;
+  readonly before?: Record<string, unknown> | null;
+  readonly after?: Record<string, unknown> | null;
+  readonly diff: readonly string[];
+  readonly valid: boolean;
+  readonly dryRun: boolean;
+  readonly requiresConfirmation: boolean;
+}
+
+export interface MailboxWriteAuditEvent {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly action: string;
+  readonly targetId: string;
+  readonly targetName: string;
+  readonly timestamp: string;
+  readonly before?: Record<string, unknown> | null;
+  readonly after?: Record<string, unknown> | null;
+}
+
+export interface MailboxWriteResult {
+  readonly success: boolean;
+  readonly noop?: boolean;
+  readonly plan: MailboxWritePlan;
+  readonly result?: Record<string, unknown>;
+  readonly auditEvent?: MailboxWriteAuditEvent;
+}
+
+export interface CreateSharedMailboxInput {
+  readonly displayName: string;
+  readonly alias?: string;
+  readonly primarySmtpAddress?: string;
+  readonly preview?: boolean;
+}
+
+export interface ConvertMailboxInput {
+  readonly preview?: boolean;
+  readonly confirm?: boolean;
+}
+
+export interface MailboxWriteProvider {
+  createSharedMailbox(
+    tenantId: string,
+    input: CreateSharedMailboxInput,
+    preview: boolean,
+  ): Promise<MailboxWriteResult | MailboxWritePlan>;
+  convertToShared(
+    tenantId: string,
+    mailboxId: string,
+    input: ConvertMailboxInput,
+    preview: boolean,
+  ): Promise<MailboxWriteResult | MailboxWritePlan>;
+}
+
+export interface MailboxWriteCaller extends Caller {
+  readonly userId?: string;
+}
+
+export type MailboxWriteAuthorizer = (
+  caller: MailboxWriteCaller,
+  permission: string,
+) => void | Promise<void>;
+
+export interface MailboxWriteRouteOptions {
+  readonly provider: MailboxWriteProvider;
+  readonly resolveCaller: (ctx: RequestContext) => MailboxWriteCaller | undefined;
+  readonly authorize?: MailboxWriteAuthorizer;
+}
+
+async function requireMailboxesWrite(
+  options: MailboxWriteRouteOptions,
+  caller: MailboxWriteCaller,
+): Promise<void> {
+  if (options.authorize) {
+    await options.authorize(caller, MAILBOXES_WRITE_PERMISSION);
+    return;
+  }
+  const permissions = caller.permissions ?? [];
+  const hasWrite =
+    permissions.includes(MAILBOXES_WRITE_PERMISSION) ||
+    permissions.includes(MAILBOXES_APPLY_PERMISSION) ||
+    permissions.includes("*");
+  if (!hasWrite) {
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.write", 403);
+  }
+}
+
+function readPreviewFlag(ctx: RequestContext, body: Record<string, unknown>): boolean {
+  return Boolean(body["preview"] ?? (ctx.query.get("preview") === "true"));
+}
+
+const ALIAS_PATTERN = /^[A-Za-z0-9._-]+$/;
+const SMTP_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function validateMailboxAlias(alias: string): boolean {
+  return ALIAS_PATTERN.test(alias);
+}
+
+export function validateMailboxSmtp(address: string): boolean {
+  return SMTP_PATTERN.test(address);
+}
+
+export function createMailboxWriteRoutes(options: MailboxWriteRouteOptions): Route[] {
+  return [
+    // POST /v1/tenants/:tenantId/mailboxes - create a shared mailbox or plan preview
+    {
+      method: "POST",
+      path: MAILBOX_CREATE_PATH,
+      handler: async (ctx: RequestContext): Promise<RouteResponse> => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        const tenantId = requireTenantParam(ctx);
+        requireTenantInScope(caller, tenantId);
+        await requireMailboxesWrite(options, caller);
+
+        const body = (ctx.body ?? {}) as Record<string, unknown>;
+        const displayName =
+          typeof body["displayName"] === "string" ? body["displayName"].trim() : "";
+        if (!displayName) {
+          throw validationError("displayName is required", "displayName");
+        }
+        const alias =
+          typeof body["alias"] === "string" && body["alias"].trim().length > 0
+            ? body["alias"].trim()
+            : undefined;
+        if (alias !== undefined && !validateMailboxAlias(alias)) {
+          throw validationError(
+            "alias may only contain letters, digits, dot, underscore, and hyphen",
+            "alias",
+          );
+        }
+        const primarySmtpAddress =
+          typeof body["primarySmtpAddress"] === "string" &&
+          body["primarySmtpAddress"].trim().length > 0
+            ? body["primarySmtpAddress"].trim()
+            : undefined;
+        if (primarySmtpAddress !== undefined && !validateMailboxSmtp(primarySmtpAddress)) {
+          throw validationError("primarySmtpAddress must be a valid SMTP address", "primarySmtpAddress");
+        }
+
+        const isPreview = readPreviewFlag(ctx, body);
+        const result = await options.provider.createSharedMailbox(
+          tenantId,
+          { displayName, alias, primarySmtpAddress, preview: isPreview },
+          isPreview,
+        );
+        return {
+          status: isPreview ? 200 : 201,
+          headers: { "content-type": "application/json" },
+          body: result,
+        };
+      },
+    },
+
+    // POST /v1/tenants/:tenantId/mailboxes/:mailboxId/convert - convert to shared or plan preview
+    {
+      method: "POST",
+      path: MAILBOX_CONVERT_PATH,
+      handler: async (ctx: RequestContext): Promise<RouteResponse> => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        const tenantId = requireTenantParam(ctx);
+        const mailboxId = requireMailboxParam(ctx);
+        requireTenantInScope(caller, tenantId);
+        await requireMailboxesWrite(options, caller);
+
+        const body = (ctx.body ?? {}) as Record<string, unknown>;
+        const isPreview = readPreviewFlag(ctx, body);
+        const confirm = Boolean(body["confirm"] ?? true);
+        if (!isPreview && !confirm) {
+          throw validationError("confirm must be true to convert a mailbox", "confirm");
+        }
+
+        const result = await options.provider.convertToShared(
+          tenantId,
+          mailboxId,
+          { preview: isPreview, confirm: true },
+          isPreview,
+        );
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: result,
+        };
+      },
+    },
+  ];
+}
+
+export const MAILBOXES_WRITE_OPENAPI = {
+  paths: {
+    "/tenants/{tenantId}/mailboxes": {
+      post: {
+        operationId: "createSharedMailbox",
+        summary: "Create a shared mailbox (plan preview with preview:true)",
+        permission: MAILBOXES_WRITE_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Plan preview of the shared-mailbox create." },
+          "201": { description: "The created shared mailbox with before/after and audit event." },
+          "400": { description: "displayName, alias, or primarySmtpAddress failed validation." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+        },
+      },
+    },
+    "/tenants/{tenantId}/mailboxes/{mailboxId}/convert": {
+      post: {
+        operationId: "convertMailboxToShared",
+        summary: "Convert a mailbox to shared (plan preview with preview:true)",
+        permission: MAILBOXES_WRITE_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          { name: "mailboxId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Conversion plan preview, applied result, or structured no-op." },
+          "400": { description: "Confirmation is missing for the conversion." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "404": { description: "The mailbox was not found." },
+        },
+      },
+    },
+  },
+} as const;
