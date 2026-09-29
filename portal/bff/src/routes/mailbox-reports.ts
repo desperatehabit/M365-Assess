@@ -7,7 +7,7 @@
 // provider, which is backed by the worker queue (T-0010) running read-only
 // EXO jobs live; mailbox objects are never mirrored, this module holds no
 // M365 SDK call, and it issues no tenant write. Reads require
-// `mailboxes.read` (SPEC §7) intersected with the caller tenant scope.
+// `Mailboxes.Mailbox.Read` (SPEC §7) intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
@@ -169,7 +169,7 @@ export function createMailboxReportsRoute(options: MailboxReportsRouteOptions): 
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(MAILBOXES_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
         }
       }
 
@@ -215,7 +215,7 @@ export const MAILBOX_REPORTS_OPENAPI = {
           "200": { description: "Cursor-paginated report rows from the module collectors." },
           "400": { description: "An unknown report name was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
         },
       },
     },

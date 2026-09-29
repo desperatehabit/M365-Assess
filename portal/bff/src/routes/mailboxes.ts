@@ -7,7 +7,7 @@
 // detail: settings, permissions, and rules. Mailbox objects are read live
 // from EXO and never mirrored: the injected provider is backed by the worker
 // queue (T-0010) running the Get-Mailboxes child job, so this module holds no
-// M365 SDK call and issues no tenant write. Reads require `mailboxes.read`
+// M365 SDK call and issues no tenant write. Reads require `Mailboxes.Mailbox.Read`
 // (SPEC §7) intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
@@ -16,7 +16,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const MAILBOXES_PATH = "/v1/tenants/:tenantId/mailboxes";
 export const MAILBOX_DETAIL_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId";
-export const MAILBOXES_READ_PERMISSION = "mailboxes.read";
+export const MAILBOXES_READ_PERMISSION = "Mailboxes.Mailbox.Read";
 export const MAILBOXES_UNAUTHENTICATED = "request.unauthenticated";
 export const MAILBOX_NOT_FOUND = "mailboxes.not_found";
 
@@ -166,7 +166,7 @@ async function requireMailboxesRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(MAILBOXES_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
   }
 }
 
@@ -359,7 +359,7 @@ export const MAILBOXES_OPENAPI = {
           "200": { description: "Cursor-paginated mailboxes with the §3.1 columns." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
         },
       },
     },
@@ -376,7 +376,7 @@ export const MAILBOXES_OPENAPI = {
         responses: {
           "200": { description: "The mailbox detail with settings, permissions, and rules." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
           "404": { description: "The mailbox was not found." },
         },
       },
@@ -395,7 +395,7 @@ export const MAILBOXES_OPENAPI = {
 // @m365-assess/db mailbox-repository (wired by a later ticket).
 export const MAILBOX_CREATE_PATH = "/v1/tenants/:tenantId/mailboxes";
 export const MAILBOX_CONVERT_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId/convert";
-export const MAILBOXES_WRITE_PERMISSION = "mailboxes.write";
+export const MAILBOXES_WRITE_PERMISSION = "Mailboxes.Mailbox.ReadWrite";
 export const MAILBOXES_APPLY_PERMISSION = "Remediation.Apply";
 
 export interface MailboxWritePlan {
@@ -471,7 +471,7 @@ export interface MailboxWriteRouteOptions {
 }
 
 async function requireMailboxesWrite(
-  options: MailboxWriteRouteOptions,
+  options: Pick<MailboxWriteRouteOptions, "authorize">,
   caller: MailboxWriteCaller,
 ): Promise<void> {
   if (options.authorize) {
@@ -484,7 +484,7 @@ async function requireMailboxesWrite(
     permissions.includes(MAILBOXES_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.ReadWrite", 403);
   }
 }
 
@@ -865,7 +865,7 @@ export const MAILBOXES_WRITE_OPENAPI = {
           "201": { description: "The created shared mailbox with before/after and audit event." },
           "400": { description: "displayName, alias, or primarySmtpAddress failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -883,7 +883,7 @@ export const MAILBOXES_WRITE_OPENAPI = {
           "200": { description: "Conversion plan preview, applied result, or structured no-op." },
           "400": { description: "Confirmation is missing for the conversion." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
           "404": { description: "The mailbox was not found." },
         },
       },
@@ -908,7 +908,7 @@ export const MAILBOXES_SETTINGS_OPENAPI = {
           "200": { description: "Settings plan preview or applied result with before/after and audit event." },
           "400": { description: "A setting failed validation or archive/hold confirmation is missing." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
           "404": { description: "The mailbox was not found." },
         },
       },

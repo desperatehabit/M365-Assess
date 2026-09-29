@@ -79,7 +79,7 @@ describe("Mailbox reports route (T-0381)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailboxes.read with 403", async () => {
+  it("rejects callers missing Mailboxes.Mailbox.Read with 403", async () => {
     const route = createMailboxReportsRoute({
       provider: new FakeMailboxReportsProvider(),
       resolveCaller: () => ({

@@ -10,8 +10,8 @@
 // with before/after capture and returns one AuditEvent, recorded by the app
 // audit sink. Grants are security-sensitive; the MailboxOperation row persists
 // through @m365-assess/db mailbox-repository (wired by a later ticket).
-// Reads require `mailboxes.read`; writes require `mailboxes.permissions`
-// (SPEC §7) with `mailboxes.write` / `Remediation.Apply` accepted as the
+// Reads require `Mailboxes.Mailbox.Read`; writes require `Mailboxes.Permission.ReadWrite`
+// (SPEC §7) with `Mailboxes.Mailbox.ReadWrite` / `Remediation.Apply` accepted as the
 // EPIC-006 apply semantics — all intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
@@ -20,8 +20,8 @@ import { MAILBOXES_READ_PERMISSION } from "./mailboxes.js";
 
 export const MAILBOX_PERMISSIONS_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId/permissions";
 export const MAILBOX_PERMISSIONS_UNAUTHENTICATED = "request.unauthenticated";
-export const MAILBOX_PERMISSIONS_WRITE_PERMISSION = "mailboxes.permissions";
-export const MAILBOXES_WRITE_PERMISSION = "mailboxes.write";
+export const MAILBOX_PERMISSIONS_WRITE_PERMISSION = "Mailboxes.Permission.ReadWrite";
+export const MAILBOXES_WRITE_PERMISSION = "Mailboxes.Mailbox.ReadWrite";
 export const MAILBOX_PERMISSIONS_APPLY_PERMISSION = "Remediation.Apply";
 
 export type MailboxPermissionScope = "mailbox" | "calendar";
@@ -176,7 +176,7 @@ async function requireMailboxesRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(MAILBOXES_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
   }
 }
 
@@ -195,7 +195,7 @@ async function requirePermissionsWrite(
     permissions.includes(MAILBOX_PERMISSIONS_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.permissions", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Permission.ReadWrite", 403);
   }
 }
 
@@ -368,7 +368,7 @@ export const MAILBOX_PERMISSIONS_OPENAPI = {
         responses: {
           "200": { description: "Mailbox and calendar permissions from Get-MailboxPermissionReport." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
           "404": { description: "The mailbox was not found." },
         },
       },
@@ -385,7 +385,7 @@ export const MAILBOX_PERMISSIONS_OPENAPI = {
           "200": { description: "Permission grant plan preview or applied result with before/after and audit event." },
           "400": { description: "Principal, scope, permission type, or access rights failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.permissions or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Permission.ReadWrite or the tenant is out of scope." },
         },
       },
       delete: {
@@ -401,7 +401,7 @@ export const MAILBOX_PERMISSIONS_OPENAPI = {
           "200": { description: "Permission removal plan preview or applied result with before/after and audit event." },
           "400": { description: "Principal, scope, or permission type failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.permissions or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Permission.ReadWrite or the tenant is out of scope." },
         },
       },
     },

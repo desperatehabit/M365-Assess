@@ -14,8 +14,8 @@
 // the T-0123 tick enqueues them with no new engine. A yearly one-shot cron
 // carries the exact instant while `nextRunAt` carries the due time; the
 // envelope's `notAfter` bounds late refires so a stale job can never
-// re-enable OoO or clobber newer forwarding. Reads require `mailboxes.read`,
-// writes require `mailboxes.vacation` (SPEC §7) intersected with the caller
+// re-enable OoO or clobber newer forwarding. Reads require `Mailboxes.Mailbox.Read`,
+// writes require `Mailboxes.Vacation.ReadWrite` (SPEC §7) intersected with the caller
 // tenant scope.
 import { randomUUID } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
@@ -24,8 +24,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const VACATION_SCHEDULES_PATH = "/v1/tenants/:tenantId/vacation-schedules";
 export const VACATION_SCHEDULE_PATH = "/v1/tenants/:tenantId/vacation-schedules/:scheduleId";
-export const VACATION_READ_PERMISSION = "mailboxes.read";
-export const VACATION_WRITE_PERMISSION = "mailboxes.vacation";
+export const VACATION_READ_PERMISSION = "Mailboxes.Mailbox.Read";
+export const VACATION_WRITE_PERMISSION = "Mailboxes.Vacation.ReadWrite";
 export const VACATION_APPLY_PERMISSION = "Remediation.Apply";
 export const VACATION_UNAUTHENTICATED = "request.unauthenticated";
 export const VACATION_NOT_FOUND = "vacation.not_found";
@@ -233,7 +233,7 @@ async function requireVacationRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(VACATION_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
   }
 }
 
@@ -251,7 +251,7 @@ async function requireVacationWrite(
     permissions.includes(VACATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.vacation", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Vacation.ReadWrite", 403);
   }
 }
 
@@ -560,7 +560,7 @@ export const VACATION_SCHEDULES_OPENAPI = {
         responses: {
           "200": { description: "The tenant's vacation schedules with display status." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -575,7 +575,7 @@ export const VACATION_SCHEDULES_OPENAPI = {
           "201": { description: "The created schedule; applies immediately when already started." },
           "400": { description: "mailboxId, startsAt, endsAt, oooMessage, or forwardTo failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.vacation or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Vacation.ReadWrite or the tenant is out of scope." },
           "502": { description: "The immediate enable failed and the schedule was recorded as failed." },
         },
       },
@@ -593,7 +593,7 @@ export const VACATION_SCHEDULES_OPENAPI = {
         responses: {
           "200": { description: "The reverted schedule with its audit event and mailbox operation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.vacation or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Vacation.ReadWrite or the tenant is out of scope." },
           "404": { description: "The vacation schedule was not found." },
           "502": { description: "The revert failed; recorded as failed with an alert." },
         },

@@ -293,12 +293,12 @@ describe("Retention policy/tag reads and tag writes (T-0387)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailboxes.write with 403", async () => {
+  it("rejects callers missing Mailboxes.Mailbox.ReadWrite with 403", async () => {
     const routes = createRetentionRoutes({
       provider: new FakeRetentionProvider(),
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),
-        permissions: ["mailboxes.read"],
+        permissions: ["Mailboxes.Mailbox.Read"],
       }),
     });
     await expect(
@@ -339,7 +339,7 @@ describe("Retention policy/tag reads and tag writes (T-0387)", () => {
       provider: new FakeRetentionProvider(),
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),
-        permissions: ["mailboxes.read"],
+        permissions: ["Mailboxes.Mailbox.Read"],
       }),
     });
     const policies = await routeByPath(routes, "GET", RETENTION_POLICIES_PATH).handler({

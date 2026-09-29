@@ -9,7 +9,7 @@
 // write, otherwise the worker applies with before/after capture and returns one
 // AuditEvent, recorded by the app audit sink. The MailboxOperation row persists
 // through @m365-assess/db mailbox-repository (wired by a later ticket).
-// Reads require `mailboxes.read`, restore requires `mailboxes.write`
+// Reads require `Mailboxes.Mailbox.Read`, restore requires `Mailboxes.Mailbox.ReadWrite`
 // (SPEC §7) intersected with the caller tenant scope; restore additionally
 // requires explicit `confirm: true`. A mailbox not in the soft-deleted set is
 // a structured 4xx, never a silent no-op.
@@ -21,8 +21,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const DELETED_MAILBOXES_PATH = "/v1/tenants/:tenantId/deleted-mailboxes";
 export const DELETED_MAILBOX_RESTORE_PATH =
   "/v1/tenants/:tenantId/deleted-mailboxes/:mailboxId/restore";
-export const DELETED_MAILBOXES_READ_PERMISSION = "mailboxes.read";
-export const DELETED_MAILBOXES_WRITE_PERMISSION = "mailboxes.write";
+export const DELETED_MAILBOXES_READ_PERMISSION = "Mailboxes.Mailbox.Read";
+export const DELETED_MAILBOXES_WRITE_PERMISSION = "Mailboxes.Mailbox.ReadWrite";
 export const DELETED_MAILBOXES_APPLY_PERMISSION = "Remediation.Apply";
 export const DELETED_MAILBOXES_UNAUTHENTICATED = "request.unauthenticated";
 export const DELETED_MAILBOX_NOT_SOFT_DELETED = "deleted-mailboxes.not_soft_deleted";
@@ -180,7 +180,7 @@ async function requireDeletedMailboxesRead(
     !permissions.includes(DELETED_MAILBOXES_READ_PERMISSION) &&
     !permissions.includes("*")
   ) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.Read", 403);
   }
 }
 
@@ -198,7 +198,7 @@ async function requireDeletedMailboxesWrite(
     permissions.includes(DELETED_MAILBOXES_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailboxes.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Mailboxes.Mailbox.ReadWrite", 403);
   }
 }
 
@@ -328,7 +328,7 @@ export const DELETED_MAILBOXES_OPENAPI = {
         responses: {
           "200": { description: "Cursor-paginated soft-deleted mailboxes." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.Read or the tenant is out of scope." },
         },
       },
     },
@@ -346,7 +346,7 @@ export const DELETED_MAILBOXES_OPENAPI = {
           "200": { description: "Restore plan preview or the applied result with before/after and audit event." },
           "400": { description: "Confirmation is missing for the restore." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Mailboxes.Mailbox.ReadWrite or the tenant is out of scope." },
           "404": { description: "The mailbox is not in the soft-deleted set." },
         },
       },

@@ -143,12 +143,12 @@ describe("Mailbox settings PATCH route (T-0383)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailboxes.write with 403", async () => {
+  it("rejects callers missing Mailboxes.Mailbox.ReadWrite with 403", async () => {
     const routes = createMailboxSettingsRoutes({
       provider: new FakeMailboxSettingsProvider(),
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),
-        permissions: ["mailboxes.read"],
+        permissions: ["Mailboxes.Mailbox.Read"],
       }),
     });
 

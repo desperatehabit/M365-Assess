@@ -188,7 +188,7 @@ describe("Mailbox rule routes (T-0385)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailboxes.read on GET with 403", async () => {
+  it("rejects callers missing Mailboxes.Mailbox.Read on GET with 403", async () => {
     const routes = createMailboxRuleRoutes({
       provider: new FakeMailboxRulesProvider(),
       resolveCaller: () => ({
@@ -208,7 +208,7 @@ describe("Mailbox rule routes (T-0385)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailboxes.write on writes with 403", async () => {
+  it("rejects callers missing Mailboxes.Mailbox.ReadWrite on writes with 403", async () => {
     const routes = createMailboxRuleRoutes({
       provider: new FakeMailboxRulesProvider(),
       resolveCaller: () => ({
