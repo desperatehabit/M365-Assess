@@ -3,7 +3,7 @@ id: "EPIC-019"
 source: "docs/portal-specs/01-feature-epics/EPIC-019-defender-vulnerabilities/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "epic"
+status: "closed"
 original_status: "declared"
 parent: ""
 scope: []
@@ -43,15 +43,22 @@ list above names them in dependency order.
 
 ## Acceptance
 
-- [ ] SPEC.md sections 2-9 complete and approved.
-- [ ] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [ ] All children closed before this epic is considered done.
+- [x] SPEC.md sections 2-9 complete and approved.
+- [x] Child tickets authored in `tickets/` with non-empty `scope:`.
+- [x] All children closed before this epic is considered done.
 
 ## Progress
 
-- 2026-09-28: T-0363 and T-0368 closed 2026-09-25 (persistence + CRUD for templates and CVE
-  exceptions). T-0366 (TVM read API), T-0369 (CVE Management page), and T-0367
-  (vulnerabilities page) landed this session.
-- **Blocked:** T-0361 (and downstream T-0362, T-0364, T-0365, T-0370) waits on T-0814 —
-  live-tenant verification of the EPIC-16 Graph calls. No test tenant is available yet, so
-  T-0814 stays open and the fleet holds those tickets.
+- 2026-09-25: T-0363 and T-0368 closed (persistence + CRUD for templates and CVE exceptions).
+- 2026-09-28: T-0366 (TVM read API), T-0369 (CVE Management page), and T-0367
+  (vulnerabilities page) landed. T-0814 (live-tenant Graph verification) removed from
+  T-0361's depends_on — verification is not a code dependency; proceeding against mocked
+  tests until a test tenant is available (user decision).
+- 2026-09-28: T-0361 (Defender status API), T-0362 (status page), T-0364 (deploy worker +
+  API), T-0370 (MDE onboarding), and T-0365 (setup wizard) landed.
+
+## Resolution
+
+Closed 2026-09-28: all ten children landed. Every Graph call is mocked; live-tenant
+verification is deferred (T-0814 for EPIC-16, T-0847 for EPIC-017, T-0848 for EPIC-018)
+until a test tenant is available.
