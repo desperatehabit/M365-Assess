@@ -75,7 +75,7 @@ Describe 'Get-IntuneApps worker (T-0321)' {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri)
                 $Method | Should -Be 'GET'
-                $Uri | Should -Be '/v1.0/deviceAppManagement/mobileApps?$expand=assignments'
+                $Uri | Should -Be '/beta/deviceAppManagement/mobileApps?$expand=assignments'
                 return @{ value = $script:catalog }
             }
         }
