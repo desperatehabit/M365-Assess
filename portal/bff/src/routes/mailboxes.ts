@@ -588,6 +588,267 @@ export function createMailboxWriteRoutes(options: MailboxWriteRouteOptions): Rou
   ];
 }
 
+// Mailbox settings write (EPIC-020 SPEC.md §2 US-3, §3.2, §4.1, §6, §9; T-0383).
+// PATCH /v1/tenants/:tenantId/mailboxes/:mailboxId applies quota, archive
+// (including auto-expanding), litigation and retention holds, locale,
+// recipient limits, calendar processing, and hide-from-GAL settings. Each run
+// follows form → plan preview → apply through the EPIC-006 gated executor:
+// `preview` (or ?preview=true) returns the worker plan with no tenant write,
+// otherwise the worker applies with before/after capture and returns one
+// MailboxOperation (T-0382, persisted via @m365-assess/db mailbox-repository
+// by the wiring) plus one AuditEvent recorded by the app audit sink. Enabling
+// or expanding archive and changing a hold are risk-flagged (§9 "quota/archive
+// changes affecting users") and require explicit confirmation.
+export const MAILBOX_SETTINGS_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId";
+
+export const MAILBOX_SETTINGS_FIELDS = [
+  "issueWarningQuota",
+  "prohibitSendQuota",
+  "prohibitSendReceiveQuota",
+  "archiveEnabled",
+  "autoExpandingArchiveEnabled",
+  "litigationHoldEnabled",
+  "litigationHoldDurationDays",
+  "retentionHoldEnabled",
+  "locale",
+  "maxSendSizeKB",
+  "maxReceiveSizeKB",
+  "maxRecipientsPerMessage",
+  "calendarAutomateProcessing",
+  "calendarAllowConflicts",
+  "hiddenFromAddressListsEnabled",
+] as const;
+
+export type MailboxSettingsField = (typeof MAILBOX_SETTINGS_FIELDS)[number];
+
+export const CALENDAR_AUTOMATE_PROCESSING_VALUES = ["None", "AutoUpdate", "AutoAccept"] as const;
+
+export type CalendarAutomateProcessing = (typeof CALENDAR_AUTOMATE_PROCESSING_VALUES)[number];
+
+export interface MailboxSettingsInput {
+  readonly issueWarningQuota?: string;
+  readonly prohibitSendQuota?: string;
+  readonly prohibitSendReceiveQuota?: string;
+  readonly archiveEnabled?: boolean;
+  readonly autoExpandingArchiveEnabled?: boolean;
+  readonly litigationHoldEnabled?: boolean;
+  readonly litigationHoldDurationDays?: number;
+  readonly retentionHoldEnabled?: boolean;
+  readonly locale?: string;
+  readonly maxSendSizeKB?: number;
+  readonly maxReceiveSizeKB?: number;
+  readonly maxRecipientsPerMessage?: number;
+  readonly calendarAutomateProcessing?: CalendarAutomateProcessing;
+  readonly calendarAllowConflicts?: boolean;
+  readonly hiddenFromAddressListsEnabled?: boolean;
+  readonly preview?: boolean;
+  readonly confirm?: boolean;
+}
+
+export interface MailboxSettingsPlan {
+  readonly action: "settings";
+  readonly mailboxId: string;
+  readonly targetName: string;
+  readonly before: Record<string, unknown>;
+  readonly after: Record<string, unknown>;
+  readonly diff: readonly string[];
+  readonly valid: boolean;
+  readonly dryRun: boolean;
+  readonly requiresConfirmation: boolean;
+}
+
+export interface MailboxSettingsOperation {
+  readonly id: string;
+  readonly tenantId: string;
+  readonly mailboxId: string;
+  readonly operation: string;
+  readonly before: Record<string, unknown>;
+  readonly after: Record<string, unknown>;
+  readonly state: string;
+  readonly by: string | null;
+  readonly at: string;
+}
+
+export interface MailboxSettingsResult {
+  readonly success: boolean;
+  readonly plan: MailboxSettingsPlan;
+  readonly result?: Record<string, unknown>;
+  readonly operation?: MailboxSettingsOperation;
+  readonly auditEvent?: MailboxWriteAuditEvent;
+}
+
+export interface MailboxSettingsProvider {
+  setMailboxSettings(
+    tenantId: string,
+    mailboxId: string,
+    input: MailboxSettingsInput,
+    preview: boolean,
+  ): Promise<MailboxSettingsResult | MailboxSettingsPlan>;
+}
+
+export interface MailboxSettingsRouteOptions {
+  readonly provider: MailboxSettingsProvider;
+  readonly resolveCaller: (ctx: RequestContext) => MailboxWriteCaller | undefined;
+  readonly authorize?: MailboxWriteAuthorizer;
+}
+
+const QUOTA_PATTERN = /^\d+(\.\d+)?\s*(MB|GB|TB)$/i;
+const LOCALE_PATTERN = /^[A-Za-z]{2}(-[A-Za-z]{2})?$/;
+
+export function validateMailboxQuota(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.toLowerCase() === "unlimited" || QUOTA_PATTERN.test(trimmed);
+}
+
+export function validateMailboxLocale(value: string): boolean {
+  return LOCALE_PATTERN.test(value.trim());
+}
+
+function isConfirmationRequired(input: MailboxSettingsInput): boolean {
+  return (
+    input.archiveEnabled === true ||
+    input.autoExpandingArchiveEnabled === true ||
+    input.litigationHoldEnabled !== undefined ||
+    input.retentionHoldEnabled !== undefined
+  );
+}
+
+function parseMailboxSettingsBody(body: Record<string, unknown>): MailboxSettingsInput {
+  for (const key of Object.keys(body)) {
+    if (
+      key !== "preview" &&
+      key !== "confirm" &&
+      !(MAILBOX_SETTINGS_FIELDS as readonly string[]).includes(key)
+    ) {
+      throw validationError(`unknown mailbox setting '${key}'`, key);
+    }
+  }
+
+  const input: Record<string, unknown> = {};
+  const quotaFields = ["issueWarningQuota", "prohibitSendQuota", "prohibitSendReceiveQuota"] as const;
+  for (const field of quotaFields) {
+    const value = body[field];
+    if (value !== undefined) {
+      if (typeof value !== "string" || value.trim().length === 0 || !validateMailboxQuota(value)) {
+        throw validationError(
+          `${field} must be a size like '50 GB' or 'Unlimited'`,
+          field,
+        );
+      }
+      input[field] = value.trim();
+    }
+  }
+
+  const booleanFields = [
+    "archiveEnabled",
+    "autoExpandingArchiveEnabled",
+    "litigationHoldEnabled",
+    "retentionHoldEnabled",
+    "calendarAllowConflicts",
+    "hiddenFromAddressListsEnabled",
+  ] as const;
+  for (const field of booleanFields) {
+    const value = body[field];
+    if (value !== undefined) {
+      if (typeof value !== "boolean") {
+        throw validationError(`${field} must be a boolean`, field);
+      }
+      input[field] = value;
+    }
+  }
+
+  if (body["litigationHoldDurationDays"] !== undefined) {
+    const value = body["litigationHoldDurationDays"];
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > 36500) {
+      throw validationError(
+        "litigationHoldDurationDays must be an integer between 1 and 36500",
+        "litigationHoldDurationDays",
+      );
+    }
+    input["litigationHoldDurationDays"] = value;
+  }
+
+  if (body["locale"] !== undefined) {
+    const value = body["locale"];
+    if (typeof value !== "string" || !validateMailboxLocale(value)) {
+      throw validationError("locale must look like 'en-US'", "locale");
+    }
+    input["locale"] = value.trim();
+  }
+
+  const limitFields = ["maxSendSizeKB", "maxReceiveSizeKB", "maxRecipientsPerMessage"] as const;
+  for (const field of limitFields) {
+    const value = body[field];
+    if (value !== undefined) {
+      if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+        throw validationError(`${field} must be a positive integer`, field);
+      }
+      input[field] = value;
+    }
+  }
+
+  if (body["calendarAutomateProcessing"] !== undefined) {
+    const value = body["calendarAutomateProcessing"];
+    if (
+      typeof value !== "string" ||
+      !(CALENDAR_AUTOMATE_PROCESSING_VALUES as readonly string[]).includes(value)
+    ) {
+      throw validationError(
+        `calendarAutomateProcessing must be one of: ${CALENDAR_AUTOMATE_PROCESSING_VALUES.join(", ")}`,
+        "calendarAutomateProcessing",
+      );
+    }
+    input["calendarAutomateProcessing"] = value;
+  }
+
+  const settingsKeys = Object.keys(input);
+  if (settingsKeys.length === 0) {
+    throw validationError("at least one mailbox setting is required", "settings");
+  }
+
+  return input as MailboxSettingsInput;
+}
+
+export function createMailboxSettingsRoutes(options: MailboxSettingsRouteOptions): Route[] {
+  return [
+    // PATCH /v1/tenants/:tenantId/mailboxes/:mailboxId - settings apply or plan preview
+    {
+      method: "PATCH",
+      path: MAILBOX_SETTINGS_PATH,
+      handler: async (ctx: RequestContext): Promise<RouteResponse> => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        const tenantId = requireTenantParam(ctx);
+        const mailboxId = requireMailboxParam(ctx);
+        requireTenantInScope(caller, tenantId);
+        await requireMailboxesWrite(options, caller);
+
+        const body = (ctx.body ?? {}) as Record<string, unknown>;
+        const settings = parseMailboxSettingsBody(body);
+        const isPreview = readPreviewFlag(ctx, body);
+        const confirm = Boolean(body["confirm"] ?? false);
+        if (!isPreview && isConfirmationRequired(settings) && !confirm) {
+          throw validationError(
+            "confirm must be true to change archive or hold settings",
+            "confirm",
+          );
+        }
+
+        const result = await options.provider.setMailboxSettings(
+          tenantId,
+          mailboxId,
+          { ...settings, preview: isPreview, confirm },
+          isPreview,
+        );
+        return {
+          status: 200,
+          headers: { "content-type": "application/json" },
+          body: result,
+        };
+      },
+    },
+  ];
+}
+
 export const MAILBOXES_WRITE_OPENAPI = {
   paths: {
     "/tenants/{tenantId}/mailboxes": {
@@ -621,6 +882,31 @@ export const MAILBOXES_WRITE_OPENAPI = {
         responses: {
           "200": { description: "Conversion plan preview, applied result, or structured no-op." },
           "400": { description: "Confirmation is missing for the conversion." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
+          "404": { description: "The mailbox was not found." },
+        },
+      },
+    },
+  },
+} as const;
+
+export const MAILBOXES_SETTINGS_OPENAPI = {
+  paths: {
+    "/tenants/{tenantId}/mailboxes/{mailboxId}": {
+      patch: {
+        operationId: "setMailboxSettings",
+        summary:
+          "Apply mailbox settings: quota, archive (incl. auto-expanding), holds, locale, recipient limits, calendar processing, hide-from-GAL (plan preview with preview:true)",
+        permission: MAILBOXES_WRITE_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          { name: "mailboxId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Settings plan preview or applied result with before/after and audit event." },
+          "400": { description: "A setting failed validation or archive/hold confirmation is missing." },
           "401": { description: "Authentication required." },
           "403": { description: "The caller lacks mailboxes.write or the tenant is out of scope." },
           "404": { description: "The mailbox was not found." },
