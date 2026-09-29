@@ -3,7 +3,7 @@ id: "EPIC-020"
 source: "docs/portal-specs/01-feature-epics/EPIC-020-mailboxes/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "epic"
+status: "closed"
 original_status: "declared"
 parent: ""
 scope: []
@@ -46,6 +46,20 @@ path every mailbox mutation routes through.
 
 ## Acceptance
 
-- [ ] SPEC.md sections 2-9 complete and approved.
-- [ ] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [ ] All children closed before this epic is considered done.
+- [x] SPEC.md sections 2-9 complete and approved.
+- [x] Child tickets authored in `tickets/` with non-empty `scope:`.
+- [x] All children closed before this epic is considered done.
+
+## Progress
+
+- 2026-09-28: T-0381 (mailbox list/detail/reports read API) and T-0382 (shared mailbox
+  create/convert) landed. T-0383–T-0388 (settings, rules, permissions, deleted mailboxes,
+  vacation schedules, retention tags) landed as a batch. T-0389 (mailbox web pages) landed.
+- 2026-09-28: T-0586 filed and landed — mailbox permission strings renamed to the
+  EPIC-038 3-segment taxonomy (Mailboxes.Mailbox.Read/ReadWrite etc.); the fleet QA gate
+  runs Pester only, so the JS-only taxonomy violation reached main until the fix.
+
+## Resolution
+
+Closed 2026-09-28: all nine children landed. Every Graph/EXO call is mocked; live-tenant
+verification deferred until a test tenant is available.
