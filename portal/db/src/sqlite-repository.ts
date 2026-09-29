@@ -71,6 +71,13 @@ import {
   type TeamTemplateInput,
   type TeamTemplateUpdate,
   type TeamVisibility,
+  type TestPack,
+  type TestPackInput,
+  type TestPackUpdate,
+  type TestRun,
+  type TestRunInput,
+  type TestRunListOptions,
+  type TestRunResult,
   type Tenant,
   type TenantCredential,
   type TenantCredentialInput,
@@ -142,6 +149,27 @@ function parseJsonArray(value: unknown): string[] {
   try {
     const parsed: unknown = JSON.parse(String(value));
     return Array.isArray(parsed) ? parsed.map((item) => String(item)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseTestRunResults(value: unknown): TestRunResult[] {
+  if (value === null || value === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(String(value));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) => {
+      if (typeof item !== "object" || item === null) return [];
+      const record = item as Record<string, unknown>;
+      if (typeof record["findingId"] !== "string") return [];
+      return [
+        {
+          findingId: record["findingId"],
+          status: asString(record["status"]) as TestRunResult["status"],
+        },
+      ];
+    });
   } catch {
     return [];
   }
@@ -482,6 +510,31 @@ export class SqliteRepository implements Repository {
       error: asNullableString(row["error"]),
       source: asString(row["source"]) as AuditSource,
       correlationId: asNullableString(row["correlationId"]),
+      createdAt: asString(row["createdAt"]),
+    };
+  }
+
+  private mapTestPack(row: Row): TestPack {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      description: asNullableString(row["description"]),
+      checkIds: parseJsonArray(row["checkIds"]),
+      frameworkId: asNullableString(row["frameworkId"]),
+      scoring: parseJson(row["scoring"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapTestRun(row: Row): TestRun {
+    return {
+      id: asString(row["id"]),
+      packId: asString(row["packId"]),
+      tenantId: asString(row["tenantId"]),
+      at: asString(row["at"]),
+      score: row["score"] === null || row["score"] === undefined ? null : asNumber(row["score"]),
+      results: parseTestRunResults(row["results"]),
       createdAt: asString(row["createdAt"]),
     };
   }
@@ -2058,6 +2111,184 @@ export class SqliteRepository implements Repository {
     const persisted = await this.getBranding();
     if (!persisted) throw new Error("branding config was not persisted");
     return persisted;
+  }
+
+  private writeAuditEvent(
+    action: string,
+    targetType: string,
+    targetId: string,
+    tenantId: string | null,
+    before: unknown,
+    after: unknown,
+    at: string,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO audit_events
+           (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        randomUUID(),
+        at,
+        null,
+        "system",
+        tenantId,
+        action,
+        targetType,
+        targetId,
+        before === null || before === undefined ? null : JSON.stringify(before),
+        after === null || after === undefined ? null : JSON.stringify(after),
+        "success",
+        null,
+        "request",
+        null,
+        at,
+      );
+  }
+
+  async createTestPack(input: TestPackInput): Promise<TestPack> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? nowIso();
+    const pack: TestPack = {
+      id: input.id,
+      name: input.name,
+      description: input.description ?? null,
+      checkIds: input.checkIds ?? [],
+      frameworkId: input.frameworkId ?? null,
+      scoring: input.scoring ?? null,
+      createdAt,
+      updatedAt,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO test_packs
+             (id, name, description, checkIds, frameworkId, scoring, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          pack.id,
+          pack.name,
+          pack.description,
+          JSON.stringify(pack.checkIds),
+          pack.frameworkId,
+          stringifyJson(pack.scoring),
+          createdAt,
+          updatedAt,
+        );
+      this.writeAuditEvent("testpack.create", "test_pack", pack.id, null, null, pack, createdAt);
+    })();
+    const persisted = await this.getTestPack(pack.id);
+    if (!persisted) throw new Error(`test pack ${pack.id} was not persisted`);
+    return persisted;
+  }
+
+  async getTestPack(packId: string, _options: ListOptions = {}): Promise<TestPack | undefined> {
+    const row = this.db.prepare("SELECT * FROM test_packs WHERE id = ?").get(packId) as
+      | Row
+      | undefined;
+    return row ? this.mapTestPack(row) : undefined;
+  }
+
+  async listTestPacks(_options: ListOptions = {}): Promise<TestPack[]> {
+    return (this.db.prepare("SELECT * FROM test_packs ORDER BY name, id").all() as Row[]).map(
+      (row) => this.mapTestPack(row),
+    );
+  }
+
+  async updateTestPack(
+    packId: string,
+    update: TestPackUpdate,
+    _options: ListOptions = {},
+  ): Promise<TestPack | undefined> {
+    const existing = await this.getTestPack(packId);
+    if (!existing) return undefined;
+    const updatedAt = nowIso();
+    const next: TestPack = {
+      ...existing,
+      ...update,
+      id: existing.id,
+      createdAt: existing.createdAt,
+      updatedAt,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE test_packs
+             SET name = ?, description = ?, checkIds = ?, frameworkId = ?, scoring = ?, updatedAt = ?
+           WHERE id = ?`,
+        )
+        .run(
+          next.name,
+          next.description,
+          JSON.stringify(next.checkIds),
+          next.frameworkId,
+          stringifyJson(next.scoring),
+          updatedAt,
+          packId,
+        );
+      this.writeAuditEvent("testpack.update", "test_pack", packId, null, existing, next, updatedAt);
+    })();
+    const persisted = await this.getTestPack(packId);
+    if (!persisted) throw new Error(`test pack ${packId} was not persisted`);
+    return persisted;
+  }
+
+  async createTestRun(input: TestRunInput): Promise<TestRun> {
+    const createdAt = input.createdAt ?? nowIso();
+    const run: TestRun = {
+      id: input.id,
+      packId: input.packId,
+      tenantId: input.tenantId,
+      at: input.at ?? nowIso(),
+      score: input.score ?? null,
+      results: input.results ?? [],
+      createdAt,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO test_runs
+             (id, packId, tenantId, "at", score, results, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          run.id,
+          run.packId,
+          run.tenantId,
+          run.at,
+          run.score,
+          JSON.stringify(run.results),
+          createdAt,
+        );
+      this.writeAuditEvent("testrun.create", "test_run", run.id, run.tenantId, null, run, run.at);
+    })();
+    const persisted = await this.getTestRun(run.tenantId, run.id);
+    if (!persisted) throw new Error(`test run ${run.id} was not persisted`);
+    return persisted;
+  }
+
+  async getTestRun(tenantId: string, runId: string): Promise<TestRun | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM test_runs WHERE id = ? AND tenantId = ?")
+      .get(runId, tenantId) as Row | undefined;
+    return row ? this.mapTestRun(row) : undefined;
+  }
+
+  async listTestRuns(tenantId: string, options: TestRunListOptions = {}): Promise<TestRun[]> {
+    if (options.packId === undefined) {
+      return (
+        this.db
+          .prepare('SELECT * FROM test_runs WHERE tenantId = ? ORDER BY "at", id')
+          .all(tenantId) as Row[]
+      ).map((row) => this.mapTestRun(row));
+    }
+    return (
+      this.db
+        .prepare('SELECT * FROM test_runs WHERE tenantId = ? AND packId = ? ORDER BY "at", id')
+        .all(tenantId, options.packId) as Row[]
+    ).map((row) => this.mapTestRun(row));
   }
 }
 
