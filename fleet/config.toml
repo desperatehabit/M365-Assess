@@ -17,11 +17,11 @@ worktrees  = "/home/wcoulter/Projects/.m365-fleet-wt"       # outside the repo o
 base_branch = "main"
 
 [model]
-# Worker model (Nemotron 3 Ultra Free — Muse Spark 1.3 stalled 2026-09-28, LongCat
-# 2.5 hit a per-model rate limit 2026-09-29; switch as needed when a model degrades).
-coder = "opencode/nemotron-3-ultra-free"
+# Worker model (LongCat 2.5 Preview Free, Go plan — the Zen variant of the same
+# model rate-limits quickly; the Go variant is the one to use).
+coder = "opencode-go/longcat-2.5-preview-free"
 # Retry/escalation target: same free model while paid-model credits are exhausted.
-escalate = "opencode/nemotron-3-ultra-free"
+escalate = "opencode-go/longcat-2.5-preview-free"
 
 [limits]
 workers           = 3      # concurrent OpenCode sessions. The portal work touches
