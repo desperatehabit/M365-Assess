@@ -160,6 +160,26 @@ Describe 'Deploy-IntuneTemplate worker (T-0306)' {
                 $Method -eq 'PATCH' -and $Uri -eq '/v1.0/deviceManagement/deviceCompliancePolicies/live-1'
             }
         }
+
+        It 'PATCHes the live configuration policy (never PUT) and audits before/after' {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $Body)
+                if ($Method -eq 'GET') {
+                    return @{ value = @(@{ id = 'live-cfg'; name = 'Defender Baseline'; settings = @{ realtime = $false } }) }
+                }
+                return @{ id = 'live-cfg' }
+            }
+            $res = Invoke-DeployIntuneTemplate -TenantId 't-1' -TemplateJson (Get-TestTemplateJson -PolicyType 'configuration') -Overwrite $true
+            $res.state | Should -Be 'succeeded'
+            $res.policyId | Should -Be 'live-cfg'
+            $res.auditEvent.action | Should -Be 'intune.template.deploy.update'
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter {
+                $Method -eq 'PATCH' -and $Uri -eq '/beta/deviceManagement/configurationPolicies/live-cfg'
+            }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter {
+                $Method -eq 'PUT' -and $Uri -like '*configurationPolicies*'
+            }
+        }
     }
 
     Context 'apply' {
@@ -176,7 +196,7 @@ Describe 'Deploy-IntuneTemplate worker (T-0306)' {
             $res.auditEvent.action | Should -Be 'intune.template.deploy.create'
             @($res.steps | ForEach-Object { $_.step }) | Should -Be @('createGroup', 'createPolicy', 'assign')
             Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter {
-                $Uri -eq '/v1.0/deviceManagement/configurationPolicies/pol-new/assign' -and $Body -match 'grp-new'
+                $Uri -eq '/beta/deviceManagement/configurationPolicies/pol-new/assign' -and $Body -match 'grp-new'
             }
         }
 
