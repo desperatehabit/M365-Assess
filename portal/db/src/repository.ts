@@ -261,6 +261,20 @@ export interface LinkRemovalJob {
   createdBy: string;
 }
 
+export type RestoreJobState = "planned" | "running" | "completed" | "failed";
+
+export interface RestoreJob {
+  id: string;
+  tenantId: string;
+  mailboxId: string;
+  scope: string;
+  target: string | null;
+  state: RestoreJobState;
+  result: Record<string, unknown> | null;
+  createdAt: string;
+  createdBy: string;
+}
+
 export type TenantInput = Omit<
   Tenant,
   | "createdAt"
@@ -401,6 +415,9 @@ export interface OffboardingStepUpdate {
 
 export type LinkRemovalJobInput = Omit<LinkRemovalJob, "createdAt" | "state" | "results"> &
   Partial<Pick<LinkRemovalJob, "createdAt" | "state" | "results">>;
+
+export type RestoreJobInput = Omit<RestoreJob, "createdAt" | "state" | "result"> &
+  Partial<Pick<RestoreJob, "createdAt" | "state" | "result">>;
 
 export interface UserTemplate {
   id: string;
@@ -569,6 +586,11 @@ export interface JitAdminTemplateUpdate {
 export interface LinkRemovalJobUpdate {
   state?: LinkRemovalJobState;
   results?: Record<string, unknown> | null;
+}
+
+export interface RestoreJobUpdate {
+  state?: RestoreJobState;
+  result?: Record<string, unknown> | null;
 }
 
 export type RemediationPlanMode = "manual" | "automated" | "mixed";
@@ -1143,6 +1165,15 @@ export interface Repository {
     jobId: string,
     update: LinkRemovalJobUpdate,
   ): Promise<LinkRemovalJob | undefined>;
+
+  createRestoreJob(input: RestoreJobInput): Promise<RestoreJob>;
+  getRestoreJob(tenantId: string, jobId: string): Promise<RestoreJob | undefined>;
+  listRestoreJobs(tenantId: string): Promise<RestoreJob[]>;
+  updateRestoreJob(
+    tenantId: string,
+    jobId: string,
+    update: RestoreJobUpdate,
+  ): Promise<RestoreJob | undefined>;
 
   appendAuditEvent(input: AuditEventInput): Promise<AuditEvent>;
   listAuditEvents(tenantId?: string): Promise<AuditEvent[]>;

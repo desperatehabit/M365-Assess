@@ -43,6 +43,10 @@ import {
   type ListOptions,
   type RemediationMode,
   type Repository,
+  type RestoreJob,
+  type RestoreJobInput,
+  type RestoreJobState,
+  type RestoreJobUpdate,
   assertValidRunStatus,
   type RunRetentionOptions,
   type RunRetentionResult,
@@ -443,6 +447,20 @@ export class SqliteRepository implements Repository {
       linkIds: parseJsonArray(row["linkIds"]),
       state: asString(row["state"]) as LinkRemovalJobState,
       results: parseJson(row["results"]),
+      createdAt: asString(row["createdAt"]),
+      createdBy: asString(row["createdBy"]),
+    };
+  }
+
+  private mapRestoreJob(row: Row): RestoreJob {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      mailboxId: asString(row["mailboxId"]),
+      scope: asString(row["scope"]),
+      target: asNullableString(row["target"]),
+      state: asString(row["state"]) as RestoreJobState,
+      result: parseJson(row["result"]),
       createdAt: asString(row["createdAt"]),
       createdBy: asString(row["createdBy"]),
     };
@@ -1383,6 +1401,60 @@ export class SqliteRepository implements Repository {
       )
       .run(state, stringifyJson(results), jobId, tenantId);
     return this.getLinkRemovalJob(tenantId, jobId);
+  }
+
+  async createRestoreJob(input: RestoreJobInput): Promise<RestoreJob> {
+    const createdAt = input.createdAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO restore_jobs
+           (id, tenantId, mailboxId, scope, target, state, result, createdAt, createdBy)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.id,
+        input.tenantId,
+        input.mailboxId,
+        input.scope,
+        input.target ?? null,
+        input.state ?? "planned",
+        stringifyJson(input.result),
+        createdAt,
+        input.createdBy,
+      );
+    const job = await this.getRestoreJob(input.tenantId, input.id);
+    if (!job) throw new Error(`restore job ${input.id} was not persisted`);
+    return job;
+  }
+
+  async getRestoreJob(tenantId: string, jobId: string): Promise<RestoreJob | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM restore_jobs WHERE id = ? AND tenantId = ?")
+      .get(jobId, tenantId) as Row | undefined;
+    return row ? this.mapRestoreJob(row) : undefined;
+  }
+
+  async listRestoreJobs(tenantId: string): Promise<RestoreJob[]> {
+    return (
+      this.db
+        .prepare("SELECT * FROM restore_jobs WHERE tenantId = ? ORDER BY createdAt, id")
+        .all(tenantId) as Row[]
+    ).map((row) => this.mapRestoreJob(row));
+  }
+
+  async updateRestoreJob(
+    tenantId: string,
+    jobId: string,
+    update: RestoreJobUpdate,
+  ): Promise<RestoreJob | undefined> {
+    const existing = await this.getRestoreJob(tenantId, jobId);
+    if (!existing) return undefined;
+    const state = update.state ?? existing.state;
+    const result = update.result === undefined ? existing.result : update.result;
+    this.db
+      .prepare("UPDATE restore_jobs SET state = ?, result = ? WHERE id = ? AND tenantId = ?")
+      .run(state, stringifyJson(result), jobId, tenantId);
+    return this.getRestoreJob(tenantId, jobId);
   }
 
   async appendAuditEvent(input: AuditEventInput): Promise<AuditEvent> {
