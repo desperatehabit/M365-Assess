@@ -1011,8 +1011,32 @@ export interface AppSetting {
   key: string;
   value: unknown;
   scope: SettingScope;
+// Instance feature flags (EPIC-037 SPEC.md §5, §11.3): global-first. The
+// 'tenant' scope is reserved for the deferred per-tenant cut; v1 writers
+// (upsertFeatureFlag) reject it, so every persisted flag is instance-global.
+export type FeatureFlagScope = "global" | "tenant";
+
+export interface FeatureFlag {
+  key: string;
+  enabled: boolean;
+  scope: FeatureFlagScope;
+  description: string;
   updatedAt: string;
   updatedBy: string | null;
+}
+
+export type FeatureFlagInput = Omit<FeatureFlag, "updatedAt" | "updatedBy"> &
+  Partial<Pick<FeatureFlag, "updatedAt" | "updatedBy">>;
+
+export class FeatureFlagScopeError extends Error {
+  readonly code = "feature_flag.tenant_scope_deferred";
+
+  constructor(scope: string) {
+    super(
+      `feature flag scope '${scope}' is reserved; per-tenant flags are deferred to a later cut`,
+    );
+    this.name = "FeatureFlagScopeError";
+  }
 }
 
 export type TemplateItemSource = "local" | "community";
@@ -1320,6 +1344,9 @@ export interface Repository {
     value: unknown,
     options?: { updatedBy?: string | null; scope?: SettingScope },
   ): Promise<AppSetting>;
+  getFeatureFlags(): Promise<FeatureFlag[]>;
+  getFeatureFlag(key: string): Promise<FeatureFlag | undefined>;
+  upsertFeatureFlag(input: FeatureFlagInput): Promise<FeatureFlag>;
 }
 
 export class SchemaVersionError extends Error {
