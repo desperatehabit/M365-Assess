@@ -84,7 +84,13 @@ def load_ticket(path: Path) -> dict:
         elif val in ("true", "false"):
             data[key] = val == "true"
         else:
-            data[key] = json.loads(val) if val.startswith('"') else val
+            if val.startswith('"'):
+                try:
+                    data[key] = json.loads(val)
+                except json.JSONDecodeError:
+                    data[key] = val.strip('"')
+            else:
+                data[key] = val
     data["_path"] = str(path)
     data["_body"] = txt[m.end():]
     return data
@@ -417,7 +423,11 @@ def work_one(t: dict, model: str = "") -> dict:
         ]
         allowed = set(scope)
 
+        SCOPE_IGNORE = {"portal/package-lock.json", "package-lock.json"}
+
         def in_scope(f: str) -> bool:
+            if f in SCOPE_IGNORE:
+                return True
             return scope_covers(allowed, f) or re.search(r"(^|/)tests?/", f) is not None
 
         # Running the suite writes into data/knowledge_uploads and data/lancedb,
