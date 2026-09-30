@@ -23,6 +23,8 @@ import {
   type BrandingPreset,
   type BrandingReportDefaults,
   type BrandingWatermark,
+  type ContactTemplate,
+  type ContactTemplateInput,
   type Finding,
   type FindingInput,
   type FindingStatus,
@@ -502,6 +504,18 @@ export class SqliteRepository implements Repository {
       members: parseJsonArray(row["members"]),
       visibility: asString(row["visibility"]) as TeamVisibility,
       settings: parseJson(row["settings"]) ?? {},
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
+    };
+  }
+
+  private mapContactTemplate(row: Row): ContactTemplate {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      properties: parseJson(row["properties"]) ?? {},
+      variables: parseJson(row["variables"]) ?? {},
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
       deletedAt: asNullableString(row["deletedAt"]),
@@ -1646,6 +1660,74 @@ export class SqliteRepository implements Repository {
     const result = this.db
       .prepare(
         "UPDATE team_templates SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+      )
+      .run(at, at, templateId);
+    return result.changes > 0;
+  }
+
+  private contactTemplateById(templateId: string): ContactTemplate | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM contact_templates WHERE id = ?")
+      .get(templateId) as Row | undefined;
+    return row ? this.mapContactTemplate(row) : undefined;
+  }
+
+  async getContactTemplate(
+    templateId: string,
+    options: ListOptions = {},
+  ): Promise<ContactTemplate | undefined> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM contact_templates WHERE id = ?"
+      : "SELECT * FROM contact_templates WHERE id = ? AND deletedAt IS NULL";
+    const row = this.db.prepare(sql).get(templateId) as Row | undefined;
+    return row ? this.mapContactTemplate(row) : undefined;
+  }
+
+  async listContactTemplates(options: ListOptions = {}): Promise<ContactTemplate[]> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM contact_templates ORDER BY name, id"
+      : "SELECT * FROM contact_templates WHERE deletedAt IS NULL ORDER BY name, id";
+    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapContactTemplate(row));
+  }
+
+  async upsertContactTemplate(input: ContactTemplateInput): Promise<ContactTemplate> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO contact_templates
+           (id, name, properties, variables, createdAt, updatedAt, deletedAt)
+         VALUES
+           (@id, @name, @properties, @variables, @createdAt, @updatedAt, @deletedAt)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           properties = excluded.properties,
+           variables = excluded.variables,
+           updatedAt = excluded.updatedAt,
+           deletedAt = excluded.deletedAt`,
+      )
+      .run({
+        id: input.id,
+        name: input.name,
+        properties: JSON.stringify(input.properties ?? {}),
+        variables: JSON.stringify(input.variables ?? {}),
+        createdAt,
+        updatedAt,
+        deletedAt: input.deletedAt ?? null,
+      });
+    const template = this.contactTemplateById(input.id);
+    if (!template) throw new Error(`contact template ${input.id} was not persisted`);
+    return template;
+  }
+
+  async softDeleteContactTemplate(
+    templateId: string,
+    options: { now?: string } = {},
+  ): Promise<boolean> {
+    const at = options.now ?? nowIso();
+    const result = this.db
+      .prepare(
+        "UPDATE contact_templates SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
       )
       .run(at, at, templateId);
     return result.changes > 0;

@@ -800,6 +800,28 @@ export type TeamTemplateInput = Omit<
 export type TeamTemplateUpdate = Partial<
   Pick<TeamTemplate, "name" | "owners" | "members" | "visibility" | "settings">
 >;
+
+export interface ContactTemplate {
+  id: string;
+  name: string;
+  properties: Record<string, unknown>;
+  variables: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export type ContactTemplateInput = Omit<
+  ContactTemplate,
+  "createdAt" | "updatedAt" | "deletedAt" | "properties" | "variables"
+> &
+  Partial<
+    Pick<
+      ContactTemplate,
+      "properties" | "variables" | "createdAt" | "updatedAt" | "deletedAt"
+    >
+  >;
+
 export type TeamOperationInput = Omit<
   TeamOperation,
   "createdAt" | "updatedAt" | "by" | "at" | "result"
@@ -1157,6 +1179,14 @@ export interface Repository {
     update: TeamTemplateUpdate,
   ): Promise<TeamTemplate | undefined>;
   softDeleteTeamTemplate(templateId: string, options?: { now?: string }): Promise<boolean>;
+
+  listContactTemplates(options?: ListOptions): Promise<ContactTemplate[]>;
+  getContactTemplate(
+    templateId: string,
+    options?: ListOptions,
+  ): Promise<ContactTemplate | undefined>;
+  upsertContactTemplate(input: ContactTemplateInput): Promise<ContactTemplate>;
+  softDeleteContactTemplate(templateId: string, options?: { now?: string }): Promise<boolean>;
 
   createTeamOperation(input: TeamOperationInput): Promise<TeamOperation>;
   getTeamOperation(tenantId: string, operationId: string): Promise<TeamOperation | undefined>;
