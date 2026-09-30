@@ -89,7 +89,7 @@ Describe 'Get-IntunePolicies worker (T-0301)' {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri)
                 $Method | Should -Be 'GET'
-                $Uri | Should -BeLike '*configurationPolicies*'
+                $Uri | Should -BeLike '*beta/deviceManagement/configurationPolicies*'
 
                 return [pscustomobject]@{
                     value = @(
@@ -320,7 +320,7 @@ Describe 'Get-IntunePolicies worker (T-0301)' {
         It 'returns the configuration body without identity fields, with settings and assignments' {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri)
-                $Uri | Should -BeLike '*/configurationPolicies/p-1?$expand=settings,assignments'
+                $Uri | Should -BeLike '*/beta/deviceManagement/configurationPolicies/p-1?$expand=settings,assignments'
                 return @{
                     id                   = 'p-1'
                     name                 = 'Defender'

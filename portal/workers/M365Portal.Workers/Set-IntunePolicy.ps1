@@ -63,8 +63,8 @@ function Read-IntunePolicyCrudJob {
 # Kind → Graph resource mapping (mirrors T-0301 registry for the supported set)
 $script:CrudKindRegistry = @{
     'configuration' = @{
-        ListResource   = 'v1.0/deviceManagement/configurationPolicies'
-        ItemResource   = 'v1.0/deviceManagement/configurationPolicies/{id}'
+        ListResource   = 'beta/deviceManagement/configurationPolicies'
+        ItemResource   = 'beta/deviceManagement/configurationPolicies/{id}'
         NameField      = 'name'
     }
     'compliance' = @{

@@ -59,7 +59,7 @@ function Read-IntunePoliciesJob {
 # Map policy kind to Graph resource and supported platforms.
 $script:KindRegistry = @{
     'configuration' = @{
-        GraphResource = 'v1.0/deviceManagement/configurationPolicies'
+        GraphResource = 'beta/deviceManagement/configurationPolicies'
         Supported     = $true
     }
     'compliance' = @{

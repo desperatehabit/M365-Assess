@@ -156,7 +156,7 @@ Describe 'Sync-ReusableSettings worker (T-0308)' {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri, $Body)
                 if ($Method -eq 'POST') { return @{ id = 's-new' } }
-                if ($Method -eq 'PUT') { return $null }
+                if ($Method -eq 'PATCH') { return $null }
                 if ($Uri -like '*referencingConfigurationPolicies*') { return @{ value = @(@{ id = 'pol-1'; name = 'HQ' }) } }
                 return @{ value = @(
                         @{ id = 's-1'; displayName = 'Branch offices'; settingDefinitionId = $script:FirewallId; settingInstance = (Get-FirewallInstance -Ranges @('10.0.0.0/8')) },
@@ -180,7 +180,7 @@ Describe 'Sync-ReusableSettings worker (T-0308)' {
             $upd.before.simpleSettingCollectionValue.Count | Should -Be 1
             ($res.auditEvents | Where-Object { $_.action -eq 'intune.reusable-setting.create' }).targetId | Should -Be 's-new'
             Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter {
-                $Method -eq 'PUT' -and $Uri -eq '/beta/deviceManagement/reusablePolicySettings/s-1' -and $Body -match 'deviceManagementReusablePolicySetting'
+                $Method -eq 'PATCH' -and $Uri -eq '/beta/deviceManagement/reusablePolicySettings/s-1' -and $Body -match 'deviceManagementReusablePolicySetting'
             }
         }
 

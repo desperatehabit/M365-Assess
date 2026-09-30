@@ -273,7 +273,7 @@ function Sync-ReusableSettingTemplate {
             else {
                 $settingId = $change.settingId
                 $before = ($live | Where-Object { $_.id -eq $settingId } | Select-Object -First 1).settingInstance
-                $null = Invoke-MgGraphRequest -Method PUT -Uri "$($script:ReusableSettingsUri)/$settingId" -Body ($body | ConvertTo-Json -Depth 30 -Compress)
+                $null = Invoke-MgGraphRequest -Method PATCH -Uri "$($script:ReusableSettingsUri)/$settingId" -Body ($body | ConvertTo-Json -Depth 30 -Compress)
             }
             $results.Add([pscustomobject]@{ templateId = $change.templateId; displayName = $change.displayName; status = 'succeeded'; settingId = $settingId; error = $null })
             $auditEvents.Add([pscustomobject]@{

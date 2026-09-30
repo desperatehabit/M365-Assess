@@ -36,6 +36,7 @@ describe("INTUNE_POLICY_TYPES registry (T-0301)", () => {
     expect(entry).toBeDefined();
     expect(entry!.supported).toBe(true);
     expect(entry!.graphResource).toContain("configurationPolicies");
+    expect(entry!.graphResource).toContain("beta");
     expect(entry!.requiredScopes).toContain("DeviceManagementConfiguration.Read.All");
   });
 
@@ -74,6 +75,28 @@ describe("INTUNE_POLICY_TYPES registry (T-0301)", () => {
       const key = `${entry.kind}/${entry.platform}`;
       expect(seen.has(key), `duplicate entry for ${key}`).toBe(false);
       seen.add(key);
+    }
+  });
+
+  it("all configuration entries use the beta API version (settings catalog is beta-only)", () => {
+    const configEntries = INTUNE_POLICY_TYPES.filter((e) => e.kind === "configuration");
+    expect(configEntries.length).toBeGreaterThan(0);
+    for (const entry of configEntries) {
+      expect(
+        entry.graphResource,
+        `${entry.kind}/${entry.platform} should use beta`,
+      ).toContain("beta");
+    }
+  });
+
+  it("compliance entries use v1.0 (deviceCompliancePolicies is GA)", () => {
+    const complianceEntries = INTUNE_POLICY_TYPES.filter((e) => e.kind === "compliance");
+    expect(complianceEntries.length).toBeGreaterThan(0);
+    for (const entry of complianceEntries) {
+      expect(
+        entry.graphResource,
+        `${entry.kind}/${entry.platform} should use v1.0`,
+      ).toContain("v1.0");
     }
   });
 });

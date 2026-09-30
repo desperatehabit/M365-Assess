@@ -10,7 +10,7 @@
 # - Emits an AuditEvent for every policy write.
 
 $script:IntuneDeployResources = @{
-    configuration = @{ Uri = '/v1.0/deviceManagement/configurationPolicies'; NameProperty = 'name' }
+    configuration = @{ Uri = '/beta/deviceManagement/configurationPolicies'; NameProperty = 'name' }
     compliance    = @{ Uri = '/v1.0/deviceManagement/deviceCompliancePolicies'; NameProperty = 'displayName' }
 }
 
@@ -370,7 +370,7 @@ function Invoke-DeployIntuneTemplate {
         $body = $payload | ConvertTo-Json -Depth 20 -Compress
         if ($existing) {
             $policyId = $before['id']
-            $method = if ($kind -eq 'configuration') { 'PUT' } else { 'PATCH' }
+            $method = 'PATCH'
             $null = Invoke-MgGraphRequest -Method $method -Uri "$($resource.Uri)/$policyId" -Body $body
         }
         else {
