@@ -1001,6 +1001,20 @@ export interface BrandingConfig {
 export type BrandingConfigInput = Omit<BrandingConfig, "updatedAt"> &
   Partial<Pick<BrandingConfig, "updatedAt">>;
 
+// Application settings (EPIC-037 SPEC.md §5, §11.1): one row per typed key
+// from the BFF settings schema. The value is the JSON-encoded typed value;
+// unknown keys and ill-typed values are rejected by the BFF schema, and the
+// repository rejects structurally invalid keys. SPEC §9: no free-form blobs.
+export type SettingScope = "global" | "tenant";
+
+export interface AppSetting {
+  key: string;
+  value: unknown;
+  scope: SettingScope;
+  updatedAt: string;
+  updatedBy: string | null;
+}
+
 export type TemplateItemSource = "local" | "community";
 export type TemplateRepoReviewState = "unreviewed" | "reviewed" | "signed";
 
@@ -1298,6 +1312,14 @@ export interface Repository {
   createTestRun(input: TestRunInput): Promise<TestRun>;
   getTestRun(tenantId: string, runId: string): Promise<TestRun | undefined>;
   listTestRuns(tenantId: string, options?: TestRunListOptions): Promise<TestRun[]>;
+
+  listSettings(): Promise<AppSetting[]>;
+  getSetting(key: string): Promise<AppSetting | undefined>;
+  upsertSetting(
+    key: string,
+    value: unknown,
+    options?: { updatedBy?: string | null; scope?: SettingScope },
+  ): Promise<AppSetting>;
 }
 
 export class SchemaVersionError extends Error {

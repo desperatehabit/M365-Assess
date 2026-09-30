@@ -10,6 +10,7 @@ import {
   type AlertStateChange,
   type AlertStateChangeInput,
   type AlertStateChangeListOptions,
+  type AppSetting,
   type AuditEvent,
   type AuditEventInput,
   type AuditResult,
@@ -56,6 +57,7 @@ import {
   type RunSectionInput,
   type RunStatus,
   type RunTrigger,
+  type SettingScope,
   type Severity,
   type SharePointSiteType,
   type SharePointTemplate,
@@ -173,6 +175,52 @@ function parseTestRunResults(value: unknown): TestRunResult[] {
   } catch {
     return [];
   }
+}
+
+// Setting values are stored as one JSON document per row and may be a
+// string, number, boolean, array, or object — unlike parseJson above, which
+// only accepts objects.
+function parseJsonValue(value: unknown): unknown {
+  if (value === null || value === undefined) return null;
+  try {
+    return JSON.parse(String(value)) as unknown;
+  } catch {
+    return null;
+  }
+}
+
+// Storage-boundary guard for SPEC §11.1: keys are dotted names such as
+// 'general.portalName'. The BFF schema is the typed layer that rejects
+// unknown keys; this only keeps garbage out of the primary key.
+const SETTING_KEY = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MAX_SETTING_KEY = 200;
+
+function assertSettingKey(key: unknown): string {
+  if (typeof key !== "string" || key.length === 0 || key.length > MAX_SETTING_KEY || !SETTING_KEY.test(key)) {
+    throw new Error("setting key must be a dotted name such as 'general.portalName'");
+  }
+  return key;
+}
+
+function assertJsonValue(value: unknown): void {
+  if (value === undefined || typeof value === "function" || typeof value === "bigint") {
+    throw new Error("setting value must be a JSON-serializable string, number, boolean, array, or object");
+  }
+  if (typeof value === "number" && !Number.isFinite(value)) {
+    throw new Error("setting value must be a finite number");
+  }
+  try {
+    JSON.stringify(value);
+  } catch {
+    throw new Error("setting value must be JSON-serializable");
+  }
+}
+
+function assertSettingScope(scope: unknown): SettingScope {
+  if (scope !== "global" && scope !== "tenant") {
+    throw new Error("setting scope must be 'global' or 'tenant'");
+  }
+  return scope;
 }
 
 function stringifyJson(value: unknown): string | null {
@@ -2024,6 +2072,16 @@ export class SqliteRepository implements Repository {
     return mapBrandingRow(row);
   }
 
+  private mapSetting(row: Row): AppSetting {
+    return {
+      key: asString(row["key"]),
+      value: parseJsonValue(row["value"]),
+      scope: asString(row["scope"]) as SettingScope,
+      updatedAt: asString(row["updatedAt"]),
+      updatedBy: asNullableString(row["updatedBy"]),
+    };
+  }
+
   async getBranding(): Promise<BrandingConfig | undefined> {
     let row: Row | undefined;
     try {
@@ -2289,6 +2347,77 @@ export class SqliteRepository implements Repository {
         .prepare('SELECT * FROM test_runs WHERE tenantId = ? AND packId = ? ORDER BY "at", id')
         .all(tenantId, options.packId) as Row[]
     ).map((row) => this.mapTestRun(row));
+  async listSettings(): Promise<AppSetting[]> {
+    return (this.db.prepare("SELECT * FROM app_settings ORDER BY key").all() as Row[]).map(
+      (row) => this.mapSetting(row),
+    );
+  }
+
+  async getSetting(key: string): Promise<AppSetting | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM app_settings WHERE key = ?")
+      .get(key) as Row | undefined;
+    return row ? this.mapSetting(row) : undefined;
+  }
+
+  async upsertSetting(
+    key: string,
+    value: unknown,
+    options: { updatedBy?: string | null; scope?: SettingScope } = {},
+  ): Promise<AppSetting> {
+    const settingKey = assertSettingKey(key);
+    assertJsonValue(value);
+    const scope = options.scope === undefined ? "global" : assertSettingScope(options.scope);
+    const updatedBy = options.updatedBy ?? null;
+    const updatedAt = nowIso();
+    this.db.transaction(() => {
+      const before = this.db
+        .prepare("SELECT * FROM app_settings WHERE key = ?")
+        .get(settingKey) as Row | undefined;
+      this.db
+        .prepare(
+          `INSERT INTO app_settings (key, value, scope, updatedAt, updatedBy)
+           VALUES (@key, @value, @scope, @updatedAt, @updatedBy)
+           ON CONFLICT(key) DO UPDATE SET
+             value = excluded.value,
+             scope = excluded.scope,
+             updatedAt = excluded.updatedAt,
+             updatedBy = excluded.updatedBy`,
+        )
+        .run({
+          key: settingKey,
+          value: JSON.stringify(value),
+          scope,
+          updatedAt,
+          updatedBy,
+        });
+      this.db
+        .prepare(
+          `INSERT INTO audit_events
+             (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          updatedAt,
+          updatedBy,
+          updatedBy === null ? "system" : "user",
+          null,
+          "settings.upsert",
+          "app_setting",
+          settingKey,
+          before ? JSON.stringify(this.mapSetting(before)) : null,
+          JSON.stringify({ key: settingKey, value, scope, updatedAt, updatedBy }),
+          "success",
+          null,
+          "request",
+          null,
+          updatedAt,
+        );
+    })();
+    const persisted = await this.getSetting(settingKey);
+    if (!persisted) throw new Error(`setting ${settingKey} was not persisted`);
+    return persisted;
   }
 }
 
