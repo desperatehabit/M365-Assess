@@ -322,3 +322,263 @@ export async function openSqliteTransportRuleTemplateRepository(
     throw error;
   }
 }
+
+// Connector templates (EPIC-021 SPEC.md §3.3, §5; T-0405) share this module
+// with the transport rule templates above. A ConnectorTemplate is a persisted
+// snapshot of a connector (id, name, connectorJson, variables, source) and is
+// never a tenant write. `connectorJson` carries connector secrets by reference
+// only (T-0404): the route rejects secret material before it is persisted, so
+// the storage layer only ever sees reference-bearing JSON. `source` is
+// constrained to 'local' in v1 (SPEC §11.3).
+export const CONNECTOR_TEMPLATE_SOURCES = ["local"] as const;
+export type ConnectorTemplateSource = (typeof CONNECTOR_TEMPLATE_SOURCES)[number];
+
+export interface ConnectorTemplateVariable {
+  name: string;
+  defaultValue?: string;
+}
+
+export interface ConnectorTemplate {
+  id: string;
+  name: string;
+  connectorJson: Record<string, unknown>;
+  variables: ConnectorTemplateVariable[];
+  source: ConnectorTemplateSource;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt: string | null;
+}
+
+export interface ConnectorTemplateCreateInput {
+  id?: string;
+  name: string;
+  connectorJson: Record<string, unknown>;
+  variables?: ConnectorTemplateVariable[];
+  source?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface ConnectorTemplateUpdateInput {
+  name?: string;
+  connectorJson?: Record<string, unknown>;
+  variables?: ConnectorTemplateVariable[];
+  source?: string;
+  updatedAt?: string;
+}
+
+export interface ConnectorTemplateCloneInput {
+  id?: string;
+  name: string;
+  createdAt?: string;
+}
+
+export interface ConnectorTemplateListOptions {
+  includeDeleted?: boolean;
+}
+
+export interface ConnectorTemplateReadOptions {
+  includeDeleted?: boolean;
+}
+
+export interface ConnectorTemplateRepository {
+  readonly schemaVersion: number;
+
+  close(): void;
+
+  createTemplate(input: ConnectorTemplateCreateInput): Promise<ConnectorTemplate>;
+  getTemplate(
+    id: string,
+    options?: ConnectorTemplateReadOptions,
+  ): Promise<ConnectorTemplate | undefined>;
+  listTemplates(options?: ConnectorTemplateListOptions): Promise<ConnectorTemplate[]>;
+  updateTemplate(
+    id: string,
+    input: ConnectorTemplateUpdateInput,
+  ): Promise<ConnectorTemplate | undefined>;
+  softDeleteTemplate(id: string, options?: { now?: string }): Promise<boolean>;
+  cloneTemplate(
+    sourceId: string,
+    input: ConnectorTemplateCloneInput,
+  ): Promise<ConnectorTemplate | undefined>;
+}
+
+function cloneConnectorJson(connectorJson: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(connectorJson)) as Record<string, unknown>;
+}
+
+export class SqliteConnectorTemplateRepository implements ConnectorTemplateRepository {
+  readonly schemaVersion: number;
+
+  constructor(
+    private readonly db: Database.Database,
+    schemaVersion: number,
+  ) {
+    this.schemaVersion = schemaVersion;
+  }
+
+  close(): void {
+    this.db.close();
+  }
+
+  private mapTemplate(row: Row): ConnectorTemplate {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      connectorJson: parseJsonObject(row["connectorJson"]),
+      variables: parseVariables(row["variables"]),
+      source: asString(row["source"]) as ConnectorTemplateSource,
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
+    };
+  }
+
+  private templateById(id: string): ConnectorTemplate | undefined {
+    const row = this.db
+      .prepare("SELECT * FROM connector_templates WHERE id = ?")
+      .get(id) as Row | undefined;
+    return row ? this.mapTemplate(row) : undefined;
+  }
+
+  async createTemplate(input: ConnectorTemplateCreateInput): Promise<ConnectorTemplate> {
+    const id = input.id ?? randomUUID();
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? createdAt;
+    this.db
+      .prepare(
+        `INSERT INTO connector_templates
+           (id, name, connectorJson, variables, source, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        id,
+        input.name,
+        JSON.stringify(input.connectorJson),
+        stringifyVariables(input.variables),
+        input.source ?? "local",
+        createdAt,
+        updatedAt,
+      );
+
+    const created = this.templateById(id);
+    if (!created) throw new Error(`connector template ${id} was not persisted`);
+    return created;
+  }
+
+  async getTemplate(
+    id: string,
+    options: ConnectorTemplateReadOptions = {},
+  ): Promise<ConnectorTemplate | undefined> {
+    const sql =
+      options.includeDeleted === true
+        ? "SELECT * FROM connector_templates WHERE id = ?"
+        : "SELECT * FROM connector_templates WHERE id = ? AND deletedAt IS NULL";
+    const row = this.db.prepare(sql).get(id) as Row | undefined;
+    return row ? this.mapTemplate(row) : undefined;
+  }
+
+  async listTemplates(options: ConnectorTemplateListOptions = {}): Promise<ConnectorTemplate[]> {
+    const sql =
+      options.includeDeleted === true
+        ? "SELECT * FROM connector_templates ORDER BY name, id"
+        : "SELECT * FROM connector_templates WHERE deletedAt IS NULL ORDER BY name, id";
+    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapTemplate(row));
+  }
+
+  async updateTemplate(
+    id: string,
+    input: ConnectorTemplateUpdateInput,
+  ): Promise<ConnectorTemplate | undefined> {
+    const existing = this.templateById(id);
+    if (!existing || existing.deletedAt !== null) return undefined;
+    const updatedAt = input.updatedAt ?? nowIso();
+    this.db
+      .prepare(
+        `UPDATE connector_templates
+           SET name = ?, connectorJson = ?, variables = ?, source = ?, updatedAt = ?
+         WHERE id = ? AND deletedAt IS NULL`,
+      )
+      .run(
+        input.name ?? existing.name,
+        JSON.stringify(
+          input.connectorJson === undefined ? existing.connectorJson : input.connectorJson,
+        ),
+        stringifyVariables(input.variables === undefined ? existing.variables : input.variables),
+        input.source ?? existing.source,
+        updatedAt,
+        id,
+      );
+
+    return this.getTemplate(id);
+  }
+
+  async softDeleteTemplate(id: string, options: { now?: string } = {}): Promise<boolean> {
+    const existing = this.templateById(id);
+    if (!existing || existing.deletedAt !== null) return false;
+    const at = options.now ?? nowIso();
+    const result = this.db
+      .prepare(
+        "UPDATE connector_templates SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+      )
+      .run(at, at, id);
+    return result.changes > 0;
+  }
+
+  async cloneTemplate(
+    sourceId: string,
+    input: ConnectorTemplateCloneInput,
+  ): Promise<ConnectorTemplate | undefined> {
+    const source = this.templateById(sourceId);
+    if (!source || source.deletedAt !== null) return undefined;
+    const id = input.id ?? randomUUID();
+    const createdAt = input.createdAt ?? nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO connector_templates
+           (id, name, connectorJson, variables, source, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, 'local', ?, ?, NULL)`,
+      )
+      .run(
+        id,
+        input.name,
+        JSON.stringify(cloneConnectorJson(source.connectorJson)),
+        stringifyVariables(source.variables),
+        createdAt,
+        createdAt,
+      );
+
+    const created = this.templateById(id);
+    if (!created) throw new Error(`connector template ${id} was not persisted`);
+    return created;
+  }
+}
+
+export async function openSqliteConnectorTemplateRepository(
+  options: OpenSqliteRepositoryOptions,
+): Promise<SqliteConnectorTemplateRepository> {
+  const migrations = options.migrations ?? loadMigrations(options.migrationsDir);
+  const target = migrations.reduce((max, migration) => Math.max(max, migration.version), 0);
+  const db = new Database(options.filename);
+  try {
+    db.pragma("journal_mode = WAL");
+    db.pragma("foreign_keys = ON");
+    db.exec(SCHEMA_VERSIONS_TABLE);
+    const row = db
+      .prepare("SELECT MAX(version) AS version FROM schema_versions")
+      .get() as { version: number | null } | undefined;
+    const existing =
+      row?.version === null || row?.version === undefined ? 0 : asNumber(row.version);
+    if (existing > target) {
+      throw new SchemaVersionError(existing, target);
+    }
+    const applied = runMigrations(db, migrations);
+    if (applied !== target) {
+      throw new SchemaVersionError(applied, target);
+    }
+    return new SqliteConnectorTemplateRepository(db, applied);
+  } catch (error) {
+    db.close();
+    throw error;
+  }
+}
