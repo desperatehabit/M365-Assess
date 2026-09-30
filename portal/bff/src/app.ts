@@ -45,10 +45,12 @@ import {
 } from "./adapters/tenants.js";
 import { createAuditSink, type RecordAudit } from "./adapters/audit.js";
 import {
+  createJobBackedRemediationIdempotencyStore,
   createRemediationStore,
   createScheduleHistoryStore,
   createRemediationQueue,
   createRemediationWorkerRunner,
+  withRemediationApplyIngestion,
   withRemediationPlanIngestion,
   createUnavailableScheduleQueue,
   createUnavailableScriptSandbox,
@@ -512,6 +514,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     poolSize: config.workerPoolSize,
     runWorker: withReportCompletion(
       withRemediationPlanIngestion(
+      withRemediationApplyIngestion(
         withFindingsIngestion(
           options.runWorker ??
             createJobDispatcher({
@@ -647,8 +650,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     // refused with 501.
     ...createRemediationRoutes({
       store: createRemediationStore(remediationRepo),
-      queue: createRemediationQueue({ jobs: runJobs, repo, storageRoot: config.artifactPath }),
+      queue: createRemediationQueue({ jobs: runJobs, repo, credentials: credentialRows, storageRoot: config.artifactPath }),
       latestRunId: (tenantId) => reportRuns.latestRunId(tenantId),
+      idempotency: createJobBackedRemediationIdempotencyStore(db),
       ...caller,
     }),
     ...createScheduleRoutes({

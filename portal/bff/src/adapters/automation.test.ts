@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,19 +6,45 @@ import { SqliteRemediationRepository, SqliteRepository, loadMigrations, runMigra
 import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
+import type { CredentialRecord, CredentialStoreRow } from "../routes/credentials.js";
 import {
   JOB_DISPATCH_UNAVAILABLE,
+  NO_CREDENTIAL,
+  REMEDIATION_APPLY_NO_PLAN,
   REMEDIATION_OUTPUT_UNREADABLE,
   SCRIPT_SANDBOX_UNAVAILABLE,
+  buildApplyWorkerArgs,
   buildPlanWorkerArgs,
+  createJobBackedRemediationIdempotencyStore,
   createRemediationQueue,
   createRemediationStore,
   createRemediationWorkerRunner,
   createScheduleHistoryStore,
   createUnavailableScheduleQueue,
   createUnavailableScriptSandbox,
+  withRemediationApplyIngestion,
   withRemediationPlanIngestion,
 } from "./automation.js";
+
+const CREDENTIAL: CredentialRecord = {
+  id: "c-1",
+  tenantId: "t-a",
+  authMethod: "certificate-thumbprint",
+  clientId: "app-1",
+  secretRef: "thumbprint://ABC",
+  thumbprint: "ABC",
+  environment: "commercial",
+  expiresOn: null,
+  lastValidated: null,
+  createdAt: "",
+  updatedAt: "",
+};
+
+const credentials: CredentialStoreRow = {
+  getCredential: async (tenantId) => (tenantId === "t-a" ? CREDENTIAL : undefined),
+  upsertCredential: async (input) => input,
+  appendAuditEvent: async () => undefined,
+};
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -150,7 +176,7 @@ describe("remediation plan jobs (T-0836)", () => {
     ]);
     const root = tempRoot();
     const enqueued: JobEnvelope[] = [];
-    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, storageRoot: root });
+    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, credentials, storageRoot: root });
 
     const env = planEnvelope("plan");
     expect(await queue.enqueue(env)).toBe("job-1");
@@ -163,13 +189,11 @@ describe("remediation plan jobs (T-0836)", () => {
     if (process.platform !== "win32") expect(statSync(path.join(folder, "job.json")).mode & 0o777).toBe(0o600);
   });
 
-  it("refuses apply and verify jobs with 501 before enqueueing", async () => {
+  it("refuses verify jobs with 501 before enqueueing", async () => {
     const { repo } = await setup();
     const enqueued: JobEnvelope[] = [];
-    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, storageRoot: tempRoot() });
-    for (const operation of ["apply", "verify"]) {
-      await expect(queue.enqueue(planEnvelope(operation))).rejects.toMatchObject({ status: 501, code: JOB_DISPATCH_UNAVAILABLE });
-    }
+    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, credentials, storageRoot: tempRoot() });
+    await expect(queue.enqueue(planEnvelope("verify"))).rejects.toMatchObject({ status: 501, code: JOB_DISPATCH_UNAVAILABLE });
     expect(enqueued).toEqual([]);
   });
 
@@ -187,7 +211,25 @@ describe("remediation plan jobs (T-0836)", () => {
       "remediation/t-a/job-1/findings.json",
     ]);
     const runner = createRemediationWorkerRunner({ workersDir: "/w", storageRoot: tempRoot() });
-    await expect(runner(planEnvelope("apply"), new AbortController().signal)).rejects.toMatchObject({ code: JOB_DISPATCH_UNAVAILABLE });
+    await expect(runner(planEnvelope("verify"), new AbortController().signal)).rejects.toMatchObject({ code: JOB_DISPATCH_UNAVAILABLE });
+  });
+
+  it("runs apply-remediation.ps1 with the plan job's folder as -PlanFile", async () => {
+    const apply = planEnvelope("apply");
+    const planOutputRef = "remediation/t-a/plan-job-1";
+    const withPlan = { ...apply, payload: { ...apply.payload, ...{ planOutputRef } } };
+    expect(buildApplyWorkerArgs(withPlan, "/w/apply-remediation.ps1")).toEqual([
+      "-NoProfile",
+      "-NonInteractive",
+      "-File",
+      "/w/apply-remediation.ps1",
+      "-JobFile",
+      "remediation/t-a/job-1/job.json",
+      "-OutputFolder",
+      "remediation/t-a/job-1",
+      "-PlanFile",
+      "remediation/t-a/plan-job-1/remediation-plan.json",
+    ]);
   });
 
   it("stores a succeeded plan job's plan and instructions under the job's plan id", async () => {
@@ -224,5 +266,181 @@ describe("remediation plan jobs (T-0836)", () => {
       error: { code: REMEDIATION_OUTPUT_UNREADABLE },
     });
     expect(await remediation.getRemediationPlan("plan-7")).toBeUndefined();
+  });
+
+  it("writes the apply job file with the credential block and the plan job's folder", async () => {
+    const { repo } = await setup();
+    await repo.createJob({
+      id: "plan-job-1",
+      type: "remediation",
+      tenantId: "t-a",
+      payload: { operation: "plan", planId: "plan-7", outputRef: "remediation/t-a/plan-job-1" },
+      state: "done",
+      attempts: 1,
+      progress: null,
+      createdAt: "2026-09-27T00:00:00.000Z",
+    });
+    const root = tempRoot();
+    const enqueued: JobEnvelope[] = [];
+    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, credentials, storageRoot: root });
+
+    const env = planEnvelope("apply");
+    expect(await queue.enqueue(env)).toBe("job-1");
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]!.payload).toMatchObject({ planOutputRef: "remediation/t-a/plan-job-1" });
+
+    const jobFile = JSON.parse(readFileSync(path.join(root, "remediation/t-a/job-1", "job.json"), "utf8"));
+    expect(jobFile.credential).toEqual({
+      credentialRef: "tenants/t-a/credential",
+      record: expect.objectContaining({ tenantId: "t-a", clientId: "app-1", thumbprint: "ABC" }),
+    });
+    expect(jobFile.payload).toMatchObject({ operation: "apply", planId: "plan-7", planOutputRef: "remediation/t-a/plan-job-1" });
+  });
+
+  it("refuses an apply whose tenant has no credential", async () => {
+    const { repo } = await setup();
+    await repo.createJob({
+      id: "plan-job-1",
+      type: "remediation",
+      tenantId: "t-a",
+      payload: { operation: "plan", planId: "plan-7", outputRef: "remediation/t-a/plan-job-1" },
+      state: "done",
+      attempts: 1,
+      progress: null,
+      createdAt: "2026-09-27T00:00:00.000Z",
+    });
+    const noCredential: CredentialStoreRow = { ...credentials, getCredential: async () => undefined };
+    const queue = createRemediationQueue({ jobs: { enqueue: async () => "" }, repo, credentials: noCredential, storageRoot: tempRoot() });
+    await expect(queue.enqueue(planEnvelope("apply"))).rejects.toMatchObject({ status: 409, code: NO_CREDENTIAL });
+  });
+
+  it("refuses an apply whose plan job is not stored", async () => {
+    const { repo } = await setup();
+    const queue = createRemediationQueue({ jobs: { enqueue: async () => "" }, repo, credentials, storageRoot: tempRoot() });
+    await expect(queue.enqueue(planEnvelope("apply"))).rejects.toMatchObject({ status: 409, code: REMEDIATION_APPLY_NO_PLAN });
+  });
+
+  it("stores a succeeded apply job's action results", async () => {
+    const { db, version } = await setup();
+    const remediation = new SqliteRemediationRepository(db, version);
+    await remediation.createRemediationPlan({
+      id: "plan-7",
+      tenantId: "t-a",
+      runId: "run-1",
+      findingIds: ["f-1"],
+      mode: "automated",
+      createdBy: "user-1",
+      actions: [
+        { id: "act-1", planId: "plan-7", checkId: "CA-1", command: "Set-Thing", target: null, state: "planned" },
+        { id: "act-2", planId: "plan-7", checkId: "SPO-1", command: "Set-Other", target: null, state: "planned" },
+      ],
+    } as never);
+    const root = tempRoot();
+    const env = planEnvelope("apply");
+    const worker = withRemediationApplyIngestion(
+      async (e) => {
+        const folder = path.join(root, e.payload.outputRef);
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(
+          path.join(folder, "remediation-apply.json"),
+          JSON.stringify({
+            PlanId: "plan-7",
+            TenantId: "t-a",
+            Results: [
+              { actionId: "act-1", state: "applied", before: { enabled: false }, after: { enabled: true }, appliedAt: "2026-09-27T00:00:01.000Z", actor: "user-1", result: { enabled: true }, error: null, dryRun: false },
+              { actionId: "act-2", state: "failed", before: null, after: null, appliedAt: "2026-09-27T00:00:02.000Z", actor: "user-1", result: null, error: "boom", dryRun: false },
+            ],
+            Summary: { total: 2, applied: 1, skipped: 0, failed: 1, dryrun: 0 },
+          }),
+        );
+        return succeeded(e);
+      },
+      { remediation, storageRoot: root },
+    );
+
+    expect(await worker(env, new AbortController().signal)).toMatchObject({ status: "succeeded" });
+    expect(await remediation.getRemediationAction("act-1")).toMatchObject({
+      state: "applied",
+      before: { enabled: false },
+      after: { enabled: true },
+      appliedAt: "2026-09-27T00:00:01.000Z",
+      appliedBy: "user-1",
+      result: { enabled: true },
+      correlationId: "corr-1",
+    });
+    expect(await remediation.getRemediationAction("act-2")).toMatchObject({
+      state: "failed",
+      error: "boom",
+      appliedBy: "user-1",
+    });
+  });
+
+  it("dry runs change no action state", async () => {
+    const { db, version } = await setup();
+    const remediation = new SqliteRemediationRepository(db, version);
+    await remediation.createRemediationPlan({
+      id: "plan-7",
+      tenantId: "t-a",
+      runId: "run-1",
+      findingIds: ["f-1"],
+      mode: "automated",
+      createdBy: "user-1",
+      actions: [{ id: "act-1", planId: "plan-7", checkId: "CA-1", command: "Set-Thing", target: null, state: "planned" }],
+    } as never);
+    const root = tempRoot();
+    const worker = withRemediationApplyIngestion(
+      async (e) => {
+        const folder = path.join(root, e.payload.outputRef);
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(
+          path.join(folder, "remediation-apply.json"),
+          JSON.stringify({
+            PlanId: "plan-7",
+            TenantId: "t-a",
+            Results: [
+              { actionId: "act-1", state: "dryrun", before: { enabled: false }, after: null, appliedAt: null, actor: "user-1", result: null, error: null, dryRun: true },
+            ],
+            Summary: { total: 1, applied: 0, skipped: 0, failed: 0, dryrun: 1 },
+          }),
+        );
+        return succeeded(e);
+      },
+      { remediation, storageRoot: root },
+    );
+
+    expect(await worker(planEnvelope("apply"), new AbortController().signal)).toMatchObject({ status: "succeeded" });
+    expect(await remediation.getRemediationAction("act-1")).toMatchObject({ state: "planned", appliedAt: null, appliedBy: null });
+  });
+
+  it("fails an apply job whose output is missing", async () => {
+    const { db, version } = await setup();
+    const remediation = new SqliteRemediationRepository(db, version);
+    const worker = withRemediationApplyIngestion(async (e) => succeeded(e), { remediation, storageRoot: tempRoot() });
+    expect(await worker(planEnvelope("apply"), new AbortController().signal)).toMatchObject({
+      status: "failed",
+      error: { code: REMEDIATION_OUTPUT_UNREADABLE },
+    });
+  });
+
+  it("replays an apply Idempotency-Key from the jobs table after a restart", async () => {
+    const { db, repo } = await setup();
+    await repo.createJob({
+      id: "apply-job-1",
+      type: "remediation",
+      tenantId: "t-a",
+      payload: { operation: "apply", planId: "plan-7", dryRun: true, idempotencyKey: "key-1" },
+      state: "done",
+      attempts: 1,
+      progress: null,
+      createdAt: "2026-09-27T00:00:00.000Z",
+    });
+    const store = createJobBackedRemediationIdempotencyStore(db);
+    await expect(store.find("t-a", "key-1")).resolves.toMatchObject({
+      planId: "plan-7",
+      jobId: "apply-job-1",
+      dryRun: true,
+      status: "queued",
+    });
+    await expect(store.find("t-a", "missing")).resolves.toBeUndefined();
   });
 });
