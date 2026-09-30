@@ -10,7 +10,7 @@
 import { randomUUID } from "node:crypto";
 import type { SqliteDriftRepository, SqliteRepository } from "@m365-assess/db";
 import type { JobQueue, RunWorkerFn } from "../jobs/queue.js";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DriftBulkStore } from "../routes/drift-bulk.js";
 import type { DriftRefresh, DriftStore } from "../routes/drift.js";
@@ -46,6 +46,7 @@ export interface DriftRefreshOptions {
   readonly drift: Pick<SqliteDriftRepository, "getDriftTemplate">;
   readonly findings: Pick<SqliteRepository, "listFindings">;
   readonly latestRunId: (tenantId: string) => Promise<string | null>;
+  readonly storageRoot: string;
 }
 
 /**
@@ -55,7 +56,7 @@ export interface DriftRefreshOptions {
 /// live tenant read; the worker seam reads the payload).
  */
 export function createDriftRefresh(options: DriftRefreshOptions): DriftRefresh {
-  const { jobs, drift, findings, latestRunId } = options;
+  const { jobs, drift, findings, latestRunId, storageRoot } = options;
   return {
     async refresh(tenantId) {
       const template = await drift.getDriftTemplate(tenantId);
@@ -67,7 +68,7 @@ export function createDriftRefresh(options: DriftRefreshOptions): DriftRefresh {
         value: parseCurrentValue(row.currentValue),
       }));
       const jobId = randomUUID();
-      await jobs.enqueue({
+      const envelope = {
         schemaVersion: "v1",
         jobId,
         jobType: "drift",
@@ -87,7 +88,11 @@ export function createDriftRefresh(options: DriftRefreshOptions): DriftRefresh {
           currentState,
           extraPolicies: [],
         },
-      });
+      };
+      const contextPath = path.resolve(storageRoot, envelope.payload.contextRef);
+      await mkdir(path.dirname(contextPath), { recursive: true, mode: 0o700 });
+      await writeFile(contextPath, JSON.stringify(envelope), { mode: 0o600 });
+      await jobs.enqueue(envelope);
       return { recomputed: true };
     },
   };
@@ -147,7 +152,7 @@ export function withDriftIngestion(runWorker: RunWorkerFn, options: DriftIngesti
     if (envelope.jobType !== "drift" || result.status !== "succeeded") {
       return result;
     }
-    const payload = envelope.payload as Record<string, unknown>;
+    const payload = envelope.payload as unknown as Record<string, unknown>;
     const outputRef = typeof payload["outputRef"] === "string" ? payload["outputRef"] : "";
     if (!outputRef) return result;
     try {

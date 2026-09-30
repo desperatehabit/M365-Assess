@@ -9,7 +9,7 @@
 // evaluation artifact.
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import type {
   Baseline,
   SqliteBaselinesRepository,
@@ -19,7 +19,7 @@ import type {
 } from "@m365-assess/db";
 import type { ResultEnvelope } from "@m365-assess/contracts";
 import type { RunWorkerFn } from "../jobs/queue.js";
-import { superviseJob } from "../jobs/supervisor.js";
+import { buildJobFileArgs, superviseJob } from "../jobs/supervisor.js";
 import { buildEvaluationRecords } from "../domain/baseline-history.js";
 import type { AdvanceHistoryPort, AdvanceStore } from "../routes/baselines-advance.js";
 import type { AlignmentStore } from "../routes/baselines-alignment.js";
@@ -121,7 +121,10 @@ function parseCurrentValue(value: string | null): unknown {
 export interface BaselineEvaluationRunnerOptions {
   readonly workersDir: string;
   readonly storageRoot: string;
-  readonly baselines: Pick<SqliteBaselinesRepository, "listBaselines" | "getRollout">;
+  readonly baselines: Pick<
+    SqliteBaselinesRepository,
+    "listBaselines" | "getRollout" | "upsertRollout" | "appendHistory" | "appendTrend"
+  >;
   readonly tenants: Pick<TenantStore, "listTenants">;
   readonly findings: Pick<SqliteRepository, "listFindings">;
   readonly latestRunId: (tenantId: string) => Promise<string | null>;
@@ -181,16 +184,21 @@ export function createBaselineEvaluationRunner(options: BaselineEvaluationRunner
         tenantId: id,
         runId,
         payload: {
-          ...(envelope.payload as Record<string, unknown>),
+          ...(envelope.payload as unknown as Record<string, unknown>),
+          contextRef: `${subOutputRef}/job.json`,
           outputRef: subOutputRef,
           baselines: baselineData,
           currentState,
         },
       };
+      const contextPath = path.resolve(storageRoot, subEnvelope.payload.contextRef);
+      await mkdir(path.dirname(contextPath), { recursive: true, mode: 0o700 });
+      await writeFile(contextPath, JSON.stringify(subEnvelope), { mode: 0o600 });
       const result = await superviseJob(subEnvelope, {
         workerScriptPath: path.join(workersDir, "run-baseline.ps1"),
         storageRoot,
         signal,
+        buildArgs: buildJobFileArgs,
       });
       await ingestBaselineEvaluation(subEnvelope, result, { baselines, storageRoot });
       lastResult = result;
@@ -251,7 +259,14 @@ export async function ingestBaselineEvaluation(
       state: stageResult.compliant ? "eligible" : "active",
       lastRunAt: evaluation.RunAt,
     });
-    await options.baselines.appendHistory({ id: randomUUID(), ...history });
+    await options.baselines.appendHistory({
+      id: randomUUID(),
+      baselineId: history.baselineId,
+      tenantId: history.tenantId,
+      event: history.event,
+      detail: history.detail ?? {},
+      at: history.at ?? new Date().toISOString(),
+    });
     await options.baselines.appendTrend(trend);
   }
 }

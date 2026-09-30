@@ -58,6 +58,7 @@ import {
 import {
   createBaselineAdvanceStore,
   createBaselineAlignmentStore,
+  createBaselineEvaluationRunner,
   createBaselineHistory,
   createBaselinesFleetStore,
   createBaselinesMigrateStore,
@@ -65,11 +66,11 @@ import {
 } from "./adapters/baselines.js";
 import { createCaProviders } from "./adapters/conditional-access.js";
 import {
+  createDriftDeletionPort,
+  createDriftRefresh,
   createDriftStore,
   createDriftTriageStore,
-  createUnavailableDriftDeletion,
-  createUnavailableDriftRefresh,
-  refuseDriftDeletion,
+  withDriftIngestion,
 } from "./adapters/drift.js";
 import { createGroupProviders } from "./adapters/groups.js";
 import { createIntuneProviders } from "./adapters/intune.js";
@@ -108,10 +109,12 @@ import { createActiveGrantsResolver, createRoleProviders } from "./adapters/role
 import {
   createStandardsAlignmentStore,
   createStandardsCatalogStore,
+  createStandardsRunQueue,
   createStandardsRunStore,
   createStandardsTemplateStore,
-  createUnavailableStandardsRunQueue,
+  createStandardsVariableResolver,
   unavailableTenantLicenses,
+  withStandardsIngestion,
 } from "./adapters/standards.js";
 import {
   createJobPersistence,
@@ -150,7 +153,7 @@ import { createInMemoryCredentialStore } from "./credentials/store.js";
 import { AppError } from "./errors.js";
 import { createJobDispatcher } from "./jobs/dispatch.js";
 import { JobQueue } from "./jobs/queue.js";
-import { createSupervisorRunner } from "./jobs/supervisor.js";
+import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
 import { isTenantAllowed } from "./rbac/scope.js";
@@ -247,6 +250,8 @@ import { ProgressEventHub } from "./sse/hub.js";
 
 export const DATABASE_FILE = "portal.db";
 export const RUN_WORKER = "run-tenant.ps1";
+export const STANDARDS_WORKER = "run-standards.ps1";
+export const DRIFT_WORKER = "run-drift.ps1";
 export const UNAUTHENTICATED = "auth.unauthenticated";
 
 // ---- Authorization ---------------------------------------------------------
@@ -503,36 +508,65 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     repo,
     db,
   );
-  // EPIC-001/003 runs and EPIC-005 report renders share one queue: the dispatcher picks
-  // the runner by job type, and each runner's result is intercepted before the queue
-  // persists it (findings, remediation plans, report artifacts). Report jobs run
-  // render-report.ps1, which prints the composed HTML to PDF (ADR-0016, T-0835).
+  const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
+  const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
+  const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
+  const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
+  const reportRuns = createReportRunReader(repo, config.artifactPath);
+
   const runJobs = new JobQueue({
     persistence: createJobPersistence(repo),
     poolSize: config.workerPoolSize,
     runWorker: withReportCompletion(
       withRemediationPlanIngestion(
-      withRemediationApplyIngestion(
-        withFindingsIngestion(
-          options.runWorker ??
-            createJobDispatcher({
-              assessment: createSupervisorRunner({
-                workerScriptPath: path.join(config.workersDir, RUN_WORKER),
-                storageRoot: config.artifactPath,
-                onProgress: publish,
-              }),
-              remediation: createRemediationWorkerRunner({
-                workersDir: config.workersDir,
-                storageRoot: config.artifactPath,
-              }),
-              report: createReportWorkerRunner({
-                workersDir: config.workersDir,
-                storageRoot: config.artifactPath,
-              }),
-            }),
-          { repo, storageRoot: config.artifactPath },
+        withRemediationApplyIngestion(
+          withDriftIngestion(
+            withStandardsIngestion(
+              withFindingsIngestion(
+                options.runWorker ??
+                  createJobDispatcher({
+                    assessment: createSupervisorRunner({
+                      workerScriptPath: path.join(config.workersDir, RUN_WORKER),
+                      storageRoot: config.artifactPath,
+                      onProgress: publish,
+                    }),
+                    standards: createSupervisorRunner({
+                      workerScriptPath: path.join(config.workersDir, STANDARDS_WORKER),
+                      storageRoot: config.artifactPath,
+                      onProgress: publish,
+                      buildArgs: buildJobFileArgs,
+                    }),
+                    drift: createSupervisorRunner({
+                      workerScriptPath: path.join(config.workersDir, DRIFT_WORKER),
+                      storageRoot: config.artifactPath,
+                      onProgress: publish,
+                      buildArgs: buildJobFileArgs,
+                    }),
+                    baseline: createBaselineEvaluationRunner({
+                      workersDir: config.workersDir,
+                      storageRoot: config.artifactPath,
+                      baselines: baselinesRepo,
+                      tenants: tenantStore,
+                      findings: repo,
+                      latestRunId: reportRuns.latestRunId,
+                    }),
+                    remediation: createRemediationWorkerRunner({
+                      workersDir: config.workersDir,
+                      storageRoot: config.artifactPath,
+                    }),
+                    report: createReportWorkerRunner({
+                      workersDir: config.workersDir,
+                      storageRoot: config.artifactPath,
+                    }),
+                  }),
+                { repo, storageRoot: config.artifactPath },
+              ),
+              { standards: standardsRepo, storageRoot: config.artifactPath },
+            ),
+            { drift: driftRepo, storageRoot: config.artifactPath },
+          ),
+          { remediation: remediationRepo, storageRoot: config.artifactPath },
         ),
-        { remediation: remediationRepo, storageRoot: config.artifactPath },
       ),
       { store: generatedReports },
     ),
@@ -545,16 +579,11 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     credentials: credentialRows,
     repo,
   });
-  const reportRuns = createReportRunReader(repo, config.artifactPath);
   const reportRenderQueue = createRenderQueue({
     store: generatedReports,
     jobs: runJobs,
     storageRoot: config.artifactPath,
   });
-  const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
-  const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
-  const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
-  const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
   const driftTriage = createDriftTriageStore(driftRepo);
 
   // These routes read the raw body themselves; the server has already parsed it.
@@ -676,8 +705,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
 
-    // EPIC-008 standards (T-0825). Running a standard now is refused with 501 (T-0841),
-    // as is classifying the catalog for a tenant (T-0828).
+    // EPIC-008 standards (T-0825). Run-now enqueues a `standards` job (T-0841);
+    // classifying the catalog for a tenant is still refused with 501 (T-0828).
     ...createStandardsCatalogRoutes({
       catalog: createStandardsCatalogStore(standardsRepo),
       resolveTenantLicense: unavailableTenantLicenses,
@@ -686,29 +715,46 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createStandardsTemplateRoutes({ store: createStandardsTemplateStore(standardsRepo), ...caller }),
     ...createStandardsRunRoutes({
       store: createStandardsRunStore(standardsRepo, scheduleRepo),
-      queue: createUnavailableStandardsRunQueue(),
+      queue: createStandardsRunQueue({
+        jobs: runJobs,
+        findings: repo,
+        latestRunId: reportRuns.latestRunId,
+        storageRoot: config.artifactPath,
+      }),
+      resolveVariables: createStandardsVariableResolver(createTenantVariableStore(repo)),
       audit: { record: routeAudit },
       ...caller,
     }),
     ...createStandardsAlignmentRoutes({ store: createStandardsAlignmentStore(standardsRepo), ...caller }),
 
-    // EPIC-009 drift (T-0825). Refresh and denials that delete are refused with 501
-    // (T-0841); see adapters/drift.ts.
-    ...createDriftRoutes({ store: createDriftStore(driftRepo), refresh: createUnavailableDriftRefresh(), ...caller }),
+    // EPIC-009 drift (T-0825). Refresh enqueues a `drift` job and a deny that
+    // deletes queues the delete as a remediation apply job (T-0841; the apply
+    // worker itself lands with T-0838).
+    ...createDriftRoutes({
+      store: createDriftStore(driftRepo),
+      refresh: createDriftRefresh({
+        jobs: runJobs,
+        drift: driftRepo,
+        findings: repo,
+        latestRunId: reportRuns.latestRunId,
+        storageRoot: config.artifactPath,
+      }),
+      ...caller,
+    }),
     ...createDriftReportRoutes({ store: createDriftStore(driftRepo), ...caller }),
     ...createDriftTriageRoutes({ store: driftTriage, audit: { record: routeAudit }, ...caller }),
     ...createDriftDenyRoutes({
       store: driftTriage,
-      remediation: createUnavailableDriftDeletion(),
+      remediation: createDriftDeletionPort({ jobs: runJobs }),
       audit: { record: routeAudit },
       ...caller,
-    }).map((route) => refuseDriftDeletion(route, (ctx) => authorizeCaller(ctx.caller, DRIFT_DENY_PERMISSIONS.remediate))),
+    }),
     ...createDriftBulkRoutes({
       store: driftTriage,
-      remediation: createUnavailableDriftDeletion(),
+      remediation: createDriftDeletionPort({ jobs: runJobs }),
       audit: { record: routeAudit },
       ...caller,
-    }).map((route) => refuseDriftDeletion(route, (ctx) => authorizeCaller(ctx.caller, DRIFT_BULK_PERMISSIONS.remediate))),
+    }),
 
     // EPIC-010 baselines (T-0825). /baselines/fleet is mounted before the
     // /baselines/:baselineId routes so the id pattern cannot capture it.

@@ -25,7 +25,7 @@ import type { StandardsRunQueue, StandardsRunStore } from "../routes/standards-r
 import type { StandardsTemplateStore } from "../routes/standards-templates.js";
 import type { TenantVariableStore } from "../routes/tenant-variables.js";
 import type { VariableEntry, VariableScopes } from "../domain/variable-substitution.js";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export const TENANT_LICENSES_UNAVAILABLE = "standards.tenant_licenses_unavailable";
@@ -82,18 +82,26 @@ export function createStandardsRunQueue(options: {
   jobs: Pick<JobQueue, "enqueue">;
   findings: Pick<SqliteRepository, "listFindings">;
   latestRunId: (tenantId: string) => Promise<string | null>;
+  storageRoot: string;
 }): StandardsRunQueue {
-  const { jobs, findings, latestRunId } = options;
+  const { jobs, findings, latestRunId, storageRoot } = options;
   return {
     async enqueue(envelope) {
       const tenantId = (envelope as { tenantId?: string }).tenantId ?? "";
       const runId = await latestRunId(tenantId);
       const rows = runId ? await findings.listFindings(tenantId, runId) : [];
       const currentState = rows.map((row) => ({ key: row.checkId, value: parseCurrentValue(row.currentValue) }));
-      return jobs.enqueue({
+      const augmented = {
         ...(envelope as Record<string, unknown>),
         payload: { ...((envelope as { payload?: Record<string, unknown> }).payload ?? {}), currentState },
-      });
+      };
+      const contextRef = (augmented.payload as Record<string, unknown>)["contextRef"];
+      if (typeof contextRef === "string" && contextRef) {
+        const contextPath = path.resolve(storageRoot, contextRef);
+        await mkdir(path.dirname(contextPath), { recursive: true, mode: 0o700 });
+        await writeFile(contextPath, JSON.stringify(augmented), { mode: 0o600 });
+      }
+      return jobs.enqueue(augmented);
     },
   };
 }
@@ -141,7 +149,7 @@ export function withStandardsIngestion(runWorker: RunWorkerFn, options: Standard
     if (envelope.jobType !== "standards" || result.status !== "succeeded") {
       return result;
     }
-    const payload = envelope.payload as Record<string, unknown>;
+    const payload = envelope.payload as unknown as Record<string, unknown>;
     const outputRef = typeof payload["outputRef"] === "string" ? payload["outputRef"] : "";
     if (!outputRef) return result;
     try {
