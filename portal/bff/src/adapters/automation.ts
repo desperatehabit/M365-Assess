@@ -4,10 +4,11 @@
 // match the route stores.
 //
 // Remediation plan jobs run plan-remediation.ps1 through the job queue's dispatcher and
-// their plans are stored when the job succeeds (T-0836). Still not wired, and refused
-// with 501 before anything is enqueued or run:
+// their plans are stored when the job succeeds (T-0836). Apply jobs run
+// apply-remediation.ps1 the same way and store each action's result (T-0838). Still
+// not wired, and refused with 501 before anything is enqueued or run:
 //
-// - Remediation apply and verify (T-0838, T-0839).
+// - Remediation verify (T-0839).
 // - Schedule run-now (T-0840).
 // - Custom scripts, which run in the T-0126 sandbox with no worker entrypoint (T-0837).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -16,17 +17,23 @@ import {
   remediationPlanFromWorkerOutput,
   toManualInstructionView,
   toRemediationActionView,
+  type RemediationActionUpdate,
   type RemediationRepository,
   type SqliteRepository,
 } from "@m365-assess/db";
 import type { JobEnvelope } from "@m365-assess/contracts";
 import type Database from "better-sqlite3";
 import { AppError } from "../errors.js";
+import type { RemediationApplyHandle, RemediationIdempotencyStore } from "../domain/remediation/apply.js";
 import type { JobQueue, RunWorkerFn } from "../jobs/queue.js";
 import { WorkerResultError, superviseJob, type SuperviseJobOptions } from "../jobs/supervisor.js";
 import type { RemediationPlanStore, RemediationQueue } from "../routes/remediation.js";
+import type { CredentialStoreRow } from "../routes/credentials.js";
 import type { ScheduleHistoryStore, ScheduleRunOutcome, ScheduleRunQueue } from "../routes/schedules.js";
 import type { ScriptSandbox } from "../routes/scripts.js";
+import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock } from "./workers.js";
+
+export { NO_CREDENTIAL };
 
 export const JOB_DISPATCH_UNAVAILABLE = "jobs.dispatch_unavailable";
 export const SCRIPT_SANDBOX_UNAVAILABLE = "scripts.sandbox_unavailable";
@@ -54,8 +61,11 @@ export function createRemediationStore(repo: RemediationRepository): Remediation
 }
 
 export const PLAN_WORKER = "plan-remediation.ps1";
+export const APPLY_WORKER = "apply-remediation.ps1";
 export const REMEDIATION_OUTPUT_UNREADABLE = "remediation.output_unreadable";
+export const REMEDIATION_APPLY_NO_PLAN = "remediation.apply_no_plan";
 const PLAN_FILE = "remediation-plan.json";
+const APPLY_FILE = "remediation-apply.json";
 const FINDINGS_FILE = "findings.json";
 
 function operationOf(envelope: JobEnvelope): unknown {
@@ -64,21 +74,24 @@ function operationOf(envelope: JobEnvelope): unknown {
 
 export interface RemediationQueueOptions {
   readonly jobs: Pick<JobQueue, "enqueue">;
-  readonly repo: Pick<SqliteRepository, "listFindings">;
+  readonly repo: Pick<SqliteRepository, "listFindings" | "listJobs">;
+  readonly credentials: CredentialStoreRow;
   readonly storageRoot: string;
 }
 
 /**
  * Plan jobs: writes the job file and the run's findings into the job's folder, then
  * enqueues. The plan worker makes no tenant calls, so the job file carries no
- * credential. Apply and verify are refused until their workers are wired.
+ * credential. Apply jobs sign in to the tenant, so their job file carries the
+ * credential block (toCredentialBlock, T-0826) and the plan job's folder, where the
+ * stored plan artifact lives. Verify is refused until its worker is wired (T-0839).
  */
 export function createRemediationQueue(options: RemediationQueueOptions): RemediationQueue {
-  const { jobs, repo, storageRoot } = options;
+  const { jobs, repo, credentials, storageRoot } = options;
   return {
     async enqueue(envelope) {
       const operation = operationOf(envelope);
-      if (operation !== "plan") {
+      if (operation !== "plan" && operation !== "apply") {
         throw unavailable(
           JOB_DISPATCH_UNAVAILABLE,
           `remediation ${String(operation)} jobs cannot run yet: no worker dispatch for them`,
@@ -86,11 +99,58 @@ export function createRemediationQueue(options: RemediationQueueOptions): Remedi
       }
       const folder = path.resolve(storageRoot, envelope.payload.outputRef);
       await mkdir(folder, { recursive: true, mode: 0o700 });
-      const findings = await repo.listFindings(envelope.tenantId, envelope.runId);
-      await writeFile(path.join(folder, FINDINGS_FILE), JSON.stringify(findings), { mode: 0o600 });
-      await writeFile(path.resolve(storageRoot, envelope.payload.contextRef), JSON.stringify(envelope), { mode: 0o600 });
-      return jobs.enqueue(envelope);
+      if (operation === "plan") {
+        const findings = await repo.listFindings(envelope.tenantId, envelope.runId);
+        await writeFile(path.join(folder, FINDINGS_FILE), JSON.stringify(findings), { mode: 0o600 });
+        await writeFile(path.resolve(storageRoot, envelope.payload.contextRef), JSON.stringify(envelope), { mode: 0o600 });
+        return jobs.enqueue(envelope);
+      }
+      const apply = await prepareApplyJob(envelope, repo, credentials);
+      await writeFile(
+        path.resolve(storageRoot, envelope.payload.contextRef),
+        JSON.stringify({ ...apply.envelope, credential: apply.credential }),
+        { mode: 0o600 },
+      );
+      return jobs.enqueue(apply.envelope);
     },
+  };
+}
+
+/**
+ * Resolves the plan job's folder for an apply job and the tenant's credential block.
+ * The apply worker reads the plan from the plan job's output folder, so the apply
+ * envelope carries that folder as `planOutputRef` for the runner to pass as -PlanFile.
+ */
+async function prepareApplyJob(
+  envelope: JobEnvelope,
+  repo: Pick<SqliteRepository, "listJobs">,
+  credentials: CredentialStoreRow,
+): Promise<{ envelope: JobEnvelope; credential: CredentialBlock }> {
+  const payload = envelope.payload as unknown as Record<string, unknown>;
+  const planId = typeof payload["planId"] === "string" ? payload["planId"] : "";
+  if (planId === "") {
+    throw new AppError(REMEDIATION_APPLY_NO_PLAN, "the apply job has no planId", 409);
+  }
+  const planJob = (await repo.listJobs(envelope.tenantId)).find((job) => {
+    const jobPayload = (job.payload ?? {}) as Record<string, unknown>;
+    return jobPayload["planId"] === planId && jobPayload["operation"] === "plan";
+  });
+  const planOutputRef = planJob?.payload?.["outputRef"];
+  if (typeof planOutputRef !== "string" || planOutputRef === "") {
+    throw new AppError(REMEDIATION_APPLY_NO_PLAN, `no stored plan job for plan ${planId}`, 409);
+  }
+  const credential = await credentials.getCredential(envelope.tenantId);
+  if (!credential) {
+    throw new AppError(
+      NO_CREDENTIAL,
+      `tenant '${envelope.tenantId}' has no credential; set one before applying remediation`,
+      409,
+    );
+  }
+  const extra: Record<string, unknown> = { planOutputRef };
+  return {
+    envelope: { ...envelope, payload: { ...envelope.payload, ...extra } },
+    credential: toCredentialBlock(credential),
   };
 }
 
@@ -110,23 +170,54 @@ export function buildPlanWorkerArgs(envelope: JobEnvelope, workerScriptPath: str
   ];
 }
 
+/**
+ * apply-remediation.ps1 reads the job file and the plan from the plan job's folder
+ * (the apply envelope carries it as `planOutputRef`), then writes its results to its
+ * own folder as `remediation-apply.json`.
+ */
+export function buildApplyWorkerArgs(envelope: JobEnvelope, workerScriptPath: string): string[] {
+  const payload = envelope.payload as unknown as Record<string, unknown>;
+  const planOutputRef = typeof payload["planOutputRef"] === "string" ? payload["planOutputRef"] : "";
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-File",
+    workerScriptPath,
+    "-JobFile",
+    envelope.payload.contextRef,
+    "-OutputFolder",
+    envelope.payload.outputRef,
+    "-PlanFile",
+    path.posix.join(planOutputRef, PLAN_FILE),
+  ];
+}
+
 export type RemediationWorkerOptions = Omit<SuperviseJobOptions, "signal" | "workerScriptPath" | "buildArgs"> & {
   readonly workersDir: string;
 };
 
-/** The remediation runner for the job dispatcher: plan jobs only (see the file header). */
+/** The remediation runner for the job dispatcher: plan and apply jobs (see the file header). */
 export function createRemediationWorkerRunner(options: RemediationWorkerOptions): RunWorkerFn {
   const { workersDir, ...supervise } = options;
   return async (envelope, signal) => {
-    if (operationOf(envelope) !== "plan") {
-      throw new WorkerResultError(JOB_DISPATCH_UNAVAILABLE, `no worker runs remediation ${String(operationOf(envelope))} jobs`);
+    const operation = operationOf(envelope);
+    if (operation === "plan") {
+      return superviseJob(envelope, {
+        ...supervise,
+        workerScriptPath: path.join(workersDir, PLAN_WORKER),
+        buildArgs: buildPlanWorkerArgs,
+        signal,
+      });
     }
-    return superviseJob(envelope, {
-      ...supervise,
-      workerScriptPath: path.join(workersDir, PLAN_WORKER),
-      buildArgs: buildPlanWorkerArgs,
-      signal,
-    });
+    if (operation === "apply") {
+      return superviseJob(envelope, {
+        ...supervise,
+        workerScriptPath: path.join(workersDir, APPLY_WORKER),
+        buildArgs: buildApplyWorkerArgs,
+        signal,
+      });
+    }
+    throw new WorkerResultError(JOB_DISPATCH_UNAVAILABLE, `no worker runs remediation ${String(operation)} jobs`);
   };
 }
 
@@ -163,6 +254,59 @@ export function withRemediationPlanIngestion(runWorker: RunWorkerFn, options: Re
       return result;
     } catch (error) {
       const message = `remediation plan output unreadable: ${error instanceof Error ? error.message : String(error)}`;
+      return { ...result, status: "failed", error: { code: REMEDIATION_OUTPUT_UNREADABLE, message, retryable: false } };
+    }
+  };
+}
+
+export interface RemediationApplyIngestionOptions {
+  readonly remediation: Pick<RemediationRepository, "updateRemediationAction">;
+  readonly storageRoot: string;
+}
+
+/**
+ * Stores a succeeded apply job's per-action results before the queue reports the job
+ * finished, so the plan and history routes serve them. Dry runs change no action
+ * state: their results carry `dryRun: true` and are skipped. Output that is missing
+ * or malformed fails the job, mirroring the plan ingestion.
+ */
+export function withRemediationApplyIngestion(runWorker: RunWorkerFn, options: RemediationApplyIngestionOptions): RunWorkerFn {
+  const { remediation, storageRoot } = options;
+  return async (envelope, signal) => {
+    const result = await runWorker(envelope, signal);
+    if (envelope.jobType !== "remediation" || operationOf(envelope) !== "apply" || result.status !== "succeeded") {
+      return result;
+    }
+    try {
+      const file = path.resolve(storageRoot, envelope.payload.outputRef, APPLY_FILE);
+      const output = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+      const results = Array.isArray(output["Results"]) ? (output["Results"] as unknown[]) : [];
+      for (const item of results) {
+        const record = (item ?? {}) as Record<string, unknown>;
+        if (record["dryRun"] === true) continue;
+        const actionId = record["actionId"];
+        if (typeof actionId !== "string" || actionId === "") continue;
+        const state = record["state"];
+        if (state !== "applied" && state !== "failed" && state !== "skipped") continue;
+        const update: RemediationActionUpdate = { state };
+        const before = record["before"];
+        if (before !== undefined) update.before = before as Record<string, unknown> | null;
+        const after = record["after"];
+        if (after !== undefined) update.after = after as Record<string, unknown> | null;
+        const appliedAt = record["appliedAt"];
+        if (typeof appliedAt === "string" && appliedAt !== "") update.appliedAt = appliedAt;
+        const actor = record["actor"];
+        if (typeof actor === "string" && actor !== "") update.appliedBy = actor;
+        const applyResult = record["result"];
+        if (applyResult !== undefined) update.result = applyResult as Record<string, unknown> | null;
+        const error = record["error"];
+        if (typeof error === "string" && error !== "") update.error = error;
+        if (envelope.correlationId) update.correlationId = envelope.correlationId;
+        await remediation.updateRemediationAction(actionId, update);
+      }
+      return result;
+    } catch (error) {
+      const message = `remediation apply output unreadable: ${error instanceof Error ? error.message : String(error)}`;
       return { ...result, status: "failed", error: { code: REMEDIATION_OUTPUT_UNREADABLE, message, retryable: false } };
     }
   };
@@ -231,6 +375,50 @@ export function createScheduleHistoryStore(db: Database.Database): ScheduleHisto
           error: typeof error === "string" ? error : error && typeof error === "object" ? JSON.stringify(error) : null,
         };
       });
+    },
+  };
+}
+
+/**
+ * The apply Idempotency-Key store backed by the jobs table, so a replay returns the
+ * prior handle instead of enqueuing a second apply even after a BFF restart. The
+ * enqueued job row already carries the key in its payload, so `save` writes nothing
+ * and `find` reads the row back. The jobs table does not persist the request id, so a
+ * replayed handle carries an empty `requestId`; the job id is what the client polls.
+ */
+export function createJobBackedRemediationIdempotencyStore(db: Database.Database): RemediationIdempotencyStore {
+  return {
+    async find(tenantId, key) {
+      const row = db
+        .prepare(
+          `SELECT id, payload FROM jobs
+           WHERE tenantId = ? AND json_extract(payload, '$.idempotencyKey') = ?
+           ORDER BY createdAt DESC LIMIT 1`,
+        )
+        .get(tenantId, key) as { id: string; payload: string | null } | undefined;
+      if (!row) return undefined;
+      let payload: Record<string, unknown> = {};
+      if (row.payload) {
+        try {
+          const parsed: unknown = JSON.parse(row.payload);
+          if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+            payload = parsed as Record<string, unknown>;
+          }
+        } catch {
+          payload = {};
+        }
+      }
+      return {
+        planId: typeof payload["planId"] === "string" ? payload["planId"] : "",
+        tenantId,
+        jobId: row.id,
+        requestId: "",
+        dryRun: payload["dryRun"] === true,
+        status: "queued",
+      };
+    },
+    async save() {
+      // The enqueued job row already carries the key in its payload; nothing to write.
     },
   };
 }
