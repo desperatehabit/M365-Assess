@@ -8,6 +8,7 @@
 // Get-TenantUsers child job live against Graph, so this module holds no Graph
 // client and issues no tenant write. Reads require `Identity.User.Read` (SPEC §7)
 // intersected with the caller tenant scope.
+import { randomUUID } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
 import {
   UserCsvError,
@@ -20,8 +21,9 @@ import {
   validatePatchProperties,
   type PatchableUserProperty,
 } from "../domain/users/patch.js";
-import { parsePagination } from "../pagination.js";
-import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
+import { paginate, parsePagination } from "../pagination.js";
+import { RbacErrorCodes, requireTenantInScope, type Caller } from "../rbac/authorize.js";
+import { BASE_ROLE_IDS, isBaseRoleId, type BaseRoleId } from "../rbac/base-roles.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TENANT_USERS_PATH = "/v1/tenants/:tenantId/users";
@@ -1110,6 +1112,423 @@ export const USERS_OPENAPI = {
           "403": { description: "The caller lacks users.write or the tenant is out of scope." },
           "501": { description: "User patch is not wired for this tenant." },
         },
+      },
+    },
+  },
+} as const;
+
+// ─── Portal user CRUD (EPIC-038 SPEC §3.1, §5, §6; T-0744) ─────────────────
+//
+// Portal users are federated identities — no passwords (SPEC §5) — held in a
+// portal-local store, unlike the Graph-backed tenant directory above. The
+// injected store is the seam the production wiring backs with the portal user
+// store; this module holds no database or Graph client. Every method requires
+// the CIPP.Admin.* scope (SPEC §7 admin surface) through the T-0743 resolver
+// via the authorize seam, and every mutation writes one access AuditEvent
+// through the recordAudit seam (T-0750 provides the writer). A user holds
+// exactly one of the four base roles (SPEC §4.1).
+
+export const PORTAL_USERS_PATH = "/v1/users";
+export const PORTAL_USER_PATH = "/v1/users/:id";
+export const USERS_ADMIN_SCOPE = "CIPP.Admin.*";
+
+export const PORTAL_USER_NOT_FOUND = "users.not_found";
+
+export type PortalUserStatus = "enabled" | "disabled";
+
+export interface PortalUserScope {
+  readonly targetType: "tenant" | "group" | "all";
+  readonly targetId: string | null;
+}
+
+export interface PortalUserRecord {
+  readonly id: string;
+  readonly upn: string;
+  readonly displayName: string | null;
+  readonly role: BaseRoleId;
+  readonly status: PortalUserStatus;
+  readonly scope: PortalUserScope;
+  readonly lastSeenAt: string | null;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+}
+
+export interface PortalUserStore {
+  listUsers(): Promise<PortalUserRecord[]>;
+  getUser(userId: string): Promise<PortalUserRecord | undefined>;
+  findByUpn(upn: string): Promise<PortalUserRecord | undefined>;
+  upsertUser(input: PortalUserRecord): Promise<PortalUserRecord>;
+  removeUser(userId: string): Promise<boolean>;
+}
+
+export function createInMemoryPortalUserStore(seed: readonly PortalUserRecord[] = []): PortalUserStore {
+  const users = new Map<string, PortalUserRecord>();
+  for (const record of seed) {
+    users.set(record.id, clonePortalUser(record));
+  }
+  return {
+    async listUsers(): Promise<PortalUserRecord[]> {
+      return [...users.values()].map(clonePortalUser);
+    },
+    async getUser(userId: string): Promise<PortalUserRecord | undefined> {
+      const user = users.get(userId);
+      return user === undefined ? undefined : clonePortalUser(user);
+    },
+    async findByUpn(upn: string): Promise<PortalUserRecord | undefined> {
+      const needle = upn.toLowerCase();
+      const match = [...users.values()].find((user) => user.upn.toLowerCase() === needle);
+      return match === undefined ? undefined : clonePortalUser(match);
+    },
+    async upsertUser(input: PortalUserRecord): Promise<PortalUserRecord> {
+      const stored = clonePortalUser(input);
+      users.set(stored.id, stored);
+      return clonePortalUser(stored);
+    },
+    async removeUser(userId: string): Promise<boolean> {
+      return users.delete(userId);
+    },
+  };
+}
+
+function clonePortalUser(record: PortalUserRecord): PortalUserRecord {
+  return { ...record, scope: { ...record.scope } };
+}
+
+export interface PortalUserAuditEvent {
+  readonly action: "users.create" | "users.update" | "users.delete";
+  readonly permission: string;
+  readonly targetId: string | null;
+  readonly upn: string;
+  readonly result: "success" | "failure";
+  readonly error: string | null;
+  readonly actorUserId: string | null;
+  readonly correlationId: string;
+  readonly createdAt: string;
+}
+
+export interface PortalUsersCaller extends Caller {
+  readonly userId?: string;
+}
+
+export type PortalUsersAuthorizer = (
+  caller: PortalUsersCaller,
+  permission: string,
+) => void | Promise<void>;
+
+export interface PortalUsersRequestContext extends RequestContext {
+  readonly body?: unknown;
+}
+
+export interface PortalUsersRouteOptions {
+  readonly store: PortalUserStore;
+  readonly resolveCaller: (ctx: RequestContext) => PortalUsersCaller | undefined;
+  readonly authorize?: PortalUsersAuthorizer;
+  readonly recordAudit?: (event: PortalUserAuditEvent) => Promise<void>;
+  readonly now?: () => string;
+  readonly readBody?: (ctx: PortalUsersRequestContext) => unknown;
+}
+
+function requirePortalUserCaller(
+  resolveCaller: (ctx: RequestContext) => PortalUsersCaller | undefined,
+  ctx: RequestContext,
+): PortalUsersCaller {
+  const caller = resolveCaller(ctx);
+  if (caller === undefined) {
+    throw new AppError(USERS_UNAUTHENTICATED, "authentication required", 401);
+  }
+  return caller;
+}
+
+async function ensurePortalAdmin(
+  options: PortalUsersRouteOptions,
+  caller: PortalUsersCaller,
+): Promise<void> {
+  if (options.authorize) {
+    await options.authorize(caller, USERS_ADMIN_SCOPE);
+    return;
+  }
+  const granted = caller.permissions ?? [];
+  if (!granted.includes(USERS_ADMIN_SCOPE) && !granted.includes("*")) {
+    throw new AppError(RbacErrorCodes.forbidden, `forbidden: requires ${USERS_ADMIN_SCOPE}`, 403);
+  }
+}
+
+function requireUserIdParam(ctx: RequestContext): string {
+  const value = ctx.params["id"];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new AppError(PORTAL_USER_NOT_FOUND, "user id is required", 404);
+  }
+  return value.trim();
+}
+
+function notFoundError(userId: string): AppError {
+  return new AppError(PORTAL_USER_NOT_FOUND, `portal user ${userId} was not found`, 404);
+}
+
+function parseUpn(value: unknown): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw validationError("upn must be a non-empty string", "upn");
+  }
+  const upn = value.trim();
+  if (!/^[^\s@]+@[^\s@]+$/.test(upn)) {
+    throw validationError("upn must be a valid user principal name", "upn");
+  }
+  return upn;
+}
+
+function parseOptionalText(value: unknown, field: string): string | null {
+  if (value === undefined || value === null) {
+    return null;
+  }
+  if (typeof value !== "string") {
+    throw validationError(`${field} must be a string`, field);
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseBaseRole(value: unknown): BaseRoleId {
+  if (typeof value !== "string" || !isBaseRoleId(value)) {
+    throw validationError(`role must be one of: ${BASE_ROLE_IDS.join(", ")}`, "role");
+  }
+  return value;
+}
+
+function parseStatus(value: unknown): PortalUserStatus {
+  if (value !== "enabled" && value !== "disabled") {
+    throw validationError("status must be one of: enabled, disabled", "status");
+  }
+  return value;
+}
+
+function parseScope(value: unknown): PortalUserScope {
+  if (value === undefined || value === null) {
+    return { targetType: "all", targetId: null };
+  }
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw validationError("scope must be an object", "scope");
+  }
+  const record = value as Record<string, unknown>;
+  const targetType = record["targetType"];
+  if (targetType !== "tenant" && targetType !== "group" && targetType !== "all") {
+    throw validationError("scope.targetType must be one of: tenant, group, all", "scope.targetType");
+  }
+  if (targetType === "all") {
+    return { targetType: "all", targetId: null };
+  }
+  const targetId = record["targetId"];
+  if (typeof targetId !== "string" || targetId.trim().length === 0) {
+    throw validationError("scope.targetId is required for a tenant or group scope", "scope.targetId");
+  }
+  return { targetType, targetId: targetId.trim() };
+}
+
+export function createPortalUsersRoute(options: PortalUsersRouteOptions): Route[] {
+  const listHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requirePortalUserCaller(options.resolveCaller, ctx);
+    await ensurePortalAdmin(options, caller);
+    const page = paginate(await options.store.listUsers(), parsePagination(ctx.query));
+    return { status: 200, body: page };
+  };
+
+  const createHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requirePortalUserCaller(options.resolveCaller, ctx);
+    await ensurePortalAdmin(options, caller);
+    const body = readCreateBody(ctx, options.readBody) as Record<string, unknown>;
+    const now = options.now ?? (() => new Date().toISOString());
+    const upn = parseUpn(body["upn"]);
+    const existing = await options.store.findByUpn(upn);
+    if (existing !== undefined) {
+      throw validationError(`upn '${upn}' is already assigned to a portal user`, "upn");
+    }
+    const record: PortalUserRecord = {
+      id: randomUUID(),
+      upn,
+      displayName: parseOptionalText(body["displayName"], "displayName"),
+      role: parseBaseRole(body["role"]),
+      status: body["status"] === undefined ? "enabled" : parseStatus(body["status"]),
+      scope: parseScope(body["scope"]),
+      lastSeenAt: null,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+    const stored = await options.store.upsertUser(record);
+    await writePortalUserAudit(options, ctx, caller, {
+      action: "users.create",
+      permission: USERS_ADMIN_SCOPE,
+      targetId: stored.id,
+      upn: stored.upn,
+      result: "success",
+      error: null,
+      actorUserId: caller.userId ?? null,
+      correlationId: ctx.correlationId,
+      createdAt: now(),
+    });
+    return { status: 201, body: stored };
+  };
+
+  const patchHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requirePortalUserCaller(options.resolveCaller, ctx);
+    await ensurePortalAdmin(options, caller);
+    const userId = requireUserIdParam(ctx);
+    const existing = await options.store.getUser(userId);
+    if (existing === undefined) {
+      throw notFoundError(userId);
+    }
+    const body = readCreateBody(ctx, options.readBody) as Record<string, unknown>;
+    const now = options.now ?? (() => new Date().toISOString());
+    const updated: PortalUserRecord = {
+      ...existing,
+      displayName: "displayName" in body ? parseOptionalText(body["displayName"], "displayName") : existing.displayName,
+      status: "status" in body ? parseStatus(body["status"]) : existing.status,
+      role: "role" in body ? parseBaseRole(body["role"]) : existing.role,
+      scope: "scope" in body ? parseScope(body["scope"]) : existing.scope,
+      updatedAt: now(),
+    };
+    const stored = await options.store.upsertUser(updated);
+    await writePortalUserAudit(options, ctx, caller, {
+      action: "users.update",
+      permission: USERS_ADMIN_SCOPE,
+      targetId: stored.id,
+      upn: stored.upn,
+      result: "success",
+      error: null,
+      actorUserId: caller.userId ?? null,
+      correlationId: ctx.correlationId,
+      createdAt: now(),
+    });
+    return { status: 200, body: stored };
+  };
+
+  const deleteHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requirePortalUserCaller(options.resolveCaller, ctx);
+    await ensurePortalAdmin(options, caller);
+    const userId = requireUserIdParam(ctx);
+    const existing = await options.store.getUser(userId);
+    if (existing === undefined) {
+      throw notFoundError(userId);
+    }
+    const removed = await options.store.removeUser(userId);
+    if (!removed) {
+      throw notFoundError(userId);
+    }
+    const now = options.now ?? (() => new Date().toISOString());
+    await writePortalUserAudit(options, ctx, caller, {
+      action: "users.delete",
+      permission: USERS_ADMIN_SCOPE,
+      targetId: userId,
+      upn: existing.upn,
+      result: "success",
+      error: null,
+      actorUserId: caller.userId ?? null,
+      correlationId: ctx.correlationId,
+      createdAt: now(),
+    });
+    return { status: 204, raw: "" };
+  };
+
+  return [
+    { method: "GET", path: PORTAL_USERS_PATH, handler: listHandler },
+    { method: "POST", path: PORTAL_USERS_PATH, handler: createHandler },
+    { method: "PATCH", path: PORTAL_USER_PATH, handler: patchHandler },
+    { method: "DELETE", path: PORTAL_USER_PATH, handler: deleteHandler },
+  ];
+}
+
+async function writePortalUserAudit(
+  options: PortalUsersRouteOptions,
+  ctx: RequestContext,
+  caller: PortalUsersCaller,
+  event: PortalUserAuditEvent,
+): Promise<void> {
+  if (!options.recordAudit) {
+    return;
+  }
+  await options.recordAudit(event);
+}
+
+// Route modules own their OpenAPI path items (portal.v1.yaml `paths` is empty
+// by design); a wiring ticket merges this fragment into the served document.
+export const PORTAL_USERS_OPENAPI = {
+  paths: {
+    "/users": {
+      get: {
+        operationId: "listPortalUsers",
+        summary: "List portal users (CIPP.Admin.* surface).",
+        permission: USERS_ADMIN_SCOPE,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "cursor", in: "query", required: false, schema: { type: "string" } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer" } },
+        ],
+        responses: {
+          "200": { description: "Cursor-paginated portal users." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+        },
+      },
+      post: {
+        operationId: "createPortalUser",
+        summary: "Create a portal user (federated identity, no password) and assign one base role.",
+        permission: USERS_ADMIN_SCOPE,
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "201": { description: "The created portal user." },
+          "400": { description: "The request body is invalid or the upn is already assigned." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+        },
+      },
+    },
+    "/users/{id}": {
+      patch: {
+        operationId: "updatePortalUser",
+        summary: "Update a portal user's display name, status, base role, or scope.",
+        permission: USERS_ADMIN_SCOPE,
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "The updated portal user." },
+          "400": { description: "The request body is invalid." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "404": { description: "No portal user has that id." },
+        },
+      },
+      delete: {
+        operationId: "deletePortalUser",
+        summary: "Remove a portal user.",
+        permission: USERS_ADMIN_SCOPE,
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "204": { description: "The portal user was removed." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "404": { description: "No portal user has that id." },
+        },
+      },
+    },
+  },
+  schemas: {
+    PortalUser: {
+      type: "object",
+      required: ["id", "upn", "role", "status", "scope"],
+      properties: {
+        id: { type: "string" },
+        upn: { type: "string" },
+        displayName: { type: ["string", "null"] },
+        role: { type: "string", enum: ["readonly", "editor", "admin", "superadmin"] },
+        status: { type: "string", enum: ["enabled", "disabled"] },
+        scope: {
+          type: "object",
+          required: ["targetType"],
+          properties: {
+            targetType: { type: "string", enum: ["tenant", "group", "all"] },
+            targetId: { type: ["string", "null"] },
+          },
+        },
+        lastSeenAt: { type: ["string", "null"] },
+        createdAt: { type: "string" },
+        updatedAt: { type: "string" },
       },
     },
   },

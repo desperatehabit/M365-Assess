@@ -5,15 +5,27 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { AppError } from "../errors.js";
+import { type BaseRoleId } from "../rbac/base-roles.js";
 import { tenantScope } from "../rbac/scope.js";
+import { testPortalAccess } from "../rbac/test-portal-access.js";
 import { buildServer, type RequestContext, type Route } from "../server.js";
 import {
+  PORTAL_USER_PATH,
+  PORTAL_USERS_OPENAPI,
+  PORTAL_USERS_PATH,
   TENANT_USERS_PATH,
+  USERS_ADMIN_SCOPE,
   USERS_OPENAPI,
   USERS_PERMISSION,
+  createInMemoryPortalUserStore,
+  createPortalUsersRoute,
   createTenantUsersRoute,
   getTenantUsers,
   parseTenantUsersFilter,
+  type PortalUserAuditEvent,
+  type PortalUserRecord,
+  type PortalUsersCaller,
+  type PortalUserStore,
   type TenantUser,
   type TenantUsersFilter,
   type TenantUsersPage,
@@ -306,5 +318,230 @@ describe("tenant users route", () => {
     ]) {
       expect(source).not.toContain(marker);
     }
+  });
+});
+
+// ─── Portal user CRUD (EPIC-038; T-0744) ─────────────────────────────────────
+
+describe("portal users route", () => {
+  function portalUsersOptions(roles: readonly BaseRoleId[], store?: PortalUserStore) {
+    const users = store ?? createInMemoryPortalUserStore();
+    const auditEvents: PortalUserAuditEvent[] = [];
+    const routes = createPortalUsersRoute({
+      store: users,
+      resolveCaller: () =>
+        ({ roles, tenantScope: { all: true, tenantIds: [] }, userId: "actor-1" }) as unknown as PortalUsersCaller,
+      authorize: (caller, permission) => {
+        const decision = testPortalAccess({
+          permission,
+          roles: caller.roles as unknown as readonly BaseRoleId[],
+        });
+        if (!decision.allowed) {
+          throw new AppError("auth.forbidden", `forbidden: requires ${permission}`, 403);
+        }
+      },
+      recordAudit: async (event) => {
+        auditEvents.push(event);
+      },
+    });
+    return { store: users, routes, auditEvents };
+  }
+
+  function seedUser(overrides: Partial<PortalUserRecord> = {}): PortalUserRecord {
+    return {
+      id: "user-1",
+      upn: "seed@example.invalid",
+      displayName: "Seed User",
+      role: "readonly",
+      status: "enabled",
+      scope: { targetType: "all", targetId: null },
+      lastSeenAt: null,
+      createdAt: "2026-09-01T00:00:00.000Z",
+      updatedAt: "2026-09-01T00:00:00.000Z",
+      ...overrides,
+    };
+  }
+
+  it("lists portal users for a caller holding the admin scope", async () => {
+    const { routes } = portalUsersOptions(["admin"], createInMemoryPortalUserStore([seedUser()]));
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { items: PortalUserRecord[]; nextCursor: string | null };
+    expect(body.items).toHaveLength(1);
+    expect(body.items[0]?.upn).toBe("seed@example.invalid");
+    expect(body.nextCursor).toBeNull();
+  });
+
+  it("creates a portal user with one base role and writes an audit event", async () => {
+    const { store, routes, auditEvents } = portalUsersOptions(["admin"]);
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ upn: "new@example.invalid", displayName: "New User", role: "editor" }),
+    });
+    expect(response.status).toBe(201);
+    const body = (await response.json()) as PortalUserRecord;
+    expect(body["upn"]).toBe("new@example.invalid");
+    expect(body["role"]).toBe("editor");
+    expect(body["status"]).toBe("enabled");
+    expect(body["scope"]).toEqual({ targetType: "all", targetId: null });
+
+    const stored = await store.findByUpn("new@example.invalid");
+    expect(stored?.role).toBe("editor");
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]?.action).toBe("users.create");
+    expect(auditEvents[0]?.targetId).toBe(body["id"]);
+    expect(auditEvents[0]?.result).toBe("success");
+  });
+
+  it("rejects an invalid base role with a 400", async () => {
+    const { routes } = portalUsersOptions(["admin"]);
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ upn: "new@example.invalid", role: "superuser" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a duplicate upn with a 400", async () => {
+    const { routes } = portalUsersOptions(["admin"], createInMemoryPortalUserStore([seedUser()]));
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ upn: "seed@example.invalid", role: "editor" }),
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("updates display name, status, and base role via PATCH", async () => {
+    const { store, routes, auditEvents } = portalUsersOptions(["admin"], createInMemoryPortalUserStore([seedUser()]));
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users/user-1`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ displayName: "Renamed", status: "disabled", role: "admin" }),
+    });
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as PortalUserRecord;
+    expect(body["displayName"]).toBe("Renamed");
+    expect(body["status"]).toBe("disabled");
+    expect(body["role"]).toBe("admin");
+
+    const stored = await store.getUser("user-1");
+    expect(stored?.role).toBe("admin");
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]?.action).toBe("users.update");
+  });
+
+  it("returns 404 when patching an unknown portal user", async () => {
+    const { routes } = portalUsersOptions(["admin"]);
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users/missing`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "admin" }),
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("removes a portal user via DELETE and writes an audit event", async () => {
+    const { store, routes, auditEvents } = portalUsersOptions(["admin"], createInMemoryPortalUserStore([seedUser()]));
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users/user-1`, { method: "DELETE" });
+    expect(response.status).toBe(204);
+    expect(await store.getUser("user-1")).toBeUndefined();
+    expect(auditEvents).toHaveLength(1);
+    expect(auditEvents[0]?.action).toBe("users.delete");
+  });
+
+  it("returns 404 when deleting an unknown portal user", async () => {
+    const { routes } = portalUsersOptions(["admin"]);
+    const baseUrl = await startServer(routes);
+
+    const response = await fetch(`${baseUrl}/v1/users/missing`, { method: "DELETE" });
+    expect(response.status).toBe(404);
+  });
+
+  it("denies every method to a caller without the CIPP.Admin.* scope", async () => {
+    const { routes } = portalUsersOptions(["readonly"], createInMemoryPortalUserStore([seedUser()]));
+    const baseUrl = await startServer(routes);
+
+    expect((await fetch(`${baseUrl}/v1/users`)).status).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/v1/users`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ upn: "new@example.invalid", role: "editor" }),
+      })).status,
+    ).toBe(403);
+    expect(
+      (await fetch(`${baseUrl}/v1/users/user-1`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ role: "admin" }),
+      })).status,
+    ).toBe(403);
+    expect((await fetch(`${baseUrl}/v1/users/user-1`, { method: "DELETE" })).status).toBe(403);
+  });
+
+  it("requires authentication", async () => {
+    const users = createInMemoryPortalUserStore([seedUser()]);
+    const routes = createPortalUsersRoute({
+      store: users,
+      resolveCaller: () => undefined,
+      authorize: () => {
+        throw new Error("authorize must not run for an anonymous caller");
+      },
+    });
+    const baseUrl = await startServer(routes);
+
+    expect((await fetch(`${baseUrl}/v1/users`)).status).toBe(401);
+    expect(
+      (await fetch(`${baseUrl}/v1/users`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ upn: "new@example.invalid", role: "editor" }),
+      })).status,
+    ).toBe(401);
+  });
+
+  it("falls back to the caller permission list when no authorize seam is wired", async () => {
+    const users = createInMemoryPortalUserStore([seedUser()]);
+    const granted = createPortalUsersRoute({
+      store: users,
+      resolveCaller: () => ({ roles: [], permissions: ["CIPP.Admin.*"], tenantScope: { all: true, tenantIds: [] } }),
+    });
+    const grantedBaseUrl = await startServer(granted);
+    expect((await fetch(`${grantedBaseUrl}/v1/users`)).status).toBe(200);
+
+    const denied = createPortalUsersRoute({
+      store: users,
+      resolveCaller: () => ({ roles: [], permissions: [], tenantScope: { all: true, tenantIds: [] } }),
+    });
+    const deniedBaseUrl = await startServer(denied);
+    expect((await fetch(`${deniedBaseUrl}/v1/users`)).status).toBe(403);
+  });
+
+  it("publishes the CIPP.Admin.* permission through the route module", () => {
+    expect(USERS_ADMIN_SCOPE).toBe("CIPP.Admin.*");
+    expect(PORTAL_USERS_PATH).toBe("/v1/users");
+    expect(PORTAL_USER_PATH).toBe("/v1/users/:id");
+    const paths = PORTAL_USERS_OPENAPI.paths;
+    expect(paths["/users"].get.permission).toBe("CIPP.Admin.*");
+    expect(paths["/users"].post.permission).toBe("CIPP.Admin.*");
+    expect(paths["/users/{id}"].patch.permission).toBe("CIPP.Admin.*");
+    expect(paths["/users/{id}"].delete.permission).toBe("CIPP.Admin.*");
   });
 });
