@@ -1,8 +1,9 @@
 # Get-IntuneApps.ps1 - EPIC-017 Intune app list worker (SPEC section 3.1, section 6, section 11; T-0321).
 #
 # Read-only. Issues only GET requests via Invoke-MgGraphRequest.
-# Views: "catalog"  (deviceAppManagement/mobileApps) - v1 lists Win32 and Store apps; the
-#                   tenant's apps of any other type are counted in 'unsupported', not dropped.
+# Views: "catalog"  (deviceAppManagement/mobileApps) - beta lists Win32 and Store apps with
+#                   their assignments expanded; the tenant's apps of any other type are
+#                   counted in 'unsupported', not dropped.
 #        "detected" (deviceManagement/detectedApps)  - Graph discovered apps, read live (section 11.4).
 #
 # The worker rehydrates the EPIC-001 RunContext from a job envelope JSON file,
@@ -221,7 +222,7 @@ function Get-IntuneApps {
         }
     }
 
-    $all = @(foreach ($app in (Get-AllGraphPage -Uri '/v1.0/deviceAppManagement/mobileApps?$expand=assignments')) {
+    $all = @(foreach ($app in (Get-AllGraphPage -Uri '/beta/deviceAppManagement/mobileApps?$expand=assignments')) {
             ConvertTo-IntuneAppRow -App $app
         })
 
