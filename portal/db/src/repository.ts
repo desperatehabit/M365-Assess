@@ -1023,6 +1023,16 @@ export interface FeatureFlag {
   description: string;
   updatedAt: string;
   updatedBy: string | null;
+// Per-user preferences (EPIC-037 SPEC.md §3.4, §4.3, §5): one record per
+// portal user holding the prefs JSON blob. The blob is opaque at this layer —
+// the BFF preferences schema is the validation authority — so prefs can evolve
+// without a migration. Reads and writes are scoped by userId so one user can
+// never read or overwrite another's.
+export interface UserPreference {
+  userId: string;
+  prefs: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export type FeatureFlagInput = Omit<FeatureFlag, "updatedAt" | "updatedBy"> &
@@ -1347,6 +1357,8 @@ export interface Repository {
   getFeatureFlags(): Promise<FeatureFlag[]>;
   getFeatureFlag(key: string): Promise<FeatureFlag | undefined>;
   upsertFeatureFlag(input: FeatureFlagInput): Promise<FeatureFlag>;
+  getUserPreference(userId: string): Promise<UserPreference | undefined>;
+  upsertUserPreference(userId: string, prefs: Record<string, unknown>): Promise<UserPreference>;
 }
 
 export class SchemaVersionError extends Error {
