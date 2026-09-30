@@ -928,6 +928,23 @@ export interface LicenseChangeListOptions {
   userId?: string;
 }
 
+// Integration config store (EPIC-041 SPEC §5): one row per integration `kind`.
+// Secrets are stored by reference only — secretRef names a credential in the
+// portal credential store. The input type carries no secret field, so a
+// secret value cannot be persisted even by a caller that holds one.
+export interface IntegrationConfig {
+  id: string;
+  kind: string;
+  enabled: boolean;
+  secretRef: string;
+  mapping: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type IntegrationConfigInput = Omit<IntegrationConfig, "createdAt" | "updatedAt"> &
+  Partial<Pick<IntegrationConfig, "createdAt" | "updatedAt">>;
+
 export interface DomainCheck {
   id: string;
   tenantId: string;

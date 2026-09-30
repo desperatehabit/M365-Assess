@@ -25,3 +25,4 @@ export * from "./remediation-import.js";
 export * from "./standards-repository.js";
 export * from "./drift-repository.js";
 export * from "./baselines-repository.js";
+export * from "./integration-repository.js";
