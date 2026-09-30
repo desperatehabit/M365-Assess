@@ -17,6 +17,9 @@
 //   the SQL implementation (run/finding data is produced by EPIC-003).
 
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
+import { stat } from "node:fs/promises";
+import path from "node:path";
 import { AppError, ErrorCodes } from "../errors.js";
 import { paginate, parsePagination } from "../pagination.js";
 import { RbacErrorCodes } from "../rbac/authorize.js";
@@ -34,6 +37,7 @@ export const REPORTS_PERMISSIONS = {
 export const REPORT_NOT_FOUND = "report.not_found";
 export const REPORT_TENANT_REQUIRED = "report.tenant_required";
 export const REPORT_RUN_NOT_FOUND = "report.run_not_found";
+export const REPORT_ARTIFACT_MISSING = "report.artifact_missing";
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -144,6 +148,8 @@ export interface ReportsDependencies {
   readonly runs: RunReadPort;
   readonly audit: AuditPort;
   readonly authorizer: (ctx: RequestContext) => ReportsAuthorizer;
+  /** Artifact root the report's artifactRef resolves against (PDF streaming). */
+  readonly artifactRoot: string;
 }
 
 // ─── Request context extension ────────────────────────────────────────────────
@@ -161,7 +167,7 @@ export interface ReportsRoute {
 // ─── Route factory ────────────────────────────────────────────────────────────
 
 export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
-  const { store, queue, runs, audit, authorizer } = deps;
+  const { store, queue, runs, audit, authorizer, artifactRoot } = deps;
 
   const visible = (auth: ReportsAuthorizer, tenantId: string | null): boolean =>
     tenantId === null || auth.canAccessTenant === undefined || auth.canAccessTenant(tenantId);
@@ -276,7 +282,7 @@ export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
     return { status: 200, body: { ...page, items: page.items.map(toResponse) } };
   }
 
-  // GET /v1/reports/:id/download — stream the rendered artifact
+  // GET /v1/reports/:id/download — stream the rendered PDF artifact
   async function handleGetDownload(ctx: ReportsRequest): Promise<RouteResponse> {
     const auth = authorizer(ctx);
     if (!auth.hasPermission(REPORTS_PERMISSIONS.read)) {
@@ -304,14 +310,22 @@ export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
       correlationId: ctx.correlationId,
     });
 
-    // Return the artifact reference so the serving layer can stream it.
-    // The raw bytes are never buffered through this route handler.
+    const filePath = resolveArtifactPath(artifactRoot, report.artifactRef);
+    let stats;
+    try {
+      stats = await stat(filePath);
+    } catch {
+      throw new AppError(REPORT_ARTIFACT_MISSING, `Report ${id} artifact is missing`, 404);
+    }
+    if (!stats.isFile()) {
+      throw new AppError(REPORT_ARTIFACT_MISSING, `Report ${id} artifact is not a file`, 404);
+    }
     return {
       status: 200,
-      body: {
-        artifactRef: report.artifactRef,
-        contentType: "application/pdf",
-      },
+      contentType: "application/pdf",
+      contentLength: stats.size,
+      headers: { "Content-Disposition": `attachment; filename="${path.basename(report.artifactRef)}"` },
+      stream: createReadStream(filePath),
     };
   }
 
@@ -441,4 +455,16 @@ function optionalString(record: Record<string, unknown>, field: string): string 
 
 function notFound(id: string): AppError {
   return new AppError(REPORT_NOT_FOUND, `Generated report ${id} not found`, 404);
+}
+
+/** Resolve a report's artifactRef against the artifact root, refusing paths outside it. */
+function resolveArtifactPath(artifactRoot: string, artifactRef: string): string {
+  const root = path.resolve(artifactRoot);
+  const resolved = path.resolve(root, artifactRef);
+  if (resolved !== root && !resolved.startsWith(root + path.sep)) {
+    throw new AppError(REPORT_ARTIFACT_MISSING, "report artifact reference is outside the artifact root", 400, [
+      { field: "artifactRef", reason: "invalid" },
+    ]);
+  }
+  return resolved;
 }

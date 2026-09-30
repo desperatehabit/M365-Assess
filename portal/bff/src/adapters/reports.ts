@@ -1,18 +1,24 @@
-// EPIC-004/005 dashboards and reports on real storage (T-0823).
+// EPIC-004/005 dashboards and reports on real storage (T-0823, T-0835).
 //
 // The dashboard, dashboard layout, and report template repositories already match
 // their route stores. This file covers the generated-report store (the repository keys
 // reports by tenant), the run reads the reports routes need, and the render ports.
 //
-// Report rendering is not built yet: nothing turns an executive payload or a template
-// document into the HTML that render-report.ps1 prints to PDF (T-0835). The render
-// ports therefore refuse with 501, marking any report already recorded as failed, so
-// history never shows a report that will not arrive.
-import { readdir, stat } from "node:fs/promises";
+// Render pipeline (T-0835): a generation request composes the report HTML in the BFF
+// (domain/reports/html.ts), writes it plus a job envelope under the artifact root, and
+// hands the envelope to the job queue. The queue runs render-report.ps1 through the
+// report runner, which prints the HTML to PDF with headless Chromium (ADR-0016). When
+// the job settles, withReportCompletion moves the report to succeeded with its PDF
+// artifactRef, or failed with the reason recorded on the job.
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { SqliteReportRepository, SqliteRepository } from "@m365-assess/db";
+import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
 import type Database from "better-sqlite3";
 import { AppError, ErrorCodes } from "../errors.js";
+import { composeReportHtml } from "../domain/reports/html.js";
+import type { JobQueue, RunWorkerFn } from "../jobs/queue.js";
+import { superviseJob, type SuperviseJobOptions } from "../jobs/supervisor.js";
 import type {
   ExecutiveRenderPayload,
   GeneratedReportStore,
@@ -188,21 +194,185 @@ function renderUnavailable(): AppError {
   return new AppError(REPORT_RENDER_UNAVAILABLE, RENDER_UNAVAILABLE_MESSAGE, 501);
 }
 
-/** Executive and custom renders: the report is already recorded, so it is failed first. */
-export function createUnavailableRenderQueue(store: GeneratedReportStore): RenderQueuePort {
-  return {
-    async enqueue(jobId) {
-      await store.update(jobId, { status: "failed" });
-      throw renderUnavailable();
-    },
-  };
-}
-
 /** Template renders refuse before anything is recorded. */
 export function createUnavailableTemplateRender(): TemplateRenderPort {
   return {
     async enqueue() {
       throw renderUnavailable();
     },
+  };
+}
+
+export const REPORT_WORKER = "render-report.ps1";
+const REPORT_PDF = "report.pdf";
+
+/** render-report.ps1 takes the job envelope and output folder, not a run context. */
+export function buildReportWorkerArgs(envelope: JobEnvelope, workerScriptPath: string): string[] {
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-File",
+    workerScriptPath,
+    "-JobFile",
+    envelope.payload.contextRef,
+    "-OutputFolder",
+    envelope.payload.outputRef,
+    "-JobId",
+    envelope.jobId,
+    "-RunId",
+    envelope.runId,
+    "-RequestId",
+    envelope.requestId,
+    "-CorrelationId",
+    envelope.correlationId,
+  ];
+}
+
+export type ReportWorkerOptions = Omit<SuperviseJobOptions, "signal" | "workerScriptPath" | "buildArgs"> & {
+  readonly workersDir: string;
+};
+
+/** The report runner for the job dispatcher: runs render-report.ps1 under the artifact root. */
+export function createReportWorkerRunner(options: ReportWorkerOptions): RunWorkerFn {
+  const { workersDir, ...supervise } = options;
+  return async (envelope, signal) => {
+    return superviseJob(envelope, {
+      ...supervise,
+      workerScriptPath: path.join(workersDir, REPORT_WORKER),
+      buildArgs: buildReportWorkerArgs,
+      signal,
+    });
+  };
+}
+
+export interface RenderQueueOptions {
+  readonly store: GeneratedReportStore;
+  readonly jobs: Pick<JobQueue, "enqueue">;
+  readonly storageRoot: string;
+}
+
+/**
+ * Executive and custom renders: compose the report HTML, write it and the job envelope
+ * under the artifact root, then enqueue. The report id doubles as the job id so the
+ * completion hook can find the report when the job settles.
+ */
+export function createRenderQueue(options: RenderQueueOptions): RenderQueuePort {
+  const { store, jobs, storageRoot } = options;
+  return {
+    async enqueue(jobId, payload) {
+      const report = await store.findById(jobId);
+      if (!report) {
+        throw new AppError(ErrorCodes.validationFailed, `Generated report ${jobId} not found`, 404, [
+          { field: "reportId", reason: "not_found" },
+        ]);
+      }
+      const tenantId = report.tenantId;
+      if (!tenantId) {
+        throw new AppError(ErrorCodes.validationFailed, `Report ${jobId} has no tenantId`, 400, [
+          { field: "tenantId", reason: "required" },
+        ]);
+      }
+      const html = composeReportHtml(payload);
+      const ref = (name: string) => path.posix.join("reports", tenantId, jobId, name);
+      const envelope: JobEnvelope = {
+        schemaVersion: "v1",
+        jobId,
+        jobType: "report",
+        tenantId,
+        runId: typeof payload["runId"] === "string" ? payload["runId"] : jobId,
+        requestId: jobId,
+        correlationId: typeof payload["correlationId"] === "string" ? payload["correlationId"] : jobId,
+        createdAt: new Date().toISOString(),
+        payload: {
+          contextRef: ref("report-job.json"),
+          outputRef: path.posix.join("reports", tenantId, jobId),
+          credentialRef: `tenants/${tenantId}/credential`,
+          sectionRefs: [],
+          artifactRefs: [],
+          // The render worker reads the HTML and PDF file names from the payload; the
+          // envelope contract validates the refs and permits additional keys.
+          ...{ htmlRef: "report.html", pdfFileName: REPORT_PDF },
+        },
+      };
+      const folder = path.resolve(storageRoot, envelope.payload.outputRef);
+      await mkdir(folder, { recursive: true, mode: 0o700 });
+      await writeFile(path.join(folder, "report.html"), html, { mode: 0o600 });
+      await writeFile(path.resolve(storageRoot, envelope.payload.contextRef), JSON.stringify(envelope), { mode: 0o600 });
+      await jobs.enqueue(envelope);
+    },
+  };
+}
+
+export interface TemplateRenderOptions {
+  readonly store: GeneratedReportStore;
+  readonly render: RenderQueuePort;
+}
+
+/**
+ * Template renders: record the report, then hand it to the render queue as a builder
+ * document. Generation is asynchronous, so the route answers 202 with the handle.
+ */
+export function createTemplateRender(options: TemplateRenderOptions): TemplateRenderPort {
+  const { store, render } = options;
+  return {
+    async enqueue(request) {
+      const report = await store.create({
+        templateId: request.templateId,
+        tenantId: request.tenantId,
+        status: "queued",
+        createdBy: request.requestedBy,
+      });
+      await render.enqueue(report.id, {
+        type: "template",
+        reportId: report.id,
+        tenantId: request.tenantId,
+        templateId: request.templateId,
+        document: request.template,
+        correlationId: request.correlationId,
+      });
+      return {
+        id: report.id,
+        templateId: request.templateId,
+        tenantId: request.tenantId,
+        status: report.status,
+        artifactRef: report.artifactRef,
+        createdAt: report.createdAt,
+      };
+    },
+  };
+}
+
+export interface ReportCompletionOptions {
+  readonly store: GeneratedReportStore;
+}
+
+/**
+ * Moves a report to succeeded with its PDF artifactRef, or failed, when its render job
+ * settles. The reason for a failure is recorded on the job by the queue; the report
+ * row carries only the terminal status. Jobs of other types pass through untouched.
+ */
+export function withReportCompletion(runWorker: RunWorkerFn, options: ReportCompletionOptions): RunWorkerFn {
+  const { store } = options;
+  return async (envelope, signal) => {
+    const result = await runWorker(envelope, signal);
+    if (envelope.jobType !== "report") return result;
+    const report = await store.findById(envelope.jobId);
+    if (!report) return result;
+    if (result.status === "succeeded") {
+      const pdfRef = result.artifactRefs
+        .map((ref) => ref.split(path.sep).join("/"))
+        .find((ref) => ref.toLowerCase().endsWith(".pdf"));
+      if (pdfRef) {
+        await store.update(envelope.jobId, {
+          status: "succeeded",
+          artifactRef: path.posix.join(envelope.payload.outputRef, pdfRef),
+        });
+      } else {
+        await store.update(envelope.jobId, { status: "failed" });
+      }
+    } else {
+      await store.update(envelope.jobId, { status: "failed" });
+    }
+    return result;
   };
 }

@@ -97,8 +97,10 @@ import { AppPackageStore } from "./storage/app-packages.js";
 import {
   createGeneratedReportStore,
   createReportRunReader,
-  createUnavailableRenderQueue,
-  createUnavailableTemplateRender,
+  createRenderQueue,
+  createReportWorkerRunner,
+  createTemplateRender,
+  withReportCompletion,
 } from "./adapters/reports.js";
 import { createActiveGrantsResolver, createRoleProviders } from "./adapters/roles.js";
 import {
@@ -496,26 +498,42 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const runStore = createRunStore(repo, db);
   const hub = new ProgressEventHub({ store: runStore });
   const publish = (event: unknown) => void hub.publish(event as Record<string, unknown>);
+  const generatedReports = createGeneratedReportStore(
+    new SqliteReportRepository(db, schemaVersion, repo),
+    repo,
+    db,
+  );
+  // EPIC-001/003 runs and EPIC-005 report renders share one queue: the dispatcher picks
+  // the runner by job type, and each runner's result is intercepted before the queue
+  // persists it (findings, remediation plans, report artifacts). Report jobs run
+  // render-report.ps1, which prints the composed HTML to PDF (ADR-0016, T-0835).
   const runJobs = new JobQueue({
     persistence: createJobPersistence(repo),
     poolSize: config.workerPoolSize,
-    runWorker: withRemediationPlanIngestion(
-      withFindingsIngestion(
-        options.runWorker ??
-          createJobDispatcher({
-            assessment: createSupervisorRunner({
-              workerScriptPath: path.join(config.workersDir, RUN_WORKER),
-              storageRoot: config.artifactPath,
-              onProgress: publish,
+    runWorker: withReportCompletion(
+      withRemediationPlanIngestion(
+        withFindingsIngestion(
+          options.runWorker ??
+            createJobDispatcher({
+              assessment: createSupervisorRunner({
+                workerScriptPath: path.join(config.workersDir, RUN_WORKER),
+                storageRoot: config.artifactPath,
+                onProgress: publish,
+              }),
+              remediation: createRemediationWorkerRunner({
+                workersDir: config.workersDir,
+                storageRoot: config.artifactPath,
+              }),
+              report: createReportWorkerRunner({
+                workersDir: config.workersDir,
+                storageRoot: config.artifactPath,
+              }),
             }),
-            remediation: createRemediationWorkerRunner({
-              workersDir: config.workersDir,
-              storageRoot: config.artifactPath,
-            }),
-          }),
-        { repo, storageRoot: config.artifactPath },
+          { repo, storageRoot: config.artifactPath },
+        ),
+        { remediation: remediationRepo, storageRoot: config.artifactPath },
       ),
-      { remediation: remediationRepo, storageRoot: config.artifactPath },
+      { store: generatedReports },
     ),
     onProgress: publish,
   });
@@ -527,11 +545,11 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     repo,
   });
   const reportRuns = createReportRunReader(repo, config.artifactPath);
-  const generatedReports = createGeneratedReportStore(
-    new SqliteReportRepository(db, schemaVersion, repo),
-    repo,
-    db,
-  );
+  const reportRenderQueue = createRenderQueue({
+    store: generatedReports,
+    jobs: runJobs,
+    storageRoot: config.artifactPath,
+  });
   const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
   const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
@@ -595,19 +613,19 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
 
-    // EPIC-005 reports (T-0823). Rendering is not built yet (T-0835): generation
-    // requests are refused with 501.
+    // EPIC-005 reports (T-0823, T-0835). Generation composes the HTML, enqueues a render
+    // job, and moves the report to succeeded with its PDF when the job settles.
     ...(createReportTemplateRoutes({
       store: new SqliteReportTemplateRepository(db, schemaVersion),
       contract: { parse: (input) => parseReportTemplate(input) },
-      render: createUnavailableTemplateRender(),
+      render: createTemplateRender({ store: generatedReports, render: reportRenderQueue }),
       authorize: { requirePermission: (ctx, permission) => authorizeCaller(ctx.caller, permission) },
       resolveActor: (ctx) => (ctx.caller ? actorOf(ctx) : null),
       tenantAccess: callerCanAccessTenant,
     }) as Route[]),
     ...(createReportsRoutes({
       store: generatedReports,
-      queue: createUnavailableRenderQueue(generatedReports),
+      queue: reportRenderQueue,
       runs: reportRuns,
       audit: {
         record: (event) =>
@@ -621,6 +639,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           }),
       },
       authorizer: reportsAuthorizer,
+      artifactRoot: config.artifactPath,
     }) as Route[]),
 
     // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans, schedules,

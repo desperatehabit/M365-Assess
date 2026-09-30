@@ -1,11 +1,11 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
-import { DEFAULT_STANDARDS_REGISTRY_PATH, SqliteDriftRepository } from "@m365-assess/db";
+import { DEFAULT_STANDARDS_REGISTRY_PATH, SqliteDriftRepository, SqliteRepository, loadMigrations, runMigrations } from "@m365-assess/db";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -62,6 +62,63 @@ async function adminWithTenant(runner: WorkerRunner, role: "admin" | "operator" 
   await setup.post("/v1/tenants", { id: "t-a", displayName: "Contoso" });
   await setup.post("/v1/tenants/t-a/credential", { authMethod: "certificate-thumbprint", clientId: "app-1", thumbprint: "ABC123" });
   return role === "admin" ? setup : serve("operator", db, runner);
+}
+
+/** Serve with a finished run and a fake render worker that writes a PDF (T-0835). */
+async function reportsApp(options: { holdRender?: () => Promise<void> } = {}) {
+  const root = mkdtempSync(path.join(tmpdir(), "m365-app-reports-"));
+  const db = new Database(":memory:");
+  const runWorker = async (envelope: JobEnvelope): Promise<ResultEnvelope> => {
+    if (envelope.jobType === "report") {
+      if (options.holdRender) await options.holdRender();
+      const outputFolder = path.join(root, envelope.payload.outputRef);
+      mkdirSync(outputFolder, { recursive: true });
+      writeFileSync(path.join(outputFolder, "report.pdf"), "%PDF-1.4\nstub\n%%EOF\n");
+      return {
+        schemaVersion: "v1",
+        jobId: envelope.jobId,
+        jobType: "report",
+        tenantId: envelope.tenantId,
+        runId: envelope.runId,
+        requestId: envelope.requestId,
+        correlationId: envelope.correlationId,
+        status: "succeeded",
+        startedAt: "2026-09-29T00:00:00.000Z",
+        finishedAt: "2026-09-29T00:00:05.000Z",
+        exitCode: 0,
+        artifactRefs: ["report.pdf"],
+      } as ResultEnvelope;
+    }
+    return {
+      schemaVersion: "v1",
+      jobId: envelope.jobId,
+      jobType: envelope.jobType,
+      tenantId: envelope.tenantId,
+      runId: envelope.runId,
+      requestId: envelope.requestId,
+      correlationId: envelope.correlationId,
+      status: "succeeded",
+      startedAt: "2026-09-29T00:00:00.000Z",
+      finishedAt: "2026-09-29T00:00:05.000Z",
+      exitCode: 0,
+      artifactRefs: [],
+    } as ResultEnvelope;
+  };
+  const app = createApp(config({ devIdentityRole: "admin", artifactPath: root }), { db, runWorker });
+  const server = buildServer({ routes: app.routes, authenticators: app.authenticators });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  opened.push({ server, app });
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const api = {
+    get: (p: string) => fetch(`${base}${p}`),
+    post: (p: string, body: unknown) =>
+      fetch(`${base}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+  };
+  await api.post("/v1/tenants", { id: "t-a", displayName: "Contoso" });
+  await api.post("/v1/tenants/t-a/credential", { authMethod: "certificate-thumbprint", clientId: "app-1", thumbprint: "ABC123" });
+  const repo = new SqliteRepository(db, runMigrations(db, loadMigrations()), "memory");
+  await repo.createRun({ id: "run-1", tenantId: "t-a", parentRunId: null, trigger: "manual", sections: [], options: null, startedAt: "2026-09-29T00:00:00.000Z", finishedAt: "2026-09-29T00:05:00.000Z", status: "succeeded", artifactPath: "runs/t-a/run-1", summaryCounts: { pass: 3, fail: 1 }, provenance: null });
+  return { api, app, db, root, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
 
 const INTUNE_TEMPLATE = {
@@ -730,26 +787,96 @@ describe("EPIC-004 dashboards and EPIC-005 reports (T-0823)", () => {
     expect(((await (await operator.get("/v1/dashboard/layout")).json()) as LayoutBody).layout.widgets).toHaveLength(1);
   });
 
-  it("stores report templates, lists report history, and refuses renders until rendering exists", async () => {
-    const admin = await adminWithTenant(runner);
-    const created = await admin.post("/v1/report-templates", { name: "Quarterly", tenantId: "t-a", document: TEMPLATE_DOCUMENT });
-    expect(created.status).toBe(201);
-    const { id } = (await created.json()) as { id: string };
-    expect((await admin.get("/v1/report-templates")).status).toBe(200);
+  it("stores report templates and generates a report from one", async () => {
+    const { api, app, cleanup } = await reportsApp();
+    try {
+      const created = await api.post("/v1/report-templates", { name: "Quarterly", tenantId: "t-a", document: TEMPLATE_DOCUMENT });
+      expect(created.status).toBe(201);
+      const { id } = (await created.json()) as { id: string };
+      expect((await api.get("/v1/report-templates")).status).toBe(200);
 
-    const generate = await admin.post(`/v1/report-templates/${id}/generate`, {});
-    expect(generate.status).toBe(501);
-    expect(await generate.json()).toMatchObject({ code: "report.render_unavailable" });
+      const generate = await api.post(`/v1/report-templates/${id}/generate`, {});
+      expect(generate.status).toBe(202);
+      const handle = (await generate.json()) as { id: string; status: string };
+      expect(handle.status).toBe("queued");
 
-    const history = await admin.get("/v1/reports?tenantId=t-a");
-    expect(history.status).toBe(200);
-    expect(await history.json()).toMatchObject({ items: [] });
+      await app.runs.drain();
+      const history = await api.get("/v1/reports?tenantId=t-a");
+      expect(history.status).toBe(200);
+      expect(await history.json()).toMatchObject({ items: [{ id: handle.id, status: "succeeded" }] });
+    } finally {
+      cleanup();
+    }
   });
 
   it("refuses report template writes to a read-only caller", async () => {
     const operator = await adminWithTenant(runner, "operator");
     const res = await operator.post("/v1/report-templates", { name: "X", document: TEMPLATE_DOCUMENT });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("EPIC-005 report rendering and download (T-0835)", () => {
+  it("renders an executive report through the job queue and downloads the PDF", async () => {
+    const { api, app, root, cleanup } = await reportsApp();
+    try {
+      const generated = await api.post("/v1/reports/executive", { tenantId: "t-a" });
+      expect(generated.status).toBe(202);
+      const report = (await generated.json()) as { id: string; status: string; artifactRef: string | null };
+      expect(report.status).toBe("queued");
+      expect(report.artifactRef).toBeNull();
+
+      await app.runs.drain();
+
+      const history = await api.get("/v1/reports?tenantId=t-a");
+      expect(history.status).toBe(200);
+      const { items } = (await history.json()) as { items: { id: string; status: string; artifactRef: string | null }[] };
+      expect(items).toHaveLength(1);
+      expect(items[0]).toMatchObject({ id: report.id, status: "succeeded", artifactRef: `reports/t-a/${report.id}/report.pdf` });
+      expect(existsSync(path.join(root, "reports/t-a", report.id, "report.pdf"))).toBe(true);
+
+      const download = await api.get(`/v1/reports/${report.id}/download`);
+      expect(download.status).toBe(200);
+      expect(download.headers.get("content-type")).toBe("application/pdf");
+      expect(await download.text()).toContain("%PDF-1.4");
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("records the download in the audit trail", async () => {
+    const { api, app, db, cleanup } = await reportsApp();
+    try {
+      const generated = await api.post("/v1/reports/executive", { tenantId: "t-a" });
+      const { id } = (await generated.json()) as { id: string };
+      await app.runs.drain();
+
+      const download = await api.get(`/v1/reports/${id}/download`);
+      expect(download.status).toBe(200);
+
+      const events = db.prepare("SELECT action, targetId FROM audit_events WHERE action = ?").all("report.download") as { action: string; targetId: string }[];
+      expect(events).toEqual([{ action: "report.download", targetId: id }]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("refuses a download for a report that is not ready", async () => {
+    let releaseRender!: () => void;
+    const renderHeld = new Promise<void>((resolve) => {
+      releaseRender = resolve;
+    });
+    const { api, app, cleanup } = await reportsApp({ holdRender: () => renderHeld });
+    try {
+      const generated = await api.post("/v1/reports/executive", { tenantId: "t-a" });
+      const { id } = (await generated.json()) as { id: string };
+      const download = await api.get(`/v1/reports/${id}/download`);
+      expect(download.status).toBe(409);
+      releaseRender();
+      await app.runs.drain();
+    } finally {
+      cleanup();
+    }
   });
 });
 
