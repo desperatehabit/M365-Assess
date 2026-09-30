@@ -8,10 +8,11 @@
 import React, { useState, type CSSProperties, type ReactElement } from "react";
 import { RolesAssignmentsTable } from "../../components/roles/RolesAssignmentsTable";
 import { PimSettingsTemplatesTab } from "../../components/roles/PimSettingsTemplatesTab";
+import { RolesTab } from "../../components/RoleEditor";
 import { RequireTenant } from "../../components/shell/RequireTenant";
 import { useCurrentTenantId } from "../../lib/useCurrentTenant";
 
-type TabId = "assignments" | "pim" | "templates";
+type TabId = "assignments" | "pim" | "templates" | "roles";
 
 const pageStyle: CSSProperties = {
   padding: "32px",
@@ -107,21 +108,35 @@ export default function RolesPage(): ReactElement {
         >
           Templates
         </button>
+        <button
+          type="button"
+          data-testid="tab-roles"
+          style={getTabButtonStyle(activeTab === "roles")}
+          onClick={() => setActiveTab("roles")}
+        >
+          Roles
+        </button>
       </nav>
 
-      <RequireTenant tenantId={activeTenant}>
-        <section style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {activeTab === "assignments" && (
-            <RolesAssignmentsTable tenantId={activeTenant} isPimView={false} />
-          )}
-          {activeTab === "pim" && (
-            <RolesAssignmentsTable tenantId={activeTenant} isPimView={true} />
-          )}
-          {activeTab === "templates" && (
-            <PimSettingsTemplatesTab tenantId={activeTenant} />
-          )}
-        </section>
-      </RequireTenant>
+      {activeTab === "roles" ? (
+        // EPIC-038 §3.2 base/custom roles are portal-wide, not tenant-scoped, so this
+        // tab does not sit behind RequireTenant.
+        <RolesTab />
+      ) : (
+        <RequireTenant tenantId={activeTenant}>
+          <section style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {activeTab === "assignments" && (
+              <RolesAssignmentsTable tenantId={activeTenant} isPimView={false} />
+            )}
+            {activeTab === "pim" && (
+              <RolesAssignmentsTable tenantId={activeTenant} isPimView={true} />
+            )}
+            {activeTab === "templates" && (
+              <PimSettingsTemplatesTab tenantId={activeTenant} />
+            )}
+          </section>
+        </RequireTenant>
+      )}
     </main>
   );
 }
