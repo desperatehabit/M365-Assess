@@ -24,6 +24,12 @@ import {
 import { paginate, parsePagination } from "../pagination.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import { BASE_ROLE_IDS, isBaseRoleId, type BaseRoleId } from "../rbac/base-roles.js";
+import type { TenantScope } from "../rbac/scope.js";
+import {
+  parseUserScopeRow,
+  resolveUserScope,
+  type GroupTenantResolver,
+} from "../rbac/user-scope.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TENANT_USERS_PATH = "/v1/tenants/:tenantId/users";
@@ -1130,6 +1136,7 @@ export const USERS_OPENAPI = {
 
 export const PORTAL_USERS_PATH = "/v1/users";
 export const PORTAL_USER_PATH = "/v1/users/:id";
+export const PORTAL_USER_SCOPE_PATH = "/v1/users/:id/scope";
 export const USERS_ADMIN_SCOPE = "CIPP.Admin.*";
 
 export const PORTAL_USER_NOT_FOUND = "users.not_found";
@@ -1192,6 +1199,21 @@ export function createInMemoryPortalUserStore(seed: readonly PortalUserRecord[] 
 
 function clonePortalUser(record: PortalUserRecord): PortalUserRecord {
   return { ...record, scope: { ...record.scope } };
+}
+
+// Shared resolver every tenant-scoped endpoint calls: turn a portal user's
+// stored scope into the concrete tenant set, expanding `group` targets through
+// the caller-supplied resolver. An `all` scope is superadmin-only, so a
+// non-superadmin holding one is rejected rather than silently trusted.
+export function resolvePortalUserTenantScope(
+  user: Pick<PortalUserRecord, "role" | "scope">,
+  resolveGroupTenants: GroupTenantResolver,
+): TenantScope {
+  return resolveUserScope({
+    rows: [user.scope],
+    roles: [user.role],
+    resolveGroupTenants,
+  });
 }
 
 export interface PortalUserAuditEvent {
@@ -1302,25 +1324,18 @@ function parseStatus(value: unknown): PortalUserStatus {
 }
 
 function parseScope(value: unknown): PortalUserScope {
-  if (value === undefined || value === null) {
-    return { targetType: "all", targetId: null };
+  return parseUserScopeRow(value);
+}
+
+// SPEC §4.2: `superadmin` may hold `all`. Any other role explicitly assigned
+// an all-tenants scope is rejected at edit time rather than persisted.
+function assertScopeAllowedForRole(scope: PortalUserScope, role: BaseRoleId): void {
+  if (scope.targetType === "all" && role !== "superadmin") {
+    throw validationError(
+      `an all-tenants scope requires the superadmin role; '${role}' cannot hold it`,
+      "scope.targetType",
+    );
   }
-  if (typeof value !== "object" || Array.isArray(value)) {
-    throw validationError("scope must be an object", "scope");
-  }
-  const record = value as Record<string, unknown>;
-  const targetType = record["targetType"];
-  if (targetType !== "tenant" && targetType !== "group" && targetType !== "all") {
-    throw validationError("scope.targetType must be one of: tenant, group, all", "scope.targetType");
-  }
-  if (targetType === "all") {
-    return { targetType: "all", targetId: null };
-  }
-  const targetId = record["targetId"];
-  if (typeof targetId !== "string" || targetId.trim().length === 0) {
-    throw validationError("scope.targetId is required for a tenant or group scope", "scope.targetId");
-  }
-  return { targetType, targetId: targetId.trim() };
 }
 
 export function createPortalUsersRoute(options: PortalUsersRouteOptions): Route[] {
@@ -1341,13 +1356,18 @@ export function createPortalUsersRoute(options: PortalUsersRouteOptions): Route[
     if (existing !== undefined) {
       throw validationError(`upn '${upn}' is already assigned to a portal user`, "upn");
     }
+    const role = parseBaseRole(body["role"]);
+    const scope = parseScope(body["scope"]);
+    if (body["scope"] !== undefined) {
+      assertScopeAllowedForRole(scope, role);
+    }
     const record: PortalUserRecord = {
       id: randomUUID(),
       upn,
       displayName: parseOptionalText(body["displayName"], "displayName"),
-      role: parseBaseRole(body["role"]),
+      role,
       status: body["status"] === undefined ? "enabled" : parseStatus(body["status"]),
-      scope: parseScope(body["scope"]),
+      scope,
       lastSeenAt: null,
       createdAt: now(),
       updatedAt: now(),
@@ -1377,12 +1397,17 @@ export function createPortalUsersRoute(options: PortalUsersRouteOptions): Route[
     }
     const body = readCreateBody(ctx, options.readBody) as Record<string, unknown>;
     const now = options.now ?? (() => new Date().toISOString());
+    const role = "role" in body ? parseBaseRole(body["role"]) : existing.role;
+    const scope = "scope" in body ? parseScope(body["scope"]) : existing.scope;
+    if ("scope" in body) {
+      assertScopeAllowedForRole(scope, role);
+    }
     const updated: PortalUserRecord = {
       ...existing,
       displayName: "displayName" in body ? parseOptionalText(body["displayName"], "displayName") : existing.displayName,
       status: "status" in body ? parseStatus(body["status"]) : existing.status,
-      role: "role" in body ? parseBaseRole(body["role"]) : existing.role,
-      scope: "scope" in body ? parseScope(body["scope"]) : existing.scope,
+      role,
+      scope,
       updatedAt: now(),
     };
     const stored = await options.store.upsertUser(updated);
@@ -1427,11 +1452,44 @@ export function createPortalUsersRoute(options: PortalUsersRouteOptions): Route[
     return { status: 204, raw: "" };
   };
 
+  // UserScope edit path (SPEC §4.2): replace a portal user's tenant scope. The
+  // request may carry the scope as `{ scope: {...} }` or as the body itself.
+  // `all` is superadmin-only, so a non-superadmin target is rejected rather
+  // than silently downgraded. Persists through the same store as PATCH and
+  // writes one access AuditEvent.
+  const scopeHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requirePortalUserCaller(options.resolveCaller, ctx);
+    await ensurePortalAdmin(options, caller);
+    const userId = requireUserIdParam(ctx);
+    const existing = await options.store.getUser(userId);
+    if (existing === undefined) {
+      throw notFoundError(userId);
+    }
+    const body = readCreateBody(ctx, options.readBody) as Record<string, unknown>;
+    const scope = parseScope("scope" in body ? body["scope"] : body);
+    assertScopeAllowedForRole(scope, existing.role);
+    const now = options.now ?? (() => new Date().toISOString());
+    const stored = await options.store.upsertUser({ ...existing, scope, updatedAt: now() });
+    await writePortalUserAudit(options, ctx, caller, {
+      action: "users.update",
+      permission: USERS_ADMIN_SCOPE,
+      targetId: stored.id,
+      upn: stored.upn,
+      result: "success",
+      error: null,
+      actorUserId: caller.userId ?? null,
+      correlationId: ctx.correlationId,
+      createdAt: now(),
+    });
+    return { status: 200, body: stored };
+  };
+
   return [
     { method: "GET", path: PORTAL_USERS_PATH, handler: listHandler },
     { method: "POST", path: PORTAL_USERS_PATH, handler: createHandler },
     { method: "PATCH", path: PORTAL_USER_PATH, handler: patchHandler },
     { method: "DELETE", path: PORTAL_USER_PATH, handler: deleteHandler },
+    { method: "PUT", path: PORTAL_USER_SCOPE_PATH, handler: scopeHandler },
   ];
 }
 
@@ -1501,6 +1559,23 @@ export const PORTAL_USERS_OPENAPI = {
         security: [{ bearerAuth: [] }],
         responses: {
           "204": { description: "The portal user was removed." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "404": { description: "No portal user has that id." },
+        },
+      },
+    },
+    "/users/{id}/scope": {
+      put: {
+        operationId: "updatePortalUserScope",
+        summary: "Replace a portal user's tenant scope (all is superadmin-only).",
+        permission: USERS_ADMIN_SCOPE,
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "The updated portal user with its new scope." },
+          "400": {
+            description: "The scope is invalid or an all scope was assigned to a non-superadmin.",
+          },
           "401": { description: "Authentication required." },
           "403": { description: "The caller lacks the CIPP.Admin.* scope." },
           "404": { description: "No portal user has that id." },
