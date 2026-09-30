@@ -2,15 +2,25 @@ import { describe, expect, it } from "vitest";
 import { tenantScope } from "../rbac/scope.js";
 import { MAILBOXES_READ_PERMISSION } from "./mailboxes.js";
 import {
+  MAILBOX_PERMISSIONS_OPENAPI,
   MAILBOX_PERMISSIONS_PATH,
+  MAILBOX_PERMISSIONS_REPORT_OPENAPI,
+  MAILBOX_PERMISSIONS_REPORT_PATH,
   MAILBOX_PERMISSIONS_WRITE_PERMISSION,
+  SHARING_READ_PERMISSION,
   createMailboxPermissionRoutes,
+  createMailboxPermissionsReportRoute,
+  parseMailboxPermissionReportFilter,
   type GrantMailboxPermissionInput,
   type MailboxPermissionPlan,
+  type MailboxPermissionReportEntry,
+  type MailboxPermissionReportFilter,
   type MailboxPermissionResult,
   type MailboxPermissionsCaller,
   type MailboxPermissionsList,
   type MailboxPermissionsProvider,
+  type MailboxPermissionsReportPage,
+  type MailboxPermissionsReportProvider,
   type RemoveMailboxPermissionInput,
 } from "./mailbox-permissions.js";
 
@@ -354,5 +364,215 @@ describe("Mailbox permission routes (T-0384)", () => {
       mailboxId: MAILBOX,
       preview: false,
     });
+  });
+});
+
+const REPORT_ENTRIES: readonly MailboxPermissionReportEntry[] = [
+  {
+    mailboxId: "mbx-1",
+    mailboxDisplayName: "Support Desk",
+    mailboxPrimarySmtp: "support@example.invalid",
+    scope: "mailbox",
+    permissionType: "FullAccess",
+    principal: "delegate@example.invalid",
+    accessRights: ["FullAccess"],
+    automap: true,
+    inherited: false,
+  },
+  {
+    mailboxId: "mbx-1",
+    mailboxDisplayName: "Support Desk",
+    mailboxPrimarySmtp: "support@example.invalid",
+    scope: "calendar",
+    permissionType: "Calendar",
+    principal: "reviewer@example.invalid",
+    accessRights: ["Reviewer"],
+    automap: false,
+    inherited: false,
+  },
+];
+
+const REPORT_PAGE: MailboxPermissionsReportPage = {
+  tenantId: TENANT,
+  items: [...REPORT_ENTRIES],
+  nextCursor: null,
+  totalCount: REPORT_ENTRIES.length,
+  retrievedAt: "2026-09-28T00:00:00.000Z",
+};
+
+class FakeMailboxPermissionsReportProvider implements MailboxPermissionsReportProvider {
+  readonly calls: Array<{ tenantId: string; filter: MailboxPermissionReportFilter }> = [];
+
+  async listMailboxPermissions(tenantId: string, filter: MailboxPermissionReportFilter): Promise<MailboxPermissionsReportPage> {
+    this.calls.push({ tenantId, filter });
+    return { ...REPORT_PAGE, tenantId };
+  }
+}
+
+function sharingReaderCaller(): MailboxPermissionsCaller {
+  return {
+    tenantScope: tenantScope([TENANT]),
+    permissions: [SHARING_READ_PERMISSION],
+  };
+}
+
+describe("Mailbox permissions report route (T-0529)", () => {
+  it("exposes GET /v1/tenants/:tenantId/mailbox-permissions", () => {
+    const route = createMailboxPermissionsReportRoute({
+      provider: new FakeMailboxPermissionsReportProvider(),
+      resolveCaller: sharingReaderCaller,
+    });
+    expect(route.method).toBe("GET");
+    expect(route.path).toBe(MAILBOX_PERMISSIONS_REPORT_PATH);
+  });
+
+  it("lists mailbox and calendar permissions through the provider seam", async () => {
+    const provider = new FakeMailboxPermissionsReportProvider();
+    const route = createMailboxPermissionsReportRoute({ provider, resolveCaller: sharingReaderCaller });
+
+    const response = await route.handler({
+      method: "GET",
+      path: `/v1/tenants/${TENANT}/mailbox-permissions`,
+      params: { tenantId: TENANT },
+      query: new URLSearchParams(),
+      headers: {},
+    });
+
+    expect(response.status).toBe(200);
+    const body = response.body as MailboxPermissionsReportPage;
+    expect(body.tenantId).toBe(TENANT);
+    expect(body.items).toHaveLength(2);
+    expect(body.items[0]).toMatchObject({
+      mailboxId: "mbx-1",
+      scope: "mailbox",
+      permissionType: "FullAccess",
+      principal: "delegate@example.invalid",
+      accessRights: ["FullAccess"],
+      automap: true,
+      inherited: false,
+    });
+    expect(body.items[1]).toMatchObject({
+      scope: "calendar",
+      permissionType: "Calendar",
+      principal: "reviewer@example.invalid",
+      accessRights: ["Reviewer"],
+    });
+    expect(provider.calls[0]).toMatchObject({ tenantId: TENANT, filter: { cursor: null, limit: 100 } });
+  });
+
+  it("passes the scope filter through to the provider", async () => {
+    const provider = new FakeMailboxPermissionsReportProvider();
+    const route = createMailboxPermissionsReportRoute({ provider, resolveCaller: sharingReaderCaller });
+
+    const response = await route.handler({
+      method: "GET",
+      path: `/v1/tenants/${TENANT}/mailbox-permissions`,
+      params: { tenantId: TENANT },
+      query: new URLSearchParams("scope=calendar"),
+      headers: {},
+    });
+
+    expect(response.status).toBe(200);
+    expect(provider.calls[0]?.filter.scope).toBe("calendar");
+  });
+
+  it("rejects unauthenticated requests with 401", async () => {
+    const route = createMailboxPermissionsReportRoute({
+      provider: new FakeMailboxPermissionsReportProvider(),
+      resolveCaller: () => undefined,
+    });
+
+    await expect(
+      route.handler({
+        method: "GET",
+        path: `/v1/tenants/${TENANT}/mailbox-permissions`,
+        params: { tenantId: TENANT },
+        query: new URLSearchParams(),
+        headers: {},
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("rejects tenant outside caller scope with 403", async () => {
+    const route = createMailboxPermissionsReportRoute({
+      provider: new FakeMailboxPermissionsReportProvider(),
+      resolveCaller: () => ({
+        tenantScope: tenantScope(["different-tenant"]),
+        permissions: [SHARING_READ_PERMISSION],
+      }),
+    });
+
+    await expect(
+      route.handler({
+        method: "GET",
+        path: `/v1/tenants/${TENANT}/mailbox-permissions`,
+        params: { tenantId: TENANT },
+        query: new URLSearchParams(),
+        headers: {},
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("rejects callers missing sharing.read with 403", async () => {
+    const route = createMailboxPermissionsReportRoute({
+      provider: new FakeMailboxPermissionsReportProvider(),
+      resolveCaller: () => ({
+        tenantScope: tenantScope([TENANT]),
+        permissions: [MAILBOXES_READ_PERMISSION],
+      }),
+    });
+
+    await expect(
+      route.handler({
+        method: "GET",
+        path: `/v1/tenants/${TENANT}/mailbox-permissions`,
+        params: { tenantId: TENANT },
+        query: new URLSearchParams(),
+        headers: {},
+      }),
+    ).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("rejects an unsupported scope value with 400", async () => {
+    const route = createMailboxPermissionsReportRoute({
+      provider: new FakeMailboxPermissionsReportProvider(),
+      resolveCaller: sharingReaderCaller,
+    });
+
+    await expect(
+      route.handler({
+        method: "GET",
+        path: `/v1/tenants/${TENANT}/mailbox-permissions`,
+        params: { tenantId: TENANT },
+        query: new URLSearchParams("scope=direct"),
+        headers: {},
+      }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
+
+  it("publishes the report path item with the sharing.read permission", () => {
+    expect(MAILBOX_PERMISSIONS_REPORT_OPENAPI.paths["/tenants/{tenantId}/mailbox-permissions"].get.permission).toBe(
+      "sharing.read",
+    );
+  });
+
+  it("publishes a report operationId distinct from the mailbox-level permission route", () => {
+    const report = MAILBOX_PERMISSIONS_REPORT_OPENAPI.paths["/tenants/{tenantId}/mailbox-permissions"].get.operationId;
+    const mailbox = MAILBOX_PERMISSIONS_OPENAPI.paths["/tenants/{tenantId}/mailboxes/{mailboxId}/permissions"].get
+      .operationId;
+    expect(report).toBe("listMailboxPermissionsReport");
+    expect(report).not.toBe(mailbox);
+  });
+});
+
+describe("Mailbox permissions report filter (T-0529)", () => {
+  it("parses scope, search, and pagination", () => {
+    const filter = parseMailboxPermissionReportFilter(new URLSearchParams("scope=mailbox&search=delegate&cursor=MTAw&limit=25"));
+    expect(filter).toEqual({ scope: "mailbox", search: "delegate", cursor: "MTAw", limit: 25 });
+  });
+
+  it("defaults to no scope, no search, and the default page limit", () => {
+    const filter = parseMailboxPermissionReportFilter(new URLSearchParams());
+    expect(filter).toEqual({ scope: undefined, search: undefined, cursor: null, limit: 100 });
   });
 });

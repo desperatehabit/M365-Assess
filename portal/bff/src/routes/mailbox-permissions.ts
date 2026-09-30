@@ -14,6 +14,7 @@
 // (SPEC §7) with `Mailboxes.Mailbox.ReadWrite` / `Remediation.Apply` accepted as the
 // EPIC-006 apply semantics — all intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
+import { parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 import { MAILBOXES_READ_PERMISSION } from "./mailboxes.js";
@@ -402,6 +403,167 @@ export const MAILBOX_PERMISSIONS_OPENAPI = {
           "400": { description: "Principal, scope, or permission type failed validation." },
           "401": { description: "Authentication required." },
           "403": { description: "The caller lacks Mailboxes.Permission.ReadWrite or the tenant is out of scope." },
+        },
+      },
+    },
+  },
+} as const;
+
+// Mailbox and calendar permission report read (EPIC-027 SPEC.md §2 US-5, §3.5,
+// §6; T-0529). GET /v1/tenants/:tenantId/mailbox-permissions serves the §3.5
+// report — the §3.3 mailbox and calendar permission tables (principal, access
+// rights, automap, inherited) flattened across the tenant's mailboxes — in the
+// sharing/permissions context. The report is read-only: the injected provider
+// is backed by the worker queue running the Get-MailboxPermissions child job
+// (live EXO reads, no tenant write), so this module holds no M365 SDK call.
+// Reads require `sharing.read` (SPEC §7) intersected with the caller tenant
+// scope. The underlying mailbox-permission collection is owned by EPIC-020;
+// this route only declares the shared read contract and the provider seam
+// the EPIC-020-backed adapter implements.
+export const MAILBOX_PERMISSIONS_REPORT_PATH = "/v1/tenants/:tenantId/mailbox-permissions";
+export const SHARING_READ_PERMISSION = "sharing.read";
+
+export type MailboxPermissionReportScope = "mailbox" | "calendar";
+
+export interface MailboxPermissionReportEntry {
+  readonly mailboxId: string;
+  readonly mailboxDisplayName: string | null;
+  readonly mailboxPrimarySmtp: string;
+  readonly scope: MailboxPermissionReportScope;
+  readonly permissionType: "FullAccess" | "SendAs" | "SendOnBehalf" | "Calendar";
+  readonly principal: string;
+  readonly accessRights: readonly string[];
+  readonly automap: boolean;
+  readonly inherited: boolean;
+}
+
+export interface MailboxPermissionReportFilter {
+  readonly scope?: MailboxPermissionReportScope;
+  readonly search?: string;
+  readonly cursor: string | null;
+  readonly limit: number;
+}
+
+export interface MailboxPermissionsReportPage {
+  readonly tenantId: string;
+  readonly items: readonly MailboxPermissionReportEntry[];
+  readonly nextCursor: string | null;
+  readonly totalCount: number;
+  readonly retrievedAt: string;
+}
+
+// Queue-backed seam for the report read: the production wiring enqueues a
+// get-mailbox-permissions worker job for (tenantId, filter) and serves the
+// worker page. Depending on the seam keeps EXO and process code out of the BFF.
+export interface MailboxPermissionsReportProvider {
+  listMailboxPermissions(tenantId: string, filter: MailboxPermissionReportFilter): Promise<MailboxPermissionsReportPage>;
+}
+
+export interface MailboxPermissionsReportCaller extends Caller {
+  readonly userId?: string;
+}
+
+export type MailboxPermissionsReportAuthorizer = (
+  caller: MailboxPermissionsReportCaller,
+  permission: string,
+) => void | Promise<void>;
+
+export interface MailboxPermissionsReportOptions {
+  readonly provider: MailboxPermissionsReportProvider;
+  readonly resolveCaller: (ctx: RequestContext) => MailboxPermissionsReportCaller | undefined;
+  readonly authorize?: MailboxPermissionsReportAuthorizer;
+}
+
+async function requireSharingRead(
+  options: MailboxPermissionsReportOptions,
+  caller: MailboxPermissionsReportCaller,
+): Promise<void> {
+  if (options.authorize) {
+    await options.authorize(caller, SHARING_READ_PERMISSION);
+    return;
+  }
+  const permissions = caller.permissions ?? [];
+  if (!permissions.includes(SHARING_READ_PERMISSION) && !permissions.includes("*")) {
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharing.read", 403);
+  }
+}
+
+function optionalReportText(query: URLSearchParams, name: string): string | undefined {
+  const value = query.get(name);
+  if (value === null || value.length === 0) {
+    return undefined;
+  }
+  return value;
+}
+
+export function parseMailboxPermissionReportFilter(query: URLSearchParams): MailboxPermissionReportFilter {
+  const pagination = parsePagination(query);
+  const scopeText = optionalReportText(query, "scope");
+  let scope: MailboxPermissionReportScope | undefined;
+  if (scopeText !== undefined) {
+    if (scopeText !== "mailbox" && scopeText !== "calendar") {
+      throw validationError("scope must be 'mailbox' or 'calendar'", "scope");
+    }
+    scope = scopeText;
+  }
+  return {
+    scope,
+    search: optionalReportText(query, "search"),
+    cursor: pagination.cursor,
+    limit: pagination.limit,
+  };
+}
+
+export function createMailboxPermissionsReportRoute(options: MailboxPermissionsReportOptions): Route {
+  return {
+    method: "GET",
+    path: MAILBOX_PERMISSIONS_REPORT_PATH,
+    handler: async (ctx: RequestContext): Promise<RouteResponse> => {
+      const caller = requireCaller(options.resolveCaller, ctx);
+      const tenantId = requireTenantParam(ctx);
+
+      requireTenantInScope(caller, tenantId);
+      await requireSharingRead(options, caller);
+
+      const filter = parseMailboxPermissionReportFilter(ctx.query);
+      const page = await options.provider.listMailboxPermissions(tenantId, filter);
+
+      return {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: page,
+      };
+    },
+  };
+}
+
+// Route modules own their OpenAPI path items (portal.v1.yaml `paths` is empty
+// by design); a wiring ticket merges this fragment into the served document.
+export const MAILBOX_PERMISSIONS_REPORT_OPENAPI = {
+  paths: {
+    "/tenants/{tenantId}/mailbox-permissions": {
+      get: {
+        operationId: "listMailboxPermissionsReport",
+        summary: "Mailbox and calendar permission report rows (principal/access rights/automap/inherited) from the EXO read worker",
+        permission: SHARING_READ_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          {
+            name: "scope",
+            in: "query",
+            required: false,
+            schema: { type: "string", enum: ["mailbox", "calendar"] },
+          },
+          { name: "search", in: "query", required: false, schema: { type: "string" } },
+          { name: "cursor", in: "query", required: false, schema: { type: "string" } },
+          { name: "limit", in: "query", required: false, schema: { type: "integer" } },
+        ],
+        responses: {
+          "200": { description: "Cursor-paginated mailbox and calendar permission rows." },
+          "400": { description: "An unsupported scope value was supplied." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks sharing.read or the tenant is out of scope." },
         },
       },
     },
