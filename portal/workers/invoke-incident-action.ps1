@@ -92,9 +92,11 @@ try {
         if (-not $PSBoundParameters.ContainsKey('Confirm')) {
             $Confirm = [bool]$job['Confirmed']
         }
+        $Actor = $job['Actor']
+        $CorrelationId = $job['CorrelationId']
     }
 
-    $result = Invoke-IncidentAction -TenantId $TenantId -IncidentId $IncidentId -Action $Action -Value $Value -Comment $Comment -Reason $Reason -DryRun:$DryRun -Confirmed:$Confirm
+    $result = Invoke-IncidentAction -TenantId $TenantId -IncidentId $IncidentId -Action $Action -Value $Value -Comment $Comment -Reason $Reason -DryRun:$DryRun -Confirmed:$Confirm -Actor $Actor -CorrelationId $CorrelationId
     $result | ConvertTo-Json -Depth 6 -Compress
 }
 finally {

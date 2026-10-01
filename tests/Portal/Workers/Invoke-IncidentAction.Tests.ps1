@@ -56,6 +56,13 @@ Describe 'Invoke-IncidentAction worker (T-0546)' {
             $entrySource | Should -Match 'Invoke-IncidentAction -TenantId'
             $entrySource | Should -Match 'ConvertTo-Json'
         }
+
+        It 'entrypoint forwards the job actor and correlation id to the worker' {
+            $entrySource = Get-Content -LiteralPath $script:entrypoint -Raw
+            $entrySource | Should -Match '\$Actor\s*=\s*\$job\[''Actor''\]'
+            $entrySource | Should -Match '\$CorrelationId\s*=\s*\$job\[''CorrelationId''\]'
+            $entrySource | Should -Match '-Actor\s+\$Actor\s+-CorrelationId\s+\$CorrelationId'
+        }
     }
 
     Context 'supported write-back (SPEC §11 item 1)' {
