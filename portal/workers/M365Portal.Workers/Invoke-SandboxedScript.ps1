@@ -446,7 +446,7 @@ function Invoke-SandboxedScript {
     if (-not $AllowedCmdlets -or $AllowedCmdlets.Count -eq 0) {
         $AllowedCmdlets = $script:SandboxAllowedCmdlets
     }
-    $violations = Test-SandboxedScript -ScriptContent $scriptText -AllowedCmdlets $AllowedCmdlets
+    $violations = @(Test-SandboxedScript -ScriptContent $scriptText -AllowedCmdlets $AllowedCmdlets)
     if ($violations -and $violations.Count -gt 0) {
         throw [System.ArgumentException]::new(($violations -join ' '))
     }

@@ -12,7 +12,6 @@ import {
   NO_CREDENTIAL,
   REMEDIATION_APPLY_NO_PLAN,
   REMEDIATION_OUTPUT_UNREADABLE,
-  SCRIPT_SANDBOX_UNAVAILABLE,
   buildApplyWorkerArgs,
   buildPlanWorkerArgs,
   createJobBackedRemediationIdempotencyStore,
@@ -20,8 +19,8 @@ import {
   createRemediationStore,
   createRemediationWorkerRunner,
   createScheduleHistoryStore,
+  createScriptSandbox,
   createUnavailableScheduleQueue,
-  createUnavailableScriptSandbox,
   withRemediationApplyIngestion,
   withRemediationPlanIngestion,
 } from "./automation.js";
@@ -112,11 +111,31 @@ describe("schedule history (T-0824)", () => {
 });
 
 describe("unwired execution (T-0824)", () => {
-  it("refuses scheduled and script runs with 501", async () => {
+  it("refuses scheduled runs with 501", async () => {
     await expect(createUnavailableScheduleQueue().enqueue({})).rejects.toMatchObject({ status: 501, code: JOB_DISPATCH_UNAVAILABLE });
-    await expect(
-      createUnavailableScriptSandbox().run({ content: "x", tenantId: "t-a", dryRun: true, parameters: null }),
-    ).rejects.toMatchObject({ status: 501, code: SCRIPT_SANDBOX_UNAVAILABLE });
+  });
+});
+
+describe("script sandbox (T-0837)", () => {
+  it("runs a script version through the worker and maps the result", async () => {
+    const calls: { entrypoint: string; job: Record<string, unknown> }[] = [];
+    const run = async <T>(entrypoint: string, job: Record<string, unknown>): Promise<T> => {
+      calls.push({ entrypoint, job });
+      return { output: "hello", exitCode: 0, error: null, durationMs: 42 } as T;
+    };
+    const sandbox = createScriptSandbox({ run });
+    const result = await sandbox.run({ content: "Write-Output 'hello'", tenantId: "t-a", dryRun: true, parameters: { dryRunContract: true } });
+    expect(result).toEqual({ output: "hello", exitCode: 0, error: null, durationMs: 42 });
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.entrypoint).toBe("run-custom-script.ps1");
+    expect(calls[0]!.job).toEqual({ content: "Write-Output 'hello'", tenantId: "t-a", dryRun: true, parameters: { dryRunContract: true } });
+  });
+
+  it("maps a worker error to a null error field", async () => {
+    const run = async <T>(): Promise<T> => ({ output: "", exitCode: 1, error: "sandbox.policy_violation: disallowed command: Get-Content", durationMs: 7 } as T);
+    const sandbox = createScriptSandbox({ run });
+    const result = await sandbox.run({ content: "Get-Content /etc/hostname", tenantId: "t-a", dryRun: false, parameters: null });
+    expect(result).toEqual({ output: "", exitCode: 1, error: "sandbox.policy_violation: disallowed command: Get-Content", durationMs: 7 });
   });
 });
 

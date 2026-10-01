@@ -51,9 +51,9 @@ import {
   createRemediationQueue,
   createRemediationWorkerRunner,
   withRemediationApplyIngestion,
+  createScriptSandbox,
   withRemediationPlanIngestion,
   createUnavailableScheduleQueue,
-  createUnavailableScriptSandbox,
 } from "./adapters/automation.js";
 import {
   createBaselineAdvanceStore,
@@ -643,9 +643,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       artifactRoot: config.artifactPath,
     }) as Route[]),
 
-    // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans, schedules,
-    // and scripts persist; running them is not wired yet (T-0836, T-0837) and is
-    // refused with 501.
+    // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans and schedules
+    // persist; running them is not wired yet (T-0836, T-0840) and is refused with 501.
+    // Custom scripts run in the T-0126 sandbox through run-custom-script.ps1 (T-0837).
     ...createRemediationRoutes({
       store: createRemediationStore(remediationRepo),
       queue: createRemediationQueue({ jobs: runJobs, repo, credentials: credentialRows, storageRoot: config.artifactPath }),
@@ -661,7 +661,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     }),
     ...createScriptRoutes({
       store: new SqliteCustomScriptRepository(db, schemaVersion),
-      sandbox: createUnavailableScriptSandbox(),
+      sandbox: createScriptSandbox({ run }),
       audit: {
         record: (event) =>
           recordAudit({

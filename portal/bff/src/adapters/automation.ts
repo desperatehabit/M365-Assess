@@ -5,12 +5,12 @@
 //
 // Remediation plan jobs run plan-remediation.ps1 through the job queue's dispatcher and
 // their plans are stored when the job succeeds (T-0836). Apply jobs run
-// apply-remediation.ps1 the same way and store each action's result (T-0838). Still
-// not wired, and refused with 501 before anything is enqueued or run:
+// apply-remediation.ps1 the same way and store each action's result (T-0838).
+// Custom scripts run in the T-0126 sandbox through run-custom-script.ps1 (T-0837).
+// Still not wired, and refused with 501 before anything is enqueued or run:
 //
 // - Remediation verify (T-0839).
 // - Schedule run-now (T-0840).
-// - Custom scripts, which run in the T-0126 sandbox with no worker entrypoint (T-0837).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -30,13 +30,12 @@ import { WorkerResultError, superviseJob, type SuperviseJobOptions } from "../jo
 import type { RemediationPlanStore, RemediationQueue } from "../routes/remediation.js";
 import type { CredentialStoreRow } from "../routes/credentials.js";
 import type { ScheduleHistoryStore, ScheduleRunOutcome, ScheduleRunQueue } from "../routes/schedules.js";
-import type { ScriptSandbox } from "../routes/scripts.js";
-import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock } from "./workers.js";
+import type { ScriptSandbox, ScriptSandboxResult } from "../routes/scripts.js";
+import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock, type WorkerRunner } from "./workers.js";
 
 export { NO_CREDENTIAL };
 
 export const JOB_DISPATCH_UNAVAILABLE = "jobs.dispatch_unavailable";
-export const SCRIPT_SANDBOX_UNAVAILABLE = "scripts.sandbox_unavailable";
 
 function unavailable(code: string, message: string): AppError {
   return new AppError(code, message, 501);
@@ -320,10 +319,34 @@ export function createUnavailableScheduleQueue(): ScheduleRunQueue {
   };
 }
 
-export function createUnavailableScriptSandbox(): ScriptSandbox {
+export const CUSTOM_SCRIPT_WORKER = "run-custom-script.ps1";
+
+export interface ScriptSandboxOptions {
+  readonly run: WorkerRunner;
+}
+
+/**
+ * Custom script sandbox: runs a script version through run-custom-script.ps1, which
+ * executes it in the T-0126 sandbox and returns output, exit code, and duration.
+ * The dry-run contract is enforced by the route (T-0127); the worker passes the
+ * dryRun flag through so the script can honour it.
+ */
+export function createScriptSandbox(options: ScriptSandboxOptions): ScriptSandbox {
+  const { run } = options;
   return {
-    async run() {
-      throw unavailable(SCRIPT_SANDBOX_UNAVAILABLE, "custom scripts cannot run yet: the script sandbox has no worker entrypoint");
+    async run(input) {
+      const result = await run<ScriptSandboxResult>(CUSTOM_SCRIPT_WORKER, {
+        content: input.content,
+        tenantId: input.tenantId,
+        dryRun: input.dryRun,
+        parameters: input.parameters,
+      });
+      return {
+        output: result.output,
+        exitCode: result.exitCode,
+        error: result.error ?? null,
+        durationMs: result.durationMs ?? null,
+      };
     },
   };
 }
