@@ -47,10 +47,18 @@ export interface OsKeystoreOptions {
   readonly directory?: string;
 }
 
+// Directory override shared with the worker child, which reads the same files
+// (T-0827 `Get-OsKeystoreCredentialStore`); the BFF sets it once for both sides.
+export const CREDENTIAL_STORE_DIR_ENV = "M365_CREDENTIAL_STORE_DIR";
+
 // Dev backend: one file per reference under an OS-appropriate directory with
 // owner-only permissions. Key Vault implements `CredentialStore` later without
 // touching callers (EPIC-002 SPEC.md §11 Q2). Values never appear in errors.
-export function defaultOsKeystoreDirectory(): string {
+export function defaultOsKeystoreDirectory(env: NodeJS.ProcessEnv = process.env): string {
+  const override = env[CREDENTIAL_STORE_DIR_ENV]?.trim();
+  if (override !== undefined && override.length > 0) {
+    return override;
+  }
   return join(homedir(), ".m365-assess", "credentials");
 }
 

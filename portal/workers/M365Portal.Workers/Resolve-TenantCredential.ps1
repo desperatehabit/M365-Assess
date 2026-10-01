@@ -39,9 +39,9 @@ function Resolve-TenantCredential {
         Scriptblock param([string]$SecretRef) returning material for the row
         secretRef: the secret string/SecureString for client-secret auth, or a
         hashtable @{ CertificatePath = ...; CertificatePassword = ... } for
-        certificate-pfx auth. Omitted when no material is needed; the OS-keystore
-        backend is provided by the credential-store ticket (T-0023) against this
-        contract. Tests pass a stub.
+        certificate-pfx auth. Omitted when no material is needed; when omitted for
+        material, the OS-keystore backend (T-0827, shared with the BFF's
+        `createOsKeystoreCredentialStore`) is used. Tests pass a stub.
     .PARAMETER Sections
         Assessment sections about to run, used only for the client-secret vs
         ExchangeOnline/Purview compatibility check.
@@ -194,6 +194,130 @@ function Assert-WorkerSecretAuthSupported {
     }
 }
 
+function Get-WorkerCredentialStoreDirectory {
+    <#
+    .SYNOPSIS
+        Directory the worker reads persisted credential material from.
+    .DESCRIPTION
+        The BFF writes one owner-only file per reference under this directory
+        (portal/bff/src/credentials/store.ts); the worker child reads the same files
+        here, so no parent ever hands material over. M365_CREDENTIAL_STORE_DIR
+        overrides the per-user default, matching the BFF's env override.
+    .OUTPUTS
+        System.String
+    .EXAMPLE
+        PS> Get-WorkerCredentialStoreDirectory
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $override = [string]$env:M365_CREDENTIAL_STORE_DIR
+    if ($override.Trim().Length -gt 0) {
+        return $override.Trim()
+    }
+    $homeDirectory = if ($HOME) { [string]$HOME } else { [Environment]::GetFolderPath('UserProfile') }
+    return (Join-Path -Path (Join-Path -Path $homeDirectory -ChildPath '.m365-assess') -ChildPath 'credentials')
+}
+
+function Get-OsKeystoreCredentialStore {
+    <#
+    .SYNOPSIS
+        Builds the OS-keystore credential store scriptblock Resolve-TenantCredential calls.
+    .DESCRIPTION
+        Implements the CredentialStore lookup contract over the same on-disk layout
+        the BFF writes: a file named <sha256-hex(ref)>.cred under -Directory, read
+        as UTF-8. A JSON object value (the certificate-pfx record) is returned as a
+        hashtable; anything else is returned as the raw string. Missing references
+        return $null and empty references return $null rather than leaking material.
+    .PARAMETER Directory
+        Store directory. Defaults to Get-WorkerCredentialStoreDirectory.
+    .OUTPUTS
+        System.Management.Automation.ScriptBlock
+    .EXAMPLE
+        PS> $store = Get-OsKeystoreCredentialStore -Directory '/var/lib/m365/creds'
+    #>
+    [CmdletBinding()]
+    [OutputType([scriptblock])]
+    param(
+        [Parameter()]
+        [string]$Directory = ''
+    )
+
+    if (-not $Directory) {
+        $Directory = Get-WorkerCredentialStoreDirectory
+    }
+
+    return {
+        param([string]$SecretRef)
+
+        if ([string]::IsNullOrWhiteSpace($SecretRef)) { return $null }
+        $algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = $algorithm.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($SecretRef))
+        }
+        finally {
+            $algorithm.Dispose()
+        }
+        $name = -join ($digest | ForEach-Object { $_.ToString('x2') })
+        $path = Join-Path -Path $Directory -ChildPath "$name.cred"
+        if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { return $null }
+        $text = [System.IO.File]::ReadAllText($path, [System.Text.Encoding]::UTF8)
+        if ($text.TrimStart().StartsWith('{')) {
+            try {
+                $parsed = $text | ConvertFrom-Json -AsHashtable
+                if ($parsed -is [System.Collections.IDictionary]) { return $parsed }
+            }
+            catch {
+                Write-Verbose "Credential material for reference '$SecretRef' is not a JSON record; using the raw value."
+            }
+        }
+        return $text
+    }.GetNewClosure()
+}
+
+function Read-WorkerContextCredential {
+    <#
+    .SYNOPSIS
+        Reads the reference-only credential block a run's context.json carries.
+    .DESCRIPTION
+        The BFF writes a `Credential` block (credentialRef plus the non-secret row)
+        for client-secret and certificate-pfx runs. This returns that block as
+        TenantId/CredentialRef/Record for Resolve-TenantCredential, or $null when the
+        context has none (for example a certificate-thumbprint run). It never reads
+        or returns material.
+    .PARAMETER ContextFile
+        Path to the run's context.json.
+    .OUTPUTS
+        System.Collections.Hashtable
+    .EXAMPLE
+        PS> $block = Read-WorkerContextCredential -ContextFile './run/context.json'
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ContextFile
+    )
+
+    if (-not (Test-Path -LiteralPath $ContextFile -PathType Leaf)) {
+        return $null
+    }
+    $data = Get-Content -LiteralPath $ContextFile -Raw -Encoding UTF8 | ConvertFrom-Json -AsHashtable
+    $credential = $data['Credential']
+    if (-not $credential) { return $null }
+    $credentialRef = [string]$credential['credentialRef']
+    if (-not $credentialRef) { return $null }
+    $tenantId = ''
+    if ($data['Tenant']) { $tenantId = [string]$data['Tenant']['TenantId'] }
+    return @{
+        TenantId      = $tenantId
+        CredentialRef = $credentialRef
+        Record        = $credential['record']
+    }
+}
+
 function Read-WorkerCredentialMaterial {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', '',
         Justification = 'CredentialRef and SecretRef are storage references, never secret material.')]
@@ -212,7 +336,7 @@ function Read-WorkerCredentialMaterial {
 
     $lookupRef = if ($SecretRef) { $SecretRef } else { $CredentialRef }
     if ($null -eq $CredentialStore) {
-        throw "Tenant credential '$CredentialRef' requires secret material but no credential store was provided (code: worker.credential_store_required)."
+        $CredentialStore = Get-OsKeystoreCredentialStore
     }
     $material = & $CredentialStore $lookupRef
     if ($null -eq $material -or ($material -is [string] -and -not $material)) {

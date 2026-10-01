@@ -78,6 +78,10 @@ catch {
     Write-Warning "run-tenant: failed to load M365Portal.Workers: $errorMessage"
 }
 
+# The manifest exports only the context/result handlers, so the child loads the
+# credential resolver directly to resolve client-secret/PFX material in-process.
+. (Join-Path -Path $PSScriptRoot -ChildPath 'M365Portal.Workers/Resolve-TenantCredential.ps1')
+
 if (Get-Module -Name 'M365Portal.Workers') {
     $errorCode = 'worker.invalid_context'
     try {
@@ -94,6 +98,23 @@ if (Get-Module -Name 'M365Portal.Workers') {
             $invokeParams['AssessmentScript'] = $AssessmentScript
         }
         try {
+            # Client-secret and PFX material is resolved here, in the child, from the
+            # reference-only Credential block; context.json never carries material.
+            $credentialBlock = Read-WorkerContextCredential -ContextFile $ContextFile
+            if ($credentialBlock) {
+                $resolveParams = @{
+                    TenantId         = $credentialBlock.TenantId
+                    CredentialRef    = $credentialBlock.CredentialRef
+                    CredentialRecord = $credentialBlock.Record
+                    Sections         = @($ctx.Scope.Sections)
+                }
+                $resolved = Resolve-TenantCredential @resolveParams
+                foreach ($key in @('Method', 'ClientId', 'CertificateThumbprint', 'CertificatePath', 'CertificatePassword', 'ClientSecret', 'M365Environment')) {
+                    if ($resolved.ContainsKey($key) -and $null -ne $resolved[$key]) {
+                        $ctx.Auth.$key = $resolved[$key]
+                    }
+                }
+            }
             Invoke-WorkerAssessment @invokeParams
             $artifacts = Get-WorkerArtifacts -OutputFolder $OutputFolder
             $status = 'succeeded'
