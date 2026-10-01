@@ -1084,6 +1084,50 @@ export interface JobStateUpdate {
   attempts?: number;
 }
 
+// Compliance test packs (EPIC-036 SPEC §5). TestPack is the report-side
+// definition of a framework pack; the catalogue and scoring live in T-0701 and
+// are only persisted here. TestRun is one scored execution of a pack against a
+// tenant. Its `results` is a serialized JSON payload that references finding
+// rows by id rather than duplicating them, so per-control detail stays in the
+// findings table and the run row carries only references plus the score.
+export interface TestPack {
+  id: string;
+  name: string;
+  description: string | null;
+  checkIds: string[];
+  frameworkId: string | null;
+  scoring: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TestPackInput = Omit<TestPack, "createdAt" | "updatedAt"> &
+  Partial<Pick<TestPack, "createdAt" | "updatedAt">>;
+
+export type TestPackUpdate = Partial<Omit<TestPack, "id" | "createdAt" | "updatedAt">>;
+
+export interface TestRunResult {
+  findingId: string;
+  status: FindingStatus;
+}
+
+export interface TestRun {
+  id: string;
+  packId: string;
+  tenantId: string;
+  at: string;
+  score: number | null;
+  results: TestRunResult[];
+  createdAt: string;
+}
+
+export type TestRunInput = Omit<TestRun, "createdAt"> &
+  Partial<Pick<TestRun, "createdAt">>;
+
+export interface TestRunListOptions {
+  packId?: string;
+}
+
 /**
  * The only surface feature code may depend on. Tenant-scoped reads require the
  * tenant id, rows with `deletedAt` set are hidden unless explicitly requested,
@@ -1241,6 +1285,19 @@ export interface Repository {
 
   getBranding(): Promise<BrandingConfig | undefined>;
   upsertBranding(input: BrandingConfigInput): Promise<BrandingConfig>;
+
+  createTestPack(input: TestPackInput): Promise<TestPack>;
+  getTestPack(packId: string, options?: ListOptions): Promise<TestPack | undefined>;
+  listTestPacks(options?: ListOptions): Promise<TestPack[]>;
+  updateTestPack(
+    packId: string,
+    update: TestPackUpdate,
+    options?: ListOptions,
+  ): Promise<TestPack | undefined>;
+
+  createTestRun(input: TestRunInput): Promise<TestRun>;
+  getTestRun(tenantId: string, runId: string): Promise<TestRun | undefined>;
+  listTestRuns(tenantId: string, options?: TestRunListOptions): Promise<TestRun[]>;
 }
 
 export class SchemaVersionError extends Error {
