@@ -61,4 +61,67 @@ Describe 'New-PimRequest worker (T-0245)' {
             $result.startsAt | Should -BeNullOrEmpty
         }
     }
+
+    Context 'App-only action mapping (T-0831)' {
+        BeforeEach {
+            $script:pimCalls = [System.Collections.Generic.List[object]]::new()
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $Body)
+                $script:pimCalls.Add([pscustomobject]@{ Method = $Method; Uri = $Uri; Body = $Body })
+                @{ id = 'req-123'; status = 'Granted' }
+            }
+        }
+
+        It 'maps activate to AdminAssign because app-only cannot SelfActivate' {
+            New-PimRequest -TenantId 'tenant-test' -PrincipalId 'u-1' -RoleId 'r-1' -Justification 'Emergency incident INC-123' | Out-Null
+
+            ($script:pimCalls[0].Body | ConvertFrom-Json).action | Should -Be 'AdminAssign'
+        }
+
+        It 'maps deactivate to AdminRemove because app-only cannot SelfDeactivate' {
+            New-PimRequest -TenantId 'tenant-test' -PrincipalId 'u-1' -RoleId 'r-1' -Action deactivate -Justification 'Emergency incident INC-123' | Out-Null
+
+            ($script:pimCalls[0].Body | ConvertFrom-Json).action | Should -Be 'AdminRemove'
+        }
+
+        It 'extends to the supplied new end rather than counting from now' {
+            New-PimRequest -TenantId 'tenant-test' -PrincipalId 'u-1' -RoleId 'r-1' -Action extend -DurationHours 4 -NewEndsAt '2026-09-26T20:00:00Z' -Justification 'Planned maintenance' | Out-Null
+
+            $body = $script:pimCalls[0].Body | ConvertFrom-Json
+            $body.action | Should -Be 'AdminExtend'
+            $body.scheduleInfo.expiration.type | Should -Be 'AfterDateTime'
+            ([datetime]$body.scheduleInfo.expiration.endDateTime).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ') |
+                Should -Be '2026-09-26T20:00:00Z'
+        }
+    }
+
+    Context 'Reading a request back so the portal can mirror Entra (T-0831)' {
+        It 'GETs the request and maps an approved status to active' {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $Body)
+                @{ id = 'req-123'; status = 'Granted' }
+            }
+
+            $result = Get-PimRequestStatus -TenantId 'tenant-test' -RequestId 'req-123'
+
+            $result.state | Should -Be 'active'
+            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter {
+                $Method -eq 'GET' -and $Uri -eq '/v1.0/roleManagement/directory/roleAssignmentScheduleRequests/req-123'
+            }
+        }
+
+        It 'maps PendingApproval to pending and Denied to rejected' {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $Body)
+                @{ id = 'req-123'; status = 'PendingApproval' }
+            }
+            (Get-PimRequestStatus -TenantId 'tenant-test' -RequestId 'req-123').state | Should -Be 'pending'
+
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $Body)
+                @{ id = 'req-123'; status = 'Denied' }
+            }
+            (Get-PimRequestStatus -TenantId 'tenant-test' -RequestId 'req-123').state | Should -Be 'rejected'
+        }
+    }
 }

@@ -21,6 +21,29 @@ function Read-PimRequestJob {
     if (-not $json.tenantId) {
         throw "job envelope '$Path' is missing mandatory 'tenantId'"
     }
+
+    $operation = if ($json.operation) { [string]$json.operation } else { 'submit' }
+    $requestId = if ($json.requestId) { [string]$json.requestId } else { '' }
+
+    if ($operation -eq 'status') {
+        if ([string]::IsNullOrWhiteSpace($requestId)) {
+            throw "job envelope '$Path' is missing mandatory 'requestId' for a status read"
+        }
+        return @{
+            TenantId         = [string]$json.tenantId
+            Operation        = 'status'
+            RequestId        = $requestId
+            PrincipalId      = ''
+            RoleId           = ''
+            Action           = 'activate'
+            Justification    = ''
+            DurationHours    = 8
+            ApprovalRequired = $false
+            TicketNumber     = $null
+            NewEndsAt        = ''
+        }
+    }
+
     if (-not $json.principalId) {
         throw "job envelope '$Path' is missing mandatory 'principalId'"
     }
@@ -30,6 +53,8 @@ function Read-PimRequestJob {
 
     return @{
         TenantId         = [string]$json.tenantId
+        Operation        = 'submit'
+        RequestId        = ''
         PrincipalId      = [string]$json.principalId
         RoleId           = [string]$json.roleId
         Action           = if ($json.action) { [string]$json.action } else { 'activate' }
@@ -37,6 +62,7 @@ function Read-PimRequestJob {
         DurationHours    = if ($json.durationHours) { [int]$json.durationHours } else { 8 }
         ApprovalRequired = [bool]($json.approvalRequired -eq $true)
         TicketNumber     = if ($json.ticketNumber) { [string]$json.ticketNumber } else { $null }
+        NewEndsAt        = if ($json.newEndsAt) { [string]$json.newEndsAt } else { '' }
     }
 }
 
@@ -75,23 +101,43 @@ function New-PimRequest {
         [switch]$ApprovalRequired,
 
         [Parameter()]
-        [string]$TicketNumber = ''
+        [string]$TicketNumber = '',
+
+        # Exact new end for an extend (ISO 8601). When set, the request extends to this
+        # instant; without it the window is counted from now, which is wrong for extend.
+        [Parameter()]
+        [string]$NewEndsAt = ''
     )
 
     if ([string]::IsNullOrWhiteSpace($Justification)) {
         throw "justification is required for PIM schedule request"
     }
 
+    # App-only workers cannot act as the signed-in principal, so SelfActivate/SelfDeactivate
+    # fail; an admin assign/remove on an active schedule is the correct app-only operation.
     $actionMap = @{
-        'activate'   = 'SelfActivate'
+        'activate'   = 'AdminAssign'
         'extend'     = 'AdminExtend'
         'assign'     = 'AdminAssign'
-        'deactivate' = 'SelfDeactivate'
+        'deactivate' = 'AdminRemove'
     }
     $graphAction = $actionMap[$Action]
 
     $startTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
     $endTime = (Get-Date).AddHours($DurationHours).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+
+    $expiration = if (-not [string]::IsNullOrWhiteSpace($NewEndsAt)) {
+        @{
+            type        = 'AfterDateTime'
+            endDateTime = $NewEndsAt
+        }
+    }
+    else {
+        @{
+            type     = 'AfterDuration'
+            duration = "PT${DurationHours}H"
+        }
+    }
 
     $body = @{
         action           = $graphAction
@@ -101,10 +147,7 @@ function New-PimRequest {
         justification    = $Justification
         scheduleInfo     = @{
             startDateTime = $startTime
-            expiration    = @{
-                type     = 'AfterDuration'
-                duration = "PT${DurationHours}H"
-            }
+            expiration    = $expiration
         }
     }
 
@@ -137,6 +180,53 @@ function New-PimRequest {
         durationHours = $DurationHours
         ticketNumber  = $TicketNumber
         startsAt      = if ($state -eq 'active') { $startTime } else { $null }
-        endsAt        = if ($state -eq 'active') { $endTime } else { $null }
+        endsAt        = if ($state -eq 'active') {
+            if (-not [string]::IsNullOrWhiteSpace($NewEndsAt)) { $NewEndsAt } else { $endTime }
+        }
+        else { $null }
+    }
+}
+
+function Get-PimRequestStatus {
+    <#
+    .SYNOPSIS
+        Reads a role assignment schedule request and maps its Entra status to a portal state.
+    .DESCRIPTION
+        Approval authority is Entra (T-0831). The portal reads the live request so it can
+        mirror the decision instead of recording one Entra did not make. The status-to-state
+        mapping awaits live-tenant verification.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantId,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RequestId
+    )
+
+    $uri = "/v1.0/roleManagement/directory/roleAssignmentScheduleRequests/$RequestId"
+    $resp = Invoke-MgGraphRequest -Method GET -Uri $uri
+
+    $status = if ($resp -and $resp.status) { [string]$resp.status } else { '' }
+    $state = switch ($status) {
+        'Granted' { 'active' }
+        'Provisioned' { 'active' }
+        'Succeeded' { 'active' }
+        'Denied' { 'rejected' }
+        'Failed' { 'rejected' }
+        'Canceled' { 'cancelled' }
+        'Revoked' { 'cancelled' }
+        default { 'pending' }
+    }
+
+    return [pscustomobject]@{
+        id       = [string]$RequestId
+        tenantId = $TenantId
+        state    = $state
+        status   = $status
     }
 }

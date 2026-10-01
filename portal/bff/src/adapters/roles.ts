@@ -3,7 +3,7 @@
 // The role, PIM, and JIT workers read flat job fields (createTenantWorker). The PIM
 // request, PIM settings, and JIT routes persist through the @m365-assess/db
 // repositories directly; these providers are the tenant side of each write.
-import type { JitGrant, JitRepository } from "@m365-assess/db";
+import type { JitGrant, JitRepository, RoleChangeRequestState } from "@m365-assess/db";
 import type Database from "better-sqlite3";
 import type { JitGrantExecutionProvider } from "../routes/jit-grants.js";
 import type { ActiveGrantsResolver } from "../routes/jit-templates.js";
@@ -77,10 +77,27 @@ export function createRoleProviders(call: TenantWorkerCall): RoleProviders {
             durationHours: input.durationHours,
             approvalRequired: input.approvalRequired,
             ...(input.ticketNumber ? { ticketNumber: input.ticketNumber } : {}),
+            ...(input.newEndsAt ? { newEndsAt: input.newEndsAt } : {}),
           },
         );
         return {
           ...(out.id ? { id: out.id } : {}),
+          state: out.state,
+          ...(out.startsAt ? { startsAt: out.startsAt } : {}),
+          ...(out.endsAt ? { endsAt: out.endsAt } : {}),
+        };
+      },
+
+      // Reads the live Entra request (T-0831); the route mirrors the decision rather
+      // than recording the portal caller's. App-only auth means the portal cannot act
+      // as the Entra approver, so a read is the only correct portal-side operation.
+      async getRequestStatus(tenantId, requestId) {
+        const out = await call<{ state: RoleChangeRequestState; startsAt?: string | null; endsAt?: string | null }>(
+          "new-pim-request.ps1",
+          tenantId,
+          { operation: "status", requestId },
+        );
+        return {
           state: out.state,
           ...(out.startsAt ? { startsAt: out.startsAt } : {}),
           ...(out.endsAt ? { endsAt: out.endsAt } : {}),
