@@ -1,7 +1,7 @@
 BeforeAll {
     # Show-InteractiveWizard uses Read-Host extensively. We stub it as a global function
     # before dot-sourcing so that all internal calls are interceptable via Mock.
-
+    function global:Read-Host { param($Prompt) return '' }
     . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/Show-InteractiveWizard.ps1"
 }
 
@@ -25,7 +25,7 @@ Describe 'Show-InteractiveWizard - non-interactive paths' {
     BeforeAll {
         # Show-InteractiveWizard reads $ProjectRoot from its calling scope to locate profile helpers.
         # Setting it as a global avoids a null-path error in Join-Path at line 185.
-        $global:ProjectRoot = $env:TEMP
+        $global:ProjectRoot = [System.IO.Path]::GetTempPath()
         # Suppress filesystem checks -- no profile helpers on disk during tests
         Mock Test-Path { return $false }
         Mock Clear-Host { }
@@ -33,6 +33,7 @@ Describe 'Show-InteractiveWizard - non-interactive paths' {
 
     AfterAll {
         Remove-Variable -Name ProjectRoot -Scope Global -ErrorAction SilentlyContinue
+        Remove-Item -Path function:\global:Read-Host -ErrorAction SilentlyContinue
     }
 
     Context 'when user quits at confirmation step' {
