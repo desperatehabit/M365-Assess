@@ -1318,6 +1318,30 @@ export interface BackupConfigInput {
   replicationTarget?: string | null;
 }
 
+// Graph Explorer saved presets (EPIC-040 SPEC.md §3.1, §5, §6; T-0783). A preset
+// is a saved request — name, method, url, body — owned by the portal user who
+// created it (per-user first; SPEC §11 open question 3). It carries no tenant
+// credential and no secret: the service validates the method against the T-0781
+// allowlist before a row is written, and the input type has no credential field.
+export interface GraphPreset {
+  id: string;
+  name: string;
+  method: string;
+  url: string;
+  body: unknown;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type GraphPresetInput = Omit<GraphPreset, "createdAt" | "updatedAt"> &
+  Partial<Pick<GraphPreset, "createdAt" | "updatedAt">>;
+
+export interface GraphPresetListOptions {
+  /** Restricts the read to presets owned by this portal user. */
+  createdBy?: string;
+}
+
 /**
  * The only surface feature code may depend on. Tenant-scoped reads require the
  * tenant id, rows with `deletedAt` set are hidden unless explicitly requested,
