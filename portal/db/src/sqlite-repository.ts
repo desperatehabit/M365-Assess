@@ -99,6 +99,7 @@ import {
   type TenantVariable,
   type TenantVariableInput,
   type TenantVariableListOptions,
+  type UserPreference,
 } from "./repository.js";
 
 type Row = Record<string, unknown>;
@@ -2072,6 +2073,15 @@ export class SqliteRepository implements Repository {
     ).map((row) => this.mapAlertStateChange(row));
   }
 
+  private mapUserPreference(row: Row): UserPreference {
+    return {
+      userId: asString(row["userId"]),
+      prefs: parseJson(row["prefs"]) ?? {},
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
   private mapBranding(row: Row): BrandingConfig {
     return mapBrandingRow(row);
   }
@@ -2445,6 +2455,30 @@ export class SqliteRepository implements Repository {
           updatedAt: flag.updatedAt,
           updatedBy: flag.updatedBy,
         });
+  async getUserPreference(userId: string): Promise<UserPreference | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM user_preferences WHERE userId = ?")
+      .get(userId) as Row | undefined;
+    return row ? this.mapUserPreference(row) : undefined;
+  }
+
+  async upsertUserPreference(
+    userId: string,
+    prefs: Record<string, unknown>,
+  ): Promise<UserPreference> {
+    const existing = await this.getUserPreference(userId);
+    const createdAt = existing?.createdAt ?? nowIso();
+    const updatedAt = nowIso();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO user_preferences (userId, prefs, createdAt, updatedAt)
+           VALUES (@userId, @prefs, @createdAt, @updatedAt)
+           ON CONFLICT(userId) DO UPDATE SET
+             prefs = excluded.prefs,
+             updatedAt = excluded.updatedAt`,
+        )
+        .run({ userId, prefs: JSON.stringify(prefs), createdAt, updatedAt });
       this.db
         .prepare(
           `INSERT INTO audit_events
@@ -2470,6 +2504,14 @@ export class SqliteRepository implements Repository {
           flag.key,
           before ? JSON.stringify(this.mapFeatureFlag(before)) : null,
           JSON.stringify(flag),
+          userId,
+          "user",
+          null,
+          "preferences.upsert",
+          "user_preferences",
+          userId,
+          existing ? JSON.stringify(existing.prefs) : null,
+          JSON.stringify(prefs),
           "success",
           null,
           "request",
@@ -2481,6 +2523,8 @@ export class SqliteRepository implements Repository {
     if (!persisted) throw new Error(`setting ${settingKey} was not persisted`);
     const persisted = await this.getFeatureFlag(flag.key);
     if (!persisted) throw new Error(`feature flag ${flag.key} was not persisted`);
+    const persisted = await this.getUserPreference(userId);
+    if (!persisted) throw new Error(`user preference ${userId} was not persisted`);
     return persisted;
   }
 }
