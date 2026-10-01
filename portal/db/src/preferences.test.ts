@@ -77,7 +77,7 @@ describe("migration 0049", () => {
       const priorMigrations = migrations.filter((migration) => migration.version < 49);
       runMigrations(db, priorMigrations);
       expect(db.prepare("SELECT MAX(version) AS v FROM schema_versions").get()).toMatchObject({
-        v: 40,
+        v: 48,
       });
 
       const target = migrations.reduce((max, migration) => Math.max(max, migration.version), 0);

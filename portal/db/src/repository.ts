@@ -1046,6 +1046,10 @@ export interface AppSetting {
   key: string;
   value: unknown;
   scope: SettingScope;
+  updatedAt?: string;
+  updatedBy?: string | null;
+}
+
 // Instance feature flags (EPIC-037 SPEC.md §5, §11.3): global-first. The
 // 'tenant' scope is reserved for the deferred per-tenant cut; v1 writers
 // (upsertFeatureFlag) reject it, so every persisted flag is instance-global.
@@ -1058,6 +1062,7 @@ export interface FeatureFlag {
   description: string;
   updatedAt: string;
   updatedBy: string | null;
+}
 // Per-user preferences (EPIC-037 SPEC.md §3.4, §4.3, §5): one record per
 // portal user holding the prefs JSON blob. The blob is opaque at this layer —
 // the BFF preferences schema is the validation authority — so prefs can evolve

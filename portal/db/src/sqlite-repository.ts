@@ -2174,6 +2174,11 @@ export class SqliteRepository implements Repository {
       key: asString(row["key"]),
       value: parseJsonValue(row["value"]),
       scope: asString(row["scope"]) as SettingScope,
+      updatedAt: asString(row["updatedAt"]),
+      updatedBy: asNullableString(row["updatedBy"]),
+    };
+  }
+
   private mapFeatureFlag(row: Row): FeatureFlag {
     return {
       key: asString(row["key"]),
@@ -2450,6 +2455,8 @@ export class SqliteRepository implements Repository {
         .prepare('SELECT * FROM test_runs WHERE tenantId = ? AND packId = ? ORDER BY "at", id')
         .all(tenantId, options.packId) as Row[]
     ).map((row) => this.mapTestRun(row));
+  }
+
   async listSettings(): Promise<AppSetting[]> {
     return (this.db.prepare("SELECT * FROM app_settings ORDER BY key").all() as Row[]).map(
       (row) => this.mapSetting(row),
@@ -2484,6 +2491,39 @@ export class SqliteRepository implements Repository {
            ON CONFLICT(key) DO UPDATE SET
              value = excluded.value,
              scope = excluded.scope,
+             updatedAt = excluded.updatedAt,
+             updatedBy = excluded.updatedBy`,
+        )
+        .run({ key: settingKey, value: JSON.stringify(value), scope, updatedAt, updatedBy });
+      this.db
+        .prepare(
+          `INSERT INTO audit_events
+             (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          updatedAt,
+          updatedBy,
+          updatedBy === null ? "system" : "user",
+          null,
+          "settings.upsert",
+          "app_setting",
+          settingKey,
+          before ? JSON.stringify(this.mapSetting(before)) : null,
+          JSON.stringify({ key: settingKey, value, scope, updatedAt, updatedBy }),
+          "success",
+          null,
+          "request",
+          null,
+          updatedAt,
+        );
+    })();
+    const persisted = await this.getSetting(settingKey);
+    if (!persisted) throw new Error(`setting ${settingKey} was not persisted`);
+    return persisted;
+  }
+
   async getFeatureFlags(): Promise<FeatureFlag[]> {
     return (this.db.prepare("SELECT * FROM feature_flags ORDER BY key").all() as Row[]).map(
       (row) => this.mapFeatureFlag(row),
@@ -2526,11 +2566,6 @@ export class SqliteRepository implements Repository {
              updatedBy = excluded.updatedBy`,
         )
         .run({
-          key: settingKey,
-          value: JSON.stringify(value),
-          scope,
-          updatedAt,
-          updatedBy,
           key: flag.key,
           enabled: flag.enabled ? 1 : 0,
           scope: flag.scope,
@@ -2538,6 +2573,34 @@ export class SqliteRepository implements Repository {
           updatedAt: flag.updatedAt,
           updatedBy: flag.updatedBy,
         });
+      this.db
+        .prepare(
+          `INSERT INTO audit_events
+             (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          randomUUID(),
+          updatedAt,
+          flag.updatedBy,
+          flag.updatedBy === null ? "system" : "user",
+          null,
+          "feature_flag.upsert",
+          "feature_flags",
+          flag.key,
+          before ? JSON.stringify(this.mapFeatureFlag(before)) : null,
+          JSON.stringify(flag),
+          "success",
+          null,
+          "request",
+          null,
+          updatedAt,
+        );
+    })();
+    const persisted = await this.getFeatureFlag(flag.key);
+    if (!persisted) throw new Error(`feature flag ${flag.key} was not persisted`);
+    return persisted;
+  }
   async getUserPreference(userId: string): Promise<UserPreference | undefined> {
     const row = this.db
       .prepare("SELECT * FROM user_preferences WHERE userId = ?")
@@ -2571,22 +2634,6 @@ export class SqliteRepository implements Repository {
         .run(
           randomUUID(),
           updatedAt,
-          updatedBy,
-          updatedBy === null ? "system" : "user",
-          null,
-          "settings.upsert",
-          "app_setting",
-          settingKey,
-          before ? JSON.stringify(this.mapSetting(before)) : null,
-          JSON.stringify({ key: settingKey, value, scope, updatedAt, updatedBy }),
-          flag.updatedBy,
-          "system",
-          null,
-          "feature_flag.upsert",
-          "feature_flags",
-          flag.key,
-          before ? JSON.stringify(this.mapFeatureFlag(before)) : null,
-          JSON.stringify(flag),
           userId,
           "user",
           null,
@@ -2602,10 +2649,6 @@ export class SqliteRepository implements Repository {
           updatedAt,
         );
     })();
-    const persisted = await this.getSetting(settingKey);
-    if (!persisted) throw new Error(`setting ${settingKey} was not persisted`);
-    const persisted = await this.getFeatureFlag(flag.key);
-    if (!persisted) throw new Error(`feature flag ${flag.key} was not persisted`);
     const persisted = await this.getUserPreference(userId);
     if (!persisted) throw new Error(`user preference ${userId} was not persisted`);
     return persisted;
