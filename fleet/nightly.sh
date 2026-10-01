@@ -55,9 +55,19 @@ process_severity() {
     done
 }
 
-for sev in "$@"; do
-    process_severity "$sev"
+pass_num=1
+while true; do
+    total_runnable=$(python3 -c "import fleet.fleet as f; print(len(f.runnable_tickets()))")
+    if [ "$total_runnable" -eq 0 ]; then
+        log "=== ALL RUNNABLE TICKETS EXHAUSTED (0 remaining) ==="
+        break
+    fi
+    log "=== PASS $pass_num START: $total_runnable runnable tickets across all severities ==="
+    for sev in "$@"; do
+        process_severity "$sev"
+    done
+    pass_num=$((pass_num + 1))
 done
 
-log "=== BANDS DONE: $* ==="
+log "=== FLIGHT COMPLETE: $* ==="
 python3 "$PY" status 2>&1 | tee -a "$LOG"
