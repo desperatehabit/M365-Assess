@@ -3,6 +3,7 @@
 // Subscriptions are RBAC-checked, tenant-scoped, and audited.
 
 import { randomUUID } from "node:crypto";
+import { Readable } from "node:stream";
 import { AppError, ErrorCodes } from "../errors.js";
 import {
   requirePermission,
@@ -53,23 +54,11 @@ export interface RunEventsStore {
   appendAuditEvent?(event: RunAuditEventInput): Promise<unknown>;
 }
 
-export interface RunsEventsRequestContext extends RequestContext {
-  readonly sink?: (chunk: string) => void;
-  readonly onEvent?: (event: ProgressEvent) => void;
-  readonly signal?: AbortSignal;
-  readonly res?: {
-    write(chunk: string): boolean;
-    end(): void;
-    setHeader?(name: string, value: string): void;
-  };
-}
-
 export interface RunsEventsRouteOptions {
   readonly hub: ProgressEventHub;
   readonly store: RunEventsStore;
   readonly resolveCaller: (ctx: RequestContext) => Caller | undefined;
   readonly authorize?: (caller: Caller, permission: string) => void | Promise<void>;
-  readonly timeoutMs?: number;
   readonly now?: () => string;
 }
 
@@ -168,92 +157,31 @@ export function createRunsEventsRoute(options: RunsEventsRouteOptions): Route {
         });
       }
 
-      const sseCtx = ctx as RunsEventsRequestContext;
-      if (sseCtx.res?.setHeader) {
-        sseCtx.res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
-        sseCtx.res.setHeader("Cache-Control", "no-cache");
-        sseCtx.res.setHeader("Connection", "keep-alive");
-      }
-
-      const chunks: string[] = [];
-      let cleanup: (() => void) | undefined;
-
-      const completionPromise = new Promise<void>((resolve, reject) => {
-        let isDone = false;
-        const markDone = () => {
-          if (isDone) return;
-          isDone = true;
-          if (sseCtx.res) {
-            try {
-              sseCtx.res.end();
-            } catch {
-              // Ignore if already ended
-            }
-          }
-          resolve();
-        };
-
-        const unsubscribe = options.hub.subscribe(runId, {
-          onEvent: (event: ProgressEvent) => {
-            const formatted = formatSseEvent(event);
-            chunks.push(formatted);
-            if (sseCtx.sink) {
-              sseCtx.sink(formatted);
-            }
-            if (sseCtx.onEvent) {
-              sseCtx.onEvent(event);
-            }
-            if (sseCtx.res) {
-              sseCtx.res.write(formatted);
-            }
-          },
-          onComplete: () => {
-            markDone();
-          },
-          onError: (err: unknown) => {
-            reject(err);
-          },
-        });
-
-        const onAbort = () => {
-          unsubscribe();
-          markDone();
-        };
-
-        if (sseCtx.signal) {
-          if (sseCtx.signal.aborted) {
-            onAbort();
-          } else {
-            sseCtx.signal.addEventListener("abort", onAbort, { once: true });
-          }
-        }
-
-        cleanup = () => {
-          unsubscribe();
-          if (sseCtx.signal) {
-            sseCtx.signal.removeEventListener("abort", onAbort);
-          }
-        };
+      // The server pipes this stream to the client and destroys it when the
+      // connection closes, so events reach the client as the hub publishes them
+      // and a disconnect ends the subscription.
+      const stream = new Readable({ read() {} });
+      const unsubscribe = options.hub.subscribe(runId, {
+        onEvent: (event: ProgressEvent) => {
+          stream.push(formatSseEvent(event));
+        },
+        onComplete: () => {
+          stream.push(null);
+        },
+        onError: (err: unknown) => {
+          stream.destroy(err instanceof Error ? err : new Error(String(err)));
+        },
       });
-
-      // If a timeout is specified, don't block indefinitely
-      if (options.timeoutMs && options.timeoutMs > 0) {
-        const timeoutPromise = new Promise<void>((resolve) => {
-          const timer = setTimeout(() => {
-            cleanup?.();
-            resolve();
-          }, options.timeoutMs);
-          completionPromise.finally(() => clearTimeout(timer));
-        });
-        await Promise.race([completionPromise, timeoutPromise]);
-      } else {
-        await completionPromise;
-      }
+      stream.on("close", unsubscribe);
 
       return {
         status: 200,
         contentType: "text/event-stream; charset=utf-8",
-        raw: chunks.join(""),
+        headers: {
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+        stream,
       };
     },
   };
