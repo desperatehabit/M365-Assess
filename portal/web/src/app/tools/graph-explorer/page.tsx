@@ -26,6 +26,7 @@ import {
   GraphResponseViewer,
   type GraphExplorerResponse,
 } from "../../../components/GraphResponseViewer";
+import { GraphPresetList } from "../../../components/GraphPresetList";
 
 export type Fetcher = typeof fetch;
 
@@ -280,7 +281,7 @@ export default function GraphExplorerPage(): ReactElement {
   const tenantId = resolveTenantId(searchParams.get("tenantId"), useCurrentTenantId());
   return (
     <RequireTenant tenantId={tenantId}>
-      <GraphExplorerView tenantId={tenantId} />
+      <GraphExplorerView tenantId={tenantId} presetSlot={<GraphPresetList />} />
     </RequireTenant>
   );
 }
