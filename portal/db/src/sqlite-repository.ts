@@ -26,6 +26,12 @@ import {
   type BrandingWatermark,
   type ContactTemplate,
   type ContactTemplateInput,
+  type CustomTest,
+  type CustomTestInput,
+  type CustomTestUpdate,
+  type CustomTestVersion,
+  type CustomTestVersionInput,
+  CustomTestNotFoundError,
   type FeatureFlag,
   type FeatureFlagInput,
   type FeatureFlagScope,
@@ -604,6 +610,31 @@ export class SqliteRepository implements Repository {
       score: row["score"] === null || row["score"] === undefined ? null : asNumber(row["score"]),
       results: parseTestRunResults(row["results"]),
       createdAt: asString(row["createdAt"]),
+    };
+  }
+
+  private mapCustomTest(row: Row): CustomTest {
+    return {
+      id: asString(row["id"]),
+      name: asString(row["name"]),
+      category: asString(row["category"]),
+      enabled: asBool(row["enabled"]),
+      alertsEnabled: asBool(row["alertsEnabled"]),
+      currentVersionId: asNullableString(row["currentVersionId"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+    };
+  }
+
+  private mapCustomTestVersion(row: Row): CustomTestVersion {
+    return {
+      id: asString(row["id"]),
+      testId: asString(row["testId"]),
+      content: asString(row["content"]),
+      markdownTemplate: asNullableString(row["markdownTemplate"]),
+      parameters: parseJson(row["parameters"]),
+      createdAt: asString(row["createdAt"]),
+      createdBy: asString(row["createdBy"]),
     };
   }
 
@@ -2455,6 +2486,179 @@ export class SqliteRepository implements Repository {
         .prepare('SELECT * FROM test_runs WHERE tenantId = ? AND packId = ? ORDER BY "at", id')
         .all(tenantId, options.packId) as Row[]
     ).map((row) => this.mapTestRun(row));
+  }
+
+  async createCustomTest(input: CustomTestInput): Promise<CustomTest> {
+    const createdAt = input.createdAt ?? nowIso();
+    const updatedAt = input.updatedAt ?? nowIso();
+    const test: CustomTest = {
+      id: input.id,
+      name: input.name,
+      category: input.category,
+      enabled: input.enabled ?? false,
+      alertsEnabled: input.alertsEnabled ?? false,
+      currentVersionId: null,
+      createdAt,
+      updatedAt,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO custom_tests
+             (id, name, category, enabled, alertsEnabled, currentVersionId, createdAt, updatedAt, deletedAt)
+           VALUES (?, ?, ?, ?, ?, NULL, ?, ?, NULL)`,
+        )
+        .run(
+          test.id,
+          test.name,
+          test.category,
+          test.enabled ? 1 : 0,
+          test.alertsEnabled ? 1 : 0,
+          createdAt,
+          updatedAt,
+        );
+      this.writeAuditEvent("customtest.create", "custom_test", test.id, null, null, test, createdAt);
+    })();
+    const persisted = await this.getCustomTest(test.id);
+    if (!persisted) throw new Error(`custom test ${test.id} was not persisted`);
+    return persisted;
+  }
+
+  async getCustomTest(testId: string, options: ListOptions = {}): Promise<CustomTest | undefined> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM custom_tests WHERE id = ?"
+      : "SELECT * FROM custom_tests WHERE id = ? AND deletedAt IS NULL";
+    const row = this.db.prepare(sql).get(testId) as Row | undefined;
+    return row ? this.mapCustomTest(row) : undefined;
+  }
+
+  async listCustomTests(options: ListOptions = {}): Promise<CustomTest[]> {
+    const sql = options.includeDeleted
+      ? "SELECT * FROM custom_tests ORDER BY name, id"
+      : "SELECT * FROM custom_tests WHERE deletedAt IS NULL ORDER BY name, id";
+    return (this.db.prepare(sql).all() as Row[]).map((row) => this.mapCustomTest(row));
+  }
+
+  async updateCustomTest(
+    testId: string,
+    update: CustomTestUpdate,
+  ): Promise<CustomTest | undefined> {
+    const existing = await this.getCustomTest(testId);
+    if (!existing) return undefined;
+    const updatedAt = nowIso();
+    const next: CustomTest = {
+      ...existing,
+      ...update,
+      id: existing.id,
+      currentVersionId: existing.currentVersionId,
+      createdAt: existing.createdAt,
+      updatedAt,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE custom_tests
+             SET name = ?, category = ?, enabled = ?, alertsEnabled = ?, updatedAt = ?
+           WHERE id = ?`,
+        )
+        .run(
+          next.name,
+          next.category,
+          next.enabled ? 1 : 0,
+          next.alertsEnabled ? 1 : 0,
+          updatedAt,
+          testId,
+        );
+      this.writeAuditEvent("customtest.update", "custom_test", testId, null, existing, next, updatedAt);
+    })();
+    const persisted = await this.getCustomTest(testId);
+    if (!persisted) throw new Error(`custom test ${testId} was not persisted`);
+    return persisted;
+  }
+
+  async deleteCustomTest(testId: string, options: { now?: string } = {}): Promise<boolean> {
+    const existing = await this.getCustomTest(testId);
+    if (!existing) return false;
+    const at = options.now ?? nowIso();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE custom_tests SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+        )
+        .run(at, at, testId);
+      this.writeAuditEvent(
+        "customtest.delete",
+        "custom_test",
+        testId,
+        null,
+        existing,
+        { ...existing, deletedAt: at },
+        at,
+      );
+    })();
+    return true;
+  }
+
+  async appendCustomTestVersion(input: CustomTestVersionInput): Promise<CustomTestVersion> {
+    const test = await this.getCustomTest(input.testId);
+    if (!test) throw new CustomTestNotFoundError(input.testId);
+    const createdAt = input.createdAt ?? nowIso();
+    const version: CustomTestVersion = {
+      id: input.id,
+      testId: input.testId,
+      content: input.content,
+      markdownTemplate: input.markdownTemplate ?? null,
+      parameters: input.parameters ?? null,
+      createdAt,
+      createdBy: input.createdBy,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO custom_test_versions
+             (id, testId, content, markdownTemplate, parameters, createdAt, createdBy)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          version.id,
+          version.testId,
+          version.content,
+          version.markdownTemplate,
+          stringifyJson(version.parameters),
+          version.createdAt,
+          version.createdBy,
+        );
+      this.db
+        .prepare("UPDATE custom_tests SET currentVersionId = ?, updatedAt = ? WHERE id = ?")
+        .run(version.id, createdAt, input.testId);
+      this.writeAuditEvent(
+        "customtest.version.create",
+        "custom_test_version",
+        version.id,
+        null,
+        { currentVersionId: test.currentVersionId },
+        { testId: input.testId, currentVersionId: version.id },
+        createdAt,
+      );
+    })();
+    return version;
+  }
+
+  async getCustomTestVersion(versionId: string): Promise<CustomTestVersion | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM custom_test_versions WHERE id = ?")
+      .get(versionId) as Row | undefined;
+    return row ? this.mapCustomTestVersion(row) : undefined;
+  }
+
+  async listCustomTestVersions(testId: string): Promise<CustomTestVersion[]> {
+    return (
+      this.db
+        .prepare(
+          "SELECT * FROM custom_test_versions WHERE testId = ? ORDER BY createdAt, id",
+        )
+        .all(testId) as Row[]
+    ).map((row) => this.mapCustomTestVersion(row));
   }
 
   async listSettings(): Promise<AppSetting[]> {
