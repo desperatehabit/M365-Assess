@@ -122,6 +122,24 @@ export function resultFilePath(envelope: JobEnvelope): string {
   return path.join(envelope.payload.outputRef, "result.json");
 }
 
+// run-standards.ps1, run-drift.ps1, and run-baseline.ps1 take the job file and
+// output folder only; the envelope itself travels via that file, never on argv.
+export function buildJobFileArgs(
+  envelope: JobEnvelope,
+  workerScriptPath: string,
+): string[] {
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-File",
+    workerScriptPath,
+    "-JobFile",
+    envelope.payload.contextRef,
+    "-OutputFolder",
+    envelope.payload.outputRef,
+  ];
+}
+
 function killProcessTree(child: SpawnedProcess): void {
   const pid = child.pid;
   if (pid !== undefined) {
