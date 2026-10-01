@@ -13,7 +13,15 @@ import {
   type TemplateLibraryItem,
   type TemplateRepository,
   type TemplateRepo,
+  type TemplateRepoReviewState,
 } from "@m365-assess/db";
+import {
+  assertBundleCloneable,
+  assertRepoBrowsable,
+  describeBundleTrust,
+  type BundleTrustView,
+  type CloneTrustOptions,
+} from "./trust.js";
 
 export const TEMPLATE_REPO_NOT_FOUND = "template.repo_not_found";
 export const TEMPLATE_REPO_REF_INVALID = "template.repo_ref_invalid";
@@ -115,6 +123,16 @@ export interface AddRepoInput {
   readonly writeAccess?: boolean;
   /** GitHub install scope; recorded in the audit event until the integration lands. */
   readonly scope?: RepoInstallScope;
+  /**
+   * Admin opt-in decision (T-0764). Adding a repo is a `templates.write` action
+   * and is itself the opt-in, so it defaults to trusted; pass false to stage a
+   * repo without making it browsable. Recorded in the add AuditEvent.
+   */
+  readonly trusted?: boolean;
+  /** Bundle signature; a bundle is verified only when signed and reviewState is `signed` (T-0764). */
+  readonly signed?: boolean;
+  /** Bundle review state; defaults to `unreviewed` (T-0764). */
+  readonly reviewState?: TemplateRepoReviewState;
 }
 
 export interface RepoAuditContext {
@@ -144,7 +162,8 @@ export class TemplateRepoService {
 
   async listRepos(options: { type?: string } = {}): Promise<TemplateRepo[]> {
     const repos = await this.repos.listTemplateRepos();
-    return options.type ? repos.filter((repo) => repo.types.includes(options.type!)) : repos;
+    const browsable = repos.filter((repo) => repo.trusted);
+    return options.type ? browsable.filter((repo) => repo.types.includes(options.type!)) : browsable;
   }
 
   async addRepo(input: AddRepoInput, context: RepoAuditContext = {}): Promise<TemplateRepo> {
@@ -158,11 +177,12 @@ export class TemplateRepoService {
       types,
       writeAccess: input.writeAccess ?? false,
       builtin: false,
-      signed: false,
-      reviewState: "unreviewed",
-      trusted: false,
+      signed: input.signed ?? false,
+      reviewState: input.reviewState ?? "unreviewed",
+      trusted: input.trusted ?? true,
     });
-    await this.indexTemplates(repo);
+    // Only an opted-in repo is browsable, so only then do we fetch its templates.
+    if (repo.trusted) await this.indexTemplates(repo);
     await this.recordAudit("template.repo.add", context, {
       targetType: "template-repo",
       targetId: repo.id,
@@ -173,6 +193,9 @@ export class TemplateRepoService {
         types: repo.types,
         writeAccess: repo.writeAccess,
         scope: input.scope ?? null,
+        trusted: repo.trusted,
+        signed: repo.signed,
+        reviewState: repo.reviewState,
       },
     });
     return repo;
@@ -206,7 +229,28 @@ export class TemplateRepoService {
     if (!repo) {
       throw new AppError(TEMPLATE_REPO_NOT_FOUND, `template repo '${repoId}' not found`, 404);
     }
+    assertRepoBrowsable(repo);
     return this.repos.listTemplateLibraryItems({ repoId });
+  }
+
+  /** The source/author/review view the catalog badge renders (T-0764). */
+  async listRepoTrust(): Promise<BundleTrustView[]> {
+    const repos = await this.repos.listTemplateRepos();
+    return repos.map((repo) => describeBundleTrust(repo));
+  }
+
+  /**
+   * Clone gate (T-0764): refuses a repo that is not opted in or a bundle that is
+   * not signed+reviewed, unless an admin explicitly overrides. Returns the repo
+   * so a caller can proceed to the owning epic's deploy plan.
+   */
+  async assertCloneable(repoId: string, options: CloneTrustOptions = {}): Promise<TemplateRepo> {
+    const repo = await this.repos.getTemplateRepo(repoId);
+    if (!repo) {
+      throw new AppError(TEMPLATE_REPO_NOT_FOUND, `template repo '${repoId}' not found`, 404);
+    }
+    assertBundleCloneable(repo, options);
+    return repo;
   }
 
   /**
