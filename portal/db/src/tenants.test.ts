@@ -7,6 +7,7 @@ import type {
   GdapRelationshipInput,
   TenantGroupInput,
   TenantInput,
+  TenantLicenseInventoryInput,
   TenantVariableInput,
 } from "./repository.js";
 import { openSqliteRepository } from "./sqlite-repository.js";
@@ -63,6 +64,22 @@ function gdap(tenantId: string, extra: Partial<GdapRelationshipInput> = {}): Gda
     delegatedPrivilegeStatus: null,
     cpvConsentState: null,
     lastSynced: null,
+    ...extra,
+  };
+}
+
+function inventory(
+  tenantId: string,
+  skuId: string,
+  extra: Partial<TenantLicenseInventoryInput> = {},
+): TenantLicenseInventoryInput {
+  return {
+    tenantId,
+    skuId,
+    skuPartNumber: skuId,
+    enabledUnits: 25,
+    consumedUnits: 17,
+    lastSynced: "2026-09-28T00:00:00.000Z",
     ...extra,
   };
 }
@@ -338,6 +355,72 @@ describe("gdap satellite", () => {
     expect((await repo.getGdapRelationship(TENANT_A))?.cpvConsentState).toBe("pending");
     expect(await repo.listGdapRelationships()).toHaveLength(1);
     expect((await repo.getTenant(TENANT_A))?.source).toBe("direct");
+    repo.close();
+  });
+});
+
+describe("tenant license inventory (T-0828)", () => {
+  it("persists per-tenant SKUs with units and sync time", async () => {
+    const repo = await openSqliteRepository({ filename: tempDbPath() });
+    await repo.upsertTenant(tenant(TENANT_A));
+    await repo.upsertTenant(tenant(TENANT_B));
+    await repo.upsertTenantLicenseInventory(inventory(TENANT_A, "ENTERPRISEPREMIUM"));
+
+    const rows = await repo.listTenantLicenseInventory(TENANT_A);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      tenantId: TENANT_A,
+      skuId: "ENTERPRISEPREMIUM",
+      skuPartNumber: "ENTERPRISEPREMIUM",
+      enabledUnits: 25,
+      consumedUnits: 17,
+      lastSynced: "2026-09-28T00:00:00.000Z",
+    });
+    expect(await repo.listTenantLicenseInventory(TENANT_B)).toHaveLength(0);
+    expect((await repo.listTenantLicenseInventory()).map((row) => row.skuId)).toEqual([
+      "ENTERPRISEPREMIUM",
+    ]);
+    repo.close();
+  });
+
+  it("treats a repeated upsert as an edit of the same row", async () => {
+    const repo = await openSqliteRepository({ filename: tempDbPath() });
+    await repo.upsertTenant(tenant(TENANT_A));
+    await repo.upsertTenantLicenseInventory(inventory(TENANT_A, "EMS"));
+    const edited = await repo.upsertTenantLicenseInventory(
+      inventory(TENANT_A, "EMS", { consumedUnits: 20, lastSynced: "2026-09-29T00:00:00.000Z" }),
+    );
+    expect(edited.consumedUnits).toBe(20);
+    expect(edited.lastSynced).toBe("2026-09-29T00:00:00.000Z");
+    expect(await repo.listTenantLicenseInventory(TENANT_A)).toHaveLength(1);
+    repo.close();
+  });
+
+  it("replaces the tenant's inventory on re-sync, dropping SKUs no longer held", async () => {
+    const repo = await openSqliteRepository({ filename: tempDbPath() });
+    await repo.upsertTenant(tenant(TENANT_A));
+    await repo.upsertTenant(tenant(TENANT_B));
+    await repo.replaceTenantLicenseInventory(TENANT_A, [
+      inventory(TENANT_A, "ENTERPRISEPREMIUM"),
+      inventory(TENANT_A, "EMS"),
+    ]);
+    await repo.upsertTenantLicenseInventory(inventory(TENANT_B, "EMS"));
+
+    expect((await repo.listTenantLicenseInventory(TENANT_A)).map((row) => row.skuId)).toEqual([
+      "EMS",
+      "ENTERPRISEPREMIUM",
+    ]);
+
+    const resynced = await repo.replaceTenantLicenseInventory(TENANT_A, [
+      inventory(TENANT_A, "ENTERPRISEPREMIUM"),
+    ]);
+    expect(resynced.map((row) => row.skuId)).toEqual(["ENTERPRISEPREMIUM"]);
+    expect((await repo.listTenantLicenseInventory(TENANT_A)).map((row) => row.skuId)).toEqual([
+      "ENTERPRISEPREMIUM",
+    ]);
+    expect((await repo.listTenantLicenseInventory(TENANT_B)).map((row) => row.skuId)).toEqual([
+      "EMS",
+    ]);
     repo.close();
   });
 });

@@ -924,6 +924,24 @@ export type LicensePricingInput = Omit<LicensePricing, "updatedAt" | "tenantId" 
 export type LicenseChangeInput = Omit<LicenseChange, "by" | "at"> &
   Partial<Pick<LicenseChange, "by" | "at">>;
 
+// Per-tenant license inventory (T-0828): the SKUs a tenant holds, with enabled
+// and consumed units and the sync time of the read that produced the row. This
+// is what the EPIC-002 SKU-equality group filter resolves against; the write
+// seam is upsert (single row) or replace (full sync drops SKUs no longer held).
+export interface TenantLicenseInventory {
+  tenantId: string;
+  skuId: string;
+  skuPartNumber: string | null;
+  enabledUnits: number;
+  consumedUnits: number;
+  lastSynced: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type TenantLicenseInventoryInput = Omit<TenantLicenseInventory, "createdAt" | "updatedAt"> &
+  Partial<Pick<TenantLicenseInventory, "createdAt" | "updatedAt">>;
+
 export interface LicenseChangeListOptions {
   userId?: string;
 }
@@ -1226,6 +1244,13 @@ export interface Repository {
   listTenantVariables(options?: TenantVariableListOptions): Promise<TenantVariable[]>;
   upsertTenantVariable(input: TenantVariableInput): Promise<TenantVariable>;
   deleteTenantVariable(variableId: string): Promise<boolean>;
+
+  upsertTenantLicenseInventory(input: TenantLicenseInventoryInput): Promise<TenantLicenseInventory>;
+  listTenantLicenseInventory(tenantId?: string): Promise<TenantLicenseInventory[]>;
+  replaceTenantLicenseInventory(
+    tenantId: string,
+    inputs: readonly TenantLicenseInventoryInput[],
+  ): Promise<TenantLicenseInventory[]>;
 
   getGdapRelationship(tenantId: string): Promise<GdapRelationship | undefined>;
   listGdapRelationships(): Promise<GdapRelationship[]>;
