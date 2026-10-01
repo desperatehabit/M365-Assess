@@ -1274,6 +1274,50 @@ export class CustomTestNotFoundError extends Error {
   }
 }
 
+// Backups (EPIC-035 SPEC §5). A Backup records a configuration archive that
+// lives on the artifact tier: `artifactRef` names it and `checksum` verifies it,
+// so a row carries no blob and no secret value. Tenant-type backups are
+// tenant-scoped; instance backups are global. BackupConfig is the
+// instance-global singleton for retention and replication settings.
+export type BackupType = "instance" | "tenant";
+
+export interface Backup {
+  id: string;
+  type: BackupType;
+  tenantId: string | null;
+  createdAt: string;
+  createdBy: string;
+  schemaVersion: number;
+  artifactRef: string;
+  checksum: string;
+}
+
+export type BackupInput = Omit<Backup, "createdAt"> & Partial<Pick<Backup, "createdAt">>;
+
+export interface BackupListOptions {
+  type?: BackupType;
+  tenantId?: string;
+}
+
+/** Restricts a read to a tenant's backups; omitted for instance-wide access. */
+export interface BackupScopeOptions {
+  tenantId?: string;
+}
+
+export interface BackupConfig {
+  id: string;
+  scheduleId: string | null;
+  retentionDays: number;
+  replicationTarget: string | null;
+}
+
+export interface BackupConfigInput {
+  id?: string;
+  scheduleId?: string | null;
+  retentionDays: number;
+  replicationTarget?: string | null;
+}
+
 /**
  * The only surface feature code may depend on. Tenant-scoped reads require the
  * tenant id, rows with `deletedAt` set are hidden unless explicitly requested,
@@ -1476,6 +1520,14 @@ export interface Repository {
   upsertFeatureFlag(input: FeatureFlagInput): Promise<FeatureFlag>;
   getUserPreference(userId: string): Promise<UserPreference | undefined>;
   upsertUserPreference(userId: string, prefs: Record<string, unknown>): Promise<UserPreference>;
+
+  createBackup(input: BackupInput): Promise<Backup>;
+  getBackup(backupId: string, options?: BackupScopeOptions): Promise<Backup | undefined>;
+  listBackups(options?: BackupListOptions): Promise<Backup[]>;
+  deleteBackup(backupId: string, options?: { now?: string }): Promise<boolean>;
+
+  getBackupConfig(): Promise<BackupConfig | undefined>;
+  upsertBackupConfig(input: BackupConfigInput): Promise<BackupConfig>;
 }
 
 export class SchemaVersionError extends Error {
