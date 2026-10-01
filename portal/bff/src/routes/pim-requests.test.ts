@@ -9,6 +9,8 @@ import type {
   RoleChangeRequestUpdate,
 } from "../../../db/src/repository.js";
 import {
+  PIM_APPROVAL_AUTHORITY,
+  PIM_DECISION_IN_ENTRA,
   PIM_JUSTIFICATION_REQUIRED,
   PIM_REQUESTS_PATH,
   ROLES_READ_PERMISSION,
@@ -88,6 +90,10 @@ class InMemoryRoleRequestsRepository implements RoleRequestsRepository {
 }
 
 describe("Role change requests with native pending-approval state (T-0245)", () => {
+  it("records Entra as the approval authority (T-0831)", () => {
+    expect(PIM_APPROVAL_AUTHORITY).toBe("entra");
+  });
+
   it("rejects a request without justification", async () => {
     const repo = new InMemoryRoleRequestsRepository();
     const routes = createPimRequestsRoutes({
@@ -165,11 +171,14 @@ describe("Role change requests with native pending-approval state (T-0245)", () 
     expect(audits[0]?.result).toBe("success");
   });
 
-  it("enters pending state when approval is configured and can transition to active or rejected", async () => {
-    const repo = new InMemoryRoleRequestsRepository();
-    const audits: PimRequestAuditEvent[] = [];
-    const routes = createPimRequestsRoutes({
+  function approverRoutes(
+    repo: InMemoryRoleRequestsRepository,
+    audits: PimRequestAuditEvent[],
+    submitProvider?: PimRequestSubmitProvider,
+  ) {
+    return createPimRequestsRoutes({
       repository: repo,
+      ...(submitProvider ? { submitProvider } : {}),
       recordAudit: async (ev) => {
         audits.push(ev);
       },
@@ -179,14 +188,13 @@ describe("Role change requests with native pending-approval state (T-0245)", () 
         permissions: [ROLES_READ_PERMISSION, ROLES_WRITE_PERMISSION],
       }),
     });
+  }
 
+  async function submitPending(
+    routes: ReturnType<typeof createPimRequestsRoutes>,
+  ): Promise<RoleChangeRequest> {
     const submitRoute = routes.find((r) => r.method === "POST" && r.path === PIM_REQUESTS_PATH)!;
-    const transitionRoute = routes.find(
-      (r) => r.method === "POST" && r.path === "/v1/tenants/:tenantId/pim/requests/:id/transition",
-    )!;
-
-    // Submit with approval required
-    const submitResp = await submitRoute.handler({
+    const resp = await submitRoute.handler({
       method: "POST",
       path: `/v1/tenants/${TENANT}/pim/requests`,
       params: { tenantId: TENANT },
@@ -200,32 +208,90 @@ describe("Role change requests with native pending-approval state (T-0245)", () 
         approvalRequired: true,
       },
     });
+    return resp.body as RoleChangeRequest;
+  }
 
-    expect(submitResp.status).toBe(201);
-    const created = submitResp.body as RoleChangeRequest;
-    expect(created.state).toBe("pending");
-    expect(created.startsAt).toBeNull();
-
-    // Transition: Approve
-    const approveResp = await transitionRoute.handler({
+  function transition(
+    routes: ReturnType<typeof createPimRequestsRoutes>,
+    id: string,
+    state: RoleChangeRequestState,
+  ) {
+    const transitionRoute = routes.find(
+      (r) => r.method === "POST" && r.path === "/v1/tenants/:tenantId/pim/requests/:id/transition",
+    )!;
+    return transitionRoute.handler({
       method: "POST",
-      path: `/v1/tenants/${TENANT}/pim/requests/${created.id}/transition`,
-      params: { tenantId: TENANT, id: created.id },
+      path: `/v1/tenants/${TENANT}/pim/requests/${id}/transition`,
+      params: { tenantId: TENANT, id },
       query: new URLSearchParams(),
       headers: {},
-      body: {
-        state: "approved",
-      },
+      body: { state },
     });
+  }
 
-    expect(approveResp.status).toBe(200);
-    const approved = approveResp.body as RoleChangeRequest;
-    expect(approved.state).toBe("approved");
-    expect(approved.approverId).toBe("approver-admin");
-    expect(approved.startsAt).not.toBeNull();
-    expect(approved.endsAt).not.toBeNull();
+  it("mirrors the Entra decision instead of recording the portal caller's decision", async () => {
+    const repo = new InMemoryRoleRequestsRepository();
+    const audits: PimRequestAuditEvent[] = [];
+    const provider: PimRequestSubmitProvider = {
+      async submitRequest() {
+        return { id: "graph-req-1", state: "pending" };
+      },
+      async getRequestStatus(_tenantId, requestId) {
+        expect(requestId).toBe("graph-req-1");
+        return {
+          state: "active",
+          startsAt: "2026-09-26T12:00:00.000Z",
+          endsAt: "2026-09-26T20:00:00.000Z",
+        };
+      },
+    };
+    const routes = approverRoutes(repo, audits, provider);
 
-    // Verify audit
-    expect(audits.some((a) => a.action === "pim.requestTransition.approved")).toBe(true);
+    const created = await submitPending(routes);
+    expect(created.state).toBe("pending");
+    expect(created.startsAt).toBeNull();
+    // The record is keyed by the Graph request id so the portal can read Entra back.
+    expect(created.id).toBe("graph-req-1");
+
+    const resp = await transition(routes, created.id, "approved");
+
+    expect(resp.status).toBe(200);
+    const mirrored = resp.body as RoleChangeRequest;
+    expect(mirrored.state).toBe("active");
+    expect(mirrored.startsAt).toBe("2026-09-26T12:00:00.000Z");
+    expect(mirrored.endsAt).toBe("2026-09-26T20:00:00.000Z");
+    expect(audits.some((a) => a.action === "pim.requestTransition.active")).toBe(true);
+  });
+
+  it("refuses to record a decision while Entra still reports pending", async () => {
+    const repo = new InMemoryRoleRequestsRepository();
+    const provider: PimRequestSubmitProvider = {
+      async submitRequest() {
+        return { id: "graph-req-2", state: "pending" };
+      },
+      async getRequestStatus() {
+        return { state: "pending" };
+      },
+    };
+    const routes = approverRoutes(repo, [], provider);
+    const created = await submitPending(routes);
+
+    await expect(transition(routes, created.id, "approved")).rejects.toMatchObject({
+      code: PIM_DECISION_IN_ENTRA,
+      status: 409,
+    });
+    expect((await repo.getRequest(TENANT, created.id))?.state).toBe("pending");
+  });
+
+  it("refuses to record a decision when no Entra mirroring provider is configured", async () => {
+    const repo = new InMemoryRoleRequestsRepository();
+    const routes = approverRoutes(repo, []);
+    const created = await submitPending(routes);
+
+    await expect(transition(routes, created.id, "rejected")).rejects.toMatchObject({
+      code: PIM_DECISION_IN_ENTRA,
+      status: 409,
+    });
+    expect((await repo.getRequest(TENANT, created.id))?.state).toBe("pending");
   });
 });

@@ -88,6 +88,35 @@ describe("role and PIM providers (T-0818)", () => {
     expect(out).toEqual({ id: "req-9", state: "active", startsAt: "s", endsAt: "e" });
   });
 
+  it("reads a PIM request status and passes the extend end through the worker", async () => {
+    const { providers, calls } = harness((_e, job) =>
+      job["operation"] === "status"
+        ? { id: "graph-req-1", state: "active" }
+        : { id: "graph-req-1", state: "active", startsAt: "s", endsAt: "e" },
+    );
+
+    const status = await providers.pimRequests.getRequestStatus!("t-a", "graph-req-1");
+    expect(status).toEqual({ state: "active" });
+    expect(calls[0]).toMatchObject({
+      entrypoint: "new-pim-request.ps1",
+      job: { operation: "status", requestId: "graph-req-1" },
+    });
+
+    await providers.pimRequests.submitRequest("t-a", {
+      principalId: "u-1",
+      roleId: "role-ga",
+      action: "extend",
+      justification: "Audit",
+      durationHours: 4,
+      approvalRequired: false,
+      newEndsAt: "2026-09-26T20:00:00.000Z",
+    });
+    expect(calls[1]!.job).toMatchObject({
+      action: "extend",
+      newEndsAt: "2026-09-26T20:00:00.000Z",
+    });
+  });
+
   it("reads live PIM settings with a get action and applies templates", async () => {
     const { providers, calls } = harness((_e, job) =>
       job["action"] === "get" ? { requireMfa: true } : { dryRun: false, before: { requireMfa: false }, after: { requireMfa: true } },

@@ -2,6 +2,12 @@
 // Exposes POST /v1/tenants/:tenantId/pim/requests with mandatory justification.
 // When approval is configured, the request enters native 'pending' state; otherwise activates directly.
 // Transitions are audited and persisted in role-requests-repository.
+//
+// T-0831 decision: approval authority is Entra. When a role policy requires approval, the
+// roleAssignmentScheduleRequest goes to PendingApproval and Entra's approvers decide. The
+// portal never records a decision Entra did not make: a decision transition reads the live
+// request and mirrors its state, and a portal record is keyed by the Graph request id so the
+// two can be correlated. A portal record with no provider to read Entra refuses the decision.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
@@ -22,6 +28,10 @@ export const ROLES_WRITE_PERMISSION = "Identity.Role.ReadWrite";
 export const ROLES_PIM_PERMISSION = "Identity.Pim.ReadWrite";
 export const PIM_REQUESTS_UNAUTHENTICATED = "request.unauthenticated";
 export const PIM_JUSTIFICATION_REQUIRED = "roles.justification_required";
+export const PIM_DECISION_IN_ENTRA = "roles.decision_in_entra";
+
+/** Approval authority for PIM requests (T-0831): Entra decides, the portal mirrors. */
+export const PIM_APPROVAL_AUTHORITY = "entra";
 
 export interface PimRequestAuditEvent {
   readonly tenantId: string;
@@ -35,6 +45,12 @@ export interface PimRequestAuditEvent {
   readonly timestamp?: string;
 }
 
+export interface PimRequestStatus {
+  readonly state: RoleChangeRequestState;
+  readonly startsAt?: string | null;
+  readonly endsAt?: string | null;
+}
+
 export interface PimRequestSubmitProvider {
   submitRequest(
     tenantId: string,
@@ -46,6 +62,8 @@ export interface PimRequestSubmitProvider {
       durationHours: number;
       approvalRequired: boolean;
       ticketNumber?: string;
+      /** Exact new end for an extend; the worker counts from here, not from now. */
+      newEndsAt?: string;
     },
   ): Promise<{
     id?: string;
@@ -53,6 +71,9 @@ export interface PimRequestSubmitProvider {
     startsAt?: string;
     endsAt?: string;
   }>;
+
+  /** Reads the live Entra request so the portal can mirror its decision (T-0831). */
+  getRequestStatus?(tenantId: string, requestId: string): Promise<PimRequestStatus>;
 }
 
 export interface PimRequestsRouteOptions {
@@ -128,6 +149,7 @@ export function createPimRequestsRoutes(options: PimRequestsRouteOptions): Route
         durationHours?: number;
         approvalRequired?: boolean;
         ticketNumber?: string;
+        newEndsAt?: string;
       };
 
       if (!body.principalId || typeof body.principalId !== "string" || body.principalId.trim().length === 0) {
@@ -149,11 +171,15 @@ export function createPimRequestsRoutes(options: PimRequestsRouteOptions): Route
       const durationHours = body.durationHours ?? 8;
       const approvalRequired = body.approvalRequired === true;
       const justification = body.justification.trim();
+      const newEndsAt =
+        typeof body.newEndsAt === "string" && body.newEndsAt.trim().length > 0
+          ? body.newEndsAt.trim()
+          : undefined;
 
       let state: RoleChangeRequestState = approvalRequired ? "pending" : "active";
       let startsAt: string | null = null;
       let endsAt: string | null = null;
-      const id = generateId();
+      let id = generateId();
 
       if (options.submitProvider) {
         const outcome = await options.submitProvider.submitRequest(tenantId, {
@@ -164,7 +190,11 @@ export function createPimRequestsRoutes(options: PimRequestsRouteOptions): Route
           durationHours,
           approvalRequired,
           ticketNumber: body.ticketNumber,
+          ...(newEndsAt ? { newEndsAt } : {}),
         });
+        // Key the portal record by the Graph request id so the portal can read the
+        // live request back and mirror Entra's decision (T-0831).
+        if (outcome.id) id = outcome.id;
         state = outcome.state;
         startsAt = outcome.startsAt ?? null;
         endsAt = outcome.endsAt ?? null;
@@ -285,18 +315,48 @@ export function createPimRequestsRoutes(options: PimRequestsRouteOptions): Route
         throw validationError("state is required for transition", "state");
       }
 
-      const now = new Date();
+      const decisionStates: RoleChangeRequestState[] = ["approved", "active", "rejected"];
+      const isDecision = decisionStates.includes(body.state);
+      const callerId = (caller as { userId?: string }).userId ?? null;
+
+      let state: RoleChangeRequestState = body.state;
       let startsAt: string | null | undefined = existing.startsAt;
       let endsAt: string | null | undefined = existing.endsAt;
 
-      if ((body.state === "approved" || body.state === "active") && !existing.startsAt) {
+      if (isDecision) {
+        // Approval authority is Entra (T-0831): the portal never records a decision
+        // Entra did not make. Read the live request and mirror its state instead of
+        // trusting the caller's requested state.
+        const readStatus = options.submitProvider?.getRequestStatus;
+        if (!readStatus) {
+          throw new AppError(
+            PIM_DECISION_IN_ENTRA,
+            "PIM approval decisions are made in Entra; the portal cannot record one",
+            409,
+          );
+        }
+        const live = await readStatus(tenantId, id);
+        if (live.state === "pending") {
+          throw new AppError(
+            PIM_DECISION_IN_ENTRA,
+            "request is still awaiting approval in Entra",
+            409,
+          );
+        }
+        state = live.state;
+        startsAt = live.startsAt ?? startsAt;
+        endsAt = live.endsAt ?? endsAt;
+      }
+
+      const now = new Date();
+      if ((state === "approved" || state === "active") && !startsAt) {
         startsAt = now.toISOString();
         endsAt = new Date(now.getTime() + existing.durationHours * 3600 * 1000).toISOString();
       }
 
       const updated = await repo.updateRequest(tenantId, id, {
-        state: body.state,
-        approverId: (caller as { userId?: string }).userId ?? null,
+        state,
+        approverId: isDecision ? (existing.approverId ?? null) : callerId,
         rejectionReason: body.rejectionReason ?? null,
         startsAt,
         endsAt,
@@ -305,12 +365,12 @@ export function createPimRequestsRoutes(options: PimRequestsRouteOptions): Route
       if (options.recordAudit) {
         await options.recordAudit({
           tenantId,
-          action: `pim.requestTransition.${body.state}`,
+          action: `pim.requestTransition.${state}`,
           targetId: existing.roleId,
           result: "success",
           before: existing,
           after: updated,
-          callerId: (caller as { userId?: string }).userId,
+          callerId: callerId ?? undefined,
           reason: body.rejectionReason ?? undefined,
           timestamp: new Date().toISOString(),
         });

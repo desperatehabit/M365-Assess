@@ -41,7 +41,19 @@ param(
     [switch]$ApprovalRequired,
 
     [Parameter(ParameterSetName = 'ByTenant')]
-    [string]$TicketNumber = ''
+    [string]$TicketNumber = '',
+
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [string]$NewEndsAt = '',
+
+    # submit (default) posts a request; status reads one back so the portal can mirror
+    # Entra's approval decision (T-0831).
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [ValidateSet('submit', 'status')]
+    [string]$Operation = 'submit',
+
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [string]$RequestId = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,6 +70,8 @@ try {
     if ($PSCmdlet.ParameterSetName -eq 'ByJobFile') {
         $job = Read-PimRequestJob -Path $JobFile
         $TenantId = $job['TenantId']
+        $Operation = $job['Operation']
+        $RequestId = [string]$job['RequestId']
         $PrincipalId = $job['PrincipalId']
         $RoleId = $job['RoleId']
         $Action = $job['Action']
@@ -65,6 +79,13 @@ try {
         $DurationHours = $job['DurationHours']
         $ApprovalRequired = [switch]$job['ApprovalRequired']
         $TicketNumber = [string]$job['TicketNumber']
+        $NewEndsAt = [string]$job['NewEndsAt']
+    }
+
+    if ($Operation -eq 'status') {
+        $status = Get-PimRequestStatus -TenantId $TenantId -RequestId $RequestId
+        $status | ConvertTo-Json -Depth 6 -Compress
+        return
     }
 
     $invokeParams = @{
@@ -76,6 +97,7 @@ try {
         DurationHours    = $DurationHours
         ApprovalRequired = $ApprovalRequired
         TicketNumber     = $TicketNumber
+        NewEndsAt        = $NewEndsAt
     }
 
     $result = New-PimRequest @invokeParams
