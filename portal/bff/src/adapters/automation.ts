@@ -5,12 +5,13 @@
 //
 // Remediation plan jobs run plan-remediation.ps1 through the job queue's dispatcher and
 // their plans are stored when the job succeeds (T-0836). Apply jobs run
-// apply-remediation.ps1 the same way and store each action's result (T-0838).
-// Custom scripts run in the T-0126 sandbox through run-custom-script.ps1 (T-0837).
-// Still not wired, and refused with 501 before anything is enqueued or run:
+// Scheduled assessment jobs run through the same queue with a run record and a
+// context.json (T-0840). Custom scripts run in the T-0126 sandbox through
+// run-custom-script.ps1 (T-0837). Still not wired, and refused with 501 before anything is enqueued or run:
 //
 // - Remediation verify (T-0839).
-// - Schedule run-now (T-0840).
+// - Schedule types with no runner on the dispatcher: standards, drift, baseline,
+//   backup, custom-script, report (T-0840).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -19,9 +20,11 @@ import {
   toRemediationActionView,
   type RemediationActionUpdate,
   type RemediationRepository,
+  type Schedule,
+  type ScheduleRepository,
   type SqliteRepository,
 } from "@m365-assess/db";
-import type { JobEnvelope } from "@m365-assess/contracts";
+import type { JobEnvelope, JobType } from "@m365-assess/contracts";
 import type Database from "better-sqlite3";
 import { AppError } from "../errors.js";
 import type { RemediationApplyHandle, RemediationIdempotencyStore } from "../domain/remediation/apply.js";
@@ -29,8 +32,15 @@ import type { JobQueue, RunWorkerFn } from "../jobs/queue.js";
 import { WorkerResultError, superviseJob, type SuperviseJobOptions } from "../jobs/supervisor.js";
 import type { RemediationPlanStore, RemediationQueue } from "../routes/remediation.js";
 import type { CredentialStoreRow } from "../routes/credentials.js";
-import type { ScheduleHistoryStore, ScheduleRunOutcome, ScheduleRunQueue } from "../routes/schedules.js";
+import type {
+  ScheduleHistoryStore,
+  ScheduleRunOutcome,
+  ScheduleRunQueue,
+  ScheduleStore,
+} from "../routes/schedules.js";
 import type { ScriptSandbox, ScriptSandboxResult } from "../routes/scripts.js";
+import type { TickSchedule, TickScheduleStore } from "../scheduler/tick.js";
+import type { TenantStore } from "../routes/tenants.js";
 import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock, type WorkerRunner } from "./workers.js";
 
 export { NO_CREDENTIAL };
@@ -311,10 +321,196 @@ export function withRemediationApplyIngestion(runWorker: RunWorkerFn, options: R
   };
 }
 
-export function createUnavailableScheduleQueue(): ScheduleRunQueue {
+export interface ScheduleRunQueueOptions {
+  readonly jobs: Pick<JobQueue, "enqueue">;
+  readonly repo: Pick<SqliteRepository, "createRun" | "updateRun">;
+  readonly storageRoot: string;
+  readonly tenants: TenantStore;
+  readonly credentials: CredentialStoreRow;
+  /** Job types with a runner on the dispatcher; enqueuing any other type is refused with 501. */
+  readonly runnableTypes: ReadonlySet<JobType>;
+}
+
+/**
+ * Scheduled runs: an assessment job gets a run record and a context.json (run-tenant.ps1
+ * rebuilds its RunContext from it), then enqueues through the job queue. A schedule type
+ * with no runner on the dispatcher is refused with 501 before anything is enqueued.
+ */
+export function createScheduleRunQueue(options: ScheduleRunQueueOptions): ScheduleRunQueue {
+  const { jobs, repo, storageRoot, tenants, credentials, runnableTypes } = options;
+
+  async function failRun(envelope: JobEnvelope, message: string): Promise<string> {
+    const now = new Date().toISOString();
+    await repo.updateRun(envelope.tenantId, envelope.runId, {
+      status: "failed",
+      finishedAt: now,
+      updatedAt: now,
+      summaryCounts: { error: message },
+    });
+    return envelope.jobId;
+  }
   return {
-    async enqueue() {
-      throw unavailable(JOB_DISPATCH_UNAVAILABLE, "scheduled jobs cannot run yet: no worker dispatch for scheduled jobs");
+    async enqueue(envelopeInput) {
+      const envelope = envelopeInput as JobEnvelope & { readonly scheduleId?: string };
+      if (!runnableTypes.has(envelope.jobType)) {
+        throw unavailable(
+          JOB_DISPATCH_UNAVAILABLE,
+          `no worker is registered for ${envelope.jobType} jobs`,
+        );
+      }
+      if (envelope.jobType === "assessment") {
+        const now = new Date().toISOString();
+        const provenance: Record<string, unknown> = {
+          jobId: envelope.jobId,
+          correlationId: envelope.correlationId,
+        };
+        if (envelope.scheduleId !== undefined) provenance["scheduleId"] = envelope.scheduleId;
+        await repo.createRun({
+          id: envelope.runId,
+          tenantId: envelope.tenantId,
+          parentRunId: null,
+          trigger: "schedule",
+          sections: [...envelope.payload.sectionRefs],
+          options: null,
+          startedAt: null,
+          finishedAt: null,
+          status: "queued",
+          artifactPath: envelope.payload.outputRef,
+          summaryCounts: null,
+          provenance,
+          createdAt: now,
+          updatedAt: now,
+        });
+        const credential = await credentials.getCredential(envelope.tenantId);
+        if (!credential) {
+          return failRun(envelope, `tenant ${envelope.tenantId} has no credential; set one before running an assessment`);
+        }
+        if (credential.authMethod !== "certificate-thumbprint" || !credential.thumbprint) {
+          return failRun(envelope, `assessment runs need a certificate-thumbprint credential; ${credential.authMethod} is not supported yet`);
+        }
+        const tenant = await tenants.getTenant(envelope.tenantId);
+        const context = {
+          SchemaVersion: 1,
+          Tenant: {
+            TenantId: envelope.tenantId,
+            DisplayName: tenant?.displayName ?? null,
+            DefaultDomain: tenant?.defaultDomain ?? null,
+            InitialDomain: tenant?.initialDomain ?? null,
+          },
+          Auth: {
+            Method: "Certificate",
+            ClientId: credential.clientId,
+            CertificateThumbprint: credential.thumbprint,
+            M365Environment: credential.environment,
+          },
+          Scope: { Sections: [...envelope.payload.sectionRefs] },
+          Output: { OutputFolder: path.resolve(storageRoot, envelope.payload.outputRef) },
+        };
+        const contextPath = path.resolve(storageRoot, envelope.payload.contextRef);
+        await mkdir(path.dirname(contextPath), { recursive: true });
+        await writeFile(contextPath, JSON.stringify(context), { mode: 0o600 });
+      }
+      return jobs.enqueue(envelope);
+    },
+  };
+}
+
+/**
+ * Refuses to save a schedule whose type has no runner on the dispatcher, so a task that
+ * can never run is rejected at save time instead of failing silently at run time.
+ */
+export function createRunnerValidatingScheduleStore(
+  store: ScheduleStore,
+  runnableTypes: ReadonlySet<JobType>,
+): ScheduleStore {
+  return {
+    listSchedules: (options) => store.listSchedules(options),
+    getSchedule: (scheduleId, options) => store.getSchedule(scheduleId, options),
+    softDeleteSchedule: (scheduleId, options) => store.softDeleteSchedule(scheduleId, options),
+    async createSchedule(input) {
+      if (!runnableTypes.has(input.type as JobType)) {
+        throw unavailable(JOB_DISPATCH_UNAVAILABLE, `no worker is registered for ${input.type} jobs`);
+      }
+      return store.createSchedule(input);
+    },
+    async updateSchedule(scheduleId, patch) {
+      if (patch.type !== undefined && !runnableTypes.has(patch.type as JobType)) {
+        throw unavailable(JOB_DISPATCH_UNAVAILABLE, `no worker is registered for ${patch.type} jobs`);
+      }
+      return store.updateSchedule(scheduleId, patch);
+    },
+  };
+}
+
+export interface ScheduleJobStateStore {
+  /** Whether the schedule has a job in flight (queued or running). */
+  isRunning(scheduleId: string): Promise<boolean>;
+  /** The newest terminal job's finish time for the schedule, if any. */
+  lastFinishedJob(scheduleId: string): Promise<{ readonly finishedAt: string } | undefined>;
+}
+
+function escapeLike(value: string): string {
+  return value.replace(/[\\%_]/g, (c) => `\\${c}`);
+}
+
+/**
+ * Reads a schedule's job state from the jobs table: the queue persists only the envelope
+ * payload, whose outputRef sits under `schedules/<scheduleId>/` (buildScheduledEnvelope).
+ */
+export function createScheduleJobStateStore(db: Database.Database): ScheduleJobStateStore {
+  return {
+    async isRunning(scheduleId) {
+      const row = db
+        .prepare(
+          `SELECT 1 AS one FROM jobs
+           WHERE json_extract(payload, '$.outputRef') LIKE ? ESCAPE '\\'
+             AND state IN ('queued', 'running')
+           LIMIT 1`,
+        )
+        .get(`schedules/${escapeLike(scheduleId)}/%`);
+      return row !== undefined;
+    },
+    async lastFinishedJob(scheduleId) {
+      const row = db
+        .prepare(
+          `SELECT updatedAt FROM jobs
+           WHERE json_extract(payload, '$.outputRef') LIKE ? ESCAPE '\\'
+             AND state IN ('done', 'failed')
+           ORDER BY updatedAt DESC
+           LIMIT 1`,
+        )
+        .get(`schedules/${escapeLike(scheduleId)}/%`) as { updatedAt: string } | undefined;
+      return row === undefined ? undefined : { finishedAt: row.updatedAt };
+    },
+  };
+}
+
+function toTickSchedule(schedule: Schedule): TickSchedule {
+  return {
+    id: schedule.id,
+    type: schedule.type,
+    cron: schedule.cron,
+    timezone: schedule.timezone,
+    targetScope: schedule.targetScope,
+    enabled: schedule.enabled,
+    lastRunAt: schedule.lastRunAt,
+    nextRunAt: schedule.nextRunAt,
+  };
+}
+
+/** Adapts the schedule repository to the scheduler tick's store seam. */
+export function createTickScheduleStore(repo: ScheduleRepository): TickScheduleStore {
+  return {
+    async listSchedules() {
+      const schedules = await repo.listSchedules();
+      return schedules.filter((schedule) => schedule.deletedAt === null).map(toTickSchedule);
+    },
+    async getSchedule(scheduleId) {
+      const schedule = await repo.getSchedule(scheduleId);
+      return schedule !== undefined && schedule.deletedAt === null ? toTickSchedule(schedule) : undefined;
+    },
+    async updateSchedule(scheduleId, patch) {
+      await repo.updateSchedule(scheduleId, { ...patch });
     },
   };
 }

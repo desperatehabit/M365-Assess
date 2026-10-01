@@ -34,6 +34,7 @@ import {
   loadMigrations,
   runMigrations,
 } from "@m365-assess/db";
+import type { JobType } from "@m365-assess/contracts";
 import { parseReportTemplate } from "@m365-assess/contracts/reports";
 import Database from "better-sqlite3";
 import {
@@ -51,9 +52,12 @@ import {
   createRemediationQueue,
   createRemediationWorkerRunner,
   withRemediationApplyIngestion,
+  createRunnerValidatingScheduleStore,
+  createScheduleJobStateStore,
+  createScheduleRunQueue,
   createScriptSandbox,
+  createTickScheduleStore,
   withRemediationPlanIngestion,
-  createUnavailableScheduleQueue,
 } from "./adapters/automation.js";
 import {
   createBaselineAdvanceStore,
@@ -152,8 +156,9 @@ import type { BffConfig } from "./config.js";
 import { createInMemoryCredentialStore } from "./credentials/store.js";
 import { AppError } from "./errors.js";
 import { createJobDispatcher } from "./jobs/dispatch.js";
-import { JobQueue } from "./jobs/queue.js";
+import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
 import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
+import { createScheduler, type Scheduler } from "./scheduler/scheduler.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
 import { isTenantAllowed } from "./rbac/scope.js";
@@ -406,6 +411,8 @@ export interface App {
   readonly runs: JobQueue;
   /** Background offboarding runs; `idle()` waits for the ones in flight. */
   readonly offboarding: OffboardingRunner;
+  /** The scheduler tick; started with the app, stopped by `close()`. */
+  readonly scheduler: Scheduler;
   close(): void;
 }
 
@@ -416,6 +423,8 @@ export interface CreateAppOptions {
   readonly workerRunner?: WorkerRunner;
   /** Run assessment jobs with this instead of supervising run-tenant.ps1 (tests pass a fake). */
   readonly runWorker?: ConstructorParameters<typeof JobQueue>[0]["runWorker"];
+  /** How often the scheduler tick runs; tests pass a long interval. */
+  readonly schedulerIntervalMs?: number;
   readonly version?: string;
 }
 
@@ -514,6 +523,41 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
   const reportRuns = createReportRunReader(repo, config.artifactPath);
 
+  const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
+    assessment: createSupervisorRunner({
+      workerScriptPath: path.join(config.workersDir, RUN_WORKER),
+      storageRoot: config.artifactPath,
+      onProgress: publish,
+    }),
+    standards: createSupervisorRunner({
+      workerScriptPath: path.join(config.workersDir, STANDARDS_WORKER),
+      storageRoot: config.artifactPath,
+      onProgress: publish,
+      buildArgs: buildJobFileArgs,
+    }),
+    drift: createSupervisorRunner({
+      workerScriptPath: path.join(config.workersDir, DRIFT_WORKER),
+      storageRoot: config.artifactPath,
+      onProgress: publish,
+      buildArgs: buildJobFileArgs,
+    }),
+    baseline: createBaselineEvaluationRunner({
+      workersDir: config.workersDir,
+      storageRoot: config.artifactPath,
+      baselines: baselinesRepo,
+      tenants: tenantStore,
+      findings: repo,
+      latestRunId: reportRuns.latestRunId,
+    }),
+    remediation: createRemediationWorkerRunner({
+      workersDir: config.workersDir,
+      storageRoot: config.artifactPath,
+    }),
+    report: createReportWorkerRunner({
+      workersDir: config.workersDir,
+      storageRoot: config.artifactPath,
+    }),
+  };
   const runJobs = new JobQueue({
     persistence: createJobPersistence(repo),
     poolSize: config.workerPoolSize,
@@ -523,42 +567,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           withDriftIngestion(
             withStandardsIngestion(
               withFindingsIngestion(
-                options.runWorker ??
-                  createJobDispatcher({
-                    assessment: createSupervisorRunner({
-                      workerScriptPath: path.join(config.workersDir, RUN_WORKER),
-                      storageRoot: config.artifactPath,
-                      onProgress: publish,
-                    }),
-                    standards: createSupervisorRunner({
-                      workerScriptPath: path.join(config.workersDir, STANDARDS_WORKER),
-                      storageRoot: config.artifactPath,
-                      onProgress: publish,
-                      buildArgs: buildJobFileArgs,
-                    }),
-                    drift: createSupervisorRunner({
-                      workerScriptPath: path.join(config.workersDir, DRIFT_WORKER),
-                      storageRoot: config.artifactPath,
-                      onProgress: publish,
-                      buildArgs: buildJobFileArgs,
-                    }),
-                    baseline: createBaselineEvaluationRunner({
-                      workersDir: config.workersDir,
-                      storageRoot: config.artifactPath,
-                      baselines: baselinesRepo,
-                      tenants: tenantStore,
-                      findings: repo,
-                      latestRunId: reportRuns.latestRunId,
-                    }),
-                    remediation: createRemediationWorkerRunner({
-                      workersDir: config.workersDir,
-                      storageRoot: config.artifactPath,
-                    }),
-                    report: createReportWorkerRunner({
-                      workersDir: config.workersDir,
-                      storageRoot: config.artifactPath,
-                    }),
-                  }),
+                options.runWorker ?? createJobDispatcher(workerRunners),
                 { repo, storageRoot: config.artifactPath },
               ),
               { standards: standardsRepo, storageRoot: config.artifactPath },
@@ -567,6 +576,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           ),
           { remediation: remediationRepo, storageRoot: config.artifactPath },
         ),
+        { remediation: remediationRepo, storageRoot: config.artifactPath },
       ),
       { store: generatedReports },
     ),
@@ -584,6 +594,28 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     jobs: runJobs,
     storageRoot: config.artifactPath,
   });
+  // EPIC-007 scheduled runs (T-0840): only job types with a runner on the dispatcher can be
+  // saved or run. Assessment jobs enqueue through the job queue with a run record and a
+  // context.json; the tick starts and stops with the app and records outcomes.
+  const runnableJobTypes = new Set<JobType>(Object.keys(workerRunners) as JobType[]);
+  const scheduleQueue = createScheduleRunQueue({
+    jobs: runJobs,
+    repo,
+    storageRoot: config.artifactPath,
+    tenants: tenantStore,
+    credentials: credentialRows,
+    runnableTypes: runnableJobTypes,
+  });
+  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes);
+  const scheduleJobState = createScheduleJobStateStore(db);
+  const scheduler = createScheduler({
+    queue: scheduleQueue,
+    schedules: createTickScheduleStore(scheduleRepo),
+    isRunning: (scheduleId) => scheduleJobState.isRunning(scheduleId),
+    lastFinishedJob: (scheduleId) => scheduleJobState.lastFinishedJob(scheduleId),
+    ...(options.schedulerIntervalMs !== undefined ? { intervalMs: options.schedulerIntervalMs } : {}),
+  });
+  scheduler.start();
   const driftTriage = createDriftTriageStore(driftRepo);
 
   // These routes read the raw body themselves; the server has already parsed it.
@@ -672,8 +704,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       artifactRoot: config.artifactPath,
     }) as Route[]),
 
-    // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans and schedules
-    // persist; running them is not wired yet (T-0836, T-0840) and is refused with 501.
+    // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans, schedules,
+    // and scripts persist. Scheduled assessment jobs run through the job queue (T-0840).
     // Custom scripts run in the T-0126 sandbox through run-custom-script.ps1 (T-0837).
     ...createRemediationRoutes({
       store: createRemediationStore(remediationRepo),
@@ -683,9 +715,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
     ...createScheduleRoutes({
-      store: scheduleRepo,
+      store: scheduleStore,
       history: createScheduleHistoryStore(db),
-      queue: createUnavailableScheduleQueue(),
+      queue: scheduleQueue,
       ...caller,
     }),
     ...createScriptRoutes({
@@ -992,7 +1024,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     authenticators,
     offboarding,
     runs: runJobs,
+    scheduler,
     close: () => {
+      scheduler.stop();
       if (!options.db) db.close();
     },
   };

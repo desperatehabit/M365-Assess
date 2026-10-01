@@ -7,6 +7,7 @@ import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
 import type { CredentialRecord, CredentialStoreRow } from "../routes/credentials.js";
+import type { TenantStore } from "../routes/tenants.js";
 import {
   JOB_DISPATCH_UNAVAILABLE,
   NO_CREDENTIAL,
@@ -18,9 +19,12 @@ import {
   createRemediationQueue,
   createRemediationStore,
   createRemediationWorkerRunner,
+  createRunnerValidatingScheduleStore,
   createScheduleHistoryStore,
+  createScheduleJobStateStore,
+  createScheduleRunQueue,
   createScriptSandbox,
-  createUnavailableScheduleQueue,
+  createTickScheduleStore,
   withRemediationApplyIngestion,
   withRemediationPlanIngestion,
 } from "./automation.js";
@@ -110,9 +114,195 @@ describe("schedule history (T-0824)", () => {
   });
 });
 
-describe("unwired execution (T-0824)", () => {
-  it("refuses scheduled runs with 501", async () => {
-    await expect(createUnavailableScheduleQueue().enqueue({})).rejects.toMatchObject({ status: 501, code: JOB_DISPATCH_UNAVAILABLE });
+describe("scheduled assessment runs (T-0840)", () => {
+  function tempRoot(): string {
+    const root = mkdtempSync(path.join(tmpdir(), "m365-sched-"));
+    dirs.push(root);
+    return root;
+  }
+
+  function assessmentEnvelope(jobId = "job-1"): JobEnvelope {
+    return {
+      schemaVersion: "v1",
+      jobId,
+      jobType: "assessment",
+      tenantId: "t-a",
+      runId: "run-1",
+      requestId: "req-1",
+      correlationId: "corr-1",
+      createdAt: "2026-09-27T00:00:00.000Z",
+      payload: {
+        contextRef: "schedules/sch-1/context.json",
+        outputRef: "schedules/sch-1/run-1",
+        credentialRef: "tenants/t-a/credential",
+        sectionRefs: [],
+        artifactRefs: [],
+      },
+      trigger: "schedule",
+      scheduleId: "sch-1",
+    } as JobEnvelope;
+  }
+
+  const tenants: TenantStore = {
+    getTenant: async (tenantId) =>
+      tenantId === "t-a"
+        ? { id: "t-a", displayName: "Contoso", defaultDomain: "contoso.com", initialDomain: "contoso.onmicrosoft.com" }
+        : undefined,
+  };
+
+  const credentials: CredentialStoreRow = {
+    getCredential: async (tenantId) =>
+      tenantId === "t-a"
+        ? {
+            id: "cred-1",
+            tenantId: "t-a",
+            authMethod: "certificate-thumbprint",
+            clientId: "app-1",
+            secretRef: "",
+            thumbprint: "ABC123",
+            environment: "Global",
+            expiresOn: null,
+            lastValidated: null,
+            createdAt: "",
+            updatedAt: "",
+          }
+        : undefined,
+  };
+
+  async function setupWithCredential() {
+    const { repo } = await setup();
+    await repo.upsertTenantCredential({
+      id: "cred-1",
+      tenantId: "t-a",
+      authMethod: "certificate-thumbprint",
+      clientId: "app-1",
+      secretRef: "",
+      thumbprint: "ABC123",
+      environment: "Global",
+      expiresOn: null,
+      lastValidated: null,
+    });
+    return { repo };
+  }
+
+  it("creates a run record and context.json, then enqueues an assessment job", async () => {
+    const { repo } = await setupWithCredential();
+    const root = tempRoot();
+    const enqueued: JobEnvelope[] = [];
+    const queue = createScheduleRunQueue({
+      jobs: { enqueue: async (e) => (enqueued.push(e as JobEnvelope), e.jobId) },
+      repo,
+      storageRoot: root,
+      tenants,
+      credentials,
+      runnableTypes: new Set(["assessment"]),
+    });
+
+    expect(await queue.enqueue(assessmentEnvelope())).toBe("job-1");
+    expect(enqueued.map((e) => e.jobId)).toEqual(["job-1"]);
+
+    const run = await repo.getRunById("run-1");
+    expect(run).toMatchObject({ id: "run-1", tenantId: "t-a", trigger: "schedule", status: "queued" });
+    expect(run?.provenance).toMatchObject({ jobId: "job-1", scheduleId: "sch-1" });
+
+    const contextPath = path.join(root, "schedules/sch-1/context.json");
+    expect(JSON.parse(readFileSync(contextPath, "utf8"))).toMatchObject({
+      SchemaVersion: 1,
+      Tenant: { TenantId: "t-a", DisplayName: "Contoso" },
+      Auth: { Method: "Certificate", ClientId: "app-1", CertificateThumbprint: "ABC123" },
+    });
+  });
+
+  it("fails the run instead of enqueueing when the tenant has no credential", async () => {
+    const { repo } = await setup();
+    const enqueued: JobEnvelope[] = [];
+    const queue = createScheduleRunQueue({
+      jobs: { enqueue: async (e) => (enqueued.push(e as JobEnvelope), e.jobId) },
+      repo,
+      storageRoot: tempRoot(),
+      tenants,
+      credentials: { getCredential: async () => undefined },
+      runnableTypes: new Set(["assessment"]),
+    });
+
+    expect(await queue.enqueue(assessmentEnvelope())).toBe("job-1");
+    expect(enqueued).toEqual([]);
+    const run = await repo.getRunById("run-1");
+    expect(run).toMatchObject({ status: "failed" });
+  });
+
+  it("refuses a schedule type with no runner with 501 before enqueueing", async () => {
+    const { repo } = await setupWithCredential();
+    const enqueued: JobEnvelope[] = [];
+    const queue = createScheduleRunQueue({
+      jobs: { enqueue: async (e) => (enqueued.push(e as JobEnvelope), e.jobId) },
+      repo,
+      storageRoot: tempRoot(),
+      tenants,
+      credentials,
+      runnableTypes: new Set(["assessment"]),
+    });
+    const standards = { ...assessmentEnvelope("job-2"), jobType: "standards" } as JobEnvelope;
+    await expect(queue.enqueue(standards)).rejects.toMatchObject({ status: 501, code: JOB_DISPATCH_UNAVAILABLE });
+    expect(enqueued).toEqual([]);
+  });
+});
+
+describe("schedule job state and tick store (T-0840)", () => {
+  it("reports whether a schedule has a job in flight and its newest finished job", async () => {
+    const { db, repo } = await setup();
+    const job = (id: string, state: string, updatedAt: string) =>
+      repo.createJob({
+        id,
+        type: "assessment",
+        tenantId: "t-a",
+        payload: { contextRef: "schedules/sch-1/context.json", outputRef: `schedules/sch-1/${id}-run` },
+        state: state as never,
+        attempts: 0,
+        progress: {},
+        createdAt: updatedAt,
+      });
+    await job("j-1", "done", "2026-09-26T01:00:00.000Z");
+    await job("j-2", "running", "2026-09-26T02:00:00.000Z");
+    await job("j-3", "failed", "2026-09-26T03:00:00.000Z");
+
+    const state = createScheduleJobStateStore(db);
+    expect(await state.isRunning("sch-1")).toBe(true);
+    const finished = await state.lastFinishedJob("sch-1");
+    expect(finished).toBeDefined();
+    expect(Number.isNaN(Date.parse(finished!.finishedAt))).toBe(false);
+    expect(await state.isRunning("sch-empty")).toBe(false);
+    expect(await state.lastFinishedJob("sch-empty")).toBeUndefined();
+  });
+
+  it("adapts the schedule repository to the tick store seam", async () => {
+    const { db, version } = await setup();
+    const { SqliteScheduleRepository } = await import("@m365-assess/db");
+    const repo = new SqliteScheduleRepository(db, version);
+    await repo.createSchedule({
+      id: "sch-1",
+      name: "Nightly",
+      type: "assessment",
+      cron: "0 0 * * * *",
+      timezone: "UTC",
+      targetScope: { type: "tenant", id: "t-a" },
+      command: "Invoke-M365Assessment",
+      parameters: {},
+      enabled: true,
+      isSystem: false,
+      lastRunAt: null,
+      nextRunAt: "2026-09-27T00:00:00.000Z",
+    });
+
+    const tickStore = createTickScheduleStore(repo);
+    const listed = await tickStore.listSchedules();
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ id: "sch-1", type: "assessment", enabled: true });
+    expect(await tickStore.getSchedule("sch-1")).toMatchObject({ id: "sch-1" });
+    expect(await tickStore.getSchedule("sch-missing")).toBeUndefined();
+
+    await tickStore.updateSchedule("sch-1", { lastRunAt: "2026-09-26T12:00:00.000Z" });
+    expect(await tickStore.getSchedule("sch-1")).toMatchObject({ lastRunAt: "2026-09-26T12:00:00.000Z" });
   });
 });
 
