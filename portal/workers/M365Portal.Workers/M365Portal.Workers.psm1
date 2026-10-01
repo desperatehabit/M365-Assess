@@ -50,6 +50,10 @@ function Read-WorkerRunContext {
         throw "Worker context file not found: $ContextFile"
     }
     $json = Get-Content -LiteralPath $ContextFile -Raw -Encoding UTF8
+    # Other module files enable Set-StrictMode; the supervisor writes partial contexts
+    # (secret/optional auth fields are omitted by design), which ConvertFrom-RunContextJson
+    # already tolerates. Relax strict mode for this scope so missing keys read as null.
+    Set-StrictMode -Off
     return ConvertFrom-RunContextJson -Json $json
 }
 
@@ -312,6 +316,7 @@ Export-ModuleMember -Function @(
     'Write-WorkerResult',
     'Invoke-WorkerAssessment',
     'Resolve-TenantCredential',
+    'Read-WorkerContextCredential',
     'Protect-WorkerSecret',
     'Invoke-ReportRender',
     'Get-PinnedChromiumVersion',

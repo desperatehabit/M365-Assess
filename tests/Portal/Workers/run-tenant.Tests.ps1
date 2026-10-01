@@ -4,6 +4,8 @@ BeforeAll {
     $script:workerManifest = Join-Path -Path $script:repoRoot -ChildPath 'portal/workers/M365Portal.Workers/M365Portal.Workers.psd1'
     $script:workerModule = Join-Path -Path $script:repoRoot -ChildPath 'portal/workers/M365Portal.Workers/M365Portal.Workers.psm1'
     $script:stubTenantId = '00000000-0000-0000-0000-000000000001'
+    $script:sentinelSecret = 'SENTINEL-SECRET-9f8b7a6c5d4e'
+    $script:sentinelRef = 'ref://store/sentinel-credential'
 
     . (Join-Path -Path $script:repoRoot -ChildPath 'src/M365-Assess/Common/RunContext.ps1')
 
@@ -65,6 +67,54 @@ throw 'stub assessment failure'
 '@ | Set-Content -Path $stub -Encoding UTF8
         }
         return $stub
+    }
+
+    function script:New-WorkerCredentialContextFile {
+        param(
+            [Parameter(Mandatory)]
+            [string]$Directory,
+            [Parameter(Mandatory)]
+            [string]$OutputFolder
+        )
+
+        $contextFile = Join-Path -Path $Directory -ChildPath 'context.json'
+        @{
+            SchemaVersion = 1
+            Tenant        = @{ TenantId = $script:stubTenantId }
+            Auth          = @{ Method = 'ClientSecret'; ClientId = 'app-secret'; M365Environment = 'commercial' }
+            Credential    = @{
+                credentialRef = "tenants/$script:stubTenantId/credential"
+                record        = @{
+                    tenantId    = $script:stubTenantId
+                    authMethod  = 'client-secret'
+                    clientId    = 'app-secret'
+                    secretRef   = $script:sentinelRef
+                    thumbprint  = $null
+                    environment = 'commercial'
+                }
+            }
+            Scope         = @{ Sections = @('Identity') }
+            Output        = @{ OutputFolder = $OutputFolder }
+        } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $contextFile -Encoding UTF8
+        return $contextFile
+    }
+
+    function script:Write-WorkerStoreMaterial {
+        param(
+            [Parameter(Mandatory)][string]$Directory,
+            [Parameter(Mandatory)][string]$Ref,
+            [Parameter(Mandatory)][string]$Material
+        )
+        New-Item -Path $Directory -ItemType Directory -Force | Out-Null
+        $algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = $algorithm.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Ref))
+        }
+        finally {
+            $algorithm.Dispose()
+        }
+        $name = -join ($digest | ForEach-Object { $_.ToString('x2') })
+        [System.IO.File]::WriteAllText((Join-Path -Path $Directory -ChildPath "$name.cred"), $Material, [System.Text.Encoding]::UTF8)
     }
 }
 
@@ -213,6 +263,57 @@ $ErrorActionPreference = 'Stop'
             $seen = Get-Content -LiteralPath (Join-Path -Path $output -ChildPath 'probe.json') -Raw | ConvertFrom-Json -AsHashtable
             $seen['TenantId'] | Should -Be $script:stubTenantId
             @($seen['Section']) | Should -Contain 'Tenant'
+        }
+    }
+
+    Context 'client-secret resolution in the child (T-0827)' {
+        It 'resolves the run credentialRef from the persistent store and never writes material' {
+            $scratch = New-WorkerScratch
+            $storeDirectory = New-WorkerScratch
+            $output = Join-Path -Path $scratch -ChildPath 'tenant'
+            $contextFile = New-WorkerCredentialContextFile -Directory $scratch -OutputFolder $output
+            Write-WorkerStoreMaterial -Directory $storeDirectory -Ref $script:sentinelRef -Material $script:sentinelSecret
+
+            $probe = Join-Path -Path $scratch -ChildPath 'credential-probe.ps1'
+            @'
+param(
+    [string]$OutputFolder = '',
+    [string]$ClientId = '',
+    $ClientSecret = $null,
+    [Parameter(ValueFromRemainingArguments = $true)]
+    $Remaining
+)
+$ErrorActionPreference = 'Stop'
+New-Item -Path $OutputFolder -ItemType Directory -Force | Out-Null
+[ordered]@{
+    ClientId       = $ClientId
+    HasSecret      = ($null -ne $ClientSecret)
+    SecretIsSecure = ($ClientSecret -is [securestring])
+} | ConvertTo-Json | Set-Content -Path (Join-Path -Path $OutputFolder -ChildPath 'probe.json') -Encoding UTF8
+'@ | Set-Content -Path $probe -Encoding UTF8
+
+            $previous = $env:M365_CREDENTIAL_STORE_DIR
+            $env:M365_CREDENTIAL_STORE_DIR = $storeDirectory
+            try {
+                & pwsh -NoProfile -File $script:runTenant -ContextFile $contextFile -OutputFolder $output -JobId 'job-cred-1' -RunId 'run-cred-1' -RequestId 'req-cred-1' -CorrelationId 'corr-cred-1' -AssessmentScript $probe | Out-Null
+                $LASTEXITCODE | Should -Be 0
+            }
+            finally {
+                $env:M365_CREDENTIAL_STORE_DIR = $previous
+            }
+
+            $envelope = Get-Content -LiteralPath (Join-Path -Path $output -ChildPath 'result.json') -Raw | ConvertFrom-Json -AsHashtable
+            $envelope['status'] | Should -Be 'succeeded'
+            $envelope['exitCode'] | Should -Be 0
+
+            $seen = Get-Content -LiteralPath (Join-Path -Path $output -ChildPath 'probe.json') -Raw | ConvertFrom-Json -AsHashtable
+            $seen['ClientId'] | Should -Be 'app-secret'
+            $seen['HasSecret'] | Should -BeTrue
+            $seen['SecretIsSecure'] | Should -BeTrue
+
+            foreach ($file in @($contextFile, (Join-Path -Path $output -ChildPath 'result.json'), (Join-Path -Path $output -ChildPath 'probe.json'))) {
+                (Get-Content -LiteralPath $file -Raw) | Should -Not -Match ([regex]::Escape($script:sentinelSecret))
+            }
         }
     }
 }

@@ -54,6 +54,42 @@ BeforeAll {
             return $secret
         }.GetNewClosure()
     }
+
+    function script:Get-StoreKeyPath {
+        param(
+            [Parameter(Mandatory)][string]$Directory,
+            [Parameter(Mandatory)][string]$Ref
+        )
+        $algorithm = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $digest = $algorithm.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Ref))
+        }
+        finally {
+            $algorithm.Dispose()
+        }
+        $name = -join ($digest | ForEach-Object { $_.ToString('x2') })
+        return (Join-Path -Path $Directory -ChildPath "$name.cred")
+    }
+
+    function script:Write-StoreMaterial {
+        param(
+            [Parameter(Mandatory)][string]$Directory,
+            [Parameter(Mandatory)][string]$Ref,
+            [Parameter(Mandatory)][AllowEmptyString()][string]$Material
+        )
+        New-Item -Path $Directory -ItemType Directory -Force | Out-Null
+        [System.IO.File]::WriteAllText((Get-StoreKeyPath -Directory $Directory -Ref $Ref), $Material, [System.Text.Encoding]::UTF8)
+    }
+
+    function script:Use-StoreDirectory {
+        param([Parameter(Mandatory)][string]$Directory)
+        $script:previousStoreDirectory = $env:M365_CREDENTIAL_STORE_DIR
+        $env:M365_CREDENTIAL_STORE_DIR = $Directory
+    }
+
+    function script:Restore-StoreDirectory {
+        $env:M365_CREDENTIAL_STORE_DIR = $script:previousStoreDirectory
+    }
 }
 
 AfterAll {
@@ -268,7 +304,9 @@ $ErrorActionPreference = 'Stop'
             $errorMessage | Should -Not -Match ([regex]::Escape($script:sentinelSecret))
         }
 
-        It 'fails when secret material is needed but no store was provided' {
+        It 'reports a missing reference from the default OS keystore when no store was provided' {
+            $storeDirectory = New-CredentialScratch
+            Use-StoreDirectory -Directory $storeDirectory
             $errorMessage = ''
             try {
                 Resolve-TenantCredential -TenantId $script:stubTenantId `
@@ -278,7 +316,11 @@ $ErrorActionPreference = 'Stop'
             catch {
                 $errorMessage = $_.Exception.Message
             }
-            $errorMessage | Should -Match 'worker\.credential_store_required'
+            finally {
+                Restore-StoreDirectory
+            }
+            $errorMessage | Should -Match 'worker\.credential_not_found'
+            $errorMessage | Should -Not -Match ([regex]::Escape($script:sentinelSecret))
         }
 
         It 'rejects an unknown auth method without leaking anything' {
@@ -295,6 +337,109 @@ $ErrorActionPreference = 'Stop'
             }
             $errorMessage | Should -Match 'worker\.credential_invalid'
             $errorMessage | Should -Not -Match ([regex]::Escape($script:sentinelSecret))
+        }
+    }
+
+    Context 'persistent OS keystore (T-0827)' {
+        It 'resolves a client secret from the default store without an explicit store' {
+            $storeDirectory = New-CredentialScratch
+            Use-StoreDirectory -Directory $storeDirectory
+            try {
+                Write-StoreMaterial -Directory $storeDirectory -Ref $script:sentinelRef -Material $script:sentinelSecret
+                $auth = Resolve-TenantCredential -TenantId $script:stubTenantId `
+                    -CredentialRef "tenants/$script:stubTenantId/credential" `
+                    -CredentialRecord (New-SecretRecord) -Sections @('Identity')
+                $auth['Method'] | Should -Be 'ClientSecret'
+                $auth['ClientSecret'] | Should -BeOfType [securestring]
+            }
+            finally {
+                Restore-StoreDirectory
+            }
+        }
+
+        It 'reads certificate-pfx material as a hashtable from the same store' {
+            $storeDirectory = New-CredentialScratch
+            $material = '{"certificatePath":"/tmp/tenant.pfx","certificatePassword":"pfx-sentinel"}'
+            Write-StoreMaterial -Directory $storeDirectory -Ref $script:sentinelRef -Material $material
+            $store = Get-OsKeystoreCredentialStore -Directory $storeDirectory
+            $value = & $store $script:sentinelRef
+            $value | Should -BeOfType [System.Collections.IDictionary]
+            $value['certificatePath'] | Should -Be '/tmp/tenant.pfx'
+        }
+
+        It 'resolves certificate-pfx material into CertificatePath and a SecureString password' {
+            $storeDirectory = New-CredentialScratch
+            Use-StoreDirectory -Directory $storeDirectory
+            try {
+                $material = '{"certificatePath":"/tmp/tenant.pfx","certificatePassword":"pfx-sentinel"}'
+                Write-StoreMaterial -Directory $storeDirectory -Ref $script:sentinelRef -Material $material
+                $record = @{
+                    tenantId    = $script:stubTenantId
+                    authMethod  = 'certificate-pfx'
+                    clientId    = 'app-1'
+                    secretRef   = $script:sentinelRef
+                    thumbprint  = $null
+                    environment = 'commercial'
+                }
+                $auth = Resolve-TenantCredential -TenantId $script:stubTenantId `
+                    -CredentialRef "tenants/$script:stubTenantId/credential" `
+                    -CredentialRecord $record -Sections @('Identity')
+                $auth['Method'] | Should -Be 'Certificate'
+                $auth['CertificatePath'] | Should -Be '/tmp/tenant.pfx'
+                $auth['CertificatePassword'] | Should -BeOfType [securestring]
+            }
+            finally {
+                Restore-StoreDirectory
+            }
+        }
+
+        It 'returns null for a reference the store does not hold' {
+            $store = Get-OsKeystoreCredentialStore -Directory (New-CredentialScratch)
+            & $store 'ref://store/absent' | Should -BeNullOrEmpty
+            & $store '   ' | Should -BeNullOrEmpty
+        }
+
+        It 'honours the shared store-directory override' {
+            $storeDirectory = New-CredentialScratch
+            Use-StoreDirectory -Directory $storeDirectory
+            try {
+                Get-WorkerCredentialStoreDirectory | Should -Be $storeDirectory
+            }
+            finally {
+                Restore-StoreDirectory
+            }
+        }
+
+        It 'reads a reference-only credential block from a context file' {
+            $contextFile = Join-Path -Path (New-CredentialScratch) -ChildPath 'context.json'
+            @{
+                SchemaVersion = 1
+                Tenant        = @{ TenantId = $script:stubTenantId }
+                Credential    = @{
+                    credentialRef = "tenants/$script:stubTenantId/credential"
+                    record        = @{
+                        tenantId    = $script:stubTenantId
+                        authMethod  = 'client-secret'
+                        clientId    = 'app-1'
+                        secretRef   = $script:sentinelRef
+                        thumbprint  = $null
+                        environment = 'commercial'
+                    }
+                }
+            } | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $contextFile -Encoding UTF8
+
+            $block = Read-WorkerContextCredential -ContextFile $contextFile
+            $block.TenantId | Should -Be $script:stubTenantId
+            $block.CredentialRef | Should -Be "tenants/$script:stubTenantId/credential"
+            $block.Record.authMethod | Should -Be 'client-secret'
+            (Get-Content -LiteralPath $contextFile -Raw) | Should -Not -Match ([regex]::Escape($script:sentinelSecret))
+        }
+
+        It 'returns null for a context without a credential block' {
+            $contextFile = Join-Path -Path (New-CredentialScratch) -ChildPath 'context.json'
+            @{ SchemaVersion = 1; Tenant = @{ TenantId = $script:stubTenantId } } |
+                ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $contextFile -Encoding UTF8
+            Read-WorkerContextCredential -ContextFile $contextFile | Should -BeNullOrEmpty
         }
     }
 

@@ -24,6 +24,7 @@ import type { RunListItem, RunListStore } from "../routes/runs-list.js";
 import { resolveMembers, type TenantGroupStore } from "../routes/tenant-groups.js";
 import type { TenantStore } from "../routes/tenants.js";
 import type { RunProgressStore, RunSectionInput } from "../sse/hub.js";
+import { toCredentialBlock } from "./workers.js";
 
 export type RunStore = RunCreateStore &
   RunsDetailStore &
@@ -148,12 +149,18 @@ export interface RunQueueAdapter {
   cancel(jobId: string): Promise<boolean>;
 }
 
+// Sections whose services reject client-secret auth (Exchange Online, Purview),
+// repeated from Resolve-TenantCredential / the credential route so the run fails
+// up front instead of in the worker.
+const SECRET_BLOCKED_SECTIONS: ReadonlySet<string> = new Set(["Email", "Security", "Inventory", "SOC2"]);
+
 /**
  * Writes the run's context.json, then enqueues it. The context carries only the
- * non-secret credential record: the assessment signs in with the certificate
- * thumbprint from the host's certificate store. Runs whose tenant has no credential,
- * or one that needs secret material (client secret, PFX; see T-0827), are failed at
- * once with the reason instead of starting a worker that cannot sign in.
+ * non-secret credential record: certificate-thumbprint runs sign in with the
+ * thumbprint from the host's certificate store, and client-secret/PFX runs carry a
+ * `Credential` block the child resolves from the credential store (T-0827). A
+ * tenant with no credential, or an unusable one, is failed at once with the reason
+ * instead of starting a worker that cannot sign in.
  */
 export function createRunQueue(options: RunQueueOptions): RunQueueAdapter {
   const { queue, storageRoot, tenants, credentials, repo } = options;
@@ -176,14 +183,40 @@ export function createRunQueue(options: RunQueueOptions): RunQueueAdapter {
       if (!credential) {
         return failRun(envelope, `tenant ${envelope.tenantId} has no credential; set one before running an assessment`);
       }
-      if (credential.authMethod !== "certificate-thumbprint" || !credential.thumbprint) {
-        return failRun(
-          envelope,
-          `assessment runs need a certificate-thumbprint credential; ${credential.authMethod} is not supported yet`,
-        );
+      const method = credential.authMethod;
+      const thumbprintMethods = method === "certificate" || method === "certificate-thumbprint";
+      const secretMethods = method === "client-secret" || method === "certificate-pfx";
+      if (!thumbprintMethods && !secretMethods) {
+        return failRun(envelope, `tenant ${envelope.tenantId} has an unsupported credential auth method '${method}'`);
+      }
+      if (thumbprintMethods && !credential.thumbprint) {
+        return failRun(envelope, `tenant ${envelope.tenantId} has a ${method} credential without a thumbprint; set one before running an assessment`);
+      }
+      if (method === "client-secret") {
+        const blocked = [
+          ...new Set(envelope.payload.sectionRefs.filter((section) => SECRET_BLOCKED_SECTIONS.has(section))),
+        ];
+        if (blocked.length > 0) {
+          return failRun(
+            envelope,
+            `client-secret auth is not supported by Exchange Online or Purview (sections: ${blocked.join(", ")}). Use certificate auth for these sections.`,
+          );
+        }
       }
       const tenant = await tenants.getTenant(envelope.tenantId);
-      const context = {
+      const auth = thumbprintMethods
+        ? {
+            Method: "Certificate",
+            ClientId: credential.clientId,
+            CertificateThumbprint: credential.thumbprint,
+            M365Environment: credential.environment,
+          }
+        : {
+            Method: method === "client-secret" ? "ClientSecret" : "Certificate",
+            ClientId: credential.clientId,
+            M365Environment: credential.environment,
+          };
+      const context: Record<string, unknown> = {
         SchemaVersion: 1,
         Tenant: {
           TenantId: envelope.tenantId,
@@ -191,15 +224,15 @@ export function createRunQueue(options: RunQueueOptions): RunQueueAdapter {
           DefaultDomain: tenant?.defaultDomain ?? null,
           InitialDomain: tenant?.initialDomain ?? null,
         },
-        Auth: {
-          Method: "Certificate",
-          ClientId: credential.clientId,
-          CertificateThumbprint: credential.thumbprint,
-          M365Environment: credential.environment,
-        },
+        Auth: auth,
         Scope: { Sections: [...envelope.payload.sectionRefs] },
         Output: { OutputFolder: path.resolve(storageRoot, envelope.payload.outputRef) },
       };
+      // Secret material is never written here; the child resolves the reference
+      // against the credential store with the non-secret row in this block.
+      if (secretMethods) {
+        context["Credential"] = toCredentialBlock(credential);
+      }
       const contextPath = path.resolve(storageRoot, envelope.payload.contextRef);
       await mkdir(path.dirname(contextPath), { recursive: true });
       await writeFile(contextPath, JSON.stringify(context), { mode: 0o600 });
