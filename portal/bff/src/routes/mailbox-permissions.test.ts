@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { tenantScope } from "../rbac/scope.js";
-import { MAILBOXES_READ_PERMISSION } from "./mailboxes.js";
+import {
+  MAILBOXES_READ_PERMISSION,
+  type MailboxItem,
+  type MailboxesFilter,
+  type MailboxesPage,
+  type MailboxesProvider,
+} from "./mailboxes.js";
 import {
   MAILBOX_PERMISSIONS_OPENAPI,
   MAILBOX_PERMISSIONS_PATH,
@@ -9,6 +15,7 @@ import {
   MAILBOX_PERMISSIONS_WRITE_PERMISSION,
   SHARING_READ_PERMISSION,
   createMailboxPermissionRoutes,
+  createMailboxPermissionsReportAdapter,
   createMailboxPermissionsReportRoute,
   parseMailboxPermissionReportFilter,
   type GrantMailboxPermissionInput,
@@ -574,5 +581,204 @@ describe("Mailbox permissions report filter (T-0529)", () => {
   it("defaults to no scope, no search, and the default page limit", () => {
     const filter = parseMailboxPermissionReportFilter(new URLSearchParams());
     expect(filter).toEqual({ scope: undefined, search: undefined, cursor: null, limit: 100 });
+  });
+});
+
+function mailboxItem(id: string, displayName: string, smtp: string): MailboxItem {
+  return {
+    id,
+    displayName,
+    primarySmtpAddress: smtp,
+    type: "user",
+    quotaUsed: null,
+    quotaUsedBytes: null,
+    quotaPercent: null,
+    archive: false,
+    hold: false,
+    forwarding: false,
+    forwardingTo: null,
+    deliverToMailboxAndForward: false,
+    lastActivity: null,
+  };
+}
+
+class FakeMailboxesProvider implements MailboxesProvider {
+  readonly calls: Array<{ tenantId: string; filter: MailboxesFilter }> = [];
+
+  constructor(private readonly pages: MailboxesPage[]) {}
+
+  async listMailboxes(tenantId: string, filter: MailboxesFilter): Promise<MailboxesPage> {
+    this.calls.push({ tenantId, filter });
+    const index = filter.cursor === null ? 0 : Number(filter.cursor);
+    return this.pages[index] ?? { tenantId, totalCount: 0, items: [], nextCursor: null };
+  }
+
+  async getMailbox(): Promise<null> {
+    return null;
+  }
+}
+
+class FakeEpic020PermissionsProvider implements MailboxPermissionsProvider {
+  readonly calls: string[] = [];
+
+  async listPermissions(tenantId: string, mailboxId: string): Promise<MailboxPermissionsList> {
+    this.calls.push(mailboxId);
+    const permissions =
+      mailboxId === "mbx-1"
+        ? [
+            {
+              scope: "mailbox" as const,
+              permissionType: "FullAccess" as const,
+              principal: "delegate@example.invalid",
+              accessRights: ["FullAccess"],
+              automap: true,
+              inherited: false,
+            },
+          ]
+        : [
+            {
+              scope: "mailbox" as const,
+              permissionType: "SendAs" as const,
+              principal: "sender@example.invalid",
+              accessRights: ["SendAs"],
+              automap: false,
+              inherited: false,
+            },
+          ];
+    const calendarPermissions =
+      mailboxId === "mbx-1"
+        ? [
+            {
+              scope: "calendar" as const,
+              permissionType: "Calendar" as const,
+              principal: "reviewer@example.invalid",
+              accessRights: ["Reviewer"],
+              automap: false,
+              inherited: false,
+            },
+          ]
+        : [];
+    return {
+      tenantId,
+      mailboxId,
+      permissions,
+      calendarPermissions,
+      retrievedAt: "2026-09-28T00:00:00.000Z",
+    };
+  }
+
+  async grantPermission(): Promise<never> {
+    throw new Error("grantPermission is not used by the report adapter");
+  }
+
+  async removePermission(): Promise<never> {
+    throw new Error("removePermission is not used by the report adapter");
+  }
+}
+
+describe("Mailbox permissions report EPIC-020 adapter (T-0529)", () => {
+  function buildAdapter(): {
+    adapter: MailboxPermissionsReportProvider;
+    mailboxes: FakeMailboxesProvider;
+    permissions: FakeEpic020PermissionsProvider;
+  } {
+    const mailboxes = new FakeMailboxesProvider([
+      {
+        tenantId: TENANT,
+        totalCount: 2,
+        items: [mailboxItem("mbx-1", "Support Desk", "support@example.invalid")],
+        nextCursor: "1",
+      },
+      {
+        tenantId: TENANT,
+        totalCount: 2,
+        items: [mailboxItem("mbx-2", "Operator One", "operator.one@example.invalid")],
+        nextCursor: null,
+      },
+    ]);
+    const permissions = new FakeEpic020PermissionsProvider();
+    return {
+      adapter: createMailboxPermissionsReportAdapter({ mailboxes, permissions }),
+      mailboxes,
+      permissions,
+    };
+  }
+
+  it("flattens EPIC-020 mailbox and calendar permissions into report rows", async () => {
+    const { adapter, permissions } = buildAdapter();
+
+    const page = await adapter.listMailboxPermissions(TENANT, { cursor: null, limit: 100 });
+
+    expect(page.tenantId).toBe(TENANT);
+    expect(page.totalCount).toBe(3);
+    expect(page.items).toHaveLength(3);
+    expect(page.items[0]).toMatchObject({
+      mailboxId: "mbx-1",
+      mailboxDisplayName: "Support Desk",
+      mailboxPrimarySmtp: "support@example.invalid",
+      scope: "mailbox",
+      permissionType: "FullAccess",
+      principal: "delegate@example.invalid",
+      accessRights: ["FullAccess"],
+      automap: true,
+      inherited: false,
+    });
+    expect(page.items[1]).toMatchObject({
+      mailboxId: "mbx-1",
+      scope: "calendar",
+      permissionType: "Calendar",
+      principal: "reviewer@example.invalid",
+      accessRights: ["Reviewer"],
+    });
+    expect(page.items[2]).toMatchObject({
+      mailboxId: "mbx-2",
+      scope: "mailbox",
+      permissionType: "SendAs",
+      principal: "sender@example.invalid",
+    });
+    expect(permissions.calls).toEqual(["mbx-1", "mbx-2"]);
+  });
+
+  it("walks every page of the EPIC-020 mailbox list seam", async () => {
+    const { adapter, mailboxes } = buildAdapter();
+
+    await adapter.listMailboxPermissions(TENANT, { cursor: null, limit: 100 });
+
+    expect(mailboxes.calls.map((call) => call.filter.cursor)).toEqual([null, "1"]);
+  });
+
+  it("applies the scope and search filters to the flattened rows", async () => {
+    const { adapter } = buildAdapter();
+
+    const calendarOnly = await adapter.listMailboxPermissions(TENANT, {
+      scope: "calendar",
+      cursor: null,
+      limit: 100,
+    });
+    expect(calendarOnly.items.map((item) => item.scope)).toEqual(["calendar"]);
+
+    const searched = await adapter.listMailboxPermissions(TENANT, {
+      search: "sender@",
+      cursor: null,
+      limit: 100,
+    });
+    expect(searched.totalCount).toBe(1);
+    expect(searched.items[0]?.principal).toBe("sender@example.invalid");
+  });
+
+  it("paginates the flattened rows with an opaque cursor", async () => {
+    const { adapter } = buildAdapter();
+
+    const first = await adapter.listMailboxPermissions(TENANT, { cursor: null, limit: 2 });
+    expect(first.items).toHaveLength(2);
+    expect(first.totalCount).toBe(3);
+    expect(first.nextCursor).not.toBeNull();
+
+    const second = await adapter.listMailboxPermissions(TENANT, {
+      cursor: first.nextCursor,
+      limit: 2,
+    });
+    expect(second.items).toHaveLength(1);
+    expect(second.nextCursor).toBeNull();
   });
 });

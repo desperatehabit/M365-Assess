@@ -14,10 +14,10 @@
 // (SPEC §7) with `Mailboxes.Mailbox.ReadWrite` / `Remediation.Apply` accepted as the
 // EPIC-006 apply semantics — all intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
-import { parsePagination } from "../pagination.js";
+import { paginate, parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
-import { MAILBOXES_READ_PERMISSION } from "./mailboxes.js";
+import { MAILBOXES_READ_PERMISSION, type MailboxesProvider } from "./mailboxes.js";
 
 export const MAILBOX_PERMISSIONS_PATH = "/v1/tenants/:tenantId/mailboxes/:mailboxId/permissions";
 export const MAILBOX_PERMISSIONS_UNAUTHENTICATED = "request.unauthenticated";
@@ -532,6 +532,80 @@ export function createMailboxPermissionsReportRoute(options: MailboxPermissionsR
         status: 200,
         headers: { "content-type": "application/json" },
         body: page,
+      };
+    },
+  };
+}
+
+// Thin adapter over EPIC-020's mailbox list (T-0381) and per-mailbox permission
+// (T-0384) seams. It composes the two providers into the §3.5 report read so the
+// report renders from EPIC-020's live EXO data without the BFF knowing EXO. The
+// route above owns only the read contract; this adapter is the concrete reuse
+// of EPIC-020 the report was specified against.
+export interface MailboxPermissionsReportAdapterOptions {
+  readonly mailboxes: MailboxesProvider;
+  readonly permissions: MailboxPermissionsProvider;
+}
+
+const MAILBOX_SCAN_PAGE_SIZE = 100;
+
+export function createMailboxPermissionsReportAdapter(
+  options: MailboxPermissionsReportAdapterOptions,
+): MailboxPermissionsReportProvider {
+  return {
+    async listMailboxPermissions(
+      tenantId: string,
+      filter: MailboxPermissionReportFilter,
+    ): Promise<MailboxPermissionsReportPage> {
+      const entries: MailboxPermissionReportEntry[] = [];
+      let cursor: string | null = null;
+      do {
+        const page = await options.mailboxes.listMailboxes(tenantId, {
+          cursor,
+          limit: MAILBOX_SCAN_PAGE_SIZE,
+        });
+        for (const mailbox of page.items) {
+          const permissions = await options.permissions.listPermissions(tenantId, mailbox.id);
+          for (const permission of [
+            ...permissions.permissions,
+            ...permissions.calendarPermissions,
+          ]) {
+            entries.push({
+              mailboxId: mailbox.id,
+              mailboxDisplayName: mailbox.displayName,
+              mailboxPrimarySmtp: mailbox.primarySmtpAddress,
+              scope: permission.scope,
+              permissionType: permission.permissionType,
+              principal: permission.principal,
+              accessRights: permission.accessRights,
+              automap: permission.automap,
+              inherited: permission.inherited,
+            });
+          }
+        }
+        cursor = page.nextCursor;
+      } while (cursor !== null);
+
+      const needle = filter.search?.trim().toLowerCase() ?? "";
+      const rows = entries.filter((entry) => {
+        if (filter.scope !== undefined && entry.scope !== filter.scope) {
+          return false;
+        }
+        if (needle.length === 0) {
+          return true;
+        }
+        return `${entry.mailboxDisplayName ?? ""} ${entry.mailboxPrimarySmtp} ${entry.principal}`
+          .toLowerCase()
+          .includes(needle);
+      });
+
+      const page = paginate(rows, { cursor: filter.cursor, limit: filter.limit });
+      return {
+        tenantId,
+        items: page.items,
+        nextCursor: page.nextCursor,
+        totalCount: rows.length,
+        retrievedAt: new Date().toISOString(),
       };
     },
   };
