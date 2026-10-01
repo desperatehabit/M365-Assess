@@ -578,7 +578,6 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
             ),
             { remediation: remediationRepo, storageRoot: config.artifactPath },
           ),
-          ),
           { remediation: remediationRepo, storageRoot: config.artifactPath },
         ),
         { remediation: remediationRepo, storageRoot: config.artifactPath },
