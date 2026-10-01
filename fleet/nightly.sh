@@ -26,25 +26,33 @@ commit_state() {
 
 process_severity() {
     local sev="$1"
-    log "=== $sev: dispatching ==="
-    python3 "$PY" run --severity "$sev" --workers 3 2>&1 | tee -a "$LOG"
+    while true; do
+        local runnable
+        runnable=$(python3 -c "import fleet.fleet as f; ts = [t for t in f.runnable_tickets() if t.get('severity') == '$sev']; print(len(ts))")
+        if [ "$runnable" -eq 0 ]; then
+            log "=== $sev: no more runnable tickets ==="
+            break
+        fi
+        log "=== $sev: dispatching ($runnable runnable) ==="
+        python3 "$PY" run --severity "$sev" --workers 4 2>&1 | tee -a "$LOG"
 
-    log "=== $sev: QA ==="
-    python3 "$PY" qa --workers 2 2>&1 | tee -a "$LOG"
+        log "=== $sev: QA ==="
+        python3 "$PY" qa --workers 3 2>&1 | tee -a "$LOG"
 
-    log "=== $sev: landing (verified) ==="
-    python3 "$PY" land --verify 2>&1 | tee -a "$LOG"
+        log "=== $sev: landing (verified) ==="
+        python3 "$PY" land --verify 2>&1 | tee -a "$LOG"
 
-    log "=== $sev: archiving + reindexing ==="
-    python3 "$PY" close 2>&1 | tee -a "$LOG"
-    python3 "$PY" index 2>&1 | tee -a "$LOG"
-    commit_state "chore(issues): close out the $sev batch"
+        log "=== $sev: archiving + reindexing ==="
+        python3 "$PY" close 2>&1 | tee -a "$LOG"
+        python3 "$PY" index 2>&1 | tee -a "$LOG"
+        commit_state "chore(issues): close out the $sev batch"
 
-    log "=== $sev: refreshing baseline ==="
-    python3 "$PY" baseline 2>&1 | tee -a "$LOG"
+        log "=== $sev: refreshing baseline ==="
+        python3 "$PY" baseline 2>&1 | tee -a "$LOG"
 
-    log "=== $sev: done ==="
-    python3 "$PY" status 2>&1 | tee -a "$LOG"
+        log "=== $sev: status ==="
+        python3 "$PY" status 2>&1 | tee -a "$LOG"
+    done
 }
 
 for sev in "$@"; do
