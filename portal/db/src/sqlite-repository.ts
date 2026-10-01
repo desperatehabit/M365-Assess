@@ -16,6 +16,13 @@ import {
   type AuditResult,
   type AuditActorType,
   type AuditSource,
+  type Backup,
+  type BackupConfig,
+  type BackupConfigInput,
+  type BackupInput,
+  type BackupListOptions,
+  type BackupScopeOptions,
+  type BackupType,
   type BrandingColors,
   type BrandingConfig,
   type BrandingConfigInput,
@@ -585,6 +592,28 @@ export class SqliteRepository implements Repository {
       source: asString(row["source"]) as AuditSource,
       correlationId: asNullableString(row["correlationId"]),
       createdAt: asString(row["createdAt"]),
+    };
+  }
+
+  private mapBackup(row: Row): Backup {
+    return {
+      id: asString(row["id"]),
+      type: asString(row["type"]) as BackupType,
+      tenantId: asNullableString(row["tenantId"]),
+      createdAt: asString(row["createdAt"]),
+      createdBy: asString(row["createdBy"]),
+      schemaVersion: asNumber(row["schemaVersion"]),
+      artifactRef: asString(row["artifactRef"]),
+      checksum: asString(row["checksum"]),
+    };
+  }
+
+  private mapBackupConfig(row: Row): BackupConfig {
+    return {
+      id: asString(row["id"]),
+      scheduleId: asNullableString(row["scheduleId"]),
+      retentionDays: asNumber(row["retentionDays"]),
+      replicationTarget: asNullableString(row["replicationTarget"]),
     };
   }
 
@@ -2855,6 +2884,160 @@ export class SqliteRepository implements Repository {
     })();
     const persisted = await this.getUserPreference(userId);
     if (!persisted) throw new Error(`user preference ${userId} was not persisted`);
+    return persisted;
+  }
+
+  async createBackup(input: BackupInput): Promise<Backup> {
+    if (input.type === "tenant" && (input.tenantId === null || input.tenantId.length === 0)) {
+      throw new Error("a tenant backup requires a tenantId");
+    }
+    if (input.type === "instance" && input.tenantId !== null) {
+      throw new Error("an instance backup must not carry a tenantId");
+    }
+    const createdAt = input.createdAt ?? nowIso();
+    const backup: Backup = {
+      id: input.id,
+      type: input.type,
+      tenantId: input.type === "tenant" ? input.tenantId : null,
+      createdAt,
+      createdBy: input.createdBy,
+      schemaVersion: input.schemaVersion,
+      artifactRef: input.artifactRef,
+      checksum: input.checksum,
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO backups
+             (id, type, tenantId, createdAt, createdBy, schemaVersion, artifactRef, checksum)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          backup.id,
+          backup.type,
+          backup.tenantId,
+          backup.createdAt,
+          backup.createdBy,
+          backup.schemaVersion,
+          backup.artifactRef,
+          backup.checksum,
+        );
+      this.writeAuditEvent(
+        "backup.create",
+        "backup",
+        backup.id,
+        backup.tenantId,
+        null,
+        backup,
+        createdAt,
+      );
+    })();
+    const persisted = await this.getBackup(backup.id);
+    if (!persisted) throw new Error(`backup ${backup.id} was not persisted`);
+    return persisted;
+  }
+
+  async getBackup(
+    backupId: string,
+    options: BackupScopeOptions = {},
+  ): Promise<Backup | undefined> {
+    const row =
+      options.tenantId === undefined
+        ? (this.db.prepare("SELECT * FROM backups WHERE id = ?").get(backupId) as
+            | Row
+            | undefined)
+        : (this.db
+            .prepare("SELECT * FROM backups WHERE id = ? AND tenantId = ?")
+            .get(backupId, options.tenantId) as Row | undefined);
+    return row ? this.mapBackup(row) : undefined;
+  }
+
+  async listBackups(options: BackupListOptions = {}): Promise<Backup[]> {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+    if (options.type !== undefined) {
+      clauses.push("type = ?");
+      params.push(options.type);
+    }
+    if (options.tenantId !== undefined) {
+      clauses.push("tenantId = ?");
+      params.push(options.tenantId);
+    }
+    const where = clauses.length === 0 ? "" : ` WHERE ${clauses.join(" AND ")}`;
+    return (
+      this.db
+        .prepare(`SELECT * FROM backups${where} ORDER BY createdAt, id`)
+        .all(...params) as Row[]
+    ).map((row) => this.mapBackup(row));
+  }
+
+  async deleteBackup(backupId: string, options: { now?: string } = {}): Promise<boolean> {
+    const existing = await this.getBackup(backupId);
+    if (!existing) return false;
+    const at = options.now ?? nowIso();
+    this.db.transaction(() => {
+      this.db.prepare("DELETE FROM backups WHERE id = ?").run(backupId);
+      this.writeAuditEvent(
+        "backup.delete",
+        "backup",
+        backupId,
+        existing.tenantId,
+        existing,
+        null,
+        at,
+      );
+    })();
+    return true;
+  }
+
+  async getBackupConfig(): Promise<BackupConfig | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM backup_config WHERE id = 'default'")
+      .get() as Row | undefined;
+    return row ? this.mapBackupConfig(row) : undefined;
+  }
+
+  async upsertBackupConfig(input: BackupConfigInput): Promise<BackupConfig> {
+    const existing = await this.getBackupConfig();
+    const config: BackupConfig = {
+      id: input.id ?? "default",
+      scheduleId:
+        input.scheduleId === undefined ? existing?.scheduleId ?? null : input.scheduleId,
+      retentionDays: input.retentionDays,
+      replicationTarget:
+        input.replicationTarget === undefined
+          ? existing?.replicationTarget ?? null
+          : input.replicationTarget,
+    };
+    const at = nowIso();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO backup_config (id, scheduleId, retentionDays, replicationTarget)
+           VALUES (@id, @scheduleId, @retentionDays, @replicationTarget)
+           ON CONFLICT(id) DO UPDATE SET
+             scheduleId = excluded.scheduleId,
+             retentionDays = excluded.retentionDays,
+             replicationTarget = excluded.replicationTarget`,
+        )
+        .run({
+          id: config.id,
+          scheduleId: config.scheduleId,
+          retentionDays: config.retentionDays,
+          replicationTarget: config.replicationTarget,
+        });
+      this.writeAuditEvent(
+        "backupconfig.upsert",
+        "backup_config",
+        config.id,
+        null,
+        existing ?? null,
+        config,
+        at,
+      );
+    })();
+    const persisted = await this.getBackupConfig();
+    if (!persisted) throw new Error("backup config was not persisted");
     return persisted;
   }
 }
