@@ -344,6 +344,12 @@ export class SqliteSecureScoreRepository implements SecureScoreRepository {
     const actionId = requireNonEmpty(input.actionId, "actionId");
     const check = requireNonEmpty(input.check, "check");
     const standardKey = requireNonEmpty(input.standardKey, "standardKey");
+    // Validate the audit source before any write: a change must never persist
+    // without its audit event (03-database.md §6).
+    const source = input.source === undefined ? "request" : input.source;
+    if (!isAuditSource(source)) {
+      throw invalid("source", `must be one of ${SECURE_SCORE_AUDIT_SOURCES.join(", ")}`);
+    }
     const existing = this.selectMapping(actionId);
     if (existing && existing.check === check && existing.standardKey === standardKey) {
       return existing;

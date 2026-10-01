@@ -322,6 +322,18 @@ describe("score action mappings", () => {
     expect(event["actorUserId"]).toBeNull();
     expect(event["actorType"]).toBe("system");
   });
+
+  it("rejects an invalid audit source without persisting an unaudited mapping", async () => {
+    const { db, repo } = open();
+
+    await expect(
+      repo.putMapping(mapping({ source: "bogus" as never })),
+    ).rejects.toMatchObject({ code: "secureScore.invalid" });
+
+    expect(await repo.getMapping("action-1")).toBeUndefined();
+    const count = db.prepare("SELECT COUNT(*) AS c FROM audit_events").get() as { c: number };
+    expect(count.c).toBe(0);
+  });
 });
 
 describe("secure score contracts", () => {
