@@ -331,14 +331,21 @@ def contention() -> dict[str, list[str]]:
     return {f: ids for f, ids in owners.items() if len(ids) > 1}
 
 
+def runnable_tickets() -> list[dict]:
+    ts = [t for t in all_tickets() if t.get("status") == "open"]
+    live = {t["id"]: t for t in all_tickets()}
+    archived = closed_ids()
+    return [t for t in ts
+            if t.get("scope") and not t.get("needs_scope_review")
+            and not unmet_deps(t, live, archived)]
+
+
 def cmd_plan(args) -> int:
     ts = [t for t in all_tickets() if t.get("status") == "open"]
     con = contention()
     live = {t["id"]: t for t in all_tickets()}
     archived = closed_ids()
-    ready = [t for t in ts
-             if t.get("scope") and not t.get("needs_scope_review")
-             and not unmet_deps(t, live, archived)]
+    ready = runnable_tickets()
     blocked = [t for t in ts if not t.get("scope")]
     held = [t for t in ts if t.get("scope") and unmet_deps(t, live, archived)]
     print(f"open tickets      {len(ts)}")
