@@ -15,6 +15,7 @@ import {
   REMEDIATION_OUTPUT_UNREADABLE,
   buildApplyWorkerArgs,
   buildPlanWorkerArgs,
+  buildVerifyWorkerArgs,
   createJobBackedRemediationIdempotencyStore,
   createRemediationQueue,
   createRemediationStore,
@@ -27,6 +28,7 @@ import {
   createTickScheduleStore,
   withRemediationApplyIngestion,
   withRemediationPlanIngestion,
+  withRemediationVerifyIngestion,
 } from "./automation.js";
 
 const CREDENTIAL: CredentialRecord = {
@@ -398,12 +400,29 @@ describe("remediation plan jobs (T-0836)", () => {
     if (process.platform !== "win32") expect(statSync(path.join(folder, "job.json")).mode & 0o777).toBe(0o600);
   });
 
-  it("refuses verify jobs with 501 before enqueueing", async () => {
+  it("writes the verify job file with the credential block and enqueues it", async () => {
     const { repo } = await setup();
+    const root = tempRoot();
     const enqueued: JobEnvelope[] = [];
-    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, credentials, storageRoot: tempRoot() });
-    await expect(queue.enqueue(planEnvelope("verify"))).rejects.toMatchObject({ status: 501, code: JOB_DISPATCH_UNAVAILABLE });
-    expect(enqueued).toEqual([]);
+    const queue = createRemediationQueue({ jobs: { enqueue: async (e) => (enqueued.push(e), e.jobId) }, repo, credentials, storageRoot: root });
+
+    const env = planEnvelope("verify");
+    expect(await queue.enqueue(env)).toBe("job-1");
+    expect(enqueued).toEqual([env]);
+
+    const jobFile = JSON.parse(readFileSync(path.join(root, "remediation/t-a/job-1", "job.json"), "utf8"));
+    expect(jobFile.credential).toEqual({
+      credentialRef: "tenants/t-a/credential",
+      record: expect.objectContaining({ tenantId: "t-a", clientId: "app-1", thumbprint: "ABC" }),
+    });
+    expect(jobFile.payload).toMatchObject({ operation: "verify", planId: "plan-7" });
+  });
+
+  it("refuses a verify whose tenant has no credential", async () => {
+    const { repo } = await setup();
+    const noCredential: CredentialStoreRow = { ...credentials, getCredential: async () => undefined };
+    const queue = createRemediationQueue({ jobs: { enqueue: async () => "" }, repo, credentials: noCredential, storageRoot: tempRoot() });
+    await expect(queue.enqueue(planEnvelope("verify"))).rejects.toMatchObject({ status: 409, code: NO_CREDENTIAL });
   });
 
   it("runs plan-remediation.ps1 on the job's folder", async () => {
@@ -419,8 +438,19 @@ describe("remediation plan jobs (T-0836)", () => {
       "-FindingsFile",
       "remediation/t-a/job-1/findings.json",
     ]);
-    const runner = createRemediationWorkerRunner({ workersDir: "/w", storageRoot: tempRoot() });
-    await expect(runner(planEnvelope("verify"), new AbortController().signal)).rejects.toMatchObject({ code: JOB_DISPATCH_UNAVAILABLE });
+  });
+
+  it("runs verify-remediation.ps1 with the job file and output folder", async () => {
+    expect(buildVerifyWorkerArgs(planEnvelope("verify"), "/w/verify-remediation.ps1")).toEqual([
+      "-NoProfile",
+      "-NonInteractive",
+      "-File",
+      "/w/verify-remediation.ps1",
+      "-JobFile",
+      "remediation/t-a/job-1/job.json",
+      "-OutputFolder",
+      "remediation/t-a/job-1",
+    ]);
   });
 
   it("runs apply-remediation.ps1 with the plan job's folder as -PlanFile", async () => {
@@ -626,6 +656,119 @@ describe("remediation plan jobs (T-0836)", () => {
     const remediation = new SqliteRemediationRepository(db, version);
     const worker = withRemediationApplyIngestion(async (e) => succeeded(e), { remediation, storageRoot: tempRoot() });
     expect(await worker(planEnvelope("apply"), new AbortController().signal)).toMatchObject({
+      status: "failed",
+      error: { code: REMEDIATION_OUTPUT_UNREADABLE },
+    });
+  });
+
+  it("stores a succeeded verify job's outcome on its action", async () => {
+    const { db, version } = await setup();
+    const remediation = new SqliteRemediationRepository(db, version);
+    await remediation.createRemediationPlan({
+      id: "plan-7",
+      tenantId: "t-a",
+      runId: "run-1",
+      findingIds: ["f-1"],
+      mode: "automated",
+      createdBy: "user-1",
+      actions: [{ id: "act-1", planId: "plan-7", checkId: "CA-1", command: "Set-Thing", target: null, state: "applied" }],
+    } as never);
+    const root = tempRoot();
+    const env = planEnvelope("verify");
+    const worker = withRemediationVerifyIngestion(
+      async (e) => {
+        const folder = path.join(root, e.payload.outputRef);
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(
+          path.join(folder, "remediation-verify.json"),
+          JSON.stringify({
+            ActionId: "act-1",
+            CheckId: "CA-1",
+            Strategy: "section",
+            FindingStatus: "Pass",
+            Passed: true,
+            ActionState: "applied",
+            ReEvaluated: true,
+            Alerted: false,
+            ActionUpdates: [
+              { actionId: "act-1", update: { state: "applied", error: null, appliedAt: "2026-09-27T00:00:03.000Z", appliedBy: "user-1", result: { verifiedStatus: "Pass" } } },
+            ],
+            FindingUpdates: [],
+            AuditEvents: [],
+            Alerts: [],
+          }),
+        );
+        return succeeded(e);
+      },
+      { remediation, storageRoot: root },
+    );
+
+    expect(await worker(env, new AbortController().signal)).toMatchObject({ status: "succeeded" });
+    expect(await remediation.getRemediationAction("act-1")).toMatchObject({
+      state: "applied",
+      appliedAt: "2026-09-27T00:00:03.000Z",
+      appliedBy: "user-1",
+      result: { verifiedStatus: "Pass" },
+      correlationId: "corr-1",
+    });
+  });
+
+  it("stores a failed verify outcome on its action", async () => {
+    const { db, version } = await setup();
+    const remediation = new SqliteRemediationRepository(db, version);
+    await remediation.createRemediationPlan({
+      id: "plan-7",
+      tenantId: "t-a",
+      runId: "run-1",
+      findingIds: ["f-1"],
+      mode: "automated",
+      createdBy: "user-1",
+      actions: [{ id: "act-1", planId: "plan-7", checkId: "CA-1", command: "Set-Thing", target: null, state: "applied" }],
+    } as never);
+    const root = tempRoot();
+    const env = planEnvelope("verify");
+    const worker = withRemediationVerifyIngestion(
+      async (e) => {
+        const folder = path.join(root, e.payload.outputRef);
+        mkdirSync(folder, { recursive: true });
+        writeFileSync(
+          path.join(folder, "remediation-verify.json"),
+          JSON.stringify({
+            ActionId: "act-1",
+            CheckId: "CA-1",
+            Strategy: "section",
+            FindingStatus: "Fail",
+            Passed: false,
+            ActionState: "failed",
+            ReEvaluated: false,
+            Alerted: true,
+            ActionUpdates: [
+              { actionId: "act-1", update: { state: "failed", error: "verify-failed: finding status 'Fail'", appliedAt: "2026-09-27T00:00:04.000Z", appliedBy: "user-1", result: { verifiedStatus: "Fail" } } },
+            ],
+            FindingUpdates: [],
+            AuditEvents: [],
+            Alerts: [],
+          }),
+        );
+        return succeeded(e);
+      },
+      { remediation, storageRoot: root },
+    );
+
+    expect(await worker(env, new AbortController().signal)).toMatchObject({ status: "succeeded" });
+    expect(await remediation.getRemediationAction("act-1")).toMatchObject({
+      state: "failed",
+      error: "verify-failed: finding status 'Fail'",
+      appliedBy: "user-1",
+      result: { verifiedStatus: "Fail" },
+    });
+  });
+
+  it("fails a verify job whose output is missing", async () => {
+    const { db, version } = await setup();
+    const remediation = new SqliteRemediationRepository(db, version);
+    const worker = withRemediationVerifyIngestion(async (e) => succeeded(e), { remediation, storageRoot: tempRoot() });
+    expect(await worker(planEnvelope("verify"), new AbortController().signal)).toMatchObject({
       status: "failed",
       error: { code: REMEDIATION_OUTPUT_UNREADABLE },
     });

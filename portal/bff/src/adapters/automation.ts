@@ -4,14 +4,11 @@
 // match the route stores.
 //
 // Remediation plan jobs run plan-remediation.ps1 through the job queue's dispatcher and
-// their plans are stored when the job succeeds (T-0836). Apply jobs run
+// apply-remediation.ps1 the same way and store each action's result (T-0838). Verify
+// jobs run verify-remediation.ps1 and store the outcome on the action (T-0839).
 // Scheduled assessment jobs run through the same queue with a run record and a
 // context.json (T-0840). Custom scripts run in the T-0126 sandbox through
-// run-custom-script.ps1 (T-0837). Still not wired, and refused with 501 before anything is enqueued or run:
-//
-// - Remediation verify (T-0839).
-// - Schedule types with no runner on the dispatcher: standards, drift, baseline,
-//   backup, custom-script, report (T-0840).
+// run-custom-script.ps1 (T-0837).
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
@@ -71,10 +68,12 @@ export function createRemediationStore(repo: RemediationRepository): Remediation
 
 export const PLAN_WORKER = "plan-remediation.ps1";
 export const APPLY_WORKER = "apply-remediation.ps1";
+export const VERIFY_WORKER = "verify-remediation.ps1";
 export const REMEDIATION_OUTPUT_UNREADABLE = "remediation.output_unreadable";
 export const REMEDIATION_APPLY_NO_PLAN = "remediation.apply_no_plan";
 const PLAN_FILE = "remediation-plan.json";
 const APPLY_FILE = "remediation-apply.json";
+const VERIFY_FILE = "remediation-verify.json";
 const FINDINGS_FILE = "findings.json";
 
 function operationOf(envelope: JobEnvelope): unknown {
@@ -91,16 +90,16 @@ export interface RemediationQueueOptions {
 /**
  * Plan jobs: writes the job file and the run's findings into the job's folder, then
  * enqueues. The plan worker makes no tenant calls, so the job file carries no
- * credential. Apply jobs sign in to the tenant, so their job file carries the
- * credential block (toCredentialBlock, T-0826) and the plan job's folder, where the
- * stored plan artifact lives. Verify is refused until its worker is wired (T-0839).
+ * credential. Apply and verify jobs sign in to the tenant, so their job file carries
+ * the credential block (toCredentialBlock, T-0826); apply also carries the plan job's
+ * folder, where the stored plan artifact lives.
  */
 export function createRemediationQueue(options: RemediationQueueOptions): RemediationQueue {
   const { jobs, repo, credentials, storageRoot } = options;
   return {
     async enqueue(envelope) {
       const operation = operationOf(envelope);
-      if (operation !== "plan" && operation !== "apply") {
+      if (operation !== "plan" && operation !== "apply" && operation !== "verify") {
         throw unavailable(
           JOB_DISPATCH_UNAVAILABLE,
           `remediation ${String(operation)} jobs cannot run yet: no worker dispatch for them`,
@@ -114,13 +113,22 @@ export function createRemediationQueue(options: RemediationQueueOptions): Remedi
         await writeFile(path.resolve(storageRoot, envelope.payload.contextRef), JSON.stringify(envelope), { mode: 0o600 });
         return jobs.enqueue(envelope);
       }
-      const apply = await prepareApplyJob(envelope, repo, credentials);
+      if (operation === "apply") {
+        const apply = await prepareApplyJob(envelope, repo, credentials);
+        await writeFile(
+          path.resolve(storageRoot, envelope.payload.contextRef),
+          JSON.stringify({ ...apply.envelope, credential: apply.credential }),
+          { mode: 0o600 },
+        );
+        return jobs.enqueue(apply.envelope);
+      }
+      const verify = await prepareVerifyJob(envelope, credentials);
       await writeFile(
         path.resolve(storageRoot, envelope.payload.contextRef),
-        JSON.stringify({ ...apply.envelope, credential: apply.credential }),
+        JSON.stringify({ ...verify.envelope, credential: verify.credential }),
         { mode: 0o600 },
       );
-      return jobs.enqueue(apply.envelope);
+      return jobs.enqueue(verify.envelope);
     },
   };
 }
@@ -163,6 +171,25 @@ async function prepareApplyJob(
   };
 }
 
+/**
+ * Resolves the tenant's credential block for a verify job. Verify re-reads tenant
+ * state, so it signs in like apply; it carries no plan reference.
+ */
+async function prepareVerifyJob(
+  envelope: JobEnvelope,
+  credentials: CredentialStoreRow,
+): Promise<{ envelope: JobEnvelope; credential: CredentialBlock }> {
+  const credential = await credentials.getCredential(envelope.tenantId);
+  if (!credential) {
+    throw new AppError(
+      NO_CREDENTIAL,
+      `tenant '${envelope.tenantId}' has no credential; set one before verifying remediation`,
+      409,
+    );
+  }
+  return { envelope, credential: toCredentialBlock(credential) };
+}
+
 /** plan-remediation.ps1 reads the job file and findings from the job's folder. */
 export function buildPlanWorkerArgs(envelope: JobEnvelope, workerScriptPath: string): string[] {
   return [
@@ -201,11 +228,25 @@ export function buildApplyWorkerArgs(envelope: JobEnvelope, workerScriptPath: st
   ];
 }
 
+/** verify-remediation.ps1 reads the job file and writes its result to its own folder. */
+export function buildVerifyWorkerArgs(envelope: JobEnvelope, workerScriptPath: string): string[] {
+  return [
+    "-NoProfile",
+    "-NonInteractive",
+    "-File",
+    workerScriptPath,
+    "-JobFile",
+    envelope.payload.contextRef,
+    "-OutputFolder",
+    envelope.payload.outputRef,
+  ];
+}
+
 export type RemediationWorkerOptions = Omit<SuperviseJobOptions, "signal" | "workerScriptPath" | "buildArgs"> & {
   readonly workersDir: string;
 };
 
-/** The remediation runner for the job dispatcher: plan and apply jobs (see the file header). */
+/** The remediation runner for the job dispatcher: plan, apply, and verify jobs (see the file header). */
 export function createRemediationWorkerRunner(options: RemediationWorkerOptions): RunWorkerFn {
   const { workersDir, ...supervise } = options;
   return async (envelope, signal) => {
@@ -223,6 +264,14 @@ export function createRemediationWorkerRunner(options: RemediationWorkerOptions)
         ...supervise,
         workerScriptPath: path.join(workersDir, APPLY_WORKER),
         buildArgs: buildApplyWorkerArgs,
+        signal,
+      });
+    }
+    if (operation === "verify") {
+      return superviseJob(envelope, {
+        ...supervise,
+        workerScriptPath: path.join(workersDir, VERIFY_WORKER),
+        buildArgs: buildVerifyWorkerArgs,
         signal,
       });
     }
@@ -321,6 +370,56 @@ export function withRemediationApplyIngestion(runWorker: RunWorkerFn, options: R
   };
 }
 
+export interface RemediationVerifyIngestionOptions {
+  readonly remediation: Pick<RemediationRepository, "updateRemediationAction">;
+  readonly storageRoot: string;
+}
+
+/**
+ * Stores a succeeded verify job's outcome on its action before the queue reports the
+ * job finished, so the plan and history routes serve it. The verify worker captures
+ * the action update through the verify seams; output that is missing or malformed
+ * fails the job, mirroring the apply ingestion.
+ */
+export function withRemediationVerifyIngestion(runWorker: RunWorkerFn, options: RemediationVerifyIngestionOptions): RunWorkerFn {
+  const { remediation, storageRoot } = options;
+  return async (envelope, signal) => {
+    const result = await runWorker(envelope, signal);
+    if (envelope.jobType !== "remediation" || operationOf(envelope) !== "verify" || result.status !== "succeeded") {
+      return result;
+    }
+    try {
+      const file = path.resolve(storageRoot, envelope.payload.outputRef, VERIFY_FILE);
+      const output = JSON.parse(await readFile(file, "utf8")) as Record<string, unknown>;
+      const actionId = output["ActionId"];
+      if (typeof actionId !== "string" || actionId === "") throw new Error("the verify job has no ActionId");
+      const updates = Array.isArray(output["ActionUpdates"]) ? (output["ActionUpdates"] as unknown[]) : [];
+      for (const item of updates) {
+        const record = (item ?? {}) as Record<string, unknown>;
+        const update = record["update"] as Record<string, unknown> | undefined;
+        if (!update) continue;
+        const state = update["state"];
+        if (state !== "applied" && state !== "failed" && state !== "skipped") continue;
+        const actionUpdate: RemediationActionUpdate = { state };
+        const error = update["error"];
+        if (error !== undefined) actionUpdate.error = error as string | null;
+        const appliedAt = update["appliedAt"];
+        if (typeof appliedAt === "string" && appliedAt !== "") actionUpdate.appliedAt = appliedAt;
+        const appliedBy = update["appliedBy"];
+        if (typeof appliedBy === "string" && appliedBy !== "") actionUpdate.appliedBy = appliedBy;
+        const updateResult = update["result"];
+        if (updateResult !== undefined) actionUpdate.result = updateResult as Record<string, unknown> | null;
+        if (envelope.correlationId) actionUpdate.correlationId = envelope.correlationId;
+        await remediation.updateRemediationAction(actionId, actionUpdate);
+      }
+      return result;
+    } catch (error) {
+      const message = `remediation verify output unreadable: ${error instanceof Error ? error.message : String(error)}`;
+      return { ...result, status: "failed", error: { code: REMEDIATION_OUTPUT_UNREADABLE, message, retryable: false } };
+    }
+  };
+}
+
 export interface ScheduleRunQueueOptions {
   readonly jobs: Pick<JobQueue, "enqueue">;
   readonly repo: Pick<SqliteRepository, "createRun" | "updateRun">;
@@ -349,6 +448,7 @@ export function createScheduleRunQueue(options: ScheduleRunQueueOptions): Schedu
     });
     return envelope.jobId;
   }
+
   return {
     async enqueue(envelopeInput) {
       const envelope = envelopeInput as JobEnvelope & { readonly scheduleId?: string };

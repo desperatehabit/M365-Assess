@@ -58,6 +58,7 @@ import {
   createScriptSandbox,
   createTickScheduleStore,
   withRemediationPlanIngestion,
+  withRemediationVerifyIngestion,
 } from "./adapters/automation.js";
 import {
   createBaselineAdvanceStore,
@@ -564,15 +565,19 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     runWorker: withReportCompletion(
       withRemediationPlanIngestion(
         withRemediationApplyIngestion(
-          withDriftIngestion(
-            withStandardsIngestion(
-              withFindingsIngestion(
-                options.runWorker ?? createJobDispatcher(workerRunners),
-                { repo, storageRoot: config.artifactPath },
+          withRemediationVerifyIngestion(
+            withDriftIngestion(
+              withStandardsIngestion(
+                withFindingsIngestion(
+                  options.runWorker ?? createJobDispatcher(workerRunners),
+                  { repo, storageRoot: config.artifactPath },
+                ),
+                { standards: standardsRepo, storageRoot: config.artifactPath },
               ),
-              { standards: standardsRepo, storageRoot: config.artifactPath },
+              { drift: driftRepo, storageRoot: config.artifactPath },
             ),
-            { drift: driftRepo, storageRoot: config.artifactPath },
+            { remediation: remediationRepo, storageRoot: config.artifactPath },
+          ),
           ),
           { remediation: remediationRepo, storageRoot: config.artifactPath },
         ),
