@@ -3,7 +3,7 @@ id: "EPIC-035"
 source: "docs/portal-specs/01-feature-epics/EPIC-035-backup-restore/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "low"
-status: "epic"
+status: "closed"
 original_status: "declared"
 parent: ""
 scope: []
@@ -44,6 +44,6 @@ replication target and per-record restore granularity remain deferred (SPEC §11
 
 ## Acceptance
 
-- [ ] SPEC.md sections 2-9 complete and approved.
-- [ ] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [ ] All children closed before this epic is considered done.
+- [x] SPEC.md sections 2-9 complete and approved.
+- [x] Child tickets authored in `tickets/` with non-empty `scope:`.
+- [x] All children closed before this epic is considered done.

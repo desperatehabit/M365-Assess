@@ -3,7 +3,7 @@ id: "EPIC-029"
 source: "docs/portal-specs/01-feature-epics/EPIC-029-alerting-notifications/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "epic"
+status: "closed"
 original_status: "declared"
 parent: ""
 scope: []
@@ -46,6 +46,6 @@ the child tickets, not an `depends_on` code gate.
 
 ## Acceptance
 
-- [ ] SPEC.md sections 2-9 complete and approved.
-- [ ] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [ ] All children closed before this epic is considered done.
+- [x] SPEC.md sections 2-9 complete and approved.
+- [x] Child tickets authored in `tickets/` with non-empty `scope:`.
+- [x] All children closed before this epic is considered done.
