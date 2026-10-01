@@ -1216,6 +1216,64 @@ export interface TestRunListOptions {
   packId?: string;
 }
 
+// Custom tests (EPIC-036 SPEC §5). A CustomTest is the authoring record; each
+// save appends an immutable CustomTestVersion and repoints currentVersionId.
+// The version's `parameters` JSON is validated by T-0705, not at this layer.
+export interface CustomTest {
+  id: string;
+  name: string;
+  category: string;
+  enabled: boolean;
+  alertsEnabled: boolean;
+  currentVersionId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CustomTestInput {
+  id: string;
+  name: string;
+  category: string;
+  enabled?: boolean;
+  alertsEnabled?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type CustomTestUpdate = Partial<
+  Pick<CustomTest, "name" | "category" | "enabled" | "alertsEnabled">
+>;
+
+export interface CustomTestVersion {
+  id: string;
+  testId: string;
+  content: string;
+  markdownTemplate: string | null;
+  parameters: Record<string, unknown> | null;
+  createdAt: string;
+  createdBy: string;
+}
+
+export interface CustomTestVersionInput {
+  id: string;
+  testId: string;
+  content: string;
+  markdownTemplate?: string | null;
+  parameters?: Record<string, unknown> | null;
+  createdBy: string;
+  createdAt?: string;
+}
+
+/** Raised when a version is appended to a custom test that does not exist. */
+export class CustomTestNotFoundError extends Error {
+  readonly code = "customTest.not_found";
+
+  constructor(testId: string) {
+    super(`custom test ${testId} was not found`);
+    this.name = "CustomTestNotFoundError";
+  }
+}
+
 /**
  * The only surface feature code may depend on. Tenant-scoped reads require the
  * tenant id, rows with `deletedAt` set are hidden unless explicitly requested,
@@ -1393,6 +1451,18 @@ export interface Repository {
   createTestRun(input: TestRunInput): Promise<TestRun>;
   getTestRun(tenantId: string, runId: string): Promise<TestRun | undefined>;
   listTestRuns(tenantId: string, options?: TestRunListOptions): Promise<TestRun[]>;
+
+  createCustomTest(input: CustomTestInput): Promise<CustomTest>;
+  getCustomTest(testId: string, options?: ListOptions): Promise<CustomTest | undefined>;
+  listCustomTests(options?: ListOptions): Promise<CustomTest[]>;
+  updateCustomTest(testId: string, update: CustomTestUpdate): Promise<CustomTest | undefined>;
+  /** Soft-deletes a test; its immutable version history remains readable. */
+  deleteCustomTest(testId: string, options?: { now?: string }): Promise<boolean>;
+
+  /** Appends an immutable version and repoints the test's currentVersionId. */
+  appendCustomTestVersion(input: CustomTestVersionInput): Promise<CustomTestVersion>;
+  getCustomTestVersion(versionId: string): Promise<CustomTestVersion | undefined>;
+  listCustomTestVersions(testId: string): Promise<CustomTestVersion[]>;
 
   listSettings(): Promise<AppSetting[]>;
   getSetting(key: string): Promise<AppSetting | undefined>;
