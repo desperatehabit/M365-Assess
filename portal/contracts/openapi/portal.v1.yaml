@@ -2,44 +2,2978 @@ openapi: 3.1.0
 info:
   title: M365-Assess Portal API
   version: 1.0.0
-  description: >
-    Versioned portal API (ADR-0014 thin BFF). This document is the contracts
-    skeleton: it owns the shared error and cursor-pagination schemas, plus the
-    shared query parameters and security schemes. Route tickets publish their
-    path items and permissions through their route modules (EPIC-038) rather
-    than hand-editing this file, so `paths` starts empty by design.
+  description: "Versioned portal API (ADR-0014 thin BFF). Generated from per-route metadata: route modules declare their path items and permission and this document is assembled from them, so it cannot drift from the implementation. It owns the shared error and cursor-pagination schemas, the shared query parameters, and the security schemes. External callers authenticate with OAuth client credentials against api://<appId>/.default."
 servers:
   - url: /v1
     description: Versioned API root.
-
-paths: {}
-
+paths:
+  /access/check:
+    post:
+      operationId: checkAccess
+      summary: Evaluate a permission for the caller (UI preflight).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - permission
+              properties:
+                permission:
+                  type: string
+                  description: Permission to evaluate, e.g. Tenant.Read.
+                tenantId:
+                  type: string
+                  description: Tenant to include in the scope check.
+      responses:
+        "200":
+          description: The access decision the endpoint would enforce.
+        "400":
+          description: The request body is invalid.
+        "401":
+          description: Authentication required.
+      x-permission: authenticated
+  /api-clients:
+    get:
+      operationId: listApiClients
+      responses:
+        "200":
+          description: Cursor-paginated API clients.
+      x-permission: CIPP.ApiClients.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: createApiClient
+      summary: Create an API client; returns the plaintext secret once.
+      responses:
+        "201":
+          description: Created; `secret` is present once.
+        "400":
+          description: Validation failed.
+      x-permission: CIPP.ApiClients.ReadWrite
+      security:
+        - bearerAuth: []
+  /api-clients/{id}:
+    get:
+      operationId: getApiClient
+      responses:
+        "200":
+          description: Response.
+        "404":
+          description: Response.
+      x-permission: CIPP.ApiClients.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: updateApiClient
+      responses:
+        "200":
+          description: Response.
+        "404":
+          description: Response.
+      x-permission: CIPP.ApiClients.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteApiClient
+      responses:
+        "204":
+          description: Response.
+        "404":
+          description: Response.
+      x-permission: CIPP.ApiClients.ReadWrite
+      security:
+        - bearerAuth: []
+  /api-clients/{id}/rotate-secret:
+    post:
+      operationId: rotateApiClientSecret
+      summary: Rotate the secret; returns the new plaintext secret once.
+      responses:
+        "200":
+          description: Response.
+        "404":
+          description: Response.
+      x-permission: CIPP.ApiClients.ReadWrite
+      security:
+        - bearerAuth: []
+  /app-packages/{packageId}:
+    get:
+      operationId: getAppPackagesPackageId
+      summary: GET /app-packages/{packageId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+  /app-templates:
+    get:
+      operationId: getAppTemplates
+      summary: GET /app-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postAppTemplates
+      summary: POST /app-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /app-templates/{id}:
+    get:
+      operationId: getAppTemplatesId
+      summary: GET /app-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchAppTemplatesId
+      summary: PATCH /app-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteAppTemplatesId
+      summary: DELETE /app-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /app-templates/{id}/deploy:
+    post:
+      operationId: postAppTemplatesIdDeploy
+      summary: POST /app-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /autopilot/profile-templates:
+    get:
+      operationId: getAutopilotProfileTemplates
+      summary: GET /autopilot/profile-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postAutopilotProfileTemplates
+      summary: POST /autopilot/profile-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /autopilot/profile-templates/{id}:
+    get:
+      operationId: getAutopilotProfileTemplatesId
+      summary: GET /autopilot/profile-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchAutopilotProfileTemplatesId
+      summary: PATCH /autopilot/profile-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteAutopilotProfileTemplatesId
+      summary: DELETE /autopilot/profile-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /autopilot/profile-templates/{id}/deploy:
+    post:
+      operationId: postAutopilotProfileTemplatesIdDeploy
+      summary: POST /autopilot/profile-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /baselines:
+    get:
+      operationId: getBaselines
+      summary: GET /baselines
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postBaselines
+      summary: POST /baselines
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
+  /baselines/catalog:
+    get:
+      operationId: getBaselinesCatalog
+      summary: GET /baselines/catalog
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.Read
+      security:
+        - bearerAuth: []
+  /baselines/fleet:
+    get:
+      operationId: getBaselinesFleet
+      summary: GET /baselines/fleet
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.Read
+      security:
+        - bearerAuth: []
+  /baselines/{baselineId}:
+    get:
+      operationId: getBaselinesBaselineId
+      summary: GET /baselines/{baselineId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchBaselinesBaselineId
+      summary: PATCH /baselines/{baselineId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteBaselinesBaselineId
+      summary: DELETE /baselines/{baselineId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
+  /baselines/{baselineId}/alignment:
+    get:
+      operationId: getBaselinesBaselineIdAlignment
+      summary: GET /baselines/{baselineId}/alignment
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.Read
+      security:
+        - bearerAuth: []
+  /baselines/{baselineId}/assign:
+    post:
+      operationId: postBaselinesBaselineIdAssign
+      summary: POST /baselines/{baselineId}/assign
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
+  /baselines/{baselineId}/migrate-from-standards:
+    post:
+      operationId: postBaselinesBaselineIdMigrateFromStandards
+      summary: POST /baselines/{baselineId}/migrate-from-standards
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
+  /baselines/{baselineId}/stages/{order}/advance:
+    post:
+      operationId: postBaselinesBaselineIdStagesOrderAdvance
+      summary: POST /baselines/{baselineId}/stages/{order}/advance
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
+  /ca-templates:
+    get:
+      operationId: getCaTemplates
+      summary: GET /ca-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postCaTemplates
+      summary: POST /ca-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /ca-templates/{id}:
+    get:
+      operationId: getCaTemplatesId
+      summary: GET /ca-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchCaTemplatesId
+      summary: PATCH /ca-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteCaTemplatesId
+      summary: DELETE /ca-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /ca-templates/{id}/deploy:
+    post:
+      operationId: postCaTemplatesIdDeploy
+      summary: POST /ca-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /ca-templates/{id}/versions:
+    get:
+      operationId: getCaTemplatesIdVersions
+      summary: GET /ca-templates/{id}/versions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+  /dashboard:
+    get:
+      operationId: getDashboard
+      summary: GET /dashboard
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Portal.Dashboard.Read
+      security:
+        - bearerAuth: []
+  /dashboard/layout:
+    get:
+      operationId: getDashboardLayout
+      summary: GET /dashboard/layout
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Portal.Dashboard.Read
+      security:
+        - bearerAuth: []
+    put:
+      operationId: putDashboardLayout
+      summary: PUT /dashboard/layout
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Portal.Dashboard.ReadWrite
+      security:
+        - bearerAuth: []
+  /dashboard/widgets:
+    get:
+      operationId: getDashboardWidgets
+      summary: GET /dashboard/widgets
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Portal.Dashboard.Read
+      security:
+        - bearerAuth: []
+  /dashboard/{tenantId}:
+    get:
+      operationId: getDashboardTenantId
+      summary: GET /dashboard/{tenantId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Portal.Dashboard.Read
+      security:
+        - bearerAuth: []
+  /drift/alignment:
+    get:
+      operationId: getDriftAlignment
+      summary: GET /drift/alignment
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.Read
+      security:
+        - bearerAuth: []
+  /drift/bulk:
+    post:
+      operationId: postDriftBulk
+      summary: POST /drift/bulk
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.ReadWrite
+      security:
+        - bearerAuth: []
+  /drift/deviations/{deviationId}/accept:
+    post:
+      operationId: postDriftDeviationsDeviationIdAccept
+      summary: POST /drift/deviations/{deviationId}/accept
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.ReadWrite
+      security:
+        - bearerAuth: []
+  /drift/deviations/{deviationId}/deny:
+    post:
+      operationId: postDriftDeviationsDeviationIdDeny
+      summary: POST /drift/deviations/{deviationId}/deny
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Apply
+      security:
+        - bearerAuth: []
+  /drift/deviations/{deviationId}/override:
+    post:
+      operationId: postDriftDeviationsDeviationIdOverride
+      summary: POST /drift/deviations/{deviationId}/override
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteDriftDeviationsDeviationIdOverride
+      summary: DELETE /drift/deviations/{deviationId}/override
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.ReadWrite
+      security:
+        - bearerAuth: []
+  /drift/{tenantId}:
+    get:
+      operationId: getDriftTenantId
+      summary: GET /drift/{tenantId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.Read
+      security:
+        - bearerAuth: []
+  /drift/{tenantId}/refresh:
+    post:
+      operationId: postDriftTenantIdRefresh
+      summary: POST /drift/{tenantId}/refresh
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.ReadWrite
+      security:
+        - bearerAuth: []
+  /drift/{tenantId}/report:
+    get:
+      operationId: getDriftTenantIdReport
+      summary: GET /drift/{tenantId}/report
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Drift.Read
+      security:
+        - bearerAuth: []
+  /enrollment-profile-templates:
+    get:
+      operationId: getEnrollmentProfileTemplates
+      summary: GET /enrollment-profile-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postEnrollmentProfileTemplates
+      summary: POST /enrollment-profile-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /enrollment-profile-templates/{id}:
+    get:
+      operationId: getEnrollmentProfileTemplatesId
+      summary: GET /enrollment-profile-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchEnrollmentProfileTemplatesId
+      summary: PATCH /enrollment-profile-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteEnrollmentProfileTemplatesId
+      summary: DELETE /enrollment-profile-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /gdap/sync:
+    post:
+      operationId: postGdapSync
+      summary: POST /gdap/sync
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /group-templates:
+    get:
+      operationId: getGroupTemplates
+      summary: GET /group-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.GroupTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postGroupTemplates
+      summary: POST /group-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.GroupTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /group-templates/{id}:
+    get:
+      operationId: getGroupTemplatesId
+      summary: GET /group-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.GroupTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchGroupTemplatesId
+      summary: PATCH /group-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.GroupTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteGroupTemplatesId
+      summary: DELETE /group-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.GroupTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /group-templates/{id}/deploy:
+    post:
+      operationId: postGroupTemplatesIdDeploy
+      summary: POST /group-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /health:
+    get:
+      operationId: getHealth
+      summary: GET /health
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Public
+  /intune-assignment-filter-templates:
+    get:
+      operationId: getIntuneAssignmentFilterTemplates
+      summary: GET /intune-assignment-filter-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postIntuneAssignmentFilterTemplates
+      summary: POST /intune-assignment-filter-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-assignment-filter-templates/{id}:
+    get:
+      operationId: getIntuneAssignmentFilterTemplatesId
+      summary: GET /intune-assignment-filter-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchIntuneAssignmentFilterTemplatesId
+      summary: PATCH /intune-assignment-filter-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteIntuneAssignmentFilterTemplatesId
+      summary: DELETE /intune-assignment-filter-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-assignment-filter-templates/{id}/deploy:
+    post:
+      operationId: postIntuneAssignmentFilterTemplatesIdDeploy
+      summary: POST /intune-assignment-filter-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-reusable-setting-templates:
+    get:
+      operationId: getIntuneReusableSettingTemplates
+      summary: GET /intune-reusable-setting-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postIntuneReusableSettingTemplates
+      summary: POST /intune-reusable-setting-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-reusable-setting-templates/{id}:
+    get:
+      operationId: getIntuneReusableSettingTemplatesId
+      summary: GET /intune-reusable-setting-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchIntuneReusableSettingTemplatesId
+      summary: PATCH /intune-reusable-setting-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteIntuneReusableSettingTemplatesId
+      summary: DELETE /intune-reusable-setting-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-templates:
+    get:
+      operationId: getIntuneTemplates
+      summary: GET /intune-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postIntuneTemplates
+      summary: POST /intune-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-templates/{id}:
+    get:
+      operationId: getIntuneTemplatesId
+      summary: GET /intune-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchIntuneTemplatesId
+      summary: PATCH /intune-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteIntuneTemplatesId
+      summary: DELETE /intune-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /intune-templates/{id}/deploy:
+    post:
+      operationId: postIntuneTemplatesIdDeploy
+      summary: POST /intune-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.IntuneTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /jit-grants/{id}/extend:
+    post:
+      operationId: postJitGrantsIdExtend
+      summary: POST /jit-grants/{id}/extend
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /jit-grants/{id}/revoke:
+    post:
+      operationId: postJitGrantsIdRevoke
+      summary: POST /jit-grants/{id}/revoke
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /jit-templates:
+    get:
+      operationId: getJitTemplates
+      summary: GET /jit-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postJitTemplates
+      summary: POST /jit-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /jit-templates/{id}:
+    get:
+      operationId: getJitTemplatesId
+      summary: GET /jit-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchJitTemplatesId
+      summary: PATCH /jit-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteJitTemplatesId
+      summary: DELETE /jit-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /me:
+    get:
+      operationId: getCurrentCaller
+      summary: Return the caller's identity, roles, effective permissions, and scope.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's own identity and effective permissions.
+        "401":
+          description: Authentication required.
+      x-permission: authenticated
+  /offboarding/{jobId}/steps/{order}/rerun:
+    post:
+      operationId: postOffboardingJobIdStepsOrderRerun
+      summary: POST /offboarding/{jobId}/steps/{order}/rerun
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /openapi.yaml:
+    get:
+      operationId: getOpenapiYaml
+      summary: GET /openapi.yaml
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Public
+  /pim-settings-templates:
+    get:
+      operationId: getPimSettingsTemplates
+      summary: GET /pim-settings-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postPimSettingsTemplates
+      summary: POST /pim-settings-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /pim-settings-templates/{id}:
+    get:
+      operationId: getPimSettingsTemplatesId
+      summary: GET /pim-settings-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchPimSettingsTemplatesId
+      summary: PATCH /pim-settings-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deletePimSettingsTemplatesId
+      summary: DELETE /pim-settings-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /pim-settings-templates/{id}/apply:
+    post:
+      operationId: postPimSettingsTemplatesIdApply
+      summary: POST /pim-settings-templates/{id}/apply
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Apply
+      security:
+        - bearerAuth: []
+  /pim-settings-templates/{id}/compare:
+    post:
+      operationId: postPimSettingsTemplatesIdCompare
+      summary: POST /pim-settings-templates/{id}/compare
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /remediation/actions/{actionId}/verify:
+    post:
+      operationId: postRemediationActionsActionIdVerify
+      summary: POST /remediation/actions/{actionId}/verify
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Plan
+      security:
+        - bearerAuth: []
+  /remediation/history:
+    get:
+      operationId: getRemediationHistory
+      summary: GET /remediation/history
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Plan.Read
+      security:
+        - bearerAuth: []
+  /remediation/instructions/{check}:
+    get:
+      operationId: getRemediationInstructionsCheck
+      summary: GET /remediation/instructions/{check}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Plan.Read
+      security:
+        - bearerAuth: []
+  /remediation/plans:
+    post:
+      operationId: postRemediationPlans
+      summary: POST /remediation/plans
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Plan
+      security:
+        - bearerAuth: []
+  /remediation/plans/{planId}:
+    get:
+      operationId: getRemediationPlansPlanId
+      summary: GET /remediation/plans/{planId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Plan.Read
+      security:
+        - bearerAuth: []
+  /remediation/plans/{planId}/apply:
+    post:
+      operationId: postRemediationPlansPlanIdApply
+      summary: POST /remediation/plans/{planId}/apply
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Apply
+      security:
+        - bearerAuth: []
+  /report-templates:
+    get:
+      operationId: getReportTemplates
+      summary: GET /report-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postReportTemplates
+      summary: POST /report-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ReportTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /report-templates/{templateId}:
+    get:
+      operationId: getReportTemplatesTemplateId
+      summary: GET /report-templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchReportTemplatesTemplateId
+      summary: PATCH /report-templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ReportTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteReportTemplatesTemplateId
+      summary: DELETE /report-templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ReportTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /report-templates/{templateId}/clone:
+    post:
+      operationId: postReportTemplatesTemplateIdClone
+      summary: POST /report-templates/{templateId}/clone
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ReportTemplate.ReadWrite
+      security:
+        - bearerAuth: []
+  /report-templates/{templateId}/generate:
+    post:
+      operationId: postReportTemplatesTemplateIdGenerate
+      summary: POST /report-templates/{templateId}/generate
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.ReadWrite
+      security:
+        - bearerAuth: []
+  /reports:
+    get:
+      operationId: getReports
+      summary: GET /reports
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.Read
+      security:
+        - bearerAuth: []
+  /reports/executive:
+    post:
+      operationId: postReportsExecutive
+      summary: POST /reports/executive
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.ReadWrite
+      security:
+        - bearerAuth: []
+  /reports/render:
+    post:
+      operationId: postReportsRender
+      summary: POST /reports/render
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.ReadWrite
+      security:
+        - bearerAuth: []
+  /reports/{id}/bundle:
+    post:
+      operationId: postReportsIdBundle
+      summary: POST /reports/{id}/bundle
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.ReadWrite
+      security:
+        - bearerAuth: []
+  /reports/{id}/download:
+    get:
+      operationId: getReportsIdDownload
+      summary: GET /reports/{id}/download
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Reports.Read
+      security:
+        - bearerAuth: []
+  /roles:
+    get:
+      operationId: listRoles
+      summary: List base (read-only) and custom roles.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Every role with its pattern lists and assignment usage.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.read.
+      x-permission: CIPP.Roles.Read
+    post:
+      operationId: createRole
+      summary: Create a custom role from include/exclude permission patterns.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Created custom role.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.readWrite.
+        "409":
+          description: The id collides with a builtin or existing role.
+      x-permission: CIPP.Roles.ReadWrite
+  /roles/preview:
+    post:
+      operationId: previewRolePermissions
+      summary: Resolve include/exclude patterns against the endpoint permission registry.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The effective permissions the patterns grant.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.read.
+      x-permission: CIPP.Roles.Read
+  /roles/{id}:
+    get:
+      operationId: getRole
+      summary: Read one role; base roles are readable but never mutable.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The role.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.read.
+        "404":
+          description: No role with that id.
+      x-permission: CIPP.Roles.Read
+    patch:
+      operationId: updateRole
+      summary: Update a custom role's name and include/exclude patterns.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Updated role.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.readWrite.
+        "404":
+          description: No custom role with that id.
+        "409":
+          description: Base roles are immutable.
+      x-permission: CIPP.Roles.ReadWrite
+    delete:
+      operationId: deleteRole
+      summary: Delete a custom role that no user or API client is assigned.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: Deleted.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.readWrite.
+        "404":
+          description: No custom role with that id.
+        "409":
+          description: Base roles are immutable or the role is in use.
+      x-permission: CIPP.Roles.ReadWrite
+  /roles/{id}/clone:
+    post:
+      operationId: cloneRole
+      summary: Clone a role into a new custom role with the same patterns.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Cloned custom role.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks roles.readWrite.
+        "404":
+          description: No role with that id.
+      x-permission: CIPP.Roles.ReadWrite
+  /runs:
+    get:
+      operationId: getRuns
+      summary: GET /runs
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postRuns
+      summary: POST /runs
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.ReadWrite
+      security:
+        - bearerAuth: []
+  /runs/{runId}:
+    get:
+      operationId: getRunsRunId
+      summary: GET /runs/{runId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.Read
+      security:
+        - bearerAuth: []
+  /runs/{runId}/artifacts:
+    get:
+      operationId: getRunsRunIdArtifacts
+      summary: GET /runs/{runId}/artifacts
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.Read
+      security:
+        - bearerAuth: []
+  /runs/{runId}/artifacts/{name}:
+    get:
+      operationId: getRunsRunIdArtifactsName
+      summary: GET /runs/{runId}/artifacts/{name}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.Read
+      security:
+        - bearerAuth: []
+  /runs/{runId}/cancel:
+    post:
+      operationId: postRunsRunIdCancel
+      summary: POST /runs/{runId}/cancel
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.ReadWrite
+      security:
+        - bearerAuth: []
+  /runs/{runId}/events:
+    get:
+      operationId: getRunsRunIdEvents
+      summary: GET /runs/{runId}/events
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.Read
+      security:
+        - bearerAuth: []
+  /runs/{runId}/results:
+    get:
+      operationId: getRunsRunIdResults
+      summary: GET /runs/{runId}/results
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.Read
+      security:
+        - bearerAuth: []
+  /runs/{runId}/retry:
+    post:
+      operationId: postRunsRunIdRetry
+      summary: POST /runs/{runId}/retry
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Runs.ReadWrite
+      security:
+        - bearerAuth: []
+  /schedules:
+    get:
+      operationId: getSchedules
+      summary: GET /schedules
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postSchedules
+      summary: POST /schedules
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+  /schedules/system:
+    get:
+      operationId: getSchedulesSystem
+      summary: GET /schedules/system
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postSchedulesSystem
+      summary: POST /schedules/system
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchSchedulesSystem
+      summary: PATCH /schedules/system
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteSchedulesSystem
+      summary: DELETE /schedules/system
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+  /schedules/{id}:
+    get:
+      operationId: getSchedulesId
+      summary: GET /schedules/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchSchedulesId
+      summary: PATCH /schedules/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteSchedulesId
+      summary: DELETE /schedules/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+  /schedules/{id}/history:
+    get:
+      operationId: getSchedulesIdHistory
+      summary: GET /schedules/{id}/history
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.Read
+      security:
+        - bearerAuth: []
+  /schedules/{id}/run-now:
+    post:
+      operationId: postSchedulesIdRunNow
+      summary: POST /schedules/{id}/run-now
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scheduler.ReadWrite
+      security:
+        - bearerAuth: []
+  /scripts:
+    get:
+      operationId: getScripts
+      summary: GET /scripts
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postScripts
+      summary: POST /scripts
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.ReadWrite
+      security:
+        - bearerAuth: []
+  /scripts/{scriptId}:
+    get:
+      operationId: getScriptsScriptId
+      summary: GET /scripts/{scriptId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchScriptsScriptId
+      summary: PATCH /scripts/{scriptId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteScriptsScriptId
+      summary: DELETE /scripts/{scriptId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.ReadWrite
+      security:
+        - bearerAuth: []
+  /scripts/{scriptId}/run:
+    post:
+      operationId: postScriptsScriptIdRun
+      summary: POST /scripts/{scriptId}/run
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.Execute
+      security:
+        - bearerAuth: []
+  /scripts/{scriptId}/versions:
+    get:
+      operationId: getScriptsScriptIdVersions
+      summary: GET /scripts/{scriptId}/versions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postScriptsScriptIdVersions
+      summary: POST /scripts/{scriptId}/versions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Scripts.ReadWrite
+      security:
+        - bearerAuth: []
+  /standards/alignment:
+    get:
+      operationId: getStandardsAlignment
+      summary: GET /standards/alignment
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.Read
+      security:
+        - bearerAuth: []
+  /standards/catalog:
+    get:
+      operationId: getStandardsCatalog
+      summary: GET /standards/catalog
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.Read
+      security:
+        - bearerAuth: []
+  /standards/compare/{tenantId}:
+    get:
+      operationId: getStandardsCompareTenantId
+      summary: GET /standards/compare/{tenantId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.Read
+      security:
+        - bearerAuth: []
+  /standards/templates:
+    get:
+      operationId: getStandardsTemplates
+      summary: GET /standards/templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postStandardsTemplates
+      summary: POST /standards/templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
+  /standards/templates/{templateId}:
+    get:
+      operationId: getStandardsTemplatesTemplateId
+      summary: GET /standards/templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchStandardsTemplatesTemplateId
+      summary: PATCH /standards/templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteStandardsTemplatesTemplateId
+      summary: DELETE /standards/templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
+  /standards/templates/{templateId}/clone:
+    post:
+      operationId: postStandardsTemplatesTemplateIdClone
+      summary: POST /standards/templates/{templateId}/clone
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
+  /standards/templates/{templateId}/run:
+    post:
+      operationId: postStandardsTemplatesTemplateIdRun
+      summary: POST /standards/templates/{templateId}/run
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
+  /standards/templates/{templateId}/schedule:
+    post:
+      operationId: postStandardsTemplatesTemplateIdSchedule
+      summary: POST /standards/templates/{templateId}/schedule
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenant-groups:
+    get:
+      operationId: getTenantGroups
+      summary: GET /tenant-groups
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantGroups
+      summary: POST /tenant-groups
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenant-groups/{id}:
+    get:
+      operationId: getTenantGroupsId
+      summary: GET /tenant-groups/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantGroupsId
+      summary: PATCH /tenant-groups/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantGroupsId
+      summary: DELETE /tenant-groups/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenant-groups/{id}/members:
+    get:
+      operationId: getTenantGroupsIdMembers
+      summary: GET /tenant-groups/{id}/members
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantGroupsIdMembers
+      summary: POST /tenant-groups/{id}/members
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenant-groups/{id}/members/{tenantId}:
+    delete:
+      operationId: deleteTenantGroupsIdMembersTenantId
+      summary: DELETE /tenant-groups/{id}/members/{tenantId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenant-groups/{id}/preview:
+    get:
+      operationId: getTenantGroupsIdPreview
+      summary: GET /tenant-groups/{id}/preview
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+  /tenant-variables:
+    get:
+      operationId: getTenantVariables
+      summary: GET /tenant-variables
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantVariables
+      summary: POST /tenant-variables
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenant-variables/{id}:
+    get:
+      operationId: getTenantVariablesId
+      summary: GET /tenant-variables/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantVariablesId
+      summary: PATCH /tenant-variables/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantVariablesId
+      summary: DELETE /tenant-variables/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants:
+    get:
+      operationId: getTenants
+      summary: GET /tenants
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenants
+      summary: POST /tenants
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{id}:
+    get:
+      operationId: getTenantsId
+      summary: GET /tenants/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsId
+      summary: PATCH /tenants/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsId
+      summary: DELETE /tenants/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{id}/credential:
+    post:
+      operationId: postTenantsIdCredential
+      summary: POST /tenants/{id}/credential
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Admin.TenantCredentials
+      security:
+        - bearerAuth: []
+  /tenants/{id}/onboard:
+    post:
+      operationId: postTenantsIdOnboard
+      summary: POST /tenants/{id}/onboard
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{id}/test-connection:
+    post:
+      operationId: postTenantsIdTestConnection
+      summary: POST /tenants/{id}/test-connection
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps:
+    get:
+      operationId: getTenantsTenantIdApps
+      summary: GET /tenants/{tenantId}/apps
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/packages:
+    post:
+      operationId: postTenantsTenantIdAppsPackages
+      summary: POST /tenants/{tenantId}/apps/packages
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/queue:
+    get:
+      operationId: getTenantsTenantIdAppsQueue
+      summary: GET /tenants/{tenantId}/apps/queue
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/queue/{deploymentId}/rerun:
+    post:
+      operationId: postTenantsTenantIdAppsQueueDeploymentIdRerun
+      summary: POST /tenants/{tenantId}/apps/queue/{deploymentId}/rerun
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/status:
+    get:
+      operationId: getTenantsTenantIdAppsStatus
+      summary: GET /tenants/{tenantId}/apps/status
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/upload:
+    post:
+      operationId: postTenantsTenantIdAppsUpload
+      summary: POST /tenants/{tenantId}/apps/upload
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/{appId}:
+    get:
+      operationId: getTenantsTenantIdAppsAppId
+      summary: GET /tenants/{tenantId}/apps/{appId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdAppsAppId
+      summary: PATCH /tenants/{tenantId}/apps/{appId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdAppsAppId
+      summary: DELETE /tenants/{tenantId}/apps/{appId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/apps/{appId}/assign:
+    post:
+      operationId: postTenantsTenantIdAppsAppIdAssign
+      summary: POST /tenants/{tenantId}/apps/{appId}/assign
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Application.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/auth-methods-policy:
+    get:
+      operationId: getTenantsTenantIdAuthMethodsPolicy
+      summary: GET /tenants/{tenantId}/auth-methods-policy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.Read
+      security:
+        - bearerAuth: []
+    put:
+      operationId: putTenantsTenantIdAuthMethodsPolicy
+      summary: PUT /tenants/{tenantId}/auth-methods-policy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.AuthMethodsPolicy.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/autopilot/devices:
+    get:
+      operationId: getTenantsTenantIdAutopilotDevices
+      summary: GET /tenants/{tenantId}/autopilot/devices
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/autopilot/devices/{deviceId}:
+    get:
+      operationId: getTenantsTenantIdAutopilotDevicesDeviceId
+      summary: GET /tenants/{tenantId}/autopilot/devices/{deviceId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/autopilot/import:
+    post:
+      operationId: postTenantsTenantIdAutopilotImport
+      summary: POST /tenants/{tenantId}/autopilot/import
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/autopilot/profiles:
+    get:
+      operationId: getTenantsTenantIdAutopilotProfiles
+      summary: GET /tenants/{tenantId}/autopilot/profiles
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdAutopilotProfiles
+      summary: POST /tenants/{tenantId}/autopilot/profiles
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/autopilot/profiles/{profileId}:
+    patch:
+      operationId: patchTenantsTenantIdAutopilotProfilesProfileId
+      summary: PATCH /tenants/{tenantId}/autopilot/profiles/{profileId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdAutopilotProfilesProfileId
+      summary: DELETE /tenants/{tenantId}/autopilot/profiles/{profileId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/autopilot/profiles/{profileId}/assignments:
+    post:
+      operationId: postTenantsTenantIdAutopilotProfilesProfileIdAssignments
+      summary: POST /tenants/{tenantId}/autopilot/profiles/{profileId}/assignments
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/coverage:
+    get:
+      operationId: getTenantsTenantIdCaCoverage
+      summary: GET /tenants/{tenantId}/ca/coverage
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/history:
+    get:
+      operationId: getTenantsTenantIdCaHistory
+      summary: GET /tenants/{tenantId}/ca/history
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/named-locations:
+    get:
+      operationId: getTenantsTenantIdCaNamedLocations
+      summary: GET /tenants/{tenantId}/ca/named-locations
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdCaNamedLocations
+      summary: POST /tenants/{tenantId}/ca/named-locations
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/named-locations/{locationId}:
+    patch:
+      operationId: patchTenantsTenantIdCaNamedLocationsLocationId
+      summary: PATCH /tenants/{tenantId}/ca/named-locations/{locationId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdCaNamedLocationsLocationId
+      summary: DELETE /tenants/{tenantId}/ca/named-locations/{locationId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/policies:
+    get:
+      operationId: getTenantsTenantIdCaPolicies
+      summary: GET /tenants/{tenantId}/ca/policies
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdCaPolicies
+      summary: POST /tenants/{tenantId}/ca/policies
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/policies/{policyId}:
+    patch:
+      operationId: patchTenantsTenantIdCaPoliciesPolicyId
+      summary: PATCH /tenants/{tenantId}/ca/policies/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdCaPoliciesPolicyId
+      summary: DELETE /tenants/{tenantId}/ca/policies/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ca/report-only:
+    get:
+      operationId: getTenantsTenantIdCaReportOnly
+      summary: GET /tenants/{tenantId}/ca/report-only
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.ConditionalAccess.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/defender/cve-exceptions:
+    get:
+      operationId: getTenantsTenantIdDefenderCveExceptions
+      summary: GET /tenants/{tenantId}/defender/cve-exceptions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdDefenderCveExceptions
+      summary: POST /tenants/{tenantId}/defender/cve-exceptions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/defender/cve-exceptions/{exceptionId}:
+    patch:
+      operationId: patchTenantsTenantIdDefenderCveExceptionsExceptionId
+      summary: PATCH /tenants/{tenantId}/defender/cve-exceptions/{exceptionId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdDefenderCveExceptionsExceptionId
+      summary: DELETE /tenants/{tenantId}/defender/cve-exceptions/{exceptionId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/defender/templates:
+    get:
+      operationId: getTenantsTenantIdDefenderTemplates
+      summary: GET /tenants/{tenantId}/defender/templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdDefenderTemplates
+      summary: POST /tenants/{tenantId}/defender/templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/defender/templates/{templateId}:
+    get:
+      operationId: getTenantsTenantIdDefenderTemplatesTemplateId
+      summary: GET /tenants/{tenantId}/defender/templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdDefenderTemplatesTemplateId
+      summary: PATCH /tenants/{tenantId}/defender/templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdDefenderTemplatesTemplateId
+      summary: DELETE /tenants/{tenantId}/defender/templates/{templateId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Security.Defender.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices:
+    get:
+      operationId: getTenantsTenantIdDevices
+      summary: GET /tenants/{tenantId}/devices
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Device.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices/{deviceId}:
+    get:
+      operationId: getTenantsTenantIdDevicesDeviceId
+      summary: GET /tenants/{tenantId}/devices/{deviceId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Device.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices/{deviceId}/actions:
+    get:
+      operationId: getTenantsTenantIdDevicesDeviceIdActions
+      summary: GET /tenants/{tenantId}/devices/{deviceId}/actions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Device.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices/{deviceId}/actions/{action}:
+    post:
+      operationId: postTenantsTenantIdDevicesDeviceIdActionsAction
+      summary: POST /tenants/{tenantId}/devices/{deviceId}/actions/{action}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Device.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices/{deviceId}/bitlocker:
+    get:
+      operationId: getTenantsTenantIdDevicesDeviceIdBitlocker
+      summary: GET /tenants/{tenantId}/devices/{deviceId}/bitlocker
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.DeviceKeys.Reveal
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices/{deviceId}/laps:
+    get:
+      operationId: getTenantsTenantIdDevicesDeviceIdLaps
+      summary: GET /tenants/{tenantId}/devices/{deviceId}/laps
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.DeviceKeys.Reveal
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/enrollment-profiles:
+    get:
+      operationId: getTenantsTenantIdEnrollmentProfiles
+      summary: GET /tenants/{tenantId}/enrollment-profiles
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdEnrollmentProfiles
+      summary: POST /tenants/{tenantId}/enrollment-profiles
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/enrollment-profiles/{profileId}:
+    patch:
+      operationId: patchTenantsTenantIdEnrollmentProfilesProfileId
+      summary: PATCH /tenants/{tenantId}/enrollment-profiles/{profileId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdEnrollmentProfilesProfileId
+      summary: DELETE /tenants/{tenantId}/enrollment-profiles/{profileId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/enrollment-profiles/{profileId}/assign:
+    post:
+      operationId: postTenantsTenantIdEnrollmentProfilesProfileIdAssign
+      summary: POST /tenants/{tenantId}/enrollment-profiles/{profileId}/assign
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Autopilot.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups:
+    get:
+      operationId: getTenantsTenantIdGroups
+      summary: GET /tenants/{tenantId}/groups
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdGroups
+      summary: POST /tenants/{tenantId}/groups
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups/usage:
+    get:
+      operationId: getTenantsTenantIdGroupsUsage
+      summary: GET /tenants/{tenantId}/groups/usage
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups/{groupId}:
+    patch:
+      operationId: patchTenantsTenantIdGroupsGroupId
+      summary: PATCH /tenants/{tenantId}/groups/{groupId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdGroupsGroupId
+      summary: DELETE /tenants/{tenantId}/groups/{groupId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups/{groupId}/delivery:
+    post:
+      operationId: postTenantsTenantIdGroupsGroupIdDelivery
+      summary: POST /tenants/{tenantId}/groups/{groupId}/delivery
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups/{groupId}/gal:
+    post:
+      operationId: postTenantsTenantIdGroupsGroupIdGal
+      summary: POST /tenants/{tenantId}/groups/{groupId}/gal
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups/{groupId}/members/bulk:
+    post:
+      operationId: postTenantsTenantIdGroupsGroupIdMembersBulk
+      summary: POST /tenants/{tenantId}/groups/{groupId}/members/bulk
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/groups/{groupId}/owners/bulk:
+    post:
+      operationId: postTenantsTenantIdGroupsGroupIdOwnersBulk
+      summary: POST /tenants/{tenantId}/groups/{groupId}/owners/bulk
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Group.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/assignment-filters:
+    get:
+      operationId: getTenantsTenantIdIntuneAssignmentFilters
+      summary: GET /tenants/{tenantId}/intune/assignment-filters
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdIntuneAssignmentFilters
+      summary: POST /tenants/{tenantId}/intune/assignment-filters
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/assignment-filters/{filterId}:
+    patch:
+      operationId: patchTenantsTenantIdIntuneAssignmentFiltersFilterId
+      summary: PATCH /tenants/{tenantId}/intune/assignment-filters/{filterId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdIntuneAssignmentFiltersFilterId
+      summary: DELETE /tenants/{tenantId}/intune/assignment-filters/{filterId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/compare:
+    get:
+      operationId: getTenantsTenantIdIntuneCompare
+      summary: GET /tenants/{tenantId}/intune/compare
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/reusable-settings:
+    get:
+      operationId: getTenantsTenantIdIntuneReusableSettings
+      summary: GET /tenants/{tenantId}/intune/reusable-settings
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdIntuneReusableSettings
+      summary: POST /tenants/{tenantId}/intune/reusable-settings
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/reusable-settings/sync:
+    post:
+      operationId: postTenantsTenantIdIntuneReusableSettingsSync
+      summary: POST /tenants/{tenantId}/intune/reusable-settings/sync
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/{kind}:
+    get:
+      operationId: getTenantsTenantIdIntuneKind
+      summary: GET /tenants/{tenantId}/intune/{kind}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdIntuneKind
+      summary: POST /tenants/{tenantId}/intune/{kind}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/intune/{kind}/{policyId}:
+    get:
+      operationId: getTenantsTenantIdIntuneKindPolicyId
+      summary: GET /tenants/{tenantId}/intune/{kind}/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdIntuneKindPolicyId
+      summary: PATCH /tenants/{tenantId}/intune/{kind}/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdIntuneKindPolicyId
+      summary: DELETE /tenants/{tenantId}/intune/{kind}/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Intune.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/jit-grants:
+    post:
+      operationId: postTenantsTenantIdJitGrants
+      summary: POST /tenants/{tenantId}/jit-grants
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+    get:
+      operationId: getTenantsTenantIdJitGrants
+      summary: GET /tenants/{tenantId}/jit-grants
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mfa-report:
+    get:
+      operationId: getTenantsTenantIdMfaReport
+      summary: GET /tenants/{tenantId}/mfa-report
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/offboarding:
+    post:
+      operationId: postTenantsTenantIdOffboarding
+      summary: POST /tenants/{tenantId}/offboarding
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/offboarding/{jobId}:
+    get:
+      operationId: getTenantsTenantIdOffboardingJobId
+      summary: GET /tenants/{tenantId}/offboarding/{jobId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/pim:
+    get:
+      operationId: getTenantsTenantIdPim
+      summary: GET /tenants/{tenantId}/pim
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/pim/requests:
+    post:
+      operationId: postTenantsTenantIdPimRequests
+      summary: POST /tenants/{tenantId}/pim/requests
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+    get:
+      operationId: getTenantsTenantIdPimRequests
+      summary: GET /tenants/{tenantId}/pim/requests
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/pim/requests/{id}:
+    get:
+      operationId: getTenantsTenantIdPimRequestsId
+      summary: GET /tenants/{tenantId}/pim/requests/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/pim/requests/{id}/transition:
+    post:
+      operationId: postTenantsTenantIdPimRequestsIdTransition
+      summary: POST /tenants/{tenantId}/pim/requests/{id}/transition
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/registration-campaign:
+    get:
+      operationId: getTenantsTenantIdRegistrationCampaign
+      summary: GET /tenants/{tenantId}/registration-campaign
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.Read
+      security:
+        - bearerAuth: []
+    put:
+      operationId: putTenantsTenantIdRegistrationCampaign
+      summary: PUT /tenants/{tenantId}/registration-campaign
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.AuthMethodsPolicy.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/role-assignments:
+    get:
+      operationId: getTenantsTenantIdRoleAssignments
+      summary: GET /tenants/{tenantId}/role-assignments
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users:
+    get:
+      operationId: getTenantsTenantIdUsers
+      summary: GET /tenants/{tenantId}/users
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdUsers
+      summary: POST /tenants/{tenantId}/users
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/bulk-patch:
+    post:
+      operationId: postTenantsTenantIdUsersBulkPatch
+      summary: POST /tenants/{tenantId}/users/bulk-patch
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/mfa/reset:
+    post:
+      operationId: postTenantsTenantIdUsersMfaReset
+      summary: POST /tenants/{tenantId}/users/mfa/reset
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/actions/{action}:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdActionsAction
+      summary: POST /tenants/{tenantId}/users/{userId}/actions/{action}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/bec-check:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdBecCheck
+      summary: POST /tenants/{tenantId}/users/{userId}/bec-check
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/bec-findings:
+    get:
+      operationId: getTenantsTenantIdUsersUserIdBecFindings
+      summary: GET /tenants/{tenantId}/users/{userId}/bec-findings
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/bec-findings/{findingId}/remediate:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdBecFindingsFindingIdRemediate
+      summary: POST /tenants/{tenantId}/users/{userId}/bec-findings/{findingId}/remediate
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/default-method:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdDefaultMethod
+      summary: POST /tenants/{tenantId}/users/{userId}/default-method
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/mfa/reset:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdMfaReset
+      summary: POST /tenants/{tenantId}/users/{userId}/mfa/reset
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/push:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdPush
+      summary: POST /tenants/{tenantId}/users/{userId}/push
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}/tap:
+    post:
+      operationId: postTenantsTenantIdUsersUserIdTap
+      summary: POST /tenants/{tenantId}/users/{userId}/tap
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.Mfa.ReadWrite
+      security:
+        - bearerAuth: []
+  /user-templates:
+    get:
+      operationId: getUserTemplates
+      summary: GET /user-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postUserTemplates
+      summary: POST /user-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /user-templates/{id}:
+    get:
+      operationId: getUserTemplatesId
+      summary: GET /user-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchUserTemplatesId
+      summary: PATCH /user-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteUserTemplatesId
+      summary: DELETE /user-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
+      security:
+        - bearerAuth: []
+  /users:
+    get:
+      operationId: listPortalUsers
+      summary: List portal users (CIPP.Admin.* surface).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated portal users.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.*
+    post:
+      operationId: createPortalUser
+      summary: Create a portal user (federated identity, no password) and assign one base role.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: The created portal user.
+        "400":
+          description: The request body is invalid or the upn is already assigned.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.*
+  /users/{id}:
+    patch:
+      operationId: updatePortalUser
+      summary: Update a portal user's display name, status, base role, or scope.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The updated portal user.
+        "400":
+          description: The request body is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+        "404":
+          description: No portal user has that id.
+      x-permission: CIPP.Admin.*
+    delete:
+      operationId: deletePortalUser
+      summary: Remove a portal user.
+      security:
+        - bearerAuth: []
+      responses:
+        "204":
+          description: The portal user was removed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+        "404":
+          description: No portal user has that id.
+      x-permission: CIPP.Admin.*
+  /users/{id}/scope:
+    put:
+      operationId: updatePortalUserScope
+      summary: Replace a portal user's tenant scope (all is superadmin-only).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The updated portal user with its new scope.
+        "400":
+          description: The scope is invalid or an all scope was assigned to a non-superadmin.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+        "404":
+          description: No portal user has that id.
+      x-permission: CIPP.Admin.*
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: Portal user session token.
+      description: Portal user session token or API client access token.
     apiKeyAuth:
       type: apiKey
-      "in": header
+      in: header
       name: X-API-Key
       description: External API client key (EPIC-038).
-
   parameters:
     Cursor:
       name: cursor
-      "in": query
+      in: query
       required: false
-      description: >
-        Opaque cursor returned as `nextCursor` by the previous page. Clients
-        must treat it as opaque and must not parse it.
+      description: Opaque cursor returned as `nextCursor` by the previous page. Clients must treat it as opaque and must not parse it.
       schema:
         type: string
     Limit:
       name: limit
-      "in": query
+      in: query
       required: false
       description: Page size. Defaults to 100; hard maximum is 1000.
       schema:
@@ -47,20 +2981,16 @@ components:
         minimum: 1
         maximum: 1000
         default: 100
-
   schemas:
     ErrorDetail:
       type: object
       additionalProperties: true
-      description: >
-        A code-specific detail entry. The `code` on the parent error is stable;
-        detail shapes are documented per error code.
+      description: A code-specific detail entry. The `code` on the parent error is stable; detail shapes are documented per error code.
       properties:
         field:
           type: string
         reason:
           type: string
-
     Error:
       type: object
       additionalProperties: false
@@ -68,11 +2998,7 @@ components:
         - code
         - message
         - correlationId
-      description: >
-        Structured error body (05-programming.md §3). Stable machine-readable
-        `code`, a client-safe `message`, optional per-code `details`, and the
-        `correlationId` used to trace the request in server logs. Never includes
-        stack traces or secrets.
+      description: Structured error body (05-programming.md §3). Stable machine-readable `code`, a client-safe `message`, optional per-code `details`, and the `correlationId` used to trace the request in server logs. Never includes stack traces or secrets.
       properties:
         code:
           type: string
@@ -89,17 +3015,13 @@ components:
         correlationId:
           type: string
           description: Correlates the response with server logs.
-
     CursorPage:
       type: object
       additionalProperties: false
       required:
         - items
         - nextCursor
-      description: >
-        Cursor-paginated collection. Route tickets layer typed items onto this
-        shape with `allOf` (or `items` for a concrete collection) so pagination
-        stays defined in exactly one place.
+      description: Cursor-paginated collection. Route tickets layer typed items onto this shape with `allOf` (or `items` for a concrete collection) so pagination stays defined in exactly one place.
       properties:
         items:
           type: array
@@ -109,10 +3031,126 @@ components:
           type:
             - string
             - "null"
-          description: >
-            Opaque cursor for the next page, or `null` when this is the last
-            page. Clients pass it back as the `cursor` query parameter.
-
+          description: Opaque cursor for the next page, or `null` when this is the last page. Clients pass it back as the `cursor` query parameter.
+    PortalUser:
+      type: object
+      required:
+        - id
+        - upn
+        - role
+        - status
+        - scope
+      properties:
+        id:
+          type: string
+        upn:
+          type: string
+        displayName:
+          type:
+            - string
+            - "null"
+        role:
+          type: string
+          enum:
+            - readonly
+            - editor
+            - admin
+            - superadmin
+        status:
+          type: string
+          enum:
+            - enabled
+            - disabled
+        scope:
+          type: object
+          required:
+            - targetType
+          properties:
+            targetType:
+              type: string
+              enum:
+                - tenant
+                - group
+                - all
+            targetId:
+              type:
+                - string
+                - "null"
+        lastSeenAt:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+    Role:
+      type: object
+      required:
+        - id
+        - name
+        - builtin
+        - include
+        - exclude
+        - superadminOnly
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        builtin:
+          type: boolean
+        include:
+          type: array
+          items:
+            type: string
+        exclude:
+          type: array
+          items:
+            type: string
+        superadminOnly:
+          type: boolean
+          description: True when the role grants Remediation.Apply; only a superadmin may be assigned.
+        usageCount:
+          type: integer
+          minimum: 0
+    ApiClient:
+      type: object
+      required:
+        - id
+        - name
+        - roles
+        - ipRanges
+        - enabled
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        roles:
+          type: array
+          items:
+            type: string
+        ipRanges:
+          type: array
+          items:
+            type: string
+          description: "`Any` or a list of CIDR ranges."
+        rateLimit:
+          type:
+            - integer
+            - "null"
+          minimum: 1
+        enabled:
+          type: boolean
+        lastUsedAt:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
   responses:
     Error:
       description: Structured error response.
