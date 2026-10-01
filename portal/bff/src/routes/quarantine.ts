@@ -6,7 +6,13 @@
 // Teams tabs; GET /v1/tenants/:tenantId/quarantine/:messageId for the §3.3
 // Preview row action; and POST
 // /v1/tenants/:tenantId/quarantine/:messageId/:action for release,
-// release-to-all, delete, and block-sender.
+// release-to-all, delete, and block-sender; and POST
+// /v1/tenants/:tenantId/quarantine/:messageId/submit for submit-for-review
+// (EPIC-022 SPEC §2 US-4, §3.3, §4.2 step 4, §6; T-0426). Submitting routes
+// the message to Microsoft through the same EPIC-006 gated path, records a
+// QuarantineAction with action `submit` plus an AuditEvent, and returns the
+// tracked submission status; a later request with `refresh: true` reads the
+// live review state back so the tracked status is never stale.
 //
 // Quarantine messages are read live from EXO/Graph and never mirrored: the
 // injected provider is backed by the worker queue (T-0010), so this module
@@ -32,6 +38,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const QUARANTINE_PATH = "/v1/tenants/:tenantId/quarantine";
 export const QUARANTINE_ITEM_PATH = "/v1/tenants/:tenantId/quarantine/:messageId";
 export const QUARANTINE_ACTION_PATH = "/v1/tenants/:tenantId/quarantine/:messageId/:action";
+export const QUARANTINE_SUBMIT_PATH = "/v1/tenants/:tenantId/quarantine/:messageId/submit";
 
 export const QUARANTINE_READ_PERMISSION = "quarantine.read";
 export const QUARANTINE_ACT_PERMISSION = "quarantine.act";
@@ -42,12 +49,29 @@ export const QUARANTINE_NOT_FOUND = "quarantine.not_found";
 export const QUARANTINE_CONFIRM_REQUIRED = "quarantine.confirm_required";
 export const QUARANTINE_INVALID_TAB = "quarantine.invalid_tab";
 export const QUARANTINE_INVALID_ACTION = "quarantine.invalid_action";
+export const QUARANTINE_SUBMISSION_NOT_FOUND = "quarantine.submission_not_found";
 
 export const QUARANTINE_TABS = ["email", "files", "teams"] as const;
 export type QuarantineTab = (typeof QUARANTINE_TABS)[number];
 
-export const QUARANTINE_ACTIONS = ["release", "releaseAll", "delete", "block"] as const;
+// `submit` shares the {action} URL shape but takes the submit-for-review branch
+// (tracked status, optional live refresh) instead of the release/delete plan.
+export const QUARANTINE_ACTIONS = ["release", "releaseAll", "delete", "block", "submit"] as const;
 export type QuarantineAction = (typeof QUARANTINE_ACTIONS)[number];
+
+export const QUARANTINE_SUBMIT_ACTION = "submit";
+
+// The review states Microsoft can report back for a submitted message. `pending`
+// is the tracked state while the submission is queued or awaiting review; the
+// others are the live states a status refresh mirrors (SPEC §4.2 step 4).
+export const QUARANTINE_SUBMISSION_STATUSES = [
+  "pending",
+  "inReview",
+  "reviewed",
+  "released",
+  "rejected",
+] as const;
+export type QuarantineSubmissionStatus = (typeof QUARANTINE_SUBMISSION_STATUSES)[number];
 
 // Release (to recipient or all) and delete release or destroy quarantined mail
 // and therefore require explicit confirmation (SPEC §4.2, §8, §9).
@@ -155,6 +179,49 @@ export interface QuarantineActionResult {
   readonly auditEventId?: string;
 }
 
+// A submitted message's tracked review state. `submissionId` keys the record so
+// a later refresh can correlate the live Microsoft state with the portal's
+// QuarantineAction.
+export interface QuarantineSubmission {
+  readonly submissionId: string;
+  readonly messageId: string;
+  readonly status: QuarantineSubmissionStatus;
+  readonly submittedAt: string;
+  readonly updatedAt: string;
+}
+
+export interface QuarantineSubmitResult {
+  readonly success: boolean;
+  readonly action: typeof QUARANTINE_SUBMIT_ACTION;
+  readonly messageId: string;
+  readonly status: QuarantineSubmissionStatus;
+  readonly submissionId: string;
+  readonly jobId?: string;
+  readonly quarantineActionId?: string;
+  readonly auditEventId?: string;
+  readonly refreshedAt?: string;
+}
+
+// Updates the tracked QuarantineAction after a live status refresh (T-0424
+// repository updateQuarantineAction). Keyed by message + action so the wiring
+// can find the submit record without the BFF importing the store.
+export interface QuarantineActionUpdateInput {
+  readonly tenantId: string;
+  readonly messageId: string;
+  readonly action: string;
+  readonly result: QuarantineActionOutcome;
+  readonly at?: string;
+}
+
+// Reads the live review state back from Microsoft so a status refresh mirrors
+// the current state instead of replaying the value captured at submit time.
+export interface QuarantineSubmitProvider {
+  getSubmissionStatus(
+    tenantId: string,
+    messageId: string,
+  ): Promise<QuarantineSubmission | undefined>;
+}
+
 // Queue-backed seam for the quarantine reads: the production wiring enqueues a
 // get-quarantine worker job for (tenantId, filter) or (tenantId, messageId)
 // and serves the worker result. Depending on the seam keeps EXO and process
@@ -179,6 +246,8 @@ export interface QuarantineRouteOptions {
     enqueue(envelope: JobEnvelope): Promise<string>;
   };
   readonly recordAction?: (input: QuarantineActionRecordInput) => void | Promise<void>;
+  readonly updateAction?: (input: QuarantineActionUpdateInput) => void | Promise<void>;
+  readonly submitProvider?: QuarantineSubmitProvider;
   readonly resolveCaller: (ctx: RequestContext) => QuarantineCaller | undefined;
   readonly authorize?: QuarantineAuthorizer;
   readonly recordAudit?: (event: QuarantineAuditEvent) => void | Promise<void>;
@@ -308,6 +377,9 @@ export function parseQuarantineAction(value: unknown): QuarantineAction {
     case "block":
     case "blocksender":
       return "block";
+    case "submit":
+    case "submitforreview":
+      return "submit";
     default:
       throw validationError(
         `action must be one of: ${QUARANTINE_ACTIONS.join(", ")}`,
@@ -469,6 +541,22 @@ function actorOf(caller: QuarantineCaller): string {
   return caller.userId ?? "unknown";
 }
 
+// Map a live review state onto the QuarantineAction result the T-0424 store
+// tracks, so a refresh can update the record without a second vocabulary.
+export function quarantineActionResultForSubmission(
+  status: QuarantineSubmissionStatus,
+): QuarantineActionOutcome {
+  switch (status) {
+    case "reviewed":
+    case "released":
+      return "success";
+    case "rejected":
+      return "failure";
+    default:
+      return "pending";
+  }
+}
+
 function requireQueue(options: QuarantineRouteOptions): {
   enqueue(envelope: JobEnvelope): Promise<string>;
 } {
@@ -522,6 +610,122 @@ export function createQuarantineRoutes(options: QuarantineRouteOptions): Route[]
     };
   };
 
+  // Submit-for-review (SPEC §2 US-4, §4.2 step 4). A new submission enqueues
+  // through the EPIC-006 gate and records a pending QuarantineAction plus an
+  // AuditEvent; `refresh: true` reads the live review state back and updates the
+  // tracked action, so the response never replays a stale value.
+  const submitHandler = async (
+    ctx: RequestContext,
+    caller: QuarantineCaller,
+    tenantId: string,
+    message: QuarantineMessageDetail,
+    body: Record<string, unknown>,
+  ): Promise<RouteResponse> => {
+    const actor = actorOf(caller);
+    const refresh =
+      optionalBoolean(body["refresh"], "refresh") ?? (ctx.query.get("refresh") === "true");
+
+    if (refresh) {
+      if (!options.submitProvider) {
+        throw new AppError(
+          ErrorCodes.internalError,
+          "quarantine submit refresh requires a status provider",
+          500,
+        );
+      }
+      const live = await options.submitProvider.getSubmissionStatus(tenantId, message.messageId);
+      if (!live) {
+        throw new AppError(
+          QUARANTINE_SUBMISSION_NOT_FOUND,
+          `quarantine submission for '${message.messageId}' was not found`,
+          404,
+          [{ field: "messageId", reason: "not_found" }],
+        );
+      }
+      const refreshedAt = now();
+      if (options.updateAction) {
+        await options.updateAction({
+          tenantId,
+          messageId: message.messageId,
+          action: QUARANTINE_SUBMIT_ACTION,
+          result: quarantineActionResultForSubmission(live.status),
+          at: refreshedAt,
+        });
+      }
+      const refreshed: QuarantineSubmitResult = {
+        success: true,
+        action: QUARANTINE_SUBMIT_ACTION,
+        messageId: message.messageId,
+        status: live.status,
+        submissionId: live.submissionId,
+        refreshedAt,
+      };
+      return { status: 200, headers: { "content-type": "application/json" }, body: refreshed };
+    }
+
+    const queue = requireQueue(options);
+    const jobId = idGenerator();
+    const requestId = idGenerator();
+    const quarantineActionId = idGenerator();
+    const auditEventId = idGenerator();
+    const submissionId = idGenerator();
+    const createdAt = now();
+
+    await queue.enqueue(
+      buildRemediationEnvelope(ctx, tenantId, jobId, requestId, createdAt, {
+        area: "quarantine",
+        action: QUARANTINE_SUBMIT_ACTION,
+        messageId: message.messageId,
+        sender: message.sender,
+        recipient: message.recipient,
+        subject: message.subject,
+        tab: message.tab,
+        submissionId,
+        refresh: false,
+        actor,
+      }),
+    );
+
+    if (options.recordAction) {
+      await options.recordAction({
+        id: quarantineActionId,
+        tenantId,
+        messageId: message.messageId,
+        action: QUARANTINE_SUBMIT_ACTION,
+        recipient: null,
+        by: actor,
+        at: createdAt,
+        result: "pending",
+      });
+    }
+
+    if (options.recordAudit) {
+      await options.recordAudit({
+        id: auditEventId,
+        tenantId,
+        action: auditActionFor(QUARANTINE_SUBMIT_ACTION),
+        messageId: message.messageId,
+        recipient: null,
+        actorUserId: actor,
+        correlationId: ctx.correlationId,
+        timestamp: createdAt,
+        result: "pending",
+      });
+    }
+
+    const submitted: QuarantineSubmitResult = {
+      success: true,
+      action: QUARANTINE_SUBMIT_ACTION,
+      messageId: message.messageId,
+      status: "pending",
+      submissionId,
+      jobId,
+      quarantineActionId,
+      auditEventId,
+    };
+    return { status: 202, headers: { "content-type": "application/json" }, body: submitted };
+  };
+
   const actionHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
     const caller = requireCaller(options.resolveCaller, ctx);
     const tenantId = requireTenantParam(ctx);
@@ -534,6 +738,10 @@ export function createQuarantineRoutes(options: QuarantineRouteOptions): Route[]
     const message = await options.provider.getMessage(tenantId, messageId);
     if (!message) {
       throw quarantineNotFoundError(messageId);
+    }
+
+    if (action === QUARANTINE_SUBMIT_ACTION) {
+      return submitHandler(ctx, caller, tenantId, message, body);
     }
 
     let recipient = optionalString(body["recipient"], "recipient") ?? null;
@@ -674,7 +882,7 @@ export const QUARANTINE_OPENAPI = {
         parameters: [
           { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
           { name: "messageId", in: "path", required: true, schema: { type: "string" } },
-          { name: "action", in: "path", required: true, schema: { type: "string", enum: [...QUARANTINE_ACTIONS] } },
+          { name: "action", in: "path", required: true, schema: { type: "string", enum: QUARANTINE_ACTIONS.filter((action) => action !== QUARANTINE_SUBMIT_ACTION) } },
         ],
         responses: {
           "200": { description: "Plan preview of the action with the affected message; nothing is released, deleted, or blocked." },
@@ -683,6 +891,44 @@ export const QUARANTINE_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": { description: "The caller lacks quarantine.act or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The quarantined message was not found." },
+        },
+      },
+    },
+    "/tenants/{tenantId}/quarantine/{messageId}/submit": {
+      post: {
+        operationId: "submitQuarantineMessageForReview",
+        summary:
+          "Submit a quarantined message to Microsoft for review through the EPIC-006 gated path and return the tracked submission status; with refresh:true, read the live review state back so the tracked status is never stale",
+        permission: QUARANTINE_ACT_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          { name: "messageId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  refresh: {
+                    type: "boolean",
+                    description:
+                      "Read the current review state instead of submitting again; the tracked QuarantineAction is updated to match.",
+                  },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "The live tracked review state read back from Microsoft; nothing new was submitted." },
+          "202": { description: "The message was queued for review through the EPIC-006 gated path with a QuarantineAction and an AuditEvent." },
+          "400": { description: "The request body failed validation." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks quarantine.act or Remediation.Apply, or the tenant is out of scope." },
+          "404": { description: "The quarantined message, or its tracked submission, was not found." },
         },
       },
     },
