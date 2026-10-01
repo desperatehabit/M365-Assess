@@ -24,9 +24,9 @@ coder = "opencode-go/longcat-2.5-preview-free"
 escalate = "opencode-go/longcat-2.5-preview-free"
 
 [limits]
-workers           = 3      # concurrent OpenCode sessions. The portal work touches
-                           # few shared files early, but keep this modest until the
-                           # module's Pester suite proves stable under parallel QA.
+workers           = 6      # concurrent OpenCode sessions. The portal work touches
+                            # few shared files early, but keep this modest until the
+                            # module's Pester suite proves stable under parallel QA.
 qa_workers        = 2      # concurrent QA suite runs. Each is its own worktree +
                            # process, so state is isolated; 2 keeps CPU contention
                            # down while the full suite runs per ticket.

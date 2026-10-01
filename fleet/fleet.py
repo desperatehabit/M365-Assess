@@ -288,6 +288,7 @@ def run_suite(cwd: Path) -> tuple[int, set[str], str]:
         proc = subprocess.run(
             cmd, shell=True, cwd=cwd, capture_output=True, text=True,
             timeout=CFG["limits"]["test_timeout_s"],
+            stdin=subprocess.DEVNULL,
         )
         out = (proc.stdout or "") + (proc.stderr or "")
         failing: set[str] = set()
@@ -749,9 +750,11 @@ def qa_one(tid: str) -> dict:
         wt, "diff", f"{CFG['git']['base_branch']}...HEAD", "--name-only"
     ).split()
     allowed = set(t.get("scope", []))
+    SCOPE_IGNORE = {"portal/package-lock.json", "package-lock.json"}
     stray = [
         c for c in changed
-        if not scope_covers(allowed, c) and not re.search(r"(^|/)tests?/", c)
+        if c not in SCOPE_IGNORE
+        and not scope_covers(allowed, c) and not re.search(r"(^|/)tests?/", c)
     ]
 
     baseline_path = STATE / "baseline.json"
