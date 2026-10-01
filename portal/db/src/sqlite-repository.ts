@@ -26,6 +26,10 @@ import {
   type BrandingWatermark,
   type ContactTemplate,
   type ContactTemplateInput,
+  type FeatureFlag,
+  type FeatureFlagInput,
+  type FeatureFlagScope,
+  FeatureFlagScopeError,
   type Finding,
   type FindingInput,
   type FindingStatus,
@@ -2077,6 +2081,12 @@ export class SqliteRepository implements Repository {
       key: asString(row["key"]),
       value: parseJsonValue(row["value"]),
       scope: asString(row["scope"]) as SettingScope,
+  private mapFeatureFlag(row: Row): FeatureFlag {
+    return {
+      key: asString(row["key"]),
+      enabled: asBool(row["enabled"]),
+      scope: asString(row["scope"]) as FeatureFlagScope,
+      description: asString(row["description"]),
       updatedAt: asString(row["updatedAt"]),
       updatedBy: asNullableString(row["updatedBy"]),
     };
@@ -2381,6 +2391,44 @@ export class SqliteRepository implements Repository {
            ON CONFLICT(key) DO UPDATE SET
              value = excluded.value,
              scope = excluded.scope,
+  async getFeatureFlags(): Promise<FeatureFlag[]> {
+    return (this.db.prepare("SELECT * FROM feature_flags ORDER BY key").all() as Row[]).map(
+      (row) => this.mapFeatureFlag(row),
+    );
+  }
+
+  async getFeatureFlag(key: string): Promise<FeatureFlag | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM feature_flags WHERE key = ?")
+      .get(key) as Row | undefined;
+    return row ? this.mapFeatureFlag(row) : undefined;
+  }
+
+  async upsertFeatureFlag(input: FeatureFlagInput): Promise<FeatureFlag> {
+    if (input.scope === "tenant") {
+      throw new FeatureFlagScopeError(input.scope);
+    }
+    const updatedAt = input.updatedAt ?? nowIso();
+    const flag: FeatureFlag = {
+      key: input.key,
+      enabled: input.enabled,
+      scope: input.scope ?? "global",
+      description: input.description ?? "",
+      updatedAt,
+      updatedBy: input.updatedBy ?? null,
+    };
+    this.db.transaction(() => {
+      const before = this.db
+        .prepare("SELECT * FROM feature_flags WHERE key = ?")
+        .get(flag.key) as Row | undefined;
+      this.db
+        .prepare(
+          `INSERT INTO feature_flags (key, enabled, scope, description, updatedAt, updatedBy)
+           VALUES (@key, @enabled, @scope, @description, @updatedAt, @updatedBy)
+           ON CONFLICT(key) DO UPDATE SET
+             enabled = excluded.enabled,
+             scope = excluded.scope,
+             description = excluded.description,
              updatedAt = excluded.updatedAt,
              updatedBy = excluded.updatedBy`,
         )
@@ -2390,6 +2438,12 @@ export class SqliteRepository implements Repository {
           scope,
           updatedAt,
           updatedBy,
+          key: flag.key,
+          enabled: flag.enabled ? 1 : 0,
+          scope: flag.scope,
+          description: flag.description,
+          updatedAt: flag.updatedAt,
+          updatedBy: flag.updatedBy,
         });
       this.db
         .prepare(
@@ -2408,6 +2462,14 @@ export class SqliteRepository implements Repository {
           settingKey,
           before ? JSON.stringify(this.mapSetting(before)) : null,
           JSON.stringify({ key: settingKey, value, scope, updatedAt, updatedBy }),
+          flag.updatedBy,
+          "system",
+          null,
+          "feature_flag.upsert",
+          "feature_flags",
+          flag.key,
+          before ? JSON.stringify(this.mapFeatureFlag(before)) : null,
+          JSON.stringify(flag),
           "success",
           null,
           "request",
@@ -2417,6 +2479,8 @@ export class SqliteRepository implements Repository {
     })();
     const persisted = await this.getSetting(settingKey);
     if (!persisted) throw new Error(`setting ${settingKey} was not persisted`);
+    const persisted = await this.getFeatureFlag(flag.key);
+    if (!persisted) throw new Error(`feature flag ${flag.key} was not persisted`);
     return persisted;
   }
 }
