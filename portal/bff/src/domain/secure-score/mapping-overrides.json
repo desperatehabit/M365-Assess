@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "description": "Curated Secure Score action -> registry check overrides (T-0603, EPIC-031 SPEC §11.1). Applied only where the registry derivation cannot resolve an action id, or to correct an ambiguous derivation. `check` is the module registry check id; `standardKey` is the framework the action is reported against. An entry with no `check` is a portal standard reference only.",
+  "overrides": [
+    {
+      "actionId": "MFARegistrationV2",
+      "check": "ENTRA-MFA-001",
+      "standardKey": "cis-m365-v6",
+      "note": "Microsoft's MFA registration improvement action; the registry carries no Secure Score control id for it."
+    },
+    {
+      "actionId": "windowsHelloForBusiness",
+      "standardKey": "cis-m365-v6",
+      "note": "Portal standard reference only; no automated registry check exists for this action."
+    }
+  ]
+}
