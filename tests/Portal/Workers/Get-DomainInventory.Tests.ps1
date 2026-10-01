@@ -33,8 +33,10 @@ Describe 'Get-DomainInventory worker (T-0662)' {
 
     Context 'Get-DomainInventory live mapping and projection' {
         BeforeEach {
+            $script:lastGraphUri = $null
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri, $Body)
+                $script:lastGraphUri = $Uri
                 return @{
                     value = @(
                         @{
@@ -45,8 +47,8 @@ Describe 'Get-DomainInventory worker (T-0662)' {
                             isManaged = $false
                             serviceConfigurationRecords = @(
                                 @{
-                                    recordType = 'MX'
-                                    recordValue = 'contoso-com.mail.protection.outlook.com'
+                                    recordType = 'Mx'
+                                    mailExchange = 'contoso-com.mail.protection.outlook.com'
                                 }
                             )
                         }
@@ -66,8 +68,8 @@ Describe 'Get-DomainInventory worker (T-0662)' {
                             isManaged = $true
                             serviceConfigurationRecords = @(
                                 @{
-                                    recordType = 'MX'
-                                    recordValue = 'fabrikam-com.mail.protection.outlook.com'
+                                    recordType = 'Mx'
+                                    mailExchange = 'fabrikam-com.mail.protection.outlook.com'
                                 }
                             )
                         }
@@ -123,6 +125,11 @@ Describe 'Get-DomainInventory worker (T-0662)' {
             $fabrikam.lastChecked | Should -Be '2026-09-19T08:30:00Z'
         }
 
+        It 'expands serviceConfigurationRecords so Graph returns the MX targets' {
+            Get-DomainInventory -TenantId 'tenant-test' -LatestChecks @() | Out-Null
+            $script:lastGraphUri | Should -Be '/v1.0/domains?$expand=serviceConfigurationRecords'
+        }
+
         It 'returns empty dnsHealth/lastChecked when domain has no stored check' {
             $res = Get-DomainInventory -TenantId 'tenant-test' -LatestChecks @()
             $res.totalCount | Should -Be 3
@@ -146,8 +153,8 @@ Describe 'Get-DomainInventory worker (T-0662)' {
                             isManaged = $false
                             serviceConfigurationRecords = @(
                                 @{
-                                    recordType = 'TXT'
-                                    recordValue = 'v=spf1 include:spf.protection.outlook.com -all'
+                                    recordType = 'Txt'
+                                    text = 'v=spf1 include:spf.protection.outlook.com -all'
                                 }
                             )
                         }
@@ -187,8 +194,8 @@ Describe 'Get-DomainInventory worker (T-0662)' {
                             isManaged = $false
                             serviceConfigurationRecords = @(
                                 @{
-                                    recordType = 'MX'
-                                    recordValue = 'test-example-com.mail.protection.outlook.com'
+                                    recordType = 'Mx'
+                                    mailExchange = 'test-example-com.mail.protection.outlook.com'
                                 }
                             )
                         }
@@ -230,8 +237,8 @@ Describe 'Get-DomainInventory worker (T-0662)' {
                             isManaged = $false
                             serviceConfigurationRecords = @(
                                 @{
-                                    recordType = 'MX'
-                                    recordValue = 'test-example-com.mail.protection.outlook.com'
+                                    recordType = 'Mx'
+                                    mailExchange = 'test-example-com.mail.protection.outlook.com'
                                 }
                             )
                         }

@@ -79,12 +79,14 @@ function ConvertTo-DomainRow {
     # Verification state
     $verification = if ($isVerified) { 'verified' } else { 'unverified' }
 
-    # Services (MX target) from serviceConfigurationRecords or MX record
+    # Services (MX target) from serviceConfigurationRecords. Graph's
+    # domainDnsMxRecord exposes the target as mailExchange (recordType 'Mx');
+    # there is no recordValue property.
     $mxTarget = ''
     $serviceRecords = if ($Domain.serviceConfigurationRecords) { @($Domain.serviceConfigurationRecords) } else { @() }
     foreach ($record in $serviceRecords) {
-        if ($record.recordType -eq 'MX' -and $record.recordValue) {
-            $mxTarget = [string]$record.recordValue
+        if ($record.recordType -eq 'MX' -and $record.mailExchange) {
+            $mxTarget = [string]$record.mailExchange
             break
         }
     }
@@ -146,10 +148,11 @@ function Get-DomainInventory {
         [object[]]$LatestChecks = @()
     )
 
-    # Get domains from Graph
+    # Get domains from Graph. serviceConfigurationRecords is a navigation
+    # property, so it is only returned when explicitly expanded.
     $graphParams = @{
         Method      = 'GET'
-        Uri         = '/v1.0/domains'
+        Uri         = '/v1.0/domains?$expand=serviceConfigurationRecords'
         ErrorAction = 'Stop'
     }
 
