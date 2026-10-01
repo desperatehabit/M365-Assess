@@ -40,7 +40,7 @@ Describe 'Invoke-DeviceWipe worker (T-0345)' {
         BeforeEach {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri, $Body, $ContentType)
-                return @{ success = $true }
+                return $null
             }
         }
 
@@ -73,6 +73,20 @@ Describe 'Invoke-DeviceWipe worker (T-0345)' {
             $null = Invoke-DeviceWipe -TenantId 'tenant-a' -DeviceId 'device-1' -Action 'fresh-start' -Reason 'Device refresh'
 
             Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $Uri -like '*freshStart*' }
+        }
+
+        It 'sends keepEnrollmentData and keepUserData for wipe' {
+            $null = Invoke-DeviceWipe -TenantId 'tenant-a' -DeviceId 'device-1' -Action 'wipe' -Reason 'Device lost'
+
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+                $Method -eq 'POST' -and $Body -match 'keepEnrollmentData' -and $Body -match 'keepUserData' -and $Body -notmatch 'reason'
+            }
+        }
+
+        It 'sends no body for fresh-start' {
+            $null = Invoke-DeviceWipe -TenantId 'tenant-a' -DeviceId 'device-1' -Action 'fresh-start' -Reason 'Device refresh'
+
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $null -eq $Body }
         }
 
         It 'requires the tenant, device, and action' {

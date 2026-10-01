@@ -22,7 +22,7 @@ function Get-ManagedDevice {
         [string]$DeviceId
     )
 
-    $deviceUri = "/v1.0/deviceManagement/managedDevices/$DeviceId`?`$select=id,deviceName,userPrincipalName,operatingSystem,osVersion,complianceState,managementState,deviceType,managedDeviceOwnerType,lastSyncDateTime,enrolledDateTime,serialNumber,isEncrypted,model,manufacturer,storageSpace,totalStorageSpace,phoneNumber,imei"
+    $deviceUri = "/v1.0/deviceManagement/managedDevices/$DeviceId`?`$select=id,deviceName,userPrincipalName,operatingSystem,osVersion,complianceState,managementState,deviceType,managedDeviceOwnerType,lastSyncDateTime,enrolledDateTime,serialNumber,isEncrypted,model,manufacturer,freeStorageSpaceInBytes,totalStorageSpaceInBytes,phoneNumber,imei"
     $device = Invoke-MgGraphRequest -Method GET -Uri $deviceUri
 
     $appsUri = "/v1.0/deviceManagement/managedDevices/$DeviceId/detectedApps?`$select=id,displayName,version,publisher"
@@ -43,8 +43,8 @@ function Get-ManagedDevice {
         model           = if ($device.model) { [string]$device.model } else { '' }
         manufacturer    = if ($device.manufacturer) { [string]$device.manufacturer } else { '' }
         serialNumber    = if ($device.serialNumber) { [string]$device.serialNumber } else { '' }
-        storageSpace    = if ($null -ne $device.storageSpace) { [int64]$device.storageSpace } else { 0 }
-        totalStorage    = if ($null -ne $device.totalStorageSpace) { [int64]$device.totalStorageSpace } else { 0 }
+        storageSpace    = if ($null -ne $device.freeStorageSpaceInBytes) { [int64]$device.freeStorageSpaceInBytes } else { 0 }
+        totalStorage    = if ($null -ne $device.totalStorageSpaceInBytes) { [int64]$device.totalStorageSpaceInBytes } else { 0 }
         phoneNumber     = if ($device.phoneNumber) { [string]$device.phoneNumber } else { '' }
         imei            = if ($device.imei) { [string]$device.imei } else { '' }
     }

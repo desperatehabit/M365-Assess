@@ -153,5 +153,37 @@ Describe 'Get-ManagedDevices worker (T-0341)' {
             $bySerial.totalCount | Should -Be 1
             $bySerial.items[0].id | Should -Be 'dev-mac'
         }
+
+        It 'follows @odata.nextLink pagination' {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri, $Body)
+                if ($Uri -notlike '*nextPage*') {
+                    return @{
+                        value = @(@{
+                            id = 'dev-1'; deviceName = 'WS-1'; userPrincipalName = 'alice@contoso.com'
+                            operatingSystem = 'Windows'; osVersion = '10.0'; complianceState = 'compliant'
+                            managedDeviceOwnerType = 'company'; lastSyncDateTime = '2026-09-20T00:00:00Z'
+                            enrolledDateTime = '2026-01-01T00:00:00Z'; serialNumber = 'SN1'; isEncrypted = $true
+                        })
+                        '@odata.nextLink' = 'https://graph.microsoft.com/v1.0/deviceManagement/managedDevices?nextPage'
+                    }
+                }
+                return @{
+                    value = @(@{
+                        id = 'dev-2'; deviceName = 'WS-2'; userPrincipalName = 'bob@contoso.com'
+                        operatingSystem = 'Windows'; osVersion = '10.0'; complianceState = 'compliant'
+                        managedDeviceOwnerType = 'company'; lastSyncDateTime = '2026-09-20T00:00:00Z'
+                        enrolledDateTime = '2026-01-01T00:00:00Z'; serialNumber = 'SN2'; isEncrypted = $true
+                    })
+                }
+            }
+
+            $result = Get-ManagedDevices -TenantId 'tenant-test'
+
+            $result.totalCount | Should -Be 2
+            $result.items.id | Should -Contain 'dev-1'
+            $result.items.id | Should -Contain 'dev-2'
+            Should -Invoke Invoke-MgGraphRequest -Times 2 -Exactly -ParameterFilter { $Method -eq 'GET' }
+        }
     }
 }

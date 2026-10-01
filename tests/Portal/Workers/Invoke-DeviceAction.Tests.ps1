@@ -40,7 +40,7 @@ Describe 'Invoke-DeviceAction worker (T-0344)' {
         BeforeEach {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri, $Body, $ContentType)
-                return @{ success = $true }
+                return $null
             }
         }
 
@@ -73,6 +73,13 @@ Describe 'Invoke-DeviceAction worker (T-0344)' {
             $null = Invoke-DeviceAction -TenantId 'tenant-a' -DeviceId 'device-1' -Action 'retire' -Reason 'Device lost'
 
             Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $Uri -like '*retire*' }
+        }
+
+        It 'sends no body for sync and retire' {
+            $null = Invoke-DeviceAction -TenantId 'tenant-a' -DeviceId 'device-1' -Action 'sync'
+            $null = Invoke-DeviceAction -TenantId 'tenant-a' -DeviceId 'device-1' -Action 'retire' -Reason 'Device lost'
+
+            Should -Invoke Invoke-MgGraphRequest -Times 2 -Exactly -ParameterFilter { $Method -eq 'POST' -and $null -eq $Body }
         }
 
         It 'requires the tenant, device, and action' {

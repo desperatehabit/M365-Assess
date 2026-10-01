@@ -26,7 +26,13 @@ function Invoke-DeviceWipe {
         [string]$Action,
 
         [Parameter()]
-        [string]$Reason = ''
+        [string]$Reason = '',
+
+        [Parameter()]
+        [bool]$KeepEnrollmentData = $false,
+
+        [Parameter()]
+        [bool]$KeepUserData = $false
     )
 
     $actionUri = switch ($Action) {
@@ -35,8 +41,8 @@ function Invoke-DeviceWipe {
     }
 
     $body = $null
-    if (-not [string]::IsNullOrWhiteSpace($Reason)) {
-        $body = @{ reason = $Reason } | ConvertTo-Json -Compress
+    if ($Action -eq 'wipe') {
+        $body = @{ keepEnrollmentData = $KeepEnrollmentData; keepUserData = $KeepUserData } | ConvertTo-Json -Compress
     }
 
     $params = @{
