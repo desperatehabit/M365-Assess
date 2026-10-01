@@ -22,13 +22,20 @@ import {
   isSecretMaterialField,
   redactConnectorSecret,
 } from "../domain/transport/connector-secret.js";
+import {
+  resolveTransportTemplateDeploy,
+  runTransportTemplateDeploy,
+  type TransportTemplateDeployExecutor,
+} from "../domain/transport/template-deploy.js";
 import { isVariableName } from "../domain/variable-substitution.js";
 import { paginate, parsePagination } from "../pagination.js";
+import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const CONNECTOR_TEMPLATES_PATH = "/v1/connector-templates";
 export const CONNECTOR_TEMPLATE_PATH = "/v1/connector-templates/:id";
 export const CONNECTOR_TEMPLATE_CLONE_PATH = "/v1/connector-templates/:id/clone";
+export const CONNECTOR_TEMPLATE_DEPLOY_PATH = "/v1/connector-templates/:id/deploy";
 
 export const CONNECTOR_TEMPLATE_PERMISSIONS = {
   read: "transport.read",
@@ -37,6 +44,7 @@ export const CONNECTOR_TEMPLATE_PERMISSIONS = {
 
 export const CONNECTOR_TEMPLATE_NOT_FOUND = "connector_template.not_found";
 export const CONNECTOR_TEMPLATE_INVALID = "connector_template.invalid";
+export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export interface ConnectorTemplateVariable {
   readonly name: string;
@@ -114,10 +122,19 @@ export type ConnectorTemplateAuthorizer = (
   permission: string,
 ) => boolean;
 
+export interface ConnectorTemplateDeployCaller extends Caller {
+  readonly userId?: string;
+}
+
 export interface ConnectorTemplateRouteOptions {
   readonly store: ConnectorTemplateStore;
   readonly authorize?: ConnectorTemplateAuthorizer;
   readonly readBody?: (ctx: ConnectorTemplateRequestContext) => unknown;
+  readonly deployExecutor?: TransportTemplateDeployExecutor;
+  readonly resolveCaller?: (
+    ctx: ConnectorTemplateRequestContext,
+  ) => ConnectorTemplateDeployCaller | undefined;
+  readonly recordAudit?: (event: Record<string, unknown>) => Promise<void>;
 }
 
 function defaultAuthorize(ctx: ConnectorTemplateRequestContext, permission: string): boolean {
@@ -140,6 +157,25 @@ function requirePermission(
   if (!authorize(ctx, permission)) {
     throw new AppError(ErrorCodes.forbidden, `Missing required permission '${permission}'`, 403);
   }
+}
+
+// Deploy is a tenant write: it needs transport.write or the EPIC-006
+// Remediation.Apply semantics (SPEC §7), and never a direct write.
+function requireDeployPermission(
+  ctx: ConnectorTemplateRequestContext,
+  authorize: ConnectorTemplateAuthorizer,
+): void {
+  if (
+    authorize(ctx, CONNECTOR_TEMPLATE_PERMISSIONS.write) ||
+    authorize(ctx, REMEDIATION_APPLY_PERMISSION)
+  ) {
+    return;
+  }
+  throw new AppError(
+    ErrorCodes.forbidden,
+    `forbidden: deploy requires ${CONNECTOR_TEMPLATE_PERMISSIONS.write} or ${REMEDIATION_APPLY_PERMISSION}`,
+    403,
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -350,6 +386,54 @@ function toResponse(template: StoredConnectorTemplate): Record<string, unknown> 
   };
 }
 
+function readDeployTargets(body: Record<string, unknown>): string[] {
+  const raw = body["targets"];
+  const targets = Array.isArray(raw)
+    ? raw.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0)
+    : [];
+  if (targets.length === 0 && nonEmptyString(body["tenantId"])) {
+    targets.push(body["tenantId"].trim());
+  }
+  if (targets.length === 0) {
+    throw new AppError(
+      ErrorCodes.validationFailed,
+      "at least one target tenant is required in 'targets' or 'tenantId'",
+      400,
+      [{ field: "targets", reason: "required" }],
+    );
+  }
+  return targets;
+}
+
+function readDeployVariables(value: unknown): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new AppError(
+      ErrorCodes.validationFailed,
+      "variables must be an object of names to values",
+      400,
+      [{ field: "variables", reason: "must be a JSON object" }],
+    );
+  }
+  const variables: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item !== "string") {
+      throw new AppError(ErrorCodes.validationFailed, `variables.${key} must be a string`, 400, [
+        { field: `variables.${key}`, reason: "must be a string" },
+      ]);
+    }
+    variables[key] = item;
+  }
+  return variables;
+}
+
+function readDeployPreview(
+  ctx: ConnectorTemplateRequestContext,
+  body: Record<string, unknown>,
+): boolean {
+  return Boolean(body["preview"] ?? (ctx.query.get("preview") === "true"));
+}
+
 export function createConnectorTemplateRoutes(
   options: ConnectorTemplateRouteOptions,
 ): Route[] {
@@ -457,6 +541,74 @@ export function createConnectorTemplateRoutes(
         return { status: 201, body: toResponse(requireTemplate(cloned)) };
       },
     },
+    {
+      method: "POST",
+      path: CONNECTOR_TEMPLATE_DEPLOY_PATH,
+      handler: async (ctx): Promise<RouteResponse> => {
+        const context = ctx as ConnectorTemplateRequestContext;
+        requireDeployPermission(context, authorize);
+        const template = requireTemplate(
+          await options.store.getTemplate(ctx.params["id"] ?? ""),
+        );
+        const body = parseBody(context, readBody);
+        const targets = readDeployTargets(body);
+        const caller = options.resolveCaller?.(context);
+        if (options.resolveCaller && caller === undefined) {
+          throw new AppError(ErrorCodes.forbidden, "authentication required", 401);
+        }
+        if (caller) {
+          for (const target of targets) requireTenantInScope(caller, target);
+        }
+
+        const resolved = resolveTransportTemplateDeploy({
+          kind: "connector",
+          templateId: template.id,
+          templateName: template.name,
+          payload: template.connectorJson,
+          declaredVariables: template.variables,
+          variables: readDeployVariables(body["variables"]),
+          targets,
+        });
+        const base = {
+          templateId: template.id,
+          kind: "connector" as const,
+          payload: redactConnectorSecret(resolved.payload),
+          variables: resolved.resolvedVariables,
+          targets: resolved.targets,
+        };
+
+        if (readDeployPreview(context, body)) {
+          return {
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: { ...base, preview: true },
+          };
+        }
+
+        const executor = options.deployExecutor;
+        if (!executor) {
+          throw new AppError(
+            ErrorCodes.internalError,
+            "connector template deploy requires an EPIC-006 apply executor",
+            500,
+          );
+        }
+        const actor = caller?.userId ?? "unknown";
+        const results = await runTransportTemplateDeploy(resolved, executor, actor);
+        if (options.recordAudit) {
+          for (const result of results) {
+            if (result.auditEvent) await options.recordAudit(result.auditEvent);
+          }
+        }
+        const allSucceeded = results.every((result) => result.success);
+        const anySucceeded = results.some((result) => result.success);
+        return {
+          status: allSucceeded ? 200 : anySucceeded ? 207 : 422,
+          headers: { "content-type": "application/json" },
+          body: { ...base, preview: false, results, success: allSucceeded },
+        };
+      },
+    },
   ];
 }
 
@@ -538,6 +690,28 @@ export const CONNECTOR_TEMPLATES_OPENAPI = {
         responses: {
           "201": { description: "The cloned template." },
           "404": { description: "No live template has that id." },
+        },
+      },
+    },
+    "/connector-templates/{id}/deploy": {
+      post: {
+        operationId: "deployConnectorTemplate",
+        summary:
+          "Deploy a connector template: resolves %name% variables (domains, IPs, action overrides) and applies the connector per target through the EPIC-006 gate with before/after and an AuditEvent",
+        permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": { description: "Plan preview of the resolved connector (preview: true)." },
+          "207": {
+            description: "Some targets applied and some failed; per-target results are returned.",
+          },
+          "400": { description: "A required variable is missing or the payload is invalid." },
+          "403": {
+            description: "The caller lacks transport.write or a target is out of scope.",
+          },
+          "404": { description: "No live template has that id." },
+          "422": { description: "Every target failed; per-target results are returned." },
         },
       },
     },

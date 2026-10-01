@@ -14,13 +14,20 @@
 // the real permission set without touching route code.
 import { randomUUID } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
+import {
+  resolveTransportTemplateDeploy,
+  runTransportTemplateDeploy,
+  type TransportTemplateDeployExecutor,
+} from "../domain/transport/template-deploy.js";
 import { isVariableName } from "../domain/variable-substitution.js";
 import { paginate, parsePagination } from "../pagination.js";
+import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TRANSPORT_RULE_TEMPLATES_PATH = "/v1/transport-rule-templates";
 export const TRANSPORT_RULE_TEMPLATE_PATH = "/v1/transport-rule-templates/:id";
 export const TRANSPORT_RULE_TEMPLATE_CLONE_PATH = "/v1/transport-rule-templates/:id/clone";
+export const TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH = "/v1/transport-rule-templates/:id/deploy";
 
 export const TRANSPORT_RULE_TEMPLATE_PERMISSIONS = {
   read: "transport.read",
@@ -29,6 +36,7 @@ export const TRANSPORT_RULE_TEMPLATE_PERMISSIONS = {
 
 export const TRANSPORT_RULE_TEMPLATE_NOT_FOUND = "transport_rule_template.not_found";
 export const TRANSPORT_RULE_TEMPLATE_INVALID = "transport_rule_template.invalid";
+export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export interface TransportRuleTemplateVariable {
   readonly name: string;
@@ -106,10 +114,19 @@ export type TransportRuleTemplateAuthorizer = (
   permission: string,
 ) => boolean;
 
+export interface TransportRuleTemplateDeployCaller extends Caller {
+  readonly userId?: string;
+}
+
 export interface TransportRuleTemplateRouteOptions {
   readonly store: TransportRuleTemplateStore;
   readonly authorize?: TransportRuleTemplateAuthorizer;
   readonly readBody?: (ctx: TransportRuleTemplateRequestContext) => unknown;
+  readonly deployExecutor?: TransportTemplateDeployExecutor;
+  readonly resolveCaller?: (
+    ctx: TransportRuleTemplateRequestContext,
+  ) => TransportRuleTemplateDeployCaller | undefined;
+  readonly recordAudit?: (event: Record<string, unknown>) => Promise<void>;
 }
 
 function defaultAuthorize(ctx: TransportRuleTemplateRequestContext, permission: string): boolean {
@@ -136,6 +153,25 @@ function requirePermission(
       403,
     );
   }
+}
+
+// Deploy is a tenant write: it needs transport.write or the EPIC-006
+// Remediation.Apply semantics (SPEC §7), and never a direct write.
+function requireDeployPermission(
+  ctx: TransportRuleTemplateRequestContext,
+  authorize: TransportRuleTemplateAuthorizer,
+): void {
+  if (
+    authorize(ctx, TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write) ||
+    authorize(ctx, REMEDIATION_APPLY_PERMISSION)
+  ) {
+    return;
+  }
+  throw new AppError(
+    ErrorCodes.forbidden,
+    `forbidden: deploy requires ${TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write} or ${REMEDIATION_APPLY_PERMISSION}`,
+    403,
+  );
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
@@ -291,6 +327,54 @@ function toResponse(template: StoredTransportRuleTemplate): Record<string, unkno
   };
 }
 
+function readDeployTargets(body: Record<string, unknown>): string[] {
+  const raw = body["targets"];
+  const targets = Array.isArray(raw)
+    ? raw.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0)
+    : [];
+  if (targets.length === 0 && nonEmptyString(body["tenantId"])) {
+    targets.push(body["tenantId"].trim());
+  }
+  if (targets.length === 0) {
+    throw new AppError(
+      ErrorCodes.validationFailed,
+      "at least one target tenant is required in 'targets' or 'tenantId'",
+      400,
+      [{ field: "targets", reason: "required" }],
+    );
+  }
+  return targets;
+}
+
+function readDeployVariables(value: unknown): Record<string, string> {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new AppError(
+      ErrorCodes.validationFailed,
+      "variables must be an object of names to values",
+      400,
+      [{ field: "variables", reason: "must be a JSON object" }],
+    );
+  }
+  const variables: Record<string, string> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof item !== "string") {
+      throw new AppError(ErrorCodes.validationFailed, `variables.${key} must be a string`, 400, [
+        { field: `variables.${key}`, reason: "must be a string" },
+      ]);
+    }
+    variables[key] = item;
+  }
+  return variables;
+}
+
+function readDeployPreview(
+  ctx: TransportRuleTemplateRequestContext,
+  body: Record<string, unknown>,
+): boolean {
+  return Boolean(body["preview"] ?? (ctx.query.get("preview") === "true"));
+}
+
 export function createTransportRuleTemplateRoutes(
   options: TransportRuleTemplateRouteOptions,
 ): Route[] {
@@ -396,6 +480,74 @@ export function createTransportRuleTemplateRoutes(
         return { status: 201, body: toResponse(requireTemplate(cloned)) };
       },
     },
+    {
+      method: "POST",
+      path: TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH,
+      handler: async (ctx): Promise<RouteResponse> => {
+        const context = ctx as TransportRuleTemplateRequestContext;
+        requireDeployPermission(context, authorize);
+        const template = requireTemplate(
+          await options.store.getTemplate(ctx.params["id"] ?? ""),
+        );
+        const body = parseBody(context, readBody);
+        const targets = readDeployTargets(body);
+        const caller = options.resolveCaller?.(context);
+        if (options.resolveCaller && caller === undefined) {
+          throw new AppError(ErrorCodes.forbidden, "authentication required", 401);
+        }
+        if (caller) {
+          for (const target of targets) requireTenantInScope(caller, target);
+        }
+
+        const resolved = resolveTransportTemplateDeploy({
+          kind: "transport-rule",
+          templateId: template.id,
+          templateName: template.name,
+          payload: template.ruleJson,
+          declaredVariables: template.variables,
+          variables: readDeployVariables(body["variables"]),
+          targets,
+        });
+        const base = {
+          templateId: template.id,
+          kind: "transport-rule" as const,
+          payload: resolved.payload,
+          variables: resolved.resolvedVariables,
+          targets: resolved.targets,
+        };
+
+        if (readDeployPreview(context, body)) {
+          return {
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: { ...base, preview: true },
+          };
+        }
+
+        const executor = options.deployExecutor;
+        if (!executor) {
+          throw new AppError(
+            ErrorCodes.internalError,
+            "transport rule template deploy requires an EPIC-006 apply executor",
+            500,
+          );
+        }
+        const actor = caller?.userId ?? "unknown";
+        const results = await runTransportTemplateDeploy(resolved, executor, actor);
+        if (options.recordAudit) {
+          for (const result of results) {
+            if (result.auditEvent) await options.recordAudit(result.auditEvent);
+          }
+        }
+        const allSucceeded = results.every((result) => result.success);
+        const anySucceeded = results.some((result) => result.success);
+        return {
+          status: allSucceeded ? 200 : anySucceeded ? 207 : 422,
+          headers: { "content-type": "application/json" },
+          body: { ...base, preview: false, results, success: allSucceeded },
+        };
+      },
+    },
   ];
 }
 
@@ -484,6 +636,30 @@ export const TRANSPORT_RULE_TEMPLATES_OPENAPI = {
         responses: {
           "201": { description: "The cloned template." },
           "404": { description: "No live template has that id." },
+        },
+      },
+    },
+    "/transport-rule-templates/{id}/deploy": {
+      post: {
+        operationId: "deployTransportRuleTemplate",
+        summary:
+          "Deploy a transport rule template: resolves %name% variables (domains, IPs, action overrides) and applies the rule per target through the EPIC-006 gate with before/after and an AuditEvent",
+        permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "Plan preview of the resolved rule (preview: true)." },
+          "207": {
+            description: "Some targets applied and some failed; per-target results are returned.",
+          },
+          "400": { description: "A required variable is missing or the payload is invalid." },
+          "403": {
+            description: "The caller lacks transport.write or a target is out of scope.",
+          },
+          "404": { description: "No live template has that id." },
+          "422": { description: "Every target failed; per-target results are returned." },
         },
       },
     },
