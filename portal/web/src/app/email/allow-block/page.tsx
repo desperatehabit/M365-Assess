@@ -12,8 +12,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
-import { RequireTenant } from "../../../../components/shell/RequireTenant";
-import { resolveTenantId, useCurrentTenantId } from "../../../../lib/useCurrentTenant";
+import { RequireTenant } from "../../../components/shell/RequireTenant";
+import { resolveTenantId, useCurrentTenantId } from "../../../lib/useCurrentTenant";
 
 export const ALLOW_BLOCK_TYPES = ["sender", "domain", "url", "file"] as const;
 export type AllowBlockType = (typeof ALLOW_BLOCK_TYPES)[number];

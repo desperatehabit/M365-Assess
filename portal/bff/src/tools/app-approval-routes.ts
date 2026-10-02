@@ -116,7 +116,11 @@ function parseDecisionBody(body: Record<string, unknown>): Omit<ConsentDecisionI
   if (reason !== undefined && reason !== null && typeof reason !== "string") {
     throw validationError("reason must be a string", "reason");
   }
-  return { requestId: requestId.trim(), decision, ...(reason !== undefined ? { reason } : {}) };
+  return {
+    requestId: requestId.trim(),
+    decision,
+    ...(typeof reason === "string" ? { reason } : {}),
+  };
 }
 
 function toServiceError(error: unknown): AppError {

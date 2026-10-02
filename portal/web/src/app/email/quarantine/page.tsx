@@ -16,8 +16,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
-import { RequireTenant } from "../../../../components/shell/RequireTenant";
-import { resolveTenantId, useCurrentTenantId } from "../../../../lib/useCurrentTenant";
+import { RequireTenant } from "../../../components/shell/RequireTenant";
+import { resolveTenantId, useCurrentTenantId } from "../../../lib/useCurrentTenant";
 
 export const QUARANTINE_TABS = ["email", "files", "teams"] as const;
 export type QuarantineTab = (typeof QUARANTINE_TABS)[number];
@@ -96,6 +96,8 @@ export interface QuarantineBulkPlan {
   readonly securityImpacting: boolean;
   readonly warning: string;
   readonly confirmation: QuarantineBulkConfirmation;
+  readonly diff?: readonly string[];
+  readonly valid?: boolean;
 }
 
 export type Fetcher = typeof fetch;
@@ -770,7 +772,7 @@ export function QuarantineView({
             <QuarantinePlanPreview plan={plan} planBusy={planBusy} planError={planError} />
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
               <button type="button" style={buttonStyle} onClick={() => { setPending(null); resetPlan(); }} data-testid="quarantine-action-cancel">Cancel</button>
-              <button type="button" style={{ ...primaryButtonStyle, ...(planBusy || !plan || !plan.valid ? disabledStyle : {}) }} disabled={planBusy || !plan || !plan.valid} onClick={() => void confirmPendingAction()} data-testid="quarantine-action-confirm">Confirm and apply</button>
+              <button type="button" style={{ ...primaryButtonStyle, ...(planBusy || !plan || plan.valid === false ? disabledStyle : {}) }} disabled={planBusy || !plan || plan.valid === false} onClick={() => void confirmPendingAction()} data-testid="quarantine-action-confirm">Confirm and apply</button>
             </div>
           </div>
         </div>
@@ -813,7 +815,7 @@ function QuarantinePlanPreview({ plan, planBusy, planError }: QuarantinePlanPrev
       {plan && (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px", fontSize: "14px" }}>
           <div data-testid="quarantine-plan-diff">
-            {plan.diff.length === 0 ? "No changes." : plan.diff.map((line, index) => <div key={index}>{line}</div>)}
+            {plan.diff && plan.diff.length > 0 ? plan.diff.map((line: string, index: number) => <div key={index}>{line}</div>) : "No changes."}
           </div>
           {plan.requiresConfirmation && <div style={{ color: "var(--text-soft)", fontSize: "13px" }}>Confirmation required before apply.</div>}
         </div>

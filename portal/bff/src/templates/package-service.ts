@@ -237,6 +237,7 @@ export function createTemplatePackageService(options: TemplatePackageServiceOpti
           name: content.name,
           body: content.body,
           source: "local",
+          repoId: null,
         }),
       );
     }

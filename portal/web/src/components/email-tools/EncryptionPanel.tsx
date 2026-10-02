@@ -281,8 +281,9 @@ export function EncryptionPanel({
     try {
       const result = await onPreview(selectedTemplate.identity, currentSettings());
       setOutcome(result);
+      const isDryRun = "dryRun" in result ? result.dryRun : result.plan.dryRun;
       setNotice(
-        result.dryRun
+        isDryRun
           ? "Plan preview: no change was written to the tenant."
           : "The OME template change was applied.",
       );
@@ -305,8 +306,9 @@ export function EncryptionPanel({
     try {
       const result = await onApply(selectedTemplate.identity, currentSettings());
       setOutcome(result);
+      const isDryRun = "dryRun" in result ? result.dryRun : result.plan.dryRun;
       setNotice(
-        result.dryRun
+        isDryRun
           ? "Plan preview: no change was written to the tenant."
           : "The OME template change was applied and audited.",
       );
@@ -538,23 +540,26 @@ export function EncryptionPanel({
                 {notice}
               </p>
             )}
-            {outcome !== null && (
-              <div style={sectionStyle} data-testid="encryption-outcome">
-                <h3 style={sectionTitleStyle}>
-                  {outcome.dryRun ? "Plan preview" : "Applied change"}
-                </h3>
-                <ul style={diffListStyle} data-testid="encryption-outcome-diff">
-                  {outcome.diff.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-                {"auditEvent" in outcome && outcome.auditEvent !== undefined && (
-                  <p style={metaStyle} data-testid="encryption-audit-event">
-                    Audited as {outcome.auditEvent.action} ({outcome.auditEvent.id}).
-                  </p>
-                )}
-              </div>
-            )}
+            {outcome !== null && (() => {
+              const plan = "plan" in outcome ? outcome.plan : outcome;
+              return (
+                <div style={sectionStyle} data-testid="encryption-outcome">
+                  <h3 style={sectionTitleStyle}>
+                    {plan.dryRun ? "Plan preview" : "Applied change"}
+                  </h3>
+                  <ul style={diffListStyle} data-testid="encryption-outcome-diff">
+                    {plan.diff.map((line: string) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                  {"auditEvent" in outcome && outcome.auditEvent !== undefined && (
+                    <p style={metaStyle} data-testid="encryption-audit-event">
+                      Audited as {outcome.auditEvent.action} ({outcome.auditEvent.id}).
+                    </p>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
       </Section>

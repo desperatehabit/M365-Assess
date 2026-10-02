@@ -1134,9 +1134,10 @@ export type TemplateRepoInput = Omit<TemplateRepo, "createdAt" | "updatedAt" | "
   Partial<Pick<TemplateRepo, "createdAt" | "updatedAt" | "deletedAt">>;
 export type TemplateLibraryItemInput = Omit<
   TemplateLibraryItem,
-  "createdAt" | "updatedAt" | "deletedAt"
-> &
-  Partial<Pick<TemplateLibraryItem, "createdAt" | "updatedAt" | "deletedAt">>;
+  "createdAt" | "updatedAt" | "deletedAt" | "repoId"
+> & {
+  repoId?: string | null;
+} & Partial<Pick<TemplateLibraryItem, "createdAt" | "updatedAt" | "deletedAt">>;
 export type TemplatePackageInput = Omit<TemplatePackage, "createdAt" | "updatedAt" | "deletedAt"> &
   Partial<Pick<TemplatePackage, "createdAt" | "updatedAt" | "deletedAt">>;
 

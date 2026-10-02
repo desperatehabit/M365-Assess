@@ -30,7 +30,10 @@ export interface JobPayload {
   credentialRef: string;
   sectionRefs: string[];
   artifactRefs: string[];
+  [key: string]: unknown;
 }
+
+export type { AlertEvent, AlertSeverity } from "./alerting.js";
 
 export interface JobEnvelope {
   schemaVersion: EnvelopeSchemaVersion;

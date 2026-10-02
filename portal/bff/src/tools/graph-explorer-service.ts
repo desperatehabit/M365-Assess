@@ -216,10 +216,8 @@ export function parseGraphExplorerRequest(body: unknown): GraphExplorerRequest {
   const request: GraphExplorerRequest = {
     method: method.trim() as GraphExplorerMethod,
     url: url.trim(),
+    ...(fields["body"] !== undefined ? { body: fields["body"] } : {}),
   };
-  if (fields["body"] !== undefined) {
-    request.body = fields["body"];
-  }
   return request;
 }
 

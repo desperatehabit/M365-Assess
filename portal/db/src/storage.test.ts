@@ -162,7 +162,7 @@ describe("migrations", () => {
     repo.close();
 
     const raw = new Database(filename);
-    raw.prepare("UPDATE schema_versions SET version = 99 WHERE version = 1").run();
+    raw.prepare("UPDATE schema_versions SET version = 9999 WHERE version = 1").run();
     raw.close();
 
     await expect(openSqliteRepository({ filename })).rejects.toBeInstanceOf(SchemaVersionError);

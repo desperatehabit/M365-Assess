@@ -15,8 +15,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
-import { RequireTenant } from "../../../../components/shell/RequireTenant";
-import { resolveTenantId, useCurrentTenantId } from "../../../../lib/useCurrentTenant";
+import { RequireTenant } from "../../../components/shell/RequireTenant";
+import { resolveTenantId, useCurrentTenantId } from "../../../lib/useCurrentTenant";
 
 export const FILTER_TYPES = ["spam", "antiphish", "malware", "connection"] as const;
 export type FilterType = (typeof FILTER_TYPES)[number];

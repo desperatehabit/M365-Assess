@@ -19,6 +19,10 @@
       "types": "./dist/reports.d.ts",
       "import": "./dist/reports.js"
     },
+    "./alerting": {
+      "types": "./dist/alerting.d.ts",
+      "import": "./dist/alerting.js"
+    },
     "./openapi": "./openapi/portal.v1.yaml"
   },
   "files": [

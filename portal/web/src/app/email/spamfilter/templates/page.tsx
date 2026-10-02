@@ -14,8 +14,8 @@
 
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
-import { RequireTenant } from "../../../../../components/shell/RequireTenant";
-import { resolveTenantId, useCurrentTenantId } from "../../../../../lib/useCurrentTenant";
+import { RequireTenant } from "../../../../components/shell/RequireTenant";
+import { resolveTenantId, useCurrentTenantId } from "../../../../lib/useCurrentTenant";
 import { FILTER_TYPES, FILTER_TYPE_TITLES, type FilterType } from "../page";
 
 export interface FilterTemplateItem {

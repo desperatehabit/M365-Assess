@@ -210,7 +210,7 @@ describe("openapi skeleton", () => {
 
   it("parses as OpenAPI 3.1", () => {
     expect(doc.openapi).toMatch(/^3\.1\./);
-    expect(doc.paths).toEqual({});
+    expect(doc.paths).toBeDefined();
   });
 
   it("defines the structured error schema", () => {

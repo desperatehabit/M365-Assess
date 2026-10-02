@@ -8,9 +8,9 @@
 
 import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
-import { RequireTenant } from "../../components/shell/RequireTenant";
-import { resolveTenantId, useCurrentTenantId } from "../../lib/useCurrentTenant";
-import { ConsentRequestTable, type ConsentRequestItem } from "../../components/ConsentRequestTable";
+import { RequireTenant } from "../../../components/shell/RequireTenant";
+import { resolveTenantId, useCurrentTenantId } from "../../../lib/useCurrentTenant";
+import { ConsentRequestTable, type ConsentRequestItem } from "../../../components/ConsentRequestTable";
 
 export type Fetcher = typeof fetch;
 

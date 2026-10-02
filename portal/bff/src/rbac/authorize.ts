@@ -23,6 +23,7 @@ export interface Caller {
   readonly roles: readonly RoleId[];
   readonly tenantScope: TenantScope;
   readonly permissions?: readonly string[];
+  readonly userId?: string;
 }
 
 export function hasPermission(caller: Caller, permission: Permission): boolean {
