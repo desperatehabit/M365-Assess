@@ -107,7 +107,15 @@ function Connect-WorkerTenant {
         TenantId  = $block.TenantId
         Services  = [System.Collections.Generic.List[string]]::new()
     }
-    foreach ($svc in $Service) {
+    # App-only Exchange Online / Purview sign-in needs the tenant's initial (*.onmicrosoft.*)
+    # domain, which Connect-Service resolves through Graph. An EXO-only worker (mailboxes,
+    # filters, permissions) must therefore connect Graph first; the extra session is tracked
+    # and closed by Disconnect-WorkerTenant.
+    $orderedServices = @()
+    if ($Service -contains 'ExchangeOnline') { $orderedServices += 'Graph' }
+    foreach ($svc in $Service) { if ($orderedServices -notcontains $svc) { $orderedServices += $svc } }
+
+    foreach ($svc in $orderedServices) {
         $connectParams = @{ Service = $svc; TenantId = $block.TenantId }
         foreach ($key in @('ClientId', 'CertificateThumbprint', 'Certificate', 'CertificatePath', 'CertificatePassword', 'ClientSecret', 'M365Environment')) {
             if ($null -ne $auth[$key] -and [string]$auth[$key] -ne '') { $connectParams[$key] = $auth[$key] }

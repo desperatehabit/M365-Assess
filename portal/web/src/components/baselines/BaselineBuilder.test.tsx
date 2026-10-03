@@ -6,8 +6,15 @@ import { StageEditor } from "./StageEditor";
 import { BaselineTimeline } from "./BaselineTimeline";
 import type { BaselineStageInput } from "../../lib/baselinesApi";
 
+let query = new URLSearchParams();
+
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => query,
+}));
+
 afterEach(() => {
   cleanup();
+  query = new URLSearchParams();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -127,5 +134,46 @@ describe("BaselineBuilderPage", () => {
     const posted = JSON.parse(calls[0]!.init!.body as string) as Record<string, unknown>;
     expect(posted["name"]).toBe("Server baseline");
     expect(screen.getByTestId("builder-notice").textContent).toContain("saved");
+  });
+
+  it("seeds name and stages from the catalog when ?catalog= is present", async () => {
+    query = new URLSearchParams("catalog=identity-baseline");
+    const calls: string[] = [];
+    const fetcher = (async (url: string): Promise<Response> => {
+      calls.push(url);
+      if (url === "/v1/baselines/catalog") {
+        return new Response(
+          JSON.stringify({
+            source: "local",
+            entries: [
+              {
+                id: "identity-baseline",
+                name: "Identity Baseline",
+                description: "Phishing-resistant MFA.",
+                stages: [
+                  {
+                    order: 0,
+                    action: "report",
+                    conditions: [{ key: "CA-MFA-ALL-001", expected: { state: "enabled" } }],
+                  },
+                ],
+              },
+            ],
+            community: { available: false, reason: "community later" },
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected request: ${url}`);
+    }) as unknown as typeof fetch;
+
+    render(<BaselineBuilderPage params={{ id: "new" }} fetcher={fetcher} />);
+
+    await waitFor(() =>
+      expect((screen.getByTestId("builder-name") as HTMLInputElement).value).toBe("Identity Baseline"),
+    );
+    expect(calls).toContain("/v1/baselines/catalog");
+    expect(screen.getByTestId("timeline-step-standards").dataset.state).toBe("done");
+    expect(screen.getByTestId("builder-notice").textContent).toContain("Seeded");
   });
 });

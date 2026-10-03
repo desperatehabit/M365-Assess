@@ -71,6 +71,64 @@ Describe 'Invoke-TenantOnboarding worker (T-0025)' {
         }
     }
 
+    Context 'PFX-backed certificates (no Windows certificate store)' {
+        It 'passes the PFX path through so the BFF can store the credential' {
+            $handler = {
+                param($TenantId, $Force)
+                return [pscustomobject]@{
+                    ClientId              = 'app-id-pfx'
+                    CertificateThumbprint = 'THUMB-PFX'
+                    CertificatePath       = '/home/op/.m365-assess/certs/M365-Assess-t.pfx'
+                    AppDisplayName        = 'M365-Assess-Reader'
+                    BootstrapCreated      = $true
+                    TotalFailed           = 0
+                }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId $script:stubTenantId -Confirmed $true -CmdletHandler $handler
+
+            $result.status | Should -Be 'succeeded'
+            $result.certificatePath | Should -Be '/home/op/.m365-assess/certs/M365-Assess-t.pfx'
+        }
+
+        It 'reports an empty certificatePath when the certificate lives in a store' {
+            $handler = {
+                param($TenantId, $Force)
+                return [pscustomobject]@{ ClientId = 'a'; CertificateThumbprint = 'T'; TotalFailed = 0 }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId $script:stubTenantId -Confirmed $true -CmdletHandler $handler
+
+            $result.certificatePath | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'partial failure detail' {
+        It 'names each failed assignment and its error in the message' {
+            $handler = {
+                param($TenantId, $Force)
+                return [pscustomobject]@{
+                    ClientId          = 'app-id-partial'
+                    GraphPermissions  = @(
+                        [pscustomobject]@{ Permission = 'User.Read.All'; Status = 'Added' },
+                        [pscustomobject]@{ Permission = 'Purview.ApplicationAccess'; Status = 'NotFound' }
+                    )
+                    ComplianceRoles   = @([pscustomobject]@{ Role = 'Global Reader'; Status = 'Failed'; Error = "Insufficient`nprivileges" })
+                    ExoRoleGroups     = @()
+                    TotalFailed       = 2
+                }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId $script:stubTenantId -Confirmed $true -CmdletHandler $handler
+
+            $result.status | Should -Be 'partial'
+            $result.error | Should -Match 'Purview\.ApplicationAccess \(NotFound\)'
+            $result.error | Should -Match 'Global Reader \(Failed: Insufficient privileges\)'
+            $result.error | Should -Not -Match 'User\.Read\.All'
+            $result.error | Should -Match 'onboard\.partial_failure'
+        }
+    }
+
     Context 'half-provisioned and failed outcomes' {
         It 'returns partial status when TotalFailed is greater than zero' {
             $handler = {

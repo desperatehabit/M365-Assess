@@ -89,6 +89,10 @@ const FULL_CONFIG = loadConfig({ M365_BFF_GDAP_PARTNER_TENANT_ID: "partner-tenan
  * Every endpoint the registry must cover: the app's served routes (T-0817) plus route
  * modules that are registered ahead of being mounted by T-0818..T-0825.
  */
+// Served to any signed-in caller with no registry permission: the OpenAPI document gives them the
+// reserved "authenticated" default (routes/openapi.ts FRAGMENT_PERMISSION_OVERRIDES).
+const AUTHENTICATED_ONLY = new Set(["GET /v1/me", "POST /v1/access/check"]);
+
 function mountedEndpoints(): Route[] {
   const app = createApp(FULL_CONFIG, { db: new Database(":memory:") });
   const appRoutes = [...app.routes];
@@ -111,7 +115,7 @@ function mountedEndpoints(): Route[] {
   const seen = new Set<string>();
   return all.filter((r) => {
     const key = `${r.method.toUpperCase()} ${r.path}`;
-    if (seen.has(key)) return false;
+    if (AUTHENTICATED_ONLY.has(key) || seen.has(key)) return false;
     seen.add(key);
     return true;
   });
@@ -355,7 +359,9 @@ describe("permission registry covers the app's mounted routes (T-0817)", () => {
       ...app.routes.map((r) => ({ method: r.method, path: r.path })),
     ];
     expect(app.routes.length).toBeGreaterThan(10);
-    const missing = served.filter((r) => permissionForEndpoint({ method: r.method, path: r.path }) === undefined);
+    const missing = served
+      .filter((r) => !AUTHENTICATED_ONLY.has(`${r.method.toUpperCase()} ${r.path}`))
+      .filter((r) => permissionForEndpoint({ method: r.method, path: r.path }) === undefined);
     expect(missing).toEqual([]);
     app.close();
   });

@@ -1,0 +1,46 @@
+{
+  "toolName": "M365-Assess",
+  "toolVersion": "2.13.0",
+  "registryDataVersion": "2026-04-30",
+  "generatedAtUtc": "2026-10-02T20:46:33.6984485Z",
+  "tenantId": "deac2b87-769a-2b3a-b24b-4b78278560c3",
+  "tenantDisplayName": "",
+  "tenantPrimaryDomain": "",
+  "tenantNameSlug": "t-a",
+  "environment": "commercial",
+  "sectionsRun": [
+    "Tenant",
+    "Identity",
+    "Licensing",
+    "Email",
+    "Intune",
+    "Security",
+    "Collaboration",
+    "PowerBI",
+    "Hybrid"
+  ],
+  "collectorsRun": 53,
+  "durationSeconds": 3,
+  "outputArtifacts": [
+    {
+      "name": "_Assessment-Issues.log",
+      "bytes": 2507,
+      "sha256": "32D7DB565342D35A19DB06562FD0B60BCB48BACCD37041A07485DE482D14D4AD"
+    },
+    {
+      "name": "_Assessment-Log.txt",
+      "bytes": 10071,
+      "sha256": "5C80BE90662291BDE5E6075D0F793011E25399030E7859A73C9CD8364D3A00FD"
+    },
+    {
+      "name": "_Assessment-Report.html",
+      "bytes": 591922,
+      "sha256": "0A7DF7CD46EACF66E359318AC9C1D17023D3026CCB2273403EFAE97AD6C4CC68"
+    },
+    {
+      "name": "_Assessment-Summary.csv",
+      "bytes": 6052,
+      "sha256": "DCA4F8AF03A936269A52D1CF27763D3221F992897DD99FEEF8855A5A9840711F"
+    }
+  ]
+}

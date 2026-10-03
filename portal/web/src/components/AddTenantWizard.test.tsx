@@ -155,9 +155,33 @@ describe("AddTenantWizard (T-0031)", () => {
         expect(screen.getByTestId("service-result-ExchangeOnline").textContent).toContain("EXO timeout");
       });
 
-      // Next button should be disabled because one service failed
+      // The probe is advisory: a failed service must not block onboarding
       const nextBtn = screen.getByTestId("wizard-next-btn");
-      expect(nextBtn.hasAttribute("disabled")).toBe(true);
+      expect(nextBtn.hasAttribute("disabled")).toBe(false);
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("explains that testing happens after onboarding when no probe handler is wired", async () => {
+    const view = render(<AddTenantWizard />);
+
+    try {
+      fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 2
+      fireEvent.change(screen.getByTestId("tenant-input"), { target: { value: "contoso.onmicrosoft.com" } });
+      fireEvent.click(screen.getByTestId("resolve-tenant-btn"));
+      await waitFor(() => {
+        expect(screen.getByTestId("resolve-success-banner")).toBeTruthy();
+      });
+      fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 3
+      fireEvent.change(screen.getByTestId("admin-upn-input"), { target: { value: "admin@contoso.onmicrosoft.com" } });
+      fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 4
+      fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 5
+
+      expect(screen.getByTestId("test-after-onboarding-note")).toBeTruthy();
+      expect(screen.queryByTestId("run-test-connection-btn")).toBeNull();
+      expect(screen.queryByTestId("service-result-Graph")).toBeNull();
+      expect(screen.getByTestId("wizard-next-btn").hasAttribute("disabled")).toBe(false);
     } finally {
       view.unmount();
     }

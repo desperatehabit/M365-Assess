@@ -7,7 +7,7 @@
 // row detail drawer with command, before/after, and result.
 // Zero colour literals: report theme tokens only.
 
-import React, { useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import React, { useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import {
   computeKpis,
   deriveCollector,
@@ -197,11 +197,19 @@ export function severityBadgeStyle(severity: string): CSSProperties {
   }
 }
 
+// A side panel pinned to the viewport. Rendered inline it landed below the whole plan table, so a
+// long plan put "View plan" detail far off-screen and the click looked like it did nothing.
 const drawerStyle: CSSProperties = {
-  padding: "16px",
+  position: "fixed",
+  top: 0,
+  right: 0,
+  bottom: 0,
+  width: "min(560px, 100vw)",
+  zIndex: 50,
+  overflowY: "auto",
+  padding: "20px",
   background: "var(--bg-elev)",
-  border: "1px solid var(--border)",
-  borderRadius: "var(--radius, 10px)",
+  borderLeft: "1px solid var(--border)",
   display: "flex",
   flexDirection: "column",
   gap: "12px",
@@ -269,6 +277,15 @@ export function RemediationPlanTable({
   }, [actions, modeFilter, severityFilter, collectorFilter, stateFilter, eligibleOnly]);
 
   const selectedAction = actions.find((a) => a.id === selected) ?? null;
+
+  useEffect(() => {
+    if (selected === null) return undefined;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setSelected(null);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selected]);
 
   return (
     <div style={containerStyle} data-testid="remediation-plan-table">
@@ -484,7 +501,7 @@ export function RemediationPlanTable({
 
       {/* Row detail drawer */}
       {selectedAction && (
-        <div style={drawerStyle} data-testid="plan-detail-drawer">
+        <div style={drawerStyle} role="dialog" aria-label={`Remediation action ${selectedAction.check}`} data-testid="plan-detail-drawer">
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <h3 style={{ margin: 0, fontSize: "16px" }}>
               <span style={monoStyle}>{selectedAction.check}</span>

@@ -6,7 +6,7 @@
 // Partial or half-provisioned failures still record an audit event and return a precise error.
 
 import { randomUUID } from "node:crypto";
-import { formatThumbprintRef } from "../credentials/store.js";
+import { formatSecretRef, formatThumbprintRef, type CredentialStore } from "../credentials/store.js";
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route } from "../server.js";
@@ -39,6 +39,8 @@ export interface OnboardWorkerResult {
   readonly status: "succeeded" | "partial" | "failed";
   readonly clientId?: string | null;
   readonly certificateThumbprint?: string | null;
+  /** Set when the certificate lives in a PFX file (no certificate store, e.g. Linux/macOS). */
+  readonly certificatePath?: string | null;
   readonly appDisplayName?: string | null;
   readonly bootstrapCreated?: boolean;
   readonly totalFailed?: number;
@@ -67,6 +69,8 @@ export interface OnboardRequestContext extends RequestContext {
 export interface OnboardRouteOptions {
   readonly tenantStore: TenantStore;
   readonly credentialStore?: CredentialStoreRow;
+  /** Backend for PFX credential material. Required to persist a PFX-backed onboarding. */
+  readonly secrets?: CredentialStore;
   readonly runner: OnboardRunner;
   readonly resolveCaller: (ctx: RequestContext) => OnboardCaller | undefined;
   readonly authorize?: OnboardAuthorizer;
@@ -266,9 +270,39 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
           updatedAt: instant,
           deletedAt: null,
         };
+        // Checked before any write so a misconfigured backend never leaves a tenant row with no
+        // credential. The app registration already exists by now, so the PFX path is reported.
+        if (workerResult.certificatePath && !options.secrets) {
+          throw new AppError(
+            ONBOARD_FAILED,
+            `onboarding created the app registration with a PFX certificate at ${workerResult.certificatePath}, but no credential backend is configured to store it`,
+            500,
+          );
+        }
         const savedTenant = await options.tenantStore.upsertTenant(tenantRecord);
 
-        if (
+        if (options.credentialStore && workerResult.clientId && workerResult.certificatePath) {
+          // The worker kept the private key in an owner-only PFX file. Only its path is stored,
+          // in the credential backend; the database row holds just the reference.
+          const secretRef = formatSecretRef(tenantId);
+          await options.secrets!.writeSecret(
+            secretRef,
+            JSON.stringify({ certificatePath: workerResult.certificatePath }),
+          );
+          await options.credentialStore.upsertCredential({
+            id: randomUUID(),
+            tenantId,
+            authMethod: "certificate-pfx",
+            clientId: workerResult.clientId,
+            secretRef,
+            thumbprint: workerResult.certificateThumbprint ?? null,
+            environment: input.environment ?? "commercial",
+            expiresOn: null,
+            lastValidated: instant,
+            createdAt: instant,
+            updatedAt: instant,
+          });
+        } else if (
           options.credentialStore &&
           workerResult.clientId &&
           workerResult.certificateThumbprint

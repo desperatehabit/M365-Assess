@@ -221,7 +221,9 @@ function Get-ManagedDevices {
     )
 
     $allRawDevices = [System.Collections.Generic.List[object]]::new()
-    $uri = "/v1.0/deviceManagement/managedDevices?`$select=id,deviceName,userPrincipalName,operatingSystem,osVersion,complianceState,managementState,deviceType,managedDeviceOwnerType,lastSyncDateTime,enrolledDateTime,serialNumber,isEncrypted&`$top=999"
+    # 'deviceType' is not a property on microsoft.graph.managedDevice; selecting it makes Graph
+    # reject the whole request with a 400 (live-tenant verification, T-0848).
+    $uri = "/v1.0/deviceManagement/managedDevices?`$select=id,deviceName,userPrincipalName,operatingSystem,osVersion,complianceState,managementState,managedDeviceOwnerType,lastSyncDateTime,enrolledDateTime,serialNumber,isEncrypted&`$top=999"
 
     do {
         $response = Invoke-MgGraphRequest -Method GET -Uri $uri

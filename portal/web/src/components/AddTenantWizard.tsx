@@ -212,13 +212,6 @@ export function AddTenantWizard({
           environment,
         });
         setServiceResults(res.services);
-      } else {
-        // Simulated pass
-        setServiceResults([
-          { service: "Graph", status: "pass", connected: true },
-          { service: "ExchangeOnline", status: "pass", connected: true },
-          { service: "Purview", status: "pass", connected: true },
-        ]);
       }
     } catch (err) {
       setTestError(err instanceof Error ? err.message : "Connection probe failed");
@@ -277,7 +270,8 @@ export function AddTenantWizard({
       return true;
     }
     if (step === 4) return true;
-    if (step === 5) return serviceResults !== null && serviceResults.every((s) => s.status === "pass");
+    // Step 5 is advisory: the tenant and its credential only exist after step 6 submits, so a
+    // probe can neither be required nor trusted to gate onboarding.
     return true;
   };
 
@@ -684,19 +678,28 @@ export function AddTenantWizard({
         {step === 5 && (
           <div data-testid="wizard-step-5" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <h2 style={{ margin: 0, fontSize: "18px" }}>Test Connection</h2>
-            <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "14px" }}>
-              Verify connectivity to Graph, Exchange Online, and Purview using the configured credentials.
-            </p>
+            {onTestConnection ? (
+              <>
+                <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "14px" }}>
+                  Optionally verify connectivity to Graph, Exchange Online, and Purview. A failed probe does not block onboarding.
+                </p>
 
-            <button
-              type="button"
-              onClick={handleTestConnection}
-              disabled={testingConnection}
-              style={primaryButtonStyle}
-              data-testid="run-test-connection-btn"
-            >
-              {testingConnection ? "Probing Cloud Services..." : "Run Test Connection"}
-            </button>
+                <button
+                  type="button"
+                  onClick={handleTestConnection}
+                  disabled={testingConnection}
+                  style={primaryButtonStyle}
+                  data-testid="run-test-connection-btn"
+                >
+                  {testingConnection ? "Probing Cloud Services..." : "Run Test Connection"}
+                </button>
+              </>
+            ) : (
+              <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "14px" }} data-testid="test-after-onboarding-note">
+                The connection can only be tested once the tenant and its credential exist. Continue to add the tenant,
+                then run Test connection from the tenant page.
+              </p>
+            )}
 
             {testError && (
               <div

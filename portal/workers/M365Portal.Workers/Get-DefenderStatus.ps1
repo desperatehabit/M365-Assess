@@ -9,12 +9,12 @@
 # EXO Get-* cmdlets are issued.
 
 $script:DefenderStatusRegistry = @(
-    @{ Area = 'av'; DisplayName = 'Antivirus (AV)'; Source = 'device-management'; GraphResource = 'v1.0/deviceManagement/configurationPolicies'; Recommended = 'Real-time protection enabled with up-to-date signatures'; Supported = $true; ModuleChecks = @('DEFENDER-ANTIMALWARE-001', 'DEFENDER-ANTIMALWARE-002', 'DEFENDER-MALWARE-001', 'DEFENDER-MALWARE-002') }
+    @{ Area = 'av'; DisplayName = 'Antivirus (AV)'; Source = 'device-management'; GraphResource = 'beta/deviceManagement/configurationPolicies'; Recommended = 'Real-time protection enabled with up-to-date signatures'; Supported = $true; ModuleChecks = @('DEFENDER-ANTIMALWARE-001', 'DEFENDER-ANTIMALWARE-002', 'DEFENDER-MALWARE-001', 'DEFENDER-MALWARE-002') }
     @{ Area = 'edr'; DisplayName = 'Endpoint Detection and Response (EDR)'; Source = 'graph-security'; GraphResource = 'v1.0/security/alerts_v2'; Recommended = 'Devices onboarded to Defender for Endpoint in block mode'; Supported = $true; ModuleChecks = @('DEFENDER-ZAP-001', 'DEFENDER-PRIORITY-001') }
-    @{ Area = 'asr'; DisplayName = 'Attack Surface Reduction (ASR)'; Source = 'device-management'; GraphResource = 'v1.0/deviceManagement/intents'; Recommended = 'ASR rules in block or warn mode per baseline'; Supported = $true; ModuleChecks = @('DEFENDER-ANTIPHISH-001', 'DEFENDER-SAFELINKS-001', 'DEFENDER-SAFEATTACH-001') }
+    @{ Area = 'asr'; DisplayName = 'Attack Surface Reduction (ASR)'; Source = 'device-management'; GraphResource = 'beta/deviceManagement/intents'; Recommended = 'ASR rules in block or warn mode per baseline'; Supported = $true; ModuleChecks = @('DEFENDER-ANTIPHISH-001', 'DEFENDER-SAFELINKS-001', 'DEFENDER-SAFEATTACH-001') }
     @{ Area = 'compliance'; DisplayName = 'Device Compliance'; Source = 'device-management'; GraphResource = 'v1.0/deviceManagement/deviceCompliancePolicies'; Recommended = 'Compliance policies assigned with conditional access'; Supported = $false; ModuleChecks = @() }
     @{ Area = 'exclusions'; DisplayName = 'Exclusions'; Source = 'exo'; GraphResource = 'exo:Get-TenantAllowBlockList'; Recommended = 'No standing allow-list entries without expiry'; Supported = $false; ModuleChecks = @() }
-    @{ Area = 'firewall'; DisplayName = 'Firewall'; Source = 'device-management'; GraphResource = 'v1.0/deviceManagement/intents'; Recommended = 'Host firewall enabled on all profiles'; Supported = $false; ModuleChecks = @() }
+    @{ Area = 'firewall'; DisplayName = 'Firewall'; Source = 'device-management'; GraphResource = 'beta/deviceManagement/intents'; Recommended = 'Host firewall enabled on all profiles'; Supported = $false; ModuleChecks = @() }
 )
 
 function Read-DefenderStatusJob {

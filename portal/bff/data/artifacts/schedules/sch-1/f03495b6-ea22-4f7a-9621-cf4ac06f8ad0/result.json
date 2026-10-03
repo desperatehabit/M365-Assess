@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "v1",
+  "jobId": "1c6d6ab2-f33f-4965-937d-669d91c550f2",
+  "jobType": "assessment",
+  "tenantId": "t-a",
+  "runId": "f03495b6-ea22-4f7a-9621-cf4ac06f8ad0",
+  "requestId": "63937815-72f3-4be0-bee6-a5a0c2e1ead5",
+  "correlationId": "4b523bfd-b3b0-48cd-b6ee-f91b8fdc3c9f",
+  "status": "succeeded",
+  "startedAt": "2026-10-02T20:46:17.662Z",
+  "finishedAt": "2026-10-02T20:46:33.719Z",
+  "exitCode": 0,
+  "artifactRefs": [
+    "Assessment_20261002_164629/_Assessment-Issues.log",
+    "Assessment_20261002_164629/_Assessment-Log.txt",
+    "Assessment_20261002_164629/_Assessment-Provenance.json",
+    "Assessment_20261002_164629/_Assessment-Report.html",
+    "Assessment_20261002_164629/_Assessment-Summary.csv"
+  ]
+}

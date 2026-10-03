@@ -15,6 +15,10 @@ const config: NextConfig = {
   outputFileTracingRoot: REPO_ROOT,
   // Next would otherwise write AGENTS.md and CLAUDE.md into this package.
   agentRules: false,
+  // The dev proxy drops a /v1 request after 30s and answers a bare 500. Onboarding and test
+  // connection block on a browser sign-in and many Graph calls, so allow longer than the BFF's
+  // 5 minute worker timeout; the worker's own timeout then reports the failure.
+  experimental: { proxyTimeout: 6 * 60 * 1000 },
   async rewrites() {
     return [{ source: "/v1/:path*", destination: `${BFF_URL}/v1/:path*` }];
   },

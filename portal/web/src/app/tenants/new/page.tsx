@@ -50,19 +50,6 @@ export default function NewTenantPage(): ReactElement {
     };
   };
 
-  const handleTestConnection = async (
-    tenantId: string,
-  ): Promise<{ success: boolean; services: { service: string; status: "pass" | "fail"; connected: boolean }[] }> => {
-    const res = await fetch(`/v1/tenants/${encodeURIComponent(tenantId)}/test-connection`, {
-      method: "POST",
-    });
-    if (!res.ok) {
-      throw new Error(`Connection test failed: ${res.statusText}`);
-    }
-    const data = await res.json();
-    return data;
-  };
-
   const handleSubmitOnboarding = async (
     payload: Record<string, unknown>,
   ): Promise<Record<string, unknown>> => {
@@ -109,7 +96,6 @@ export default function NewTenantPage(): ReactElement {
 
       <AddTenantWizard
         onResolveTenant={handleResolveTenant}
-        onTestConnection={handleTestConnection}
         onSubmitOnboarding={handleSubmitOnboarding}
         onComplete={handleComplete}
         onCancel={handleCancel}

@@ -1,0 +1,95 @@
+================================================================================
+  M365 Environment Assessment Log
+  Version:  v2.13.0
+  Started:  2026-10-02 16:46:29
+  Tenant:   t-a
+  Cloud:    commercial
+  Domain:   
+  Sections: Tenant, Identity, Licensing, Email, Intune, Security, Collaboration, PowerBI, Hybrid
+================================================================================
+
+[2026-10-02 16:46:29.616] [INFO] Assessment started. Output folder: schedules/sch-1/f03495b6-ea22-4f7a-9621-cf4ac06f8ad0/Assessment_20261002_164629
+[2026-10-02 16:46:29.692] [INFO] [Setup] Module compatibility check passed
+[2026-10-02 16:46:30.121] [INFO] [Tenant] Connecting to Graph...
+[2026-10-02 16:46:30.168] [ERROR] [Tenant] Graph connection failed: Failed to connect to Graph: 'CertificateThumbprint' must have a len...
+    Microsoft.PowerShell.Commands.WriteErrorException: Failed to connect to Graph: 'CertificateThumbprint' must have a length of 40. Ensure you have the right certificate thumbprint then try again.
+[2026-10-02 16:46:30.191] [WARN] [Tenant] [Tenant Information] Skipped: Tenant Information — Graph not connected
+[2026-10-02 16:46:30.192] [WARN] [Identity] [User Summary] Skipped: User Summary — Graph not connected
+[2026-10-02 16:46:30.193] [WARN] [Identity] [MFA Report] Skipped: MFA Report — Graph not connected
+[2026-10-02 16:46:30.193] [WARN] [Identity] [Admin Roles] Skipped: Admin Roles — Graph not connected
+[2026-10-02 16:46:30.193] [WARN] [Identity] [Conditional Access] Skipped: Conditional Access — Graph not connected
+[2026-10-02 16:46:30.194] [WARN] [Identity] [App Registrations] Skipped: App Registrations — Graph not connected
+[2026-10-02 16:46:30.194] [WARN] [Identity] [Password Policy] Skipped: Password Policy — Graph not connected
+[2026-10-02 16:46:30.195] [WARN] [Identity] [Entra Security Config] Skipped: Entra Security Config — Graph not connected
+[2026-10-02 16:46:30.195] [WARN] [Identity] [CA Policy Evaluation] Skipped: CA Policy Evaluation — Graph not connected
+[2026-10-02 16:46:30.196] [WARN] [Identity] [Enterprise App Security] Skipped: Enterprise App Security — Graph not connected
+[2026-10-02 16:46:30.196] [WARN] [Identity] [Separation of Duties] Skipped: Separation of Duties — Graph not connected
+[2026-10-02 16:46:30.197] [WARN] [Identity] [Terms of Use] Skipped: Terms of Use — Graph not connected
+[2026-10-02 16:46:30.198] [WARN] [Identity] [Privileged Remote Access] Skipped: Privileged Remote Access — Graph not connected
+[2026-10-02 16:46:30.198] [WARN] [Identity] [Admin Role Separation] Skipped: Admin Role Separation — Graph not connected
+[2026-10-02 16:46:30.199] [WARN] [Identity] [CA Remote Device Policy] Skipped: CA Remote Device Policy — Graph not connected
+[2026-10-02 16:46:30.200] [WARN] [Licensing] [License Summary] Skipped: License Summary — Graph not connected
+[2026-10-02 16:46:30.201] [INFO] [Email] Connecting to ExchangeOnline...
+[2026-10-02 16:46:31.489] [ERROR] [Email] ExchangeOnline connection failed: Failed to connect to ExchangeOnline: -CertificateThumbprint is Wind...
+    Microsoft.PowerShell.Commands.WriteErrorException: Failed to connect to ExchangeOnline: -CertificateThumbprint is Windows-only for Exchange Online / Purview (it is resolved through the Windows certificate store). On Linux/macOS, pass the certificate with -Certificate or -CertificatePath instead.
+[2026-10-02 16:46:31.490] [WARN] [Email] [Mailbox Summary] Skipped: Mailbox Summary — ExchangeOnline not connected
+[2026-10-02 16:46:31.490] [WARN] [Email] [Mail Flow] Skipped: Mail Flow — ExchangeOnline not connected
+[2026-10-02 16:46:31.491] [WARN] [Email] [EXO Email Policies] Skipped: EXO Email Policies — ExchangeOnline not connected
+[2026-10-02 16:46:31.491] [WARN] [Email] [EXO Security Config] Skipped: EXO Security Config — ExchangeOnline not connected
+[2026-10-02 16:46:31.491] [WARN] [Email] [DNS Email Authentication] Skipped: DNS Email Authentication — ExchangeOnline not connected
+[2026-10-02 16:46:31.492] [WARN] [Intune] [Device Summary] Skipped: Device Summary — Graph not connected
+[2026-10-02 16:46:31.493] [WARN] [Intune] [Compliance Policies] Skipped: Compliance Policies — Graph not connected
+[2026-10-02 16:46:31.493] [WARN] [Intune] [Config Profiles] Skipped: Config Profiles — Graph not connected
+[2026-10-02 16:46:31.493] [WARN] [Intune] [Intune Security Config] Skipped: Intune Security Config — Graph not connected
+[2026-10-02 16:46:31.494] [WARN] [Intune] [Mobile Encryption] Skipped: Mobile Encryption — Graph not connected
+[2026-10-02 16:46:31.494] [WARN] [Intune] [Portable Storage] Skipped: Portable Storage — Graph not connected
+[2026-10-02 16:46:31.494] [WARN] [Intune] [Application Control] Skipped: Application Control — Graph not connected
+[2026-10-02 16:46:31.495] [WARN] [Intune] [FIPS Cryptography] Skipped: FIPS Cryptography — Graph not connected
+[2026-10-02 16:46:31.500] [WARN] [Intune] [Device Inventory] Skipped: Device Inventory — Graph not connected
+[2026-10-02 16:46:31.500] [WARN] [Intune] [Auto Discovery] Skipped: Auto Discovery — Graph not connected
+[2026-10-02 16:46:31.500] [WARN] [Intune] [Removable Media] Skipped: Removable Media — Graph not connected
+[2026-10-02 16:46:31.501] [WARN] [Intune] [Always-On VPN] Skipped: Always-On VPN — Graph not connected
+[2026-10-02 16:46:31.501] [WARN] [Intune] [VPN Split Tunnel] Skipped: VPN Split Tunnel — Graph not connected
+[2026-10-02 16:46:31.501] [WARN] [Intune] [Wi-Fi EAP] Skipped: Wi-Fi EAP — Graph not connected
+[2026-10-02 16:46:31.506] [WARN] [Security] [Secure Score] Skipped: Secure Score — Graph not connected
+[2026-10-02 16:46:31.506] [WARN] [Security] [Defender Policies] Skipped: Defender Policies — ExchangeOnline not connected
+[2026-10-02 16:46:31.507] [WARN] [Security] [Defender Security Config] Skipped: Defender Security Config — ExchangeOnline not connected
+[2026-10-02 16:46:31.507] [INFO] [Security] Connecting to Purview...
+[2026-10-02 16:46:31.512] [ERROR] [Security] Purview connection failed: Failed to connect to Purview: -CertificateThumbprint is Windows-onl...
+    Microsoft.PowerShell.Commands.WriteErrorException: Failed to connect to Purview: -CertificateThumbprint is Windows-only for Exchange Online / Purview (it is resolved through the Windows certificate store). On Linux/macOS, pass the certificate with -Certificate or -CertificatePath instead.
+[2026-10-02 16:46:31.513] [WARN] [Security] [DLP Policies] Skipped: DLP Policies — Purview not connected
+[2026-10-02 16:46:31.513] [WARN] [Security] [Compliance Security Config] Skipped: Compliance Security Config — Purview not connected
+[2026-10-02 16:46:31.514] [WARN] [Security] [Purview Retention Config] Skipped: Purview Retention Config — Purview not connected
+[2026-10-02 16:46:31.514] [WARN] [Security] [Critical Exposure] Skipped: Critical Exposure — Graph not connected
+[2026-10-02 16:46:31.515] [WARN] [Security] [Vulnerability Scanning] Skipped: Vulnerability Scanning — Graph not connected
+[2026-10-02 16:46:31.528] [WARN] [Security] [Real-time Scanning] Skipped: Real-time Scanning — Graph not connected
+[2026-10-02 16:46:31.528] [WARN] [Security] [Security Monitoring] Skipped: Security Monitoring — Graph not connected
+[2026-10-02 16:46:31.529] [WARN] [Security] [Config Detection] Skipped: Config Detection — Graph not connected
+[2026-10-02 16:46:31.529] [WARN] [Collaboration] [SharePoint & OneDrive] Skipped: SharePoint & OneDrive — Graph not connected
+[2026-10-02 16:46:31.530] [WARN] [Collaboration] [SharePoint Security Config] Skipped: SharePoint Security Config — Graph not connected
+[2026-10-02 16:46:31.530] [WARN] [Collaboration] [Teams Access] Skipped: Teams Access — Graph not connected
+[2026-10-02 16:46:31.530] [WARN] [Collaboration] [Teams Security Config] Skipped: Teams Security Config — Graph not connected
+[2026-10-02 16:46:31.531] [WARN] [Collaboration] [Forms Security Config] Skipped: Forms Security Config — Graph not connected
+[2026-10-02 16:46:31.532] [INFO] [PowerBI] [Power BI Security Config] Running: Power BI Security Config
+[2026-10-02 16:46:31.535] [INFO] [PowerBI] [Power BI Security Config] Running Power BI Security Config in child process to avoid MSAL assembly conflict
+[2026-10-02 16:46:32.394] [WARN] [PowerBI] [Power BI Security Config] Child process stderr: Write-Error: /tmp/m365assess_pbi_we3fccv4.f3x.ps1:6
+Line |
+   6 |  … /Connect-Service.ps1' @connectParams } catch { Write-Error $_; exit 1 …
+     |                                                   ~~~~~~~~~~~~~~
+     | Failed to connect to PowerBI: One or more errors occurred. (Unix
+     | LocalMachine X509Store is limited to the Root and CertificateAuthority
+     | stores.)
+[2026-10-02 16:46:32.400] [ERROR] [PowerBI] [Power BI Security Config] Collector failed
+    System.Management.Automation.RuntimeException: Child process failed: Write-Error: /tmp/m365assess_pbi_we3fccv4.f3x.ps1:6
+    Line |
+       6 |  … /Connect-Service.ps1' @connectParams } catch { Write-Error $_; exit 1 …
+         |                                                   ~~~~~~~~~~~~~~
+         | Failed to connect to PowerBI: One or more errors occurred. (Unix
+         | LocalMachine X509Store is limited to the Root and CertificateAuthority
+         | stores.)
+[2026-10-02 16:46:32.406] [INFO] [PowerBI] [Power BI Security Config] Completed: Power BI Security Config — Failed, 0 items, 0.9s
+[2026-10-02 16:46:32.407] [WARN] [Hybrid] [Hybrid Sync] Skipped: Hybrid Sync — Graph not connected
+[2026-10-02 16:46:32.426] [INFO] Issue report exported: schedules/sch-1/f03495b6-ea22-4f7a-9621-cf4ac06f8ad0/Assessment_20261002_164629/_Assessment-Issues.log (4 issues)
+[2026-10-02 16:46:32.428] [INFO] Assessment complete. Duration: 00:02. Summary CSV: schedules/sch-1/f03495b6-ea22-4f7a-9621-cf4ac06f8ad0/Assessment_20261002_164629/_Assessment-Summary.csv
+[2026-10-02 16:46:33.576] [INFO] HTML report generated: schedules/sch-1/f03495b6-ea22-4f7a-9621-cf4ac06f8ad0/Assessment_20261002_164629/_Assessment-Report.html
+[2026-10-02 16:46:33.701] [INFO] Provenance file written: schedules/sch-1/f03495b6-ea22-4f7a-9621-cf4ac06f8ad0/Assessment_20261002_164629/_Assessment-Provenance.json (4 artifacts hashed)

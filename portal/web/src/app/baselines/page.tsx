@@ -9,13 +9,20 @@
 
 import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { FleetOverview } from "../../components/baselines/FleetOverview";
+import { BaselineCatalogDialog } from "../../components/baselines/BaselineCatalogDialog";
+import { MigrateFromStandardsDialog } from "../../components/baselines/MigrateFromStandardsDialog";
 import {
   deleteBaseline,
   fetchBaselines,
+  fetchBaselinesCatalog,
   fetchFleetOverview,
+  migrateBaselineFromStandards,
+  type BaselineCatalog,
+  type BaselineCatalogEntry,
   type BaselineSummary,
   type FleetOverview as FleetOverviewData,
 } from "../../lib/baselinesApi";
+import { fetchStandardTemplates, type StandardTemplate } from "../../lib/standardsApi";
 
 const pageStyle: CSSProperties = {
   padding: "32px",
@@ -120,19 +127,31 @@ const noticeStyle: CSSProperties = {
 
 export interface BaselinesPageProps {
   readonly fetcher?: typeof fetch;
+  /** Navigation seam; defaults to window.location.href. */
+  readonly navigate?: (url: string) => void;
 }
 
 function complianceLabel(value: number): string {
   return `${Math.round(value * 100)}%`;
 }
 
-export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactElement {
+export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps): ReactElement {
   const doFetch = fetcher ?? fetch;
+  const go = navigate ?? ((url: string): void => { window.location.href = url; });
   const [baselines, setBaselines] = useState<readonly BaselineSummary[]>([]);
   const [fleet, setFleet] = useState<FleetOverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalog, setCatalog] = useState<BaselineCatalog | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [migrateOpen, setMigrateOpen] = useState(false);
+  const [templates, setTemplates] = useState<readonly StandardTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [migratingId, setMigratingId] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -191,6 +210,54 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
     URL.revokeObjectURL(url);
   };
 
+  const openCatalog = async (): Promise<void> => {
+    setCatalogOpen(true);
+    setCatalogLoading(true);
+    setCatalogError(null);
+    try {
+      setCatalog(await fetchBaselinesCatalog(doFetch));
+    } catch (err) {
+      setCatalogError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setCatalogLoading(false);
+    }
+  };
+
+  const useCatalogEntry = (entry: BaselineCatalogEntry): void => {
+    setCatalogOpen(false);
+    go(`/baselines/new/edit?catalog=${encodeURIComponent(entry.id)}`);
+  };
+
+  const openMigrate = async (): Promise<void> => {
+    setMigrateOpen(true);
+    setTemplatesLoading(true);
+    setTemplatesError(null);
+    setMigratingId(null);
+    try {
+      const all = await fetchStandardTemplates({}, doFetch);
+      // Drift templates are observe-only; the server rejects them too.
+      setTemplates(all.filter((template) => template.kind !== "drift"));
+    } catch (err) {
+      setTemplatesError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  const migrateTemplate = async (template: StandardTemplate): Promise<void> => {
+    setMigratingId(template.id);
+    setTemplatesError(null);
+    try {
+      const baseline = await migrateBaselineFromStandards(template.id, {}, doFetch);
+      setMigrateOpen(false);
+      go(`/baselines/${baseline.id}/edit`);
+    } catch (err) {
+      setTemplatesError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setMigratingId(null);
+    }
+  };
+
   return (
     <div style={pageStyle} data-testid="baselines-page">
       <div style={headerStyle}>
@@ -206,7 +273,7 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
             style={primaryButtonStyle}
             data-testid="baselines-add"
             onClick={() => {
-              window.location.href = "/baselines/new/edit";
+              go("/baselines/new/edit");
             }}
           >
             Add baseline
@@ -215,7 +282,7 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
             type="button"
             style={buttonStyle}
             data-testid="baselines-migrate"
-            onClick={() => setNotice("Migrate from standards arrives with T-0189.")}
+            onClick={() => void openMigrate()}
           >
             Migrate from standards
           </button>
@@ -223,7 +290,7 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
             type="button"
             style={buttonStyle}
             data-testid="baselines-catalog"
-            onClick={() => setNotice("Browse baseline catalog arrives with T-0190.")}
+            onClick={() => void openCatalog()}
           >
             Browse baseline catalog
           </button>
@@ -273,7 +340,7 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
                         style={actionBtnStyle}
                         data-testid={`baseline-view-${baseline.id}`}
                         onClick={() => {
-                          window.location.href = `/baselines/${baseline.id}/edit`;
+                          go(`/baselines/${baseline.id}/edit`);
                         }}
                       >
                         View
@@ -283,7 +350,7 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
                         style={actionBtnStyle}
                         data-testid={`baseline-edit-${baseline.id}`}
                         onClick={() => {
-                          window.location.href = `/baselines/${baseline.id}/edit`;
+                          go(`/baselines/${baseline.id}/edit`);
                         }}
                       >
                         Edit
@@ -329,6 +396,27 @@ export default function BaselinesPage({ fetcher }: BaselinesPageProps): ReactEle
           </tbody>
         </table>
       </div>
+
+      {catalogOpen && (
+        <BaselineCatalogDialog
+          catalog={catalog}
+          loading={catalogLoading}
+          error={catalogError}
+          onUse={useCatalogEntry}
+          onClose={() => setCatalogOpen(false)}
+        />
+      )}
+
+      {migrateOpen && (
+        <MigrateFromStandardsDialog
+          templates={templates}
+          loading={templatesLoading}
+          error={templatesError}
+          migratingId={migratingId}
+          onMigrate={(template) => void migrateTemplate(template)}
+          onClose={() => setMigrateOpen(false)}
+        />
+      )}
     </div>
   );
 }

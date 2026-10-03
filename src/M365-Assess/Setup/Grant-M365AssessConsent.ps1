@@ -1,5 +1,6 @@
 # Dot-source permission definitions
 . "$PSScriptRoot\PermissionDefinitions.ps1"
+. "$PSScriptRoot\New-M365AssessCertificate.ps1"
 
 function Grant-M365AssessConsent {
     <#
@@ -22,6 +23,10 @@ function Grant-M365AssessConsent {
         - 1 Microsoft Purview API permission (Purview.ApplicationAccess)
         - 3 Entra ID directory roles (Security Reader, Compliance Admin, Global Reader)
         - 2 Exchange Online RBAC role groups (View-Only Org Management, Compliance Management)
+
+        On Windows the certificate is created in Cert:\CurrentUser\My. On Linux and macOS, where
+        there is no certificate store, it is written to an owner-only PFX under
+        ~/.m365-assess/certs and the result carries CertificatePath.
 
         Supports creating a new app registration from scratch (-CreateNew) or configuring
         an existing one. Saves credentials to .m365assess.json for automatic detection
@@ -171,6 +176,12 @@ function Grant-M365AssessConsent {
             return
         }
     }
+    else {
+        # -Force means the caller already confirmed (the portal wizard, a script). Without this
+        # every later ShouldProcess call in the function would prompt again at ConfirmImpact High,
+        # which throws in non-interactive hosts such as portal workers.
+        $ConfirmPreference = 'None'
+    }
 
     # ==================================================================
     # INTERNAL HELPERS (private to function scope)
@@ -307,6 +318,8 @@ function Grant-M365AssessConsent {
     $bootstrapCreated = $false
     $cert = $null
     $cerPath = $null
+    # Set only when the certificate lives in a PFX file (non-Windows) instead of Cert:\CurrentUser\My.
+    $certificatePath = $null
 
     if ($PSCmdlet.ParameterSetName -eq 'CreateNew') {
         Write-Step "Bootstrapping new app registration '$AppDisplayName'..."
@@ -332,63 +345,111 @@ function Grant-M365AssessConsent {
         }
 
         # --- Check for duplicate app name ---
+        # An earlier run that stopped part way leaves the app and its PFX behind. When this machine
+        # holds the private key for that app, resume it instead of failing on the duplicate name.
+        $certDirectory = Join-Path -Path (Join-Path -Path $HOME -ChildPath '.m365-assess') -ChildPath 'certs'
+        $resumedApp = $false
         $existingApps = @(Get-MgApplication -Filter "displayName eq '$AppDisplayName'" -ErrorAction Stop)
         if ($existingApps.Count -gt 0) {
             $existingId = $existingApps[0].AppId
-            Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
-            throw "An app named '$AppDisplayName' already exists (AppId: $existingId). " +
-                  "Use -ClientId '$existingId' -CertificateThumbprint <thumbprint> to configure " +
-                  'the existing app, or choose a different -AppDisplayName.'
+            $resumable = $null
+            if (-not $IsWindows) {
+                $findParams = @{
+                    AppKeys        = @($existingApps[0].KeyCredentials)
+                    Directory      = $certDirectory
+                    BaseName       = "M365-Assess-$TenantId"
+                }
+                $resumable = Find-M365AssessCertificate @findParams
+            }
+            if ($resumable) {
+                $resumedApp = $true
+                $ClientId = $existingId
+                $cert = $resumable.Certificate
+                $CertificateThumbprint = $resumable.Thumbprint
+                $certificatePath = $resumable.CertificatePath
+                $cerPath = $resumable.CerPath
+                Write-OK "Resuming existing app '$AppDisplayName' (AppId: $ClientId)"
+                Write-OK "Using the private key already on this machine: $certificatePath"
+            }
+            else {
+                Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+                throw "An app named '$AppDisplayName' already exists (AppId: $existingId). " +
+                      "Use -ClientId '$existingId' -CertificateThumbprint <thumbprint> to configure " +
+                      'the existing app, or choose a different -AppDisplayName.'
+            }
         }
 
-        # --- Generate self-signed certificate ---
-        Write-Step "Generating self-signed certificate (CN=M365-Assess-$TenantId, $CertificateExpiryYears yr)..."
-        $certSubject = "CN=M365-Assess-$TenantId"
-        $certParams = @{
-            Subject            = $certSubject
-            CertStoreLocation  = 'Cert:\CurrentUser\My'
-            KeyExportPolicy    = 'Exportable'
-            KeySpec            = 'Signature'
-            KeyLength          = 2048
-            KeyAlgorithm       = 'RSA'
-            HashAlgorithm      = 'SHA256'
-            NotAfter           = (Get-Date).AddYears($CertificateExpiryYears)
-        }
-        $cert = New-SelfSignedCertificate @certParams
-        $CertificateThumbprint = $cert.Thumbprint
-        Write-OK "Certificate created: $certSubject"
-        Write-OK "Thumbprint: $CertificateThumbprint"
-        Write-OK "Expires: $($cert.NotAfter.ToString('yyyy-MM-dd'))"
+        if (-not $resumedApp) {
+            # --- Generate self-signed certificate ---
+            Write-Step "Generating self-signed certificate (CN=M365-Assess-$TenantId, $CertificateExpiryYears yr)..."
+            $certSubject = "CN=M365-Assess-$TenantId"
+            if ($IsWindows) {
+                $certParams = @{
+                    Subject            = $certSubject
+                    CertStoreLocation  = 'Cert:\CurrentUser\My'
+                    KeyExportPolicy    = 'Exportable'
+                    KeySpec            = 'Signature'
+                    KeyLength          = 2048
+                    KeyAlgorithm       = 'RSA'
+                    HashAlgorithm      = 'SHA256'
+                    NotAfter           = (Get-Date).AddYears($CertificateExpiryYears)
+                }
+                $cert = New-SelfSignedCertificate @certParams
+                $CertificateThumbprint = $cert.Thumbprint
+            }
+            else {
+                # No Windows certificate store: keep the key in an owner-only PFX file instead.
+                $newCertParams = @{
+                    Subject         = $certSubject
+                    ExpiryYears     = $CertificateExpiryYears
+                    OutputDirectory = $certDirectory
+                    BaseName        = "M365-Assess-$TenantId"
+                }
+                $generated = New-M365AssessCertificate @newCertParams
+                $cert = $generated.Certificate
+                $CertificateThumbprint = $generated.Thumbprint
+                $certificatePath = $generated.CertificatePath
+            }
+            Write-OK "Certificate created: $certSubject"
+            Write-OK "Thumbprint: $CertificateThumbprint"
+            Write-OK "Expires: $($cert.NotAfter.ToString('yyyy-MM-dd'))"
+            if ($certificatePath) { Write-OK "Private key (PFX, owner-only): $certificatePath" }
 
-        # --- Export public key (.cer) for portability ---
-        $cerPath = Join-Path (Get-Location) "M365-Assess-$TenantId.cer"
-        Export-Certificate -Cert $cert -FilePath $cerPath -Type CERT | Out-Null
-        Write-OK "Public key exported: $cerPath"
+            # --- Export public key (.cer) for portability ---
+            if ($IsWindows) {
+                $cerPath = Join-Path (Get-Location) "M365-Assess-$TenantId.cer"
+                Export-Certificate -Cert $cert -FilePath $cerPath -Type CERT | Out-Null
+            }
+            else {
+                $cerPath = $generated.CerPath
+            }
+            Write-OK "Public key exported: $cerPath"
 
-        # --- Create app registration with certificate ---
-        Write-Step "Creating app registration '$AppDisplayName'..."
-        $keyCredential = @{
-            Type          = 'AsymmetricX509Cert'
-            Usage         = 'Verify'
-            Key           = $cert.RawData
-            DisplayName   = $certSubject
-            StartDateTime = $cert.NotBefore.ToUniversalTime().ToString('o')
-            EndDateTime   = $cert.NotAfter.ToUniversalTime().ToString('o')
-        }
+            # --- Create app registration with certificate ---
+            Write-Step "Creating app registration '$AppDisplayName'..."
+            $keyCredential = @{
+                Type          = 'AsymmetricX509Cert'
+                Usage         = 'Verify'
+                Key           = $cert.RawData
+                DisplayName   = $certSubject
+                StartDateTime = $cert.NotBefore.ToUniversalTime().ToString('o')
+                EndDateTime   = $cert.NotAfter.ToUniversalTime().ToString('o')
+            }
 
-        if ($PSCmdlet.ShouldProcess($AppDisplayName, 'Create new app registration')) {
-            $newApp = New-MgApplication -DisplayName $AppDisplayName -SignInAudience 'AzureADMyOrg' -KeyCredentials @($keyCredential) -ErrorAction Stop
-            $ClientId = $newApp.AppId
-            Write-OK "App created: $AppDisplayName"
-            Write-OK "Application (client) ID: $ClientId"
-            Write-OK "Object ID: $($newApp.Id)"
-        }
+            if ($PSCmdlet.ShouldProcess($AppDisplayName, 'Create new app registration')) {
+                $newApp = New-MgApplication -DisplayName $AppDisplayName -SignInAudience 'AzureADMyOrg' -KeyCredentials @($keyCredential) -ErrorAction Stop
+                $ClientId = $newApp.AppId
+                Write-OK "App created: $AppDisplayName"
+                Write-OK "Application (client) ID: $ClientId"
+                Write-OK "Object ID: $($newApp.Id)"
+            }
 
-        # --- Create service principal ---
-        Write-Step 'Creating service principal...'
-        if ($PSCmdlet.ShouldProcess($AppDisplayName, 'Create service principal')) {
-            $newSp = New-MgServicePrincipal -AppId $ClientId -ErrorAction Stop
-            Write-OK "Service principal created (ObjectId: $($newSp.Id))"
+            # --- Create service principal ---
+            Write-Step 'Creating service principal...'
+            if ($PSCmdlet.ShouldProcess($AppDisplayName, 'Create service principal')) {
+                $newSp = New-MgServicePrincipal -AppId $ClientId -ErrorAction Stop
+                Write-OK "Service principal created (ObjectId: $($newSp.Id))"
+            }
         }
 
         # --- Disconnect bootstrap session ---
@@ -398,10 +459,12 @@ function Grant-M365AssessConsent {
         # --- Wait for AAD replication ---
         # This delay is necessary for Azure AD to replicate the new app
         # registration and service principal across all directory partitions.
-        Write-Info 'Waiting 10 seconds for Azure AD replication...'
-        Start-Sleep -Seconds 10
+        if (-not $resumedApp) {
+            Write-Info 'Waiting 10 seconds for Azure AD replication...'
+            Start-Sleep -Seconds 10
+        }
 
-        $bootstrapCreated = $true
+        $bootstrapCreated = -not $resumedApp
 
         # WhatIf guard -- downstream steps require the real app + cert to exist
         if ($WhatIfPreference) {
@@ -426,7 +489,12 @@ function Grant-M365AssessConsent {
 
     Write-Step 'Validating certificate...'
 
-    $cert = Get-Item "Cert:\CurrentUser\My\$CertificateThumbprint" -ErrorAction SilentlyContinue
+    if (-not $cert) {
+        if (-not $IsWindows) {
+            throw "Certificate '$CertificateThumbprint' cannot be looked up on this platform: the Windows certificate store is unavailable. Use -CreateNew to generate a PFX-backed certificate."
+        }
+        $cert = Get-Item "Cert:\CurrentUser\My\$CertificateThumbprint" -ErrorAction SilentlyContinue
+    }
     if (-not $cert) {
         throw "Certificate '$CertificateThumbprint' not found in Cert:\CurrentUser\My."
     }
@@ -464,7 +532,12 @@ function Grant-M365AssessConsent {
         # No AdminUpn -- fall back to app-only (will work only if app already has sufficient perms)
         Write-Step 'Connecting to Microsoft Graph (app-only, certificate)...'
         Write-Info 'No -AdminUpn provided. App-only session may lack permission to grant roles. Use -AdminUpn for full setup.'
-        Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -NoWelcome
+        if ($certificatePath) {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -Certificate $cert -NoWelcome
+        }
+        else {
+            Connect-MgGraph -TenantId $TenantId -ClientId $ClientId -CertificateThumbprint $CertificateThumbprint -NoWelcome
+        }
         $ctx = Get-MgContext
         Write-OK "Connected (app-only) | AuthType: $($ctx.AuthType)"
     }
@@ -538,7 +611,7 @@ function Grant-M365AssessConsent {
                 }
                 catch {
                     Write-Fail "$name - $($_.Exception.Message)"
-                    $graphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'Failed'; Sections = $perm.Sections })
+                    $graphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'Failed'; Error = $_.Exception.Message; Sections = $perm.Sections })
                 }
             }
             else {
@@ -679,7 +752,7 @@ function Grant-M365AssessConsent {
                     }
                     catch {
                         Write-Fail "$roleName - could not activate role: $($_.Exception.Message)"
-                        $complianceResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Sections = $roleDef.Sections })
+                        $complianceResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Error = $_.Exception.Message; Sections = $roleDef.Sections })
                         continue
                     }
                 }
@@ -717,7 +790,7 @@ function Grant-M365AssessConsent {
                     }
                     else {
                         Write-Fail "$roleName - $($_.Exception.Message)"
-                        $complianceResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Sections = $roleDef.Sections })
+                        $complianceResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Error = $_.Exception.Message; Sections = $roleDef.Sections })
                     }
                 }
             }
@@ -768,6 +841,26 @@ function Grant-M365AssessConsent {
         }
 
         if ($exoConnected) {
+            # Exchange keeps its own pointer object for an Entra service principal. A freshly
+            # created app is unknown to Add-RoleGroupMember until that object exists.
+            try {
+                $exoSp = Get-ServicePrincipal -Identity $sp.Id -ErrorAction Stop
+            }
+            catch {
+                $exoSp = $null
+            }
+            if (-not $exoSp) {
+                if ($PSCmdlet.ShouldProcess($spDisplayName, 'Register service principal in Exchange Online')) {
+                    try {
+                        New-ServicePrincipal -AppId $ClientId -ObjectId $sp.Id -DisplayName $spDisplayName -ErrorAction Stop | Out-Null
+                        Write-OK "Registered '$spDisplayName' as an Exchange Online service principal"
+                    }
+                    catch {
+                        Write-Warn "Could not register the service principal in Exchange Online: $($_.Exception.Message)"
+                    }
+                }
+            }
+
             Write-Step "Adding '$spDisplayName' to Exchange Online role groups ($($script:RequiredExoRoleGroups.Count) groups)..."
 
             foreach ($entry in $script:RequiredExoRoleGroups) {
@@ -790,7 +883,21 @@ function Grant-M365AssessConsent {
 
                 if ($PSCmdlet.ShouldProcess($rg, "Add '$spDisplayName'")) {
                     try {
-                        Add-RoleGroupMember -Identity $rg -Member $spDisplayName -ErrorAction Stop
+                        # A new service principal can take a while to appear in Exchange. Retry
+                        # "couldn't find object" a few times, trying the display name then the object id.
+                        $added = $false
+                        for ($attempt = 1; -not $added; $attempt++) {
+                            $member = if ($attempt % 2 -eq 1) { $spDisplayName } else { $sp.Id }
+                            try {
+                                Add-RoleGroupMember -Identity $rg -Member $member -ErrorAction Stop
+                                $added = $true
+                            }
+                            catch {
+                                if ($attempt -ge 6 -or $_.Exception.Message -notmatch "Couldn't find object|could not be found|not found") { throw }
+                                Write-Info "$rg - service principal not visible to Exchange yet; retrying in 15s ($attempt/5)"
+                                Start-Sleep -Seconds 15
+                            }
+                        }
                         Write-OK "$rg  [$($entry.Sections)]"
                         $exoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Added'; Sections = $entry.Sections })
                     }
@@ -802,7 +909,7 @@ function Grant-M365AssessConsent {
                         }
                         else {
                             Write-Fail "$rg - $($_.Exception.Message)"
-                            $exoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Sections = $entry.Sections })
+                            $exoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Error = $_.Exception.Message; Sections = $entry.Sections })
                         }
                     }
                 }
@@ -872,7 +979,9 @@ function Grant-M365AssessConsent {
     # ------------------------------------------------------------------
     # Save credentials to connection profile
     # ------------------------------------------------------------------
-    if ($ClientId -and $CertificateThumbprint -and -not $WhatIfPreference) {
+    # Connection profiles are thumbprint-based; a PFX-backed certificate has no store entry to
+    # point at, so the portal credential store holds it instead.
+    if ($ClientId -and $CertificateThumbprint -and -not $certificatePath -and -not $WhatIfPreference) {
         $profileHelper = Join-Path $PSScriptRoot 'Save-M365ConnectionProfile.ps1'
         if (Test-Path -Path $profileHelper) {
             . $profileHelper
@@ -930,6 +1039,7 @@ function Grant-M365AssessConsent {
     [PSCustomObject]@{
         ClientId              = $ClientId
         CertificateThumbprint = $CertificateThumbprint
+        CertificatePath       = $certificatePath
         AppDisplayName        = $spDisplayName
         TenantId              = $TenantId
         BootstrapCreated      = $bootstrapCreated

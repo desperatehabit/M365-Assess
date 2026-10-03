@@ -46,6 +46,20 @@ describe("DEFENDER_POLICY_AREAS registry (T-0361)", () => {
     expect(sources.has("exo")).toBe(true);
   });
 
+  it("uses beta for device-management resources that v1.0 does not expose", () => {
+    // Live tenant: v1.0/configurationPolicies and v1.0/intents return
+    // "Resource not found for the segment"; beta returns 200 (EPIC-019).
+    const affected = DEFENDER_POLICY_AREAS.filter(
+      (e) =>
+        e.graphResource.includes("deviceManagement/intents") ||
+        e.graphResource.includes("deviceManagement/configurationPolicies"),
+    );
+    expect(affected.length).toBeGreaterThan(0);
+    for (const entry of affected) {
+      expect(entry.graphResource.startsWith("beta/"), `${entry.area} should use beta`).toBe(true);
+    }
+  });
+
   it("supports AV/EDR/ASR in v1", () => {
     for (const area of ["av", "edr", "asr"] as const) {
       const entry = DEFENDER_POLICY_AREAS.find((e) => e.area === area);

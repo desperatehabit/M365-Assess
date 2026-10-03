@@ -938,6 +938,24 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
               <option value="review">Review</option>
               <option value="skipped">Skipped</option>
             </select>
+            {(run.status === "succeeded" || run.status === "partial") && !(run.children && run.children.length > 0) && (
+              <a
+                href={`/remediation?tenantId=${encodeURIComponent(run.tenantId)}&runId=${encodeURIComponent(run.id)}`}
+                data-testid="plan-remediation-link"
+                style={{
+                  padding: "8px 14px",
+                  border: "1px solid var(--accent)",
+                  borderRadius: "var(--radius, 6px)",
+                  color: "var(--accent)",
+                  fontSize: "14px",
+                  fontWeight: 600,
+                  textDecoration: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Plan remediation
+              </a>
+            )}
           </div>
 
           {/* Findings Table */}

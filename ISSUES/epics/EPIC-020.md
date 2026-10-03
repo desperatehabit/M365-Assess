@@ -63,3 +63,17 @@ path every mailbox mutation routes through.
 
 Closed 2026-09-28: all nine children landed. Every Graph/EXO call is mocked; live-tenant
 verification deferred until a test tenant is available.
+
+## Live verification (2026-10-02)
+
+Run with `scripts/portal/Verify-PortalWorkerEndpoints.ps1` against a live tenant.
+
+- `get-mailboxes.ps1` and `get-mailbox-permissions.ps1` failed at sign-in:
+  *"Could not resolve the tenant's initial (\*.onmicrosoft.\*) domain, which app-only
+  Exchange Online / Purview authentication requires. Connect to Microsoft Graph first."*
+  `Connect-WorkerTenant` connected ExchangeOnline without a Graph session, and the initial
+  domain is resolved through Graph. Fixed: Connect-WorkerTenant now connects Graph before an
+  ExchangeOnline-only worker. Re-run to confirm the mailbox reads return data.
+- **Outstanding:** mailbox detail and the mutation paths (shared conversion, quota/archive/hold,
+  permissions, rules, forwarding, vacation, retention) need seeded mailboxes to exercise.
+

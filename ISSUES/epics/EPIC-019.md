@@ -62,3 +62,32 @@ list above names them in dependency order.
 Closed 2026-09-28: all ten children landed. Every Graph call is mocked; live-tenant
 verification is deferred (T-0814 for EPIC-16, T-0847 for EPIC-017, T-0848 for EPIC-018)
 until a test tenant is available.
+
+## Live verification (2026-10-02)
+
+Run with `scripts/portal/Verify-PortalWorkerEndpoints.ps1` against a live tenant.
+
+- `Get-DefenderStatus` and `Deploy-DefenderPolicies` targeted
+  `v1.0/deviceManagement/configurationPolicies` and `v1.0/deviceManagement/intents`; both
+  return **400 "Resource not found for the segment"** on v1.0 and **200** on beta. Both
+  workers and `portal/bff/src/domain/defender-policy-areas.ts` were switched to beta.
+  Before the fix the status page reported AV/EDR/ASR/firewall as "Graph query failed".
+- **TVM vulnerabilities are not a Microsoft Graph resource.** Both
+  `v1.0/security/vulnerabilities` and `beta/security/vulnerabilities` return
+  **400 "Resource not found for the segment 'vulnerabilities'"**. TVM exposure data lives on
+  the Microsoft Defender for Endpoint API (`https://api.security.microsoft.com/api/vulnerabilities`,
+  `Vulnerability.Read.All` under WindowsDefenderATP — a separate token audience). Graph only
+  exposes `security/threatIntelligence/vulnerabilities` (Defender Threat Intelligence,
+  license-gated). `Get-TvmVulnerabilities` needs a design decision: MDE API integration or
+  mark unsupported.
+- **MDE onboarding has no Graph resource.** `v1.0/security/mdeOnboardingState` and
+  `beta/security/mdeOnboardingState` return **400 "Resource not found for the segment"**.
+  `Get-MdeOnboarding` needs the correct Intune/Defender report source or must be marked
+  unsupported.
+- **EDR alerts require Defender XDR provisioning.** `v1.0/security/alerts_v2` and
+  `beta/security/alerts_v2` return **403 "Unauthorized request - Account is not provisioned."**
+  on a tenant without Defender for Endpoint/XDR provisioned. The worker should report
+  "not provisioned/not licensed" rather than "Graph query failed". AV and ASR now return real
+  data after the beta switch.
+
+

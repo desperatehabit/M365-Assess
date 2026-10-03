@@ -307,7 +307,17 @@ function Invoke-WorkerAssessment {
     # A service child has no one to answer prompts; a missing module must fail the run, not hang.
     $splat['NonInteractive'] = $true
 
-    & $AssessmentScript @splat
+    if ($AssessmentScript -eq $script:DefaultAssessmentScript) {
+        # Invoke-M365Assessment.ps1 has no param block of its own: its direct-run shim re-splats
+        # $args, which turns a switch passed through a hashtable splat (-NonInteractive:$true)
+        # into a stray positional 'True'. The module's exported function binds by name.
+        $manifest = Join-Path -Path (Split-Path -Path $AssessmentScript -Parent) -ChildPath 'M365-Assess.psd1'
+        Import-Module -Name $manifest -Force -ErrorAction Stop
+        Invoke-M365Assessment @splat
+    }
+    else {
+        & $AssessmentScript @splat
+    }
 }
 
 Export-ModuleMember -Function @(

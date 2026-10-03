@@ -33,6 +33,16 @@ Describe 'Get-DefenderStatus worker (T-0361)' {
             $entrySource | Should -Not -Match '-Method PATCH'
         }
 
+        It 'targets the beta device-management resources (v1.0 lacks them)' {
+            # Live tenant: v1.0/configurationPolicies and v1.0/intents return
+            # "Resource not found for the segment"; beta returns 200 (EPIC-019).
+            $source = Get-Content -LiteralPath $script:worker -Raw
+            $source | Should -Match 'beta/deviceManagement/configurationPolicies'
+            $source | Should -Match 'beta/deviceManagement/intents'
+            $source | Should -Not -Match 'v1\.0/deviceManagement/configurationPolicies'
+            $source | Should -Not -Match 'v1\.0/deviceManagement/intents'
+        }
+
         It 'uses only Get-* EXO cmdlets, never tenant writes' {
             $source = Get-Content -LiteralPath $script:worker -Raw
             $source | Should -Match 'Get-MalwareFilterPolicy'

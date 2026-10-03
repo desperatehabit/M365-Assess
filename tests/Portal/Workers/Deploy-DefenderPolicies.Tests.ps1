@@ -19,6 +19,14 @@ Describe 'Deploy-DefenderPolicies worker (T-0364)' {
             (Get-Command Invoke-DeployDefenderPolicies -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Read-DefenderDeployJob -CommandType Function) | Should -Not -BeNullOrEmpty
         }
+
+        It 'targets the beta device-management resources (v1.0 lacks them)' {
+            $source = Get-Content -LiteralPath $script:worker -Raw
+            $source | Should -Match '/beta/deviceManagement/configurationPolicies'
+            $source | Should -Match '/beta/deviceManagement/intents'
+            $source | Should -Not -Match '/v1\.0/deviceManagement/configurationPolicies'
+            $source | Should -Not -Match '/v1\.0/deviceManagement/intents'
+        }
     }
 
     Context 'plan preview per policy area' {

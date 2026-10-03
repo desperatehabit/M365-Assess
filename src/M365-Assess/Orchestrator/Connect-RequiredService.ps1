@@ -241,6 +241,13 @@ function Connect-RequiredService {
                                 $ctx.Output.LogFileName = $newLogName
                                 $ctx.Output.LogFilePath = Join-Path -Path $ctx.Output.AssessmentFolder -ChildPath $newLogName
 
+                                # Write-AssessmentLog reads the script-scope log path. In shim mode it is only
+                                # reflected back after every service connects, so without this the next log
+                                # line targets the renamed-away folder and fails the whole connection.
+                                $script:logFilePath = $ctx.Output.LogFilePath
+                                $script:logFileName = $ctx.Output.LogFileName
+                                $script:assessmentFolder = $ctx.Output.AssessmentFolder
+
                                 # Update log header with resolved domain prefix
                                 $logContent = Get-Content -Path $ctx.Output.LogFilePath -Raw
                                 $logContent = $logContent -creplace '(?m)(Domain:\s*)(\r?\n)', "`${1}$($ctx.Output.DomainPrefix)`${2}"

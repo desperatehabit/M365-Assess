@@ -4,4 +4,3 @@ web/next-env.d.ts
 web/tsconfig.tsbuildinfo
 # Local development data (npm run dev)
 .dev-data/
-bff/data/

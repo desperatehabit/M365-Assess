@@ -154,7 +154,7 @@ import {
 } from "./adapters/workers.js";
 import { createDevIdentityAuthenticator, ensureDevUser } from "./auth/dev-identity.js";
 import type { BffConfig } from "./config.js";
-import { createInMemoryCredentialStore } from "./credentials/store.js";
+import { createOsKeystoreCredentialStore, type CredentialStore } from "./credentials/store.js";
 import { AppError } from "./errors.js";
 import { createJobDispatcher } from "./jobs/dispatch.js";
 import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
@@ -220,6 +220,8 @@ import { createPimRequestsRoutes } from "./routes/pim-requests.js";
 import { createPimSettingsTemplatesRoutes } from "./routes/pim-settings-templates.js";
 import { createPimAssignmentsRoute } from "./routes/pim.js";
 import { createRegistrationCampaignRoute } from "./routes/registration-campaign.js";
+import { createAccessRoutes } from "./routes/access.js";
+import { createMeRoutes } from "./routes/me.js";
 import { createRemediationRoutes } from "./routes/remediation.js";
 import { createReportTemplateRoutes } from "./routes/report-templates.js";
 import { createReportsRoutes, type ReportsAuthorizer } from "./routes/reports.js";
@@ -422,6 +424,8 @@ export interface CreateAppOptions {
   readonly db?: Database.Database;
   /** Run worker entrypoints with this instead of pwsh (tests pass a fake). */
   readonly workerRunner?: WorkerRunner;
+  /** Backend for client-secret and PFX material instead of the owner-only file store (tests pass in-memory). */
+  readonly credentialStore?: CredentialStore;
   /** Run assessment jobs with this instead of supervising run-tenant.ps1 (tests pass a fake). */
   readonly runWorker?: ConstructorParameters<typeof JobQueue>[0]["runWorker"];
   /** How often the scheduler tick runs; tests pass a long interval. */
@@ -455,6 +459,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const recordAudit = createAuditSink(repo);
   const intuneTemplates = new SqliteIntuneTemplateRepository(db);
   const credentialRows = createCredentialRowStore(repo);
+  // Client-secret and PFX material lives here (owner-only files the worker child reads, T-0827).
+  const credentialSecrets = options.credentialStore ?? createOsKeystoreCredentialStore();
   const intune = createIntuneProviders(run, credentialRows);
   const keyAudit = new SqliteKeyAccessAuditRepository(db, schemaVersion);
   const caller = { resolveCaller, authorize: authorizeCaller };
@@ -708,6 +714,11 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       artifactRoot: config.artifactPath,
     }) as Route[]),
 
+    // Caller identity and the permission preflight the UI's PermissionGate reads. Without
+    // them every gated control stays hidden (it fails closed).
+    ...createMeRoutes({ resolveCaller }),
+    ...createAccessRoutes({ resolveCaller, recordAccess: recordAudit }),
+
     // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans, schedules,
     // and scripts persist. Scheduled assessment jobs run through the job queue (T-0840).
     // Custom scripts run in the T-0126 sandbox through run-custom-script.ps1 (T-0837).
@@ -811,9 +822,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createTenantVariableRoutes({ store: createTenantVariableStore(repo), ...caller }),
     ...createCredentialRoutes({
       records: credentialRows,
-      // Secret material has no persistent backend yet (T-0827): client-secret and PFX
-      // material set here lasts until restart. Thumbprint credentials need none.
-      secrets: createInMemoryCredentialStore(),
+      secrets: credentialSecrets,
       ...caller,
     }),
     ...createGdapRoutes({
@@ -825,7 +834,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
         : {}),
       ...caller,
     }),
-    ...createOnboardRoutes({ tenantStore, credentialStore: credentialRows, runner: createOnboardRunner(run), ...caller }),
+    ...createOnboardRoutes({ tenantStore, credentialStore: credentialRows, secrets: credentialSecrets, runner: createOnboardRunner(run), ...caller }),
     ...createTestConnectionRoutes({
       tenantStore,
       credentialStore: credentialRows,

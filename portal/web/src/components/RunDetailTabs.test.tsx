@@ -259,6 +259,21 @@ describe("RunDetailTabs", () => {
       expect(screen.queryByTestId("finding-row-f-002")).toBeNull();
     });
 
+    it("links a finished run's findings to a remediation plan for that run", () => {
+      const run = { ...SAMPLE_RUN_FAILED, status: "succeeded" };
+      render(<RunDetailTabs run={run} findings={SAMPLE_FINDINGS} defaultTab="findings" streamEvents={false} />);
+
+      const link = screen.getByTestId("plan-remediation-link") as HTMLAnchorElement;
+      expect(link.getAttribute("href")).toBe(
+        `/remediation?tenantId=${encodeURIComponent(run.tenantId)}&runId=${encodeURIComponent(run.id)}`,
+      );
+    });
+
+    it("offers no remediation plan for a run that did not finish", () => {
+      render(<RunDetailTabs run={{ ...SAMPLE_RUN_FAILED, status: "failed" }} findings={SAMPLE_FINDINGS} defaultTab="findings" streamEvents={false} />);
+      expect(screen.queryByTestId("plan-remediation-link")).toBeNull();
+    });
+
     it("renders Artifacts tab with download links, content types, and redacted badges", () => {
       const handleDownload = vi.fn();
 

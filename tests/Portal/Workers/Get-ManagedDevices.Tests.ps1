@@ -27,6 +27,15 @@ Describe 'Get-ManagedDevices worker (T-0341)' {
             $source | Should -Not -Match '-Method DELETE'
             $source | Should -Not -Match '-Method PATCH'
         }
+
+        It 'selects only properties that exist on managedDevice (no deviceType)' {
+            # deviceType is not on microsoft.graph.managedDevice; selecting it is a Graph 400
+            # (live-tenant verification, T-0848).
+            $source = Get-Content -LiteralPath $script:worker -Raw
+            $selectLine = ($source -split "`n" | Where-Object { $_ -match '\$select=' }) -join ' '
+            $selectLine | Should -Match 'id,deviceName,userPrincipalName'
+            $selectLine | Should -Not -Match 'deviceType'
+        }
     }
 
     Context 'Get-ManagedDevices live mapping and filtering' {

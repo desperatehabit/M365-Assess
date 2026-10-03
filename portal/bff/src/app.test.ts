@@ -252,6 +252,18 @@ describe("tenants and onboarding routes (T-0822)", () => {
     expect((await api.post("/v1/tenant-variables", { name: "region", value: "eu", tenantId: "t-a" })).status).toBe(201);
   });
 
+  it("tells the UI what the caller may do, so permission-gated controls can show", async () => {
+    const admin = await (await (await serve("admin")).get("/v1/me")).json();
+    expect(admin.roles).toContain("admin");
+    expect(admin.permissions).toContain("Remediation.Apply");
+
+    const operator = await (await (await serve("operator")).get("/v1/me")).json();
+    expect(operator.permissions).not.toContain("Remediation.Apply");
+
+    const check = await (await serve("admin")).post("/v1/access/check", { permission: "Remediation.Apply" });
+    expect(await check.json()).toMatchObject({ allowed: true, permission: "Remediation.Apply" });
+  });
+
   it("runs the connection test worker with the tenant's credential block", async () => {
     const calls: { entrypoint: string; job: unknown }[] = [];
     const runner: WorkerRunner = async (entrypoint, job) => {

@@ -9,12 +9,14 @@
 // alerting config ties into EPIC-029 (stored, delivered later).
 // Zero colour literals: report theme tokens only.
 
-import React, { use, useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
+import React, { use, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import { useSearchParams } from "next/navigation";
 import { BaselineTimeline, type BaselineTimelineStep } from "../../../../components/baselines/BaselineTimeline";
 import { StageEditor } from "../../../../components/baselines/StageEditor";
 import {
   createBaseline,
   fetchBaseline,
+  fetchBaselinesCatalog,
   updateBaseline,
   type BaselineAssignmentInput,
   type BaselineStageInput,
@@ -139,6 +141,8 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
   );
   const baselineId = resolved.id;
   const isNew = baselineId === "new";
+  const searchParams = useSearchParams();
+  const catalogId = searchParams?.get("catalog") ?? null;
 
   const [name, setName] = useState("");
   const [assignments, setAssignments] = useState<BaselineAssignmentInput[]>([]);
@@ -183,6 +187,35 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Seed a new baseline from the local catalog (T-0190):
+  // /baselines/new/edit?catalog=<id> pre-fills the name and stages.
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (!isNew || !catalogId || seededRef.current) return;
+    seededRef.current = true;
+    void (async () => {
+      try {
+        const catalog = await fetchBaselinesCatalog(doFetch);
+        const entry = catalog.entries.find((candidate) => candidate.id === catalogId);
+        if (!entry) {
+          setError(`Catalog baseline “${catalogId}” was not found.`);
+          return;
+        }
+        setName(entry.name);
+        setStages(
+          entry.stages.map((stage) => ({
+            order: stage.order,
+            action: stage.action,
+            conditions: [...stage.conditions],
+          })),
+        );
+        setNotice(`Seeded from “${entry.name}”. Assign a tenant or group to save.`);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    })();
+  }, [catalogId, doFetch, isNew]);
 
   const hasName = name.trim().length > 0;
   const hasAssignment = assignments.length > 0;

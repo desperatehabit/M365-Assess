@@ -123,7 +123,18 @@ function Invoke-TenantOnboarding {
 
         $status = if ($totalFailed -gt 0) { 'partial' } else { 'succeeded' }
         $errorMessage = if ($totalFailed -gt 0) {
-            "Tenant onboarding completed with $totalFailed failed permission assignments (code: onboard.partial_failure)."
+            # Name what failed and why; the run output is not shown to the operator otherwise.
+            $failedItems = foreach ($step in @($rawResult.GraphPermissions, $rawResult.ComplianceRoles, $rawResult.ExoRoleGroups)) {
+                foreach ($item in @($step)) {
+                    if ($item.Status -in 'Failed', 'NotFound') {
+                        $name = @($item.Permission, $item.Role, $item.RoleGroup) | Where-Object { $_ } | Select-Object -First 1
+                        $detail = if ($item.Error) { ": $($item.Error)" } else { '' }
+                        "$name ($($item.Status)$detail)"
+                    }
+                }
+            }
+            $detailText = if ($failedItems) { ' -- ' + (($failedItems -join '; ') -replace '\s+', ' ') } else { '' }
+            "Tenant onboarding completed with $totalFailed failed permission assignments$detailText (code: onboard.partial_failure)."
         } else {
             $null
         }
@@ -133,6 +144,7 @@ function Invoke-TenantOnboarding {
             status                = $status
             clientId              = [string]$rawResult.ClientId
             certificateThumbprint = [string]$rawResult.CertificateThumbprint
+            certificatePath       = [string]$rawResult.CertificatePath
             appDisplayName        = [string]$rawResult.AppDisplayName
             bootstrapCreated      = [bool]$rawResult.BootstrapCreated
             graphPermissions      = $rawResult.GraphPermissions
@@ -150,6 +162,7 @@ function Invoke-TenantOnboarding {
             status                = 'failed'
             clientId              = [string]$splat['ClientId']
             certificateThumbprint = [string]$splat['CertificateThumbprint']
+            certificatePath       = ''
             appDisplayName        = [string]$splat['AppDisplayName']
             bootstrapCreated      = $false
             graphPermissions      = @()

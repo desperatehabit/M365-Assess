@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createInMemoryCredentialStore } from "../credentials/store.js";
 import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import type { RequestContext, Route } from "../server.js";
 import type { CredentialRecord, CredentialStoreRow } from "./credentials.js";
@@ -261,6 +262,53 @@ describe("Tenant onboarding route (T-0025)", () => {
     expect(event.result).toBe("success");
     expect(event.actorUserId).toBe("admin-user-1");
     expect(event.after?.clientId).toBe("00000000-0000-0000-0000-000000000009");
+  });
+
+  it("stores a PFX-backed onboarding as a certificate-pfx credential holding only the file path", async () => {
+    const pfxResult: OnboardWorkerResult = {
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "00000000-0000-0000-0000-000000000009",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      certificatePath: "/home/op/.m365-assess/certs/M365-Assess-t.pfx",
+      appDisplayName: "M365-Assess-Reader",
+      bootstrapCreated: true,
+      totalFailed: 0,
+      completedAt: NOW,
+    };
+    const secrets = createInMemoryCredentialStore();
+    const h = createHarness(pfxResult, { secrets });
+
+    const res = await h.routes[0].handler(
+      makeContext({ id: TENANT_ID }, { confirmed: true, adminUpn: "admin@contoso.onmicrosoft.com", createNew: true }),
+    );
+
+    expect(res.status).toBe(201);
+    const savedCred = await h.credentials.getCredential(TENANT_ID);
+    expect(savedCred?.authMethod).toBe("certificate-pfx");
+    expect(savedCred?.thumbprint).toBe("AABBCCDDEEFF0011223344556677889900112233");
+    expect(savedCred?.secretRef).toMatch(/^ref:\/\/tenants\//);
+    expect(JSON.stringify(savedCred)).not.toContain(".pfx");
+    const material = await secrets.readSecret(savedCred!.secretRef);
+    expect(JSON.parse(material!)).toEqual({ certificatePath: "/home/op/.m365-assess/certs/M365-Assess-t.pfx" });
+  });
+
+  it("fails before writing a tenant row when a PFX result has no credential backend", async () => {
+    const pfxResult: OnboardWorkerResult = {
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "00000000-0000-0000-0000-000000000009",
+      certificateThumbprint: "AABB",
+      certificatePath: "/home/op/.m365-assess/certs/M365-Assess-t.pfx",
+      totalFailed: 0,
+    };
+    const h = createHarness(pfxResult);
+
+    await expect(
+      h.routes[0].handler(makeContext({ id: TENANT_ID }, { confirmed: true, createNew: true })),
+    ).rejects.toThrow(/\.pfx.*no credential backend/);
+    expect(await h.tenants.getTenant(TENANT_ID)).toBeUndefined();
+    expect(await h.credentials.getCredential(TENANT_ID)).toBeUndefined();
   });
 
   it("records audit event and returns 502 on half-provisioned partial failure", async () => {

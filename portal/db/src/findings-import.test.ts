@@ -41,8 +41,25 @@ describe("findings from the assessment export (T-0833)", () => {
       review: 1,
       info: 0,
       skipped: 0,
+      unknown: 0,
+      notApplicable: 0,
+      notLicensed: 0,
       total: 4,
     });
+  });
+
+  it("accepts the collector contract's licensing and applicability statuses instead of failing the run", () => {
+    const json = JSON.stringify({
+      findings: [
+        { checkId: "DEFENDER-ZAP-001.1", status: "NotLicensed" },
+        { checkId: "A-1.1", status: "NotApplicable" },
+        { checkId: "B-1.1", status: "Unknown" },
+        { checkId: "C-1.1", status: "Pass" },
+      ],
+    });
+    const { findings, summaryCounts } = findingsFromAssessmentExport(json, target);
+    expect(findings.map((f) => f.status)).toEqual(["NotLicensed", "NotApplicable", "Unknown", "Pass"]);
+    expect(summaryCounts).toMatchObject({ notLicensed: 1, notApplicable: 1, unknown: 1, pass: 1, total: 4 });
   });
 
   it("reads older exports: a byte order mark, bare single items, and no descriptive fields", () => {

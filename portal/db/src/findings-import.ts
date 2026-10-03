@@ -23,11 +23,13 @@ export interface ImportedFindings {
     review: number;
     info: number;
     skipped: number;
+    unknown: number;
+    notApplicable: number;
+    /** Checks the tenant is not licensed for; the run detail KPI strip reads this key. */
+    notLicensed: number;
     total: number;
   };
 }
-
-const STATUSES: ReadonlySet<string> = new Set<FindingStatus>(["Pass", "Fail", "Warning", "Review", "Info", "Skipped"]);
 
 const SEVERITIES: Readonly<Record<string, Severity>> = {
   critical: "Critical",
@@ -45,7 +47,12 @@ const COUNT_KEY: Readonly<Record<FindingStatus, keyof ImportedFindings["summaryC
   Review: "review",
   Info: "info",
   Skipped: "skipped",
+  Unknown: "unknown",
+  NotApplicable: "notApplicable",
+  NotLicensed: "notLicensed",
 };
+
+const STATUSES: ReadonlySet<string> = new Set<FindingStatus>(Object.keys(COUNT_KEY) as FindingStatus[]);
 
 function text(value: unknown): string | null {
   if (value === null || value === undefined) return null;
@@ -82,7 +89,18 @@ export function findingsFromAssessmentExport(
   const rows = raw === null ? [] : Array.isArray(raw) ? raw : [raw];
 
   const now = target.now ?? new Date().toISOString();
-  const summaryCounts = { pass: 0, fail: 0, warning: 0, review: 0, info: 0, skipped: 0, total: 0 };
+  const summaryCounts = {
+    pass: 0,
+    fail: 0,
+    warning: 0,
+    review: 0,
+    info: 0,
+    skipped: 0,
+    unknown: 0,
+    notApplicable: 0,
+    notLicensed: 0,
+    total: 0,
+  };
   const findings = rows.map((row: unknown, index): FindingInput => {
     const r = (typeof row === "object" && row !== null ? row : {}) as Record<string, unknown>;
     const check = text(r["checkId"]);

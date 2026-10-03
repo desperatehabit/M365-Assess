@@ -270,7 +270,7 @@ describe("findings ingestion (T-0833)", () => {
       ["SPO-SHARING-001.1", "Fail"],
       ["ENTRA-GUEST-001.1", "Review"],
     ]);
-    expect((await repo.getRun("t-a", "r-1"))!.summaryCounts).toEqual({ pass: 1, fail: 1, warning: 1, review: 1, info: 0, skipped: 0, total: 4 });
+    expect((await repo.getRun("t-a", "r-1"))!.summaryCounts).toEqual({ pass: 1, fail: 1, warning: 1, review: 1, info: 0, skipped: 0, unknown: 0, notApplicable: 0, notLicensed: 0, total: 4 });
 
     // Ingesting the same run again replaces rather than duplicates.
     await worker(env, new AbortController().signal);

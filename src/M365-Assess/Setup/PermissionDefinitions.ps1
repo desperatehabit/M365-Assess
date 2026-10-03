@@ -24,6 +24,9 @@ $script:RequiredGraphPermissions = @(
     @{ Name = 'DeviceManagementConfiguration.Read.All';  Sections = 'Intune, Security'                       ; Reason = 'Configuration profiles, compliance policies, Multi-Admin Approval policies' }
     @{ Name = 'DeviceManagementRBAC.Read.All';           Sections = 'Security'                               ; Reason = 'Intune RBAC role definitions and assignments (scope tag audit)' }
     @{ Name = 'DeviceManagementApps.Read.All';           Sections = 'Security'                               ; Reason = 'Intune audit events including device wipe/retire/delete actions' }
+    # -- Portal feature workers (EPIC-017/018) ---------------------------------
+    @{ Name = 'DeviceManagementServiceConfig.Read.All';  Sections = 'Intune'                                 ; Reason = 'Autopilot deployment profiles and Apple/Android enrollment profiles' }
+    @{ Name = 'BitlockerKey.Read.All';                   Sections = 'Intune, Security'                       ; Reason = 'BitLocker recovery key retrieval for portal device actions' }
     # -- Security --------------------------------------------------------------
     @{ Name = 'SecurityEvents.Read.All';                 Sections = 'Security'                               ; Reason = 'Secure Score, improvement actions, security alerts' }
     # -- Collaboration ---------------------------------------------------------

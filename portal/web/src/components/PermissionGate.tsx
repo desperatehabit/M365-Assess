@@ -94,7 +94,8 @@ export async function resolvePermission(permission: string): Promise<boolean> {
   return checkAccessPreflight(permission);
 }
 
-function usePermission(permission: string): boolean | null {
+/** Whether the caller holds `permission`; null while it is still being resolved. */
+export function usePermission(permission: string): boolean | null {
   const [allowed, setAllowed] = useState<boolean | null>(null);
   useEffect(() => {
     let active = true;

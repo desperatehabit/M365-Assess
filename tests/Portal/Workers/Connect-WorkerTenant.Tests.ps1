@@ -82,6 +82,12 @@ Describe 'Connect-WorkerTenant (T-0826)' {
             @($session.Services) | Should -Be @('Graph', 'ExchangeOnline')
         }
 
+        It 'connects Graph before an ExchangeOnline-only worker so the initial domain resolves' {
+            $session = Connect-WorkerTenant -JobFile (New-JobFile -Job $script:thumbprintJob) -Service ExchangeOnline -ConnectScript $script:connectScript
+            @($global:ConnectCalls | ForEach-Object { $_.Service }) | Should -Be @('Graph', 'ExchangeOnline')
+            @($session.Services) | Should -Be @('Graph', 'ExchangeOnline')
+        }
+
         It 'disconnects what it already opened when a later service fails' {
             Mock Disconnect-MgGraph { }
             $global:FailService = 'ExchangeOnline'

@@ -266,6 +266,21 @@ $ErrorActionPreference = 'Stop'
         }
     }
 
+    Context 'the real assessment script binds switch parameters' {
+        It 'passes -NonInteractive and -QuickScan through without a stray positional argument' {
+            $scratch = New-WorkerScratch
+            $output = Join-Path -Path $scratch -ChildPath 'tenant'
+            New-Item -Path $output -ItemType Directory -Force | Out-Null
+            # An unreadable certificate path makes the Graph connect fail before any network call;
+            # what matters is that parameter binding succeeds and the run completes.
+            $ctx = New-RunContext -TenantId $script:stubTenantId -Sections @('Tenant') -QuickScan -Timestamp '20260101_000000' `
+                -Auth @{ Method = 'Certificate'; ClientId = 'app-id'; CertificatePath = (Join-Path -Path $scratch -ChildPath 'missing.pfx') } `
+                -OutputFolder $output
+
+            { Invoke-WorkerAssessment -Context $ctx -OutputFolder $output *> $null } | Should -Not -Throw
+        }
+    }
+
     Context 'client-secret resolution in the child (T-0827)' {
         It 'resolves the run credentialRef from the persistent store and never writes material' {
             $scratch = New-WorkerScratch

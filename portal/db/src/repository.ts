@@ -34,7 +34,17 @@ export function assertValidRunStatus(status: unknown): asserts status is RunStat
   }
 }
 export type JobState = "queued" | "running" | "done" | "failed";
-export type FindingStatus = "Pass" | "Fail" | "Warning" | "Review" | "Info" | "Skipped";
+// The collector contract's full status vocabulary (SecurityConfigHelper.ps1 Add-Setting).
+export type FindingStatus =
+  | "Pass"
+  | "Fail"
+  | "Warning"
+  | "Review"
+  | "Info"
+  | "Skipped"
+  | "Unknown"
+  | "NotApplicable"
+  | "NotLicensed";
 export type Severity = "Critical" | "High" | "Medium" | "Low" | "Info";
 export type RemediationMode = "manual" | "automated";
 export type AuditActorType = "user" | "apiClient" | "system";

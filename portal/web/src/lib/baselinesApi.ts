@@ -169,3 +169,53 @@ export async function fetchFleetOverview(fetcher?: Fetcher): Promise<FleetOvervi
   const response = await asFetcher(fetcher)("/v1/baselines/fleet");
   return (await expectOk(response, "Loading fleet overview")) as FleetOverview;
 }
+
+// ─── Local catalog (EPIC-010 SPEC.md §6; T-0190) ─────────────────────────────
+
+export interface BaselineCatalogCondition {
+  readonly key: string;
+  readonly expected: unknown;
+}
+
+export interface BaselineCatalogStage {
+  readonly order: number;
+  readonly action: BaselineStageAction;
+  readonly conditions: readonly BaselineCatalogCondition[];
+}
+
+export interface BaselineCatalogEntry {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string;
+  readonly stages: readonly BaselineCatalogStage[];
+}
+
+export interface BaselineCatalog {
+  readonly source: "local";
+  readonly entries: readonly BaselineCatalogEntry[];
+  readonly community: { readonly available: false; readonly reason: string };
+}
+
+export async function fetchBaselinesCatalog(fetcher?: Fetcher): Promise<BaselineCatalog> {
+  const response = await asFetcher(fetcher)("/v1/baselines/catalog");
+  return (await expectOk(response, "Loading baseline catalog")) as BaselineCatalog;
+}
+
+// ─── Migrate from standards (EPIC-010 SPEC.md §6; T-0189) ────────────────────
+
+export async function migrateBaselineFromStandards(
+  templateId: string,
+  options: { name?: string } = {},
+  fetcher?: Fetcher,
+): Promise<BaselineSummary> {
+  const response = await asFetcher(fetcher)(
+    `/v1/baselines/${encodeURIComponent(templateId)}/migrate-from-standards`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options.name ? { name: options.name } : {}),
+    },
+  );
+  const body = (await expectOk(response, "Migrating from standards")) as { baseline: BaselineSummary };
+  return body.baseline;
+}

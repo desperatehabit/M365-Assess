@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RemediationPlanTable } from "./RemediationPlanTable";
-import RemediationPage from "../../app/remediation/page";
+import { RemediationView as RemediationPage } from "./RemediationView";
 import {
   computeKpis,
   exportPlan,
@@ -112,6 +112,25 @@ describe("RemediationPlanTable", () => {
     const drawer = screen.getByTestId("plan-detail-drawer");
     expect(drawer.textContent).toContain("Set-EntraSecurityDefaultsState");
     expect(drawer.textContent).toContain("enabled");
+  });
+
+  it("pins the detail drawer to the viewport so it is visible however long the plan is", () => {
+    render(<RemediationPlanTable plan={sample} canApply />);
+    fireEvent.click(screen.getByTestId("action-view-auto-1"));
+    const drawer = screen.getByTestId("plan-detail-drawer");
+    expect(drawer.getAttribute("role")).toBe("dialog");
+    expect(drawer.style.position).toBe("fixed");
+  });
+
+  it("closes the detail drawer with the Close button or Escape", () => {
+    render(<RemediationPlanTable plan={sample} canApply />);
+    fireEvent.click(screen.getByTestId("action-view-auto-1"));
+    fireEvent.click(screen.getByTestId("drawer-close"));
+    expect(screen.queryByTestId("plan-detail-drawer")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("action-view-auto-1"));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByTestId("plan-detail-drawer")).toBeNull();
   });
 
   it("uses CSS custom properties (zero hex literals)", () => {

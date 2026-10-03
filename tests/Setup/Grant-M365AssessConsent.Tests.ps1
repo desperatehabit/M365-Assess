@@ -105,6 +105,13 @@ Describe 'Grant-M365AssessConsent' {
             $param.SwitchParameter | Should -BeTrue
         }
 
+        It 'should suppress every later confirmation prompt when -Force is supplied' {
+            # Non-interactive hosts (portal workers) throw on any ShouldProcess prompt, and the
+            # function calls ShouldProcess per permission and role after the initial gate.
+            $source = (Get-Command -Name 'Grant-M365AssessConsent').ScriptBlock.ToString()
+            $source | Should -Match "(?s)else\s*\{[^}]*\`$ConfirmPreference\s*=\s*'None'"
+        }
+
         It 'should not run any Graph mutation when -WhatIf is supplied' {
             # Track whether mutations were attempted; mocks would normally hit these
             $script:mutationAttempts = 0
