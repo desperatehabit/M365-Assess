@@ -71,6 +71,7 @@ import {
   createBaselinesStore,
 } from "./adapters/baselines.js";
 import { createCaProviders } from "./adapters/conditional-access.js";
+import { createPurviewProviders } from "./adapters/purview.js";
 import {
   createDriftDeletionPort,
   createDriftRefresh,
@@ -177,6 +178,7 @@ import { SqliteDeviceActionRepository } from "./repository/device-actions.js";
 import { SqliteDeviceActionPolicyRepository } from "./repository/device-action-policies.js";
 import { SqliteIntuneTemplateRepository } from "./repository/intune-templates.js";
 import { SqliteKeyAccessAuditRepository } from "./repository/key-access-audit.js";
+import { SqlitePurviewComplianceRepository } from "./repository/purview-compliance.js";
 import { SqliteReusableSettingTemplateRepository } from "./repository/reusable-setting-templates.js";
 import { createAuthMethodsPolicyRoutes } from "./routes/auth-methods-policy.js";
 import { createBaselinesAdvanceRoutes } from "./routes/baselines-advance.js";
@@ -193,6 +195,12 @@ import { createCaPoliciesRoute } from "./routes/ca-policies.js";
 import { createCaReportOnlyRoutes } from "./routes/ca-report-only.js";
 import { createCaTemplateDeployRoute } from "./routes/ca-templates-deploy.js";
 import { createCaTemplateRoutes } from "./routes/ca-templates.js";
+import { createComplianceTemplatesRoutes } from "./routes/compliance-templates.js";
+import { createPurviewDlpRoutes } from "./routes/purview-dlp.js";
+import { createPurviewDlpWriteRoutes } from "./routes/purview-dlp-write.js";
+import { createPurviewLabelRoutes } from "./routes/purview-labels.js";
+import { createPurviewRetentionRoutes } from "./routes/purview-retention.js";
+import { createSafeLinksRoutes } from "./routes/safelinks.js";
 import { createCredentialRoutes } from "./routes/credentials.js";
 import { createDashboardLayoutRoutes } from "./routes/dashboard-layout.js";
 import { createDashboardRoutes, type DashboardRoutesStore } from "./routes/dashboard.js";
@@ -637,6 +645,13 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   scheduler.start();
   const driftTriage = createDriftTriageStore(driftRepo);
 
+  // EPIC-030 Purview DLP, labels/SITs, retention, Safe Links, and compliance
+  // templates (T-0860). Reads run the workers through the Purview adapter; writes
+  // enqueue EPIC-006 gated remediation apply jobs on the run queue and record the
+  // append-only CompliancePolicyChange rows plus audit events.
+  const purview = createPurviewProviders(run, credentialRows);
+  const purviewCompliance = new SqlitePurviewComplianceRepository(db, schemaVersion);
+
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
   // in-memory store.
@@ -1067,6 +1082,51 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createDeviceLapsRoute({ credentials: intune.laps, audit: keyAudit, authorize: authorizeContext, actor: actorOf }).map(
       (r) => guardRoute(r, DEVICE_LAPS_PERMISSION),
     ),
+
+    // EPIC-030 Purview and Safe Links (T-0860). Reads validate purview.read + tenant
+    // scope and serve the workers' live pages; changes validate purview.write (or
+    // Remediation.Apply) and enqueue EPIC-006 gated remediation apply jobs. Template
+    // CRUD is gated on purview.templates; deploy applies per target with partial
+    // failures reported.
+    ...createPurviewDlpRoutes({ provider: purview.dlp, resolveCaller, authorize: authorizeCaller }),
+    ...createPurviewDlpWriteRoutes({
+      provider: purview.dlpWrite,
+      queue: runJobs,
+      repository: purviewCompliance,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createPurviewLabelRoutes({
+      provider: purview.labels,
+      queue: runJobs,
+      repository: purviewCompliance,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createPurviewRetentionRoutes({
+      provider: purview.retention,
+      queue: runJobs,
+      repository: purviewCompliance,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createSafeLinksRoutes({
+      provider: purview.safelinks,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+      recordPolicyChange: (input) => purviewCompliance.recordPolicyChange(input),
+    }),
+    ...createComplianceTemplatesRoutes({
+      repository: purviewCompliance,
+      queue: runJobs,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
   ];
 
   return {
