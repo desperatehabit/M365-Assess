@@ -22,6 +22,7 @@ import {
   SqliteJitTemplatesRepository,
   SqliteOffboardingRepository,
   SqlitePimSettingsRepository,
+  SqliteRbacRepository,
   SqliteRemediationRepository,
   SqliteReportRepository,
   SqliteReportTemplateRepository,
@@ -103,6 +104,11 @@ import { createIntuneAppCrudRoutes } from "./routes/intune-apps-crud.js";
 import { createIntuneAppsQueueRoutes } from "./routes/intune-apps-queue.js";
 import { AppPackageStore } from "./storage/app-packages.js";
 import {
+  createApiClientStore,
+  createPortalUserStore,
+  createRolesStore,
+} from "./adapters/rbac.js";
+import {
   createGeneratedReportStore,
   createReportRunReader,
   createRenderQueue,
@@ -161,6 +167,7 @@ import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
 import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
 import { createScheduler, type Scheduler } from "./scheduler/scheduler.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
+import { PermissionRegistry } from "./rbac/permissions.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
 import { isTenantAllowed } from "./rbac/scope.js";
 import { testPortalAccess } from "./rbac/test-portal-access.js";
@@ -221,11 +228,13 @@ import { createPimSettingsTemplatesRoutes } from "./routes/pim-settings-template
 import { createPimAssignmentsRoute } from "./routes/pim.js";
 import { createRegistrationCampaignRoute } from "./routes/registration-campaign.js";
 import { createAccessRoutes } from "./routes/access.js";
+import { createApiClientRoutes } from "./routes/api-clients.js";
 import { createMeRoutes } from "./routes/me.js";
+import { createOpenApiRoutes } from "./routes/openapi.js";
 import { createRemediationRoutes } from "./routes/remediation.js";
 import { createReportTemplateRoutes } from "./routes/report-templates.js";
 import { createReportsRoutes, type ReportsAuthorizer } from "./routes/reports.js";
-import { createRoleAssignmentsRoute } from "./routes/roles.js";
+import { createRoleAssignmentsRoute, createRolesRoutes } from "./routes/roles.js";
 import { createRunsActionsRoutes } from "./routes/runs-actions.js";
 import { createRunsArtifactsRoutes } from "./routes/runs-artifacts.js";
 import { createRunsCreateRoute } from "./routes/runs-create.js";
@@ -243,7 +252,7 @@ import { createTenantVariableRoutes } from "./routes/tenant-variables.js";
 import { createTenantRoutes } from "./routes/tenants.js";
 import { createTestConnectionRoutes } from "./routes/test-connection.js";
 import { createUserTemplateRoutes } from "./routes/user-templates.js";
-import { createTenantUsersRoute } from "./routes/users.js";
+import { createPortalUsersRoute, createTenantUsersRoute } from "./routes/users.js";
 import { createGroupTemplatesDeployRoute } from "./routes/group-templates-deploy.js";
 import { createGroupTemplatesRoutes } from "./routes/group-templates.js";
 import { createGroupCrudRoutes } from "./routes/groups-crud.js";
@@ -628,6 +637,14 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   scheduler.start();
   const driftTriage = createDriftTriageStore(driftRepo);
 
+  // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
+  // clients persist through the shared SQLite connection rather than a test-only
+  // in-memory store.
+  const rbacRepo = new SqliteRbacRepository(db, schemaVersion);
+  const portalUserStore = createPortalUserStore(rbacRepo);
+  const rbacRolesStore = createRolesStore(rbacRepo);
+  const apiClientStore = createApiClientStore(rbacRepo);
+
   // These routes read the raw body themselves; the server has already parsed it.
   const readBody = async (ctx: RequestContext) => (ctx.body === undefined ? "" : JSON.stringify(ctx.body));
 
@@ -718,6 +735,26 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     // them every gated control stays hidden (it fails closed).
     ...createMeRoutes({ resolveCaller }),
     ...createAccessRoutes({ resolveCaller, recordAccess: recordAudit }),
+
+    // EPIC-038 RBAC, portal users, and API clients (T-0868). The SPEC §6 surface was
+    // implemented but never mounted; the stores bind to the SQLite rbac repository.
+    ...createPortalUsersRoute({
+      store: portalUserStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createRolesRoutes({
+      store: rbacRolesStore,
+      permissionRegistry: PermissionRegistry,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createApiClientRoutes(apiClientStore),
+    // GET /openapi.json and /v1/openapi.json serve the generated OpenAPI 3.1 document
+    // (SPEC §3.5/§6); the server keeps serving /v1/openapi.yaml.
+    ...createOpenApiRoutes(),
 
     // EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824). Plans, schedules,
     // and scripts persist. Scheduled assessment jobs run through the job queue (T-0840).
