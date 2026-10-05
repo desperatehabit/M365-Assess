@@ -187,7 +187,7 @@ export async function saveRetentionTemplate(
   const response = await fetcher("/v1/compliance-templates", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ area: "retention", name, payload, variables: [], source: "local" }),
+    body: JSON.stringify({ area: "retention", name, payload, variables: {}, source: "local" }),
   });
   if (!response.ok) throw await readError(response, "Save retention template");
   return response.json();
