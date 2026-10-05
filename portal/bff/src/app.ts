@@ -118,6 +118,7 @@ import {
   withReportCompletion,
 } from "./adapters/reports.js";
 import { createActiveGrantsResolver, createRoleProviders } from "./adapters/roles.js";
+import { createMailboxProviders } from "./adapters/mailboxes.js";
 import {
   createStandardsAlignmentStore,
   createStandardsCatalogStore,
@@ -269,6 +270,20 @@ import { createGroupsListRoute } from "./routes/groups-list.js";
 import { createGroupMembersRoutes } from "./routes/groups-members.js";
 import { createGroupUsageRoutes } from "./routes/groups-usage.js";
 import { createHealthRoutes } from "./routes/health.js";
+import {
+  createMailboxRoutes,
+  createMailboxSettingsRoutes,
+  createMailboxWriteRoutes,
+} from "./routes/mailboxes.js";
+import {
+  createMailboxPermissionRoutes,
+  createMailboxPermissionsReportRoute,
+} from "./routes/mailbox-permissions.js";
+import { createMailboxReportsRoute } from "./routes/mailbox-reports.js";
+import { createMailboxRuleRoutes } from "./routes/mailbox-rules.js";
+import { createRetentionRoutes } from "./routes/retention.js";
+import { createVacationScheduleRoutes } from "./routes/vacation-schedules.js";
+import { createDeletedMailboxRoutes } from "./routes/deleted-mailboxes.js";
 import { createIntuneTemplateRoutes } from "./routes/intune-templates.js";
 import type { RequestAuthenticator, RequestCaller, RequestContext, Route } from "./server.js";
 import { ProgressEventHub } from "./sse/hub.js";
@@ -496,6 +511,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const tenantWorker = createTenantWorker(run, credentialRows);
   const mfa = createMfaProviders(envelope);
   const roles = createRoleProviders(tenantWorker);
+  // EPIC-020 mailboxes (T-0850): every read and write runs a feature worker for the
+  // tenant; only vacation schedule rows persist, through the shared connection.
+  const mailboxes = createMailboxProviders(run, credentialRows, db);
   const jitRepo = new SqliteJitRepository(db, schemaVersion);
 
   // EPIC-017 Intune apps, Autopilot, and enrollment (T-0844). App uploads run on their own
@@ -1045,6 +1063,26 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createGroupGalDeliveryRoutes({ provider: groups.gal, ...caller }).map(audited),
     ...createGroupMembersRoutes({ provider: groups.members, ...caller }).map(audited),
     audited(createGroupTemplatesDeployRoute({ repository: groupTemplates, provider: groups.templateDeploy, ...caller })),
+
+    // EPIC-020 mailboxes (T-0850). Reads run their feature workers live from EXO; writes
+    // run the mailbox, permission, rule, retention, and vacation workers through the
+    // adapter. Write routes are wrapped with the audit sink, which records the worker's
+    // auditEvent under the signed-in actor; retention and deleted-mailbox routes record
+    // their own events through recordAudit.
+    ...createMailboxRoutes({ provider: mailboxes.mailboxes, ...caller }),
+    ...createMailboxWriteRoutes({ provider: mailboxes.mailboxWrite, ...caller }).map(audited),
+    ...createMailboxSettingsRoutes({ provider: mailboxes.mailboxSettings, ...caller }).map(audited),
+    ...createMailboxPermissionRoutes({ provider: mailboxes.mailboxPermissions, ...caller }).map(audited),
+    createMailboxPermissionsReportRoute({ provider: mailboxes.mailboxPermissionsReport, ...caller }),
+    createMailboxReportsRoute({ provider: mailboxes.mailboxReports, ...caller }),
+    ...createMailboxRuleRoutes({ provider: mailboxes.mailboxRules, ...caller }).map(audited),
+    ...createRetentionRoutes({ provider: mailboxes.retention, recordAudit: routeAudit, ...caller }),
+    ...createVacationScheduleRoutes({
+      store: mailboxes.vacationStore,
+      apply: mailboxes.vacationApply,
+      ...caller,
+    }).map(audited),
+    ...createDeletedMailboxRoutes({ provider: mailboxes.deletedMailboxes, recordAudit: routeAudit, ...caller }),
 
     // EPIC-015 Conditional Access (T-0819).
     createCaPoliciesRoute({ provider: ca.policies, ...caller }),

@@ -186,6 +186,40 @@ Describe 'Get-MailboxPermissions worker (T-0529)' {
         }
     }
 
+    Context 'per-mailbox filter' {
+        BeforeEach {
+            script:New-MailboxPermissionsMock
+            Mock Get-EXOMailbox {
+                param($Identity, $ResultSize, $Properties, $RecipientTypeDetails, $Filter)
+                if ($Identity) {
+                    return @($script:supportMailbox, $script:userMailbox) | Where-Object {
+                        $_.ExchangeObjectId -eq $Identity -or $_.PrimarySmtpAddress -eq $Identity
+                    }
+                }
+                return @($script:supportMailbox, $script:userMailbox)
+            }
+        }
+
+        It 'returns only the requested mailbox rows and looks up only that mailbox' {
+            $result = Get-MailboxPermissions -TenantId 'tenant-a' -MailboxId 'mbx-1'
+
+            $result.totalCount | Should -Be 4
+            @($result.items).mailboxId | Select-Object -Unique | Should -Be 'mbx-1'
+            Should -Invoke Get-MailboxPermission -Times 1 -Exactly
+            Should -Invoke Get-EXOMailbox -Times 1 -Exactly -ParameterFilter { $Identity -eq 'mbx-1' }
+        }
+
+        It 'accepts the primary SMTP address as the mailbox identity' {
+            $result = Get-MailboxPermissions -TenantId 'tenant-a' -MailboxId 'operator.one@example.invalid'
+
+            @($result.items).mailboxId | Select-Object -Unique | Should -Be 'mbx-2'
+        }
+
+        It 'fails for an unknown mailbox instead of returning an empty report' {
+            { Get-MailboxPermissions -TenantId 'tenant-a' -MailboxId 'missing-mailbox' } | Should -Throw '*not found*'
+        }
+    }
+
     Context 'cursor pagination' {
         BeforeEach {
             script:New-MailboxPermissionsMock
@@ -218,6 +252,7 @@ Describe 'Get-MailboxPermissions worker (T-0529)' {
                 jobId         = 'job-1'
                 tenantId     = 'tenant-a'
                 scope         = 'calendar'
+                mailboxId     = 'mbx-1'
                 search        = 'delegate'
                 top           = 25
                 cursor        = 'MTAw'
@@ -228,6 +263,7 @@ Describe 'Get-MailboxPermissions worker (T-0529)' {
 
             $job['TenantId'] | Should -Be 'tenant-a'
             $job['Scope'] | Should -Be 'calendar'
+            $job['MailboxId'] | Should -Be 'mbx-1'
             $job['Search'] | Should -Be 'delegate'
             $job['Top'] | Should -Be 25
             $job['Cursor'] | Should -Be 'MTAw'

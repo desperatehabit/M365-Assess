@@ -416,6 +416,60 @@ describe("Vacation schedule routes (T-0386)", () => {
     expect(apply.outcome.alert?.severity).toBe("High");
   });
 
+  it("End now on a schedule that never started cancels it without running the revert worker", async () => {
+    const store = new FakeVacationStore();
+    const apply = new FakeApplyProvider();
+    const scheduler = new FakeScheduler();
+    const routes = createVacationScheduleRoutes({ store, apply, scheduler, resolveCaller: writeCaller });
+
+    const response = await routes[2]!.handler({
+      method: "DELETE",
+      path: `/v1/tenants/${TENANT}/vacation-schedules/vac-1`,
+      params: { tenantId: TENANT, scheduleId: "vac-1" },
+      query: new URLSearchParams(),
+      headers: {},
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ ended: true, reason: "never_started", schedule: { status: "ended" } });
+    expect(apply.calls).toHaveLength(0);
+    expect((await store.getVacationSchedule(TENANT, "vac-1"))?.state).toBe("ended");
+    expect(scheduler.disabled).toEqual(["vacation-vac-1-enable", "vacation-vac-1-revert"]);
+  });
+
+  it("marks an immediate-start schedule failed when the enable worker throws", async () => {
+    const store = new FakeVacationStore();
+    const apply = new FakeApplyProvider();
+    apply.applyVacationPhase = async () => {
+      throw new Error("worker unavailable");
+    };
+    const routes = createVacationScheduleRoutes({
+      store,
+      apply,
+      resolveCaller: writeCaller,
+      now: () => "2026-10-02T00:00:00.000Z",
+      newId: () => "vac-now",
+    });
+
+    await expect(
+      routes[1]!.handler({
+        method: "POST",
+        path: `/v1/tenants/${TENANT}/vacation-schedules`,
+        params: { tenantId: TENANT },
+        query: new URLSearchParams(),
+        headers: {},
+        body: {
+          mailboxId: "mbx-9",
+          startsAt: "2026-10-01T00:00:00.000Z",
+          endsAt: "2026-10-08T00:00:00.000Z",
+          oooMessage: "Out of office.",
+        },
+      }),
+    ).rejects.toThrow("worker unavailable");
+
+    expect((await store.getVacationSchedule(TENANT, "vac-now"))?.state).toBe("failed");
+  });
+
   it("rejects callers missing Mailboxes.Vacation.ReadWrite with 403", async () => {
     const routes = createVacationScheduleRoutes({
       store: new FakeVacationStore(),

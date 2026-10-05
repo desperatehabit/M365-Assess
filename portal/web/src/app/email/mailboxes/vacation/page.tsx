@@ -20,7 +20,13 @@ export interface VacationSchedule {
   readonly endsAt: string;
   readonly oooMessage: string;
   readonly forwardTo: string | null;
-  readonly state: "active" | "upcoming" | "ended" | "reverted";
+  readonly state: "active" | "upcoming" | "ended" | "reverted" | "failed";
+}
+
+/** A schedule row as GET /vacation-schedules returns it: the stored `state` plus the display `status`. */
+interface VacationScheduleRow extends Omit<VacationSchedule, "state"> {
+  readonly status?: VacationSchedule["state"];
+  readonly state?: string;
 }
 
 /** Active/upcoming schedules sort first so the operator sees what is live. */
@@ -35,11 +41,19 @@ export async function listVacationSchedules(
   mailboxId: string | undefined,
   fetcher: Fetcher = fetch,
 ): Promise<{ schedules: VacationSchedule[] }> {
-  const query = mailboxId ? `?mailboxId=${encodeURIComponent(mailboxId)}` : "";
-  const response = await fetcher(`/v1/tenants/${encodeURIComponent(tenantId)}/vacation-schedules${query}`);
+  const response = await fetcher(`/v1/tenants/${encodeURIComponent(tenantId)}/vacation-schedules`);
   if (!response.ok) throw new Error(`List vacation schedules failed: HTTP ${response.status}`);
-  const body = (await response.json()) as { schedules?: VacationSchedule[] };
-  return { schedules: [...(body.schedules ?? [])] };
+  // The BFF answers { tenantId, items: [{ ...schedule, status }] }; `status` is the display
+  // state (stored `scheduled` shows as `upcoming`). It has no mailbox filter, so filter here.
+  const body = (await response.json()) as { items?: VacationScheduleRow[]; schedules?: VacationScheduleRow[] };
+  const rows = body.items ?? body.schedules ?? [];
+  const schedules = rows
+    .map((row): VacationSchedule => ({
+      ...row,
+      state: (row.status ?? (row.state === "scheduled" ? "upcoming" : row.state)) as VacationSchedule["state"],
+    }))
+    .filter((schedule) => !mailboxId || schedule.mailboxId === mailboxId);
+  return { schedules };
 }
 
 export async function createVacationSchedule(
@@ -61,9 +75,10 @@ export async function endVacationScheduleNow(
   scheduleId: string,
   fetcher: Fetcher = fetch,
 ): Promise<unknown> {
+  // End now is DELETE /vacation-schedules/:id (SPEC §6): the BFF reverts immediately and audits it.
   const response = await fetcher(
-    `/v1/tenants/${encodeURIComponent(tenantId)}/vacation-schedules/${encodeURIComponent(scheduleId)}/end`,
-    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirm: true }) },
+    `/v1/tenants/${encodeURIComponent(tenantId)}/vacation-schedules/${encodeURIComponent(scheduleId)}`,
+    { method: "DELETE" },
   );
   if (!response.ok) throw new Error(`End vacation schedule failed: HTTP ${response.status}`);
   return response.json();
