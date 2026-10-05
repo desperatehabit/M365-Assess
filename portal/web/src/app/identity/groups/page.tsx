@@ -6,7 +6,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { RequireTenant } from "../../../components/shell/RequireTenant";
 import { resolveTenantId, useCurrentTenantId } from "../../../lib/useCurrentTenant";
 import { GroupsTable, type GroupRowAction } from "../../../components/groups/GroupsTable";
-import { listGroups, type GroupItem } from "../../../lib/groupsApi";
+import { DeliveryManagementDialog, GalDialog } from "../../../components/groups/GalDeliveryDialog";
+import { GroupDeleteDialog } from "../../../components/groups/GroupDeleteDialog";
+import { listAllGroups, type GroupItem } from "../../../lib/groupsApi";
+
+type GroupDialog = { readonly kind: "delete" | "gal" | "delivery"; readonly group: GroupItem } | null;
 
 function GroupsView({ tenantId }: { readonly tenantId: string }): React.ReactElement {
   const router = useRouter();
@@ -14,6 +18,9 @@ function GroupsView({ tenantId }: { readonly tenantId: string }): React.ReactEle
   const [groups, setGroups] = useState<GroupItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [dialog, setDialog] = useState<GroupDialog>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -21,9 +28,9 @@ function GroupsView({ tenantId }: { readonly tenantId: string }): React.ReactEle
       try {
         setLoading(true);
         setError(null);
-        const data = await listGroups(tenantId);
+        const items = await listAllGroups(tenantId);
         if (active) {
-          setGroups([...data.items]);
+          setGroups(items);
         }
       } catch (err: any) {
         if (active) {
@@ -39,21 +46,38 @@ function GroupsView({ tenantId }: { readonly tenantId: string }): React.ReactEle
     return () => {
       active = false;
     };
-  }, [tenantId]);
+  }, [tenantId, reloadKey]);
+
+  const reload = () => setReloadKey((key) => key + 1);
 
   const handleAction = (action: GroupRowAction, group: GroupItem) => {
+    const tenantQuery = `tenantId=${encodeURIComponent(tenantId)}`;
+    const id = encodeURIComponent(group.id);
+    setNotice(null);
     switch (action) {
+      case "view":
+        // GroupsTable opens the detail drawer itself.
+        break;
       case "edit":
-        router.push(`/identity/groups/${group.id}/edit?tenantId=${encodeURIComponent(tenantId)}`);
+        router.push(`/identity/groups/${id}/edit?${tenantQuery}`);
         break;
       case "manageMembers":
+        router.push(`/identity/groups/${id}/bulk?${tenantQuery}&role=members`);
+        break;
       case "manageOwners":
-        router.push(`/identity/groups/${group.id}/bulk?tenantId=${encodeURIComponent(tenantId)}`);
+        router.push(`/identity/groups/${id}/bulk?${tenantQuery}&role=owners`);
         break;
       case "delete":
-        // delete handled via dialog or direct
+      case "gal":
+      case "delivery":
+        setDialog({ kind: action, group });
         break;
-      default:
+      case "convert":
+        // There is no group-convert endpoint in the BFF (the Set-Group worker lists the
+        // action, no route exposes it), so say so rather than do nothing.
+        setNotice(
+          `Convert is not available for "${group.name}": the portal has no group conversion endpoint yet.`,
+        );
         break;
     }
   };
@@ -67,6 +91,22 @@ function GroupsView({ tenantId }: { readonly tenantId: string }): React.ReactEle
         <h1 style={{ fontSize: "24px", fontWeight: 700, margin: 0 }}>Groups</h1>
       </div>
 
+      {notice && (
+        <div
+          role="status"
+          data-testid="groups-notice"
+          style={{
+            padding: "10px 12px",
+            border: "1px solid var(--border)",
+            borderRadius: "6px",
+            background: "var(--surface)",
+            fontSize: "14px",
+          }}
+        >
+          {notice}
+        </div>
+      )}
+
       <GroupsTable
         groups={groups}
         loading={loading}
@@ -74,6 +114,39 @@ function GroupsView({ tenantId }: { readonly tenantId: string }): React.ReactEle
         onAddGroup={() => router.push(`/identity/groups/new?tenantId=${encodeURIComponent(tenantId)}`)}
         onAction={handleAction}
       />
+
+      {dialog?.kind === "delete" && (
+        <GroupDeleteDialog
+          tenantId={tenantId}
+          group={dialog.group}
+          onClose={() => setDialog(null)}
+          onDeleted={reload}
+        />
+      )}
+
+      {dialog?.kind === "gal" && (
+        <GalDialog
+          isOpen={true}
+          tenantId={tenantId}
+          groupId={dialog.group.id}
+          groupName={dialog.group.name}
+          initialHiddenFromAddressListsEnabled={dialog.group.hiddenFromAddressListsEnabled}
+          onClose={() => setDialog(null)}
+          onSuccess={reload}
+        />
+      )}
+
+      {dialog?.kind === "delivery" && (
+        <DeliveryManagementDialog
+          isOpen={true}
+          tenantId={tenantId}
+          groupId={dialog.group.id}
+          groupName={dialog.group.name}
+          initialRequireSenderAuthenticationEnabled={dialog.group.deliveryManagementEnabled}
+          onClose={() => setDialog(null)}
+          onSuccess={reload}
+        />
+      )}
     </div>
   );
 }

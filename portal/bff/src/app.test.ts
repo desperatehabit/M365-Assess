@@ -53,6 +53,10 @@ async function serve(
       fetch(`${base}${p}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
     put: (p: string, body: unknown) =>
       fetch(`${base}${p}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    patch: (p: string, body: unknown) =>
+      fetch(`${base}${p}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
+    delete: (p: string, body: unknown) =>
+      fetch(`${base}${p}`, { method: "DELETE", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }),
   };
 }
 
@@ -395,7 +399,7 @@ describe("groups and Conditional Access routes (T-0819)", () => {
         case "get-group-usage.ps1":
           return { tenantId: "t-a", summary: { totalGroups: 0 } } as never;
         case "set-group.ps1":
-          return { success: true, plan, auditEvent: { ...AUDIT, action: "group.create", targetId: "g-1", targetName: j["displayName"] } } as never;
+          return { success: true, plan, auditEvent: { ...AUDIT, id: `evt-${calls.length}`, action: `group.${String(j["action"])}`, targetId: j["groupId"] ?? "g-1", targetName: j["displayName"] } } as never;
         case "set-ca-policy.ps1":
           return j["dryRun"]
             ? ({ success: true, plan } as never)
@@ -404,6 +408,14 @@ describe("groups and Conditional Access routes (T-0819)", () => {
                 plan,
                 auditEvent: { ...AUDIT, id: "evt-ca", action: "ca.policy.create", targetId: "pol-1", after: { displayName: j["displayName"] } },
               } as never);
+        case "set-group-gal-delivery.ps1":
+          return {
+            success: true,
+            plan: { tenantId: "t-a", groupId: j["groupId"], target: j["target"], before: {}, after: {}, diff: [], dryRun: j["dryRun"] },
+            before: {},
+            after: {},
+            auditEvent: { ...AUDIT, id: `evt-${String(j["target"])}`, action: `group.${String(j["target"])}`, targetId: j["groupId"] },
+          } as never;
         case "deploy-group-template.ps1":
           return {
             plan: {},
@@ -439,6 +451,34 @@ describe("groups and Conditional Access routes (T-0819)", () => {
     expect(res.status).toBe(201);
     expect(calls.at(-1)).toMatchObject({ entrypoint: "set-group.ps1", job: { action: "create", displayName: "Finance", dryRun: false } });
     expect(auditRows(db)).toContainEqual({ id: "evt-1", action: "group.create", actorUserId: "dev-user", tenantId: "t-a", targetId: "g-1" });
+  });
+
+  it("edits, deletes, and changes GAL and delivery for a group through the mounted row-action routes (T-0883)", async () => {
+    const { runner, calls } = recordingRunner();
+    const db = new Database(":memory:");
+    const api = await adminWithTenant(runner, "admin", db);
+    const jobs = () => calls.filter((c) => c.entrypoint.startsWith("set-group"));
+
+    expect((await api.patch("/v1/tenants/t-a/groups/g-1", { displayName: "Renamed", preview: true })).status).toBe(200);
+    expect((await api.patch("/v1/tenants/t-a/groups/g-1", { displayName: "Renamed" })).status).toBe(200);
+    expect((await api.delete("/v1/tenants/t-a/groups/g-1", { confirmName: "Renamed" })).status).toBe(200);
+    expect((await api.post("/v1/tenants/t-a/groups/g-1/gal", { hiddenFromAddressListsEnabled: true })).status).toBe(200);
+    expect(
+      (await api.post("/v1/tenants/t-a/groups/g-1/delivery", { requireSenderAuthenticationEnabled: true, grantSendOnBehalfTo: ["a@example.invalid"] })).status,
+    ).toBe(200);
+
+    expect(jobs().map((c) => [c.entrypoint, c.job["action"] ?? c.job["target"], c.job["dryRun"]])).toEqual([
+      ["set-group.ps1", "edit", true],
+      ["set-group.ps1", "edit", false],
+      ["set-group.ps1", "delete", false],
+      ["set-group-gal-delivery.ps1", "gal", false],
+      ["set-group-gal-delivery.ps1", "delivery", false],
+    ]);
+    expect(jobs()[2]!.job).toMatchObject({ groupId: "g-1", confirmName: "Renamed" });
+    expect(jobs()[3]!.job).toMatchObject({ groupId: "g-1", hiddenFromAddressListsEnabled: true });
+    expect(jobs()[4]!.job).toMatchObject({ requireSenderAuthenticationEnabled: true, grantSendOnBehalfTo: ["a@example.invalid"] });
+    expect(auditRows(db)).toContainEqual(expect.objectContaining({ id: "evt-gal", action: "group.gal", actorUserId: "dev-user" }));
+    expect(auditRows(db)).toContainEqual(expect.objectContaining({ id: "evt-delivery", action: "group.delivery", actorUserId: "dev-user" }));
   });
 
   it("stamps a group template deploy with the signed-in user", async () => {

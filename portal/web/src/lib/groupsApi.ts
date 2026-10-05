@@ -126,6 +126,38 @@ export async function listGroups(tenantId: string, filter?: GroupsFilter): Promi
   return response.json();
 }
 
+/** Largest number of list pages followed by listAllGroups / getGroup (1000 groups per page). */
+const MAX_GROUP_PAGES = 20;
+
+/** Every group in the tenant, following the list endpoint's cursor. */
+export async function listAllGroups(tenantId: string): Promise<GroupItem[]> {
+  const items: GroupItem[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < MAX_GROUP_PAGES; page += 1) {
+    const result: GroupsPage = await listGroups(tenantId, { limit: 1000, cursor });
+    items.push(...result.items);
+    if (!result.nextCursor) return items;
+    cursor = result.nextCursor;
+  }
+  throw new Error(`Group list is longer than ${MAX_GROUP_PAGES * 1000} groups; refine the search`);
+}
+
+/**
+ * One group by id. The BFF has no single-group read, so this pages through the list until
+ * the group is found; it throws when the tenant has no such group.
+ */
+export async function getGroup(tenantId: string, groupId: string): Promise<GroupItem> {
+  let cursor: string | null = null;
+  for (let page = 0; page < MAX_GROUP_PAGES; page += 1) {
+    const result: GroupsPage = await listGroups(tenantId, { limit: 1000, cursor });
+    const found = result.items.find((g) => g.id === groupId);
+    if (found) return found;
+    if (!result.nextCursor) break;
+    cursor = result.nextCursor;
+  }
+  throw new Error(`Group ${groupId} was not found in this tenant`);
+}
+
 export async function createGroup(tenantId: string, payload: CreateGroupPayload): Promise<GroupCrudResult | GroupPlan> {
   const url = `/v1/tenants/${encodeURIComponent(tenantId)}/groups`;
   const response = await fetch(url, {

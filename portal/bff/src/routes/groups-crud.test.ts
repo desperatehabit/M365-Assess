@@ -273,4 +273,81 @@ describe("Group CRUD routes (T-0262)", () => {
     expect(body.auditEvent?.action).toBe("group.delete");
     expect(provider.deleteCalls).toHaveLength(1);
   });
+
+  describe("PATCH /groups/:groupId (T-0883 Edit row action)", () => {
+    const writer: GroupCrudCaller = { tenantScope: tenantScope([TENANT]), permissions: [GROUPS_WRITE_PERMISSION] };
+    const patch = (provider: FakeGroupCrudProvider, caller: GroupCrudCaller | undefined, body: unknown, query = "") => {
+      const route = getRoutes(provider, caller).find((r) => r.method === "PATCH")!;
+      return route.handler({
+        method: "PATCH",
+        path: `/v1/tenants/${TENANT}/groups/grp-1`,
+        params: { tenantId: TENANT, groupId: "grp-1" },
+        query: new URLSearchParams(query),
+        headers: {},
+        body,
+      });
+    };
+
+    it("previews an edit without applying it", async () => {
+      const provider = new FakeGroupCrudProvider();
+      const response = await patch(provider, writer, { displayName: " Renamed ", description: "New", preview: true });
+      expect(response.status).toBe(200);
+      expect((response.body as GroupPlan).dryRun).toBe(true);
+      expect(provider.editCalls).toEqual([
+        {
+          tenantId: TENANT,
+          groupId: "grp-1",
+          input: { displayName: "Renamed", description: "New", dynamicRule: undefined, preview: true },
+          preview: true,
+        },
+      ]);
+    });
+
+    it("applies an edit and returns the audit event", async () => {
+      const provider = new FakeGroupCrudProvider();
+      const response = await patch(provider, writer, { displayName: "Renamed" });
+      expect(response.status).toBe(200);
+      const body = response.body as GroupCrudResult;
+      expect(body.success).toBe(true);
+      expect(body.auditEvent?.action).toBe("group.edit");
+      expect(provider.editCalls[0]).toMatchObject({ groupId: "grp-1", preview: false });
+    });
+
+    it("rejects an invalid dynamic rule before dispatch", async () => {
+      const provider = new FakeGroupCrudProvider();
+      await expect(patch(provider, writer, { dynamicRule: "no parentheses -eq x" })).rejects.toMatchObject({ status: 400 });
+      expect(provider.editCalls).toHaveLength(0);
+    });
+
+    it("rejects an unauthenticated caller, a caller without write, and a tenant out of scope", async () => {
+      const provider = new FakeGroupCrudProvider();
+      await expect(patch(provider, undefined, {})).rejects.toMatchObject({ status: 401 });
+      await expect(
+        patch(provider, { tenantScope: tenantScope([TENANT]), permissions: [] }, {}),
+      ).rejects.toMatchObject({ status: 403 });
+      await expect(
+        patch(provider, { tenantScope: tenantScope(["other"]), permissions: [GROUPS_WRITE_PERMISSION] }, {}),
+      ).rejects.toMatchObject({ status: 403 });
+      expect(provider.editCalls).toHaveLength(0);
+    });
+  });
+
+  it("previews a delete without a confirmName and sends the preview flag to the provider", async () => {
+    const provider = new FakeGroupCrudProvider();
+    const caller: GroupCrudCaller = { tenantScope: tenantScope([TENANT]), permissions: [GROUPS_WRITE_PERMISSION] };
+    const deleteRoute = getRoutes(provider, caller).find((r) => r.method === "DELETE")!;
+    const response = await deleteRoute.handler({
+      method: "DELETE",
+      path: `/v1/tenants/${TENANT}/groups/grp-1`,
+      params: { tenantId: TENANT, groupId: "grp-1" },
+      query: new URLSearchParams(),
+      headers: {},
+      body: { confirmName: "Finance Team", preview: true },
+    });
+    expect(response.status).toBe(200);
+    expect((response.body as GroupPlan).dryRun).toBe(true);
+    expect(provider.deleteCalls).toEqual([
+      { tenantId: TENANT, groupId: "grp-1", confirmName: "Finance Team", preview: true },
+    ]);
+  });
 });
