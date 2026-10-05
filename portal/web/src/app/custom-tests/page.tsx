@@ -136,51 +136,32 @@ const toggleBadgeStyle = (active: boolean): CSSProperties => ({
   color: active ? "var(--success-text)" : "var(--muted)",
 });
 
-const DEFAULT_CUSTOM_TESTS: CustomTestRow[] = [
-  {
-    id: "ct-001",
-    name: "Check Inactive Mailboxes Retention",
-    category: "Exchange",
-    enabled: true,
-    alertsEnabled: true,
-    currentVersionId: "v1",
-    lastRunAt: "2026-10-01T06:00:00.000Z",
-    createdAt: "2026-09-15T00:00:00.000Z",
-    updatedAt: "2026-10-01T06:00:00.000Z",
-  },
-  {
-    id: "ct-002",
-    name: "Audit Guest User Access Rights",
-    category: "Identity",
-    enabled: false,
-    alertsEnabled: false,
-    currentVersionId: "v2",
-    lastRunAt: null,
-    createdAt: "2026-09-20T00:00:00.000Z",
-    updatedAt: "2026-09-20T00:00:00.000Z",
-  },
-];
-
 export default function CustomTestsPage({
   fetcher = fetch,
 }: CustomTestsPageProps): ReactElement {
-  const [tests, setTests] = useState<readonly CustomTestRow[]>(DEFAULT_CUSTOM_TESTS);
+  const [tests, setTests] = useState<readonly CustomTestRow[]>([]);
   const [isEditing, setIsEditing] = useState(false);
   const [editingTest, setEditingTest] = useState<CustomTestRow | null>(null);
   const [viewingVersionsFor, setViewingVersionsFor] = useState<CustomTestRow | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadTests = useCallback(async () => {
     try {
       const res = await fetcher("/v1/custom-tests");
-      if (res.ok) {
-        const data = (await res.json()) as CustomTestRow[];
-        if (Array.isArray(data)) {
-          setTests(data);
-        }
+      if (!res.ok) {
+        setTests([]);
+        setLoadError(`Failed to load custom tests (status ${res.status}).`);
+        return;
       }
-    } catch {
-      // Use defaults
+      const data = (await res.json()) as CustomTestRow[];
+      setTests(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setTests([]);
+      setLoadError(
+        `Failed to load custom tests: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }, [fetcher]);
 
@@ -301,6 +282,22 @@ export default function CustomTestsPage({
           </button>
         )}
       </div>
+
+      {loadError && (
+        <div
+          style={{
+            padding: "10px 16px",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            fontSize: "13px",
+            color: "var(--danger-text, var(--text-soft))",
+          }}
+          role="alert"
+        >
+          {loadError}
+        </div>
+      )}
 
       {statusMessage && (
         <div

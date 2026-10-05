@@ -20,6 +20,11 @@ import { PackList, type TestPackItem } from "./PackList";
 import { PackReport, type PackReportData } from "./PackReport";
 import { CustomTestEditor } from "./CustomTestEditor";
 import CustomTestsPage from "../../app/custom-tests/page";
+import TestPacksPage from "../../app/test-packs/page";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+}));
 
 afterEach(() => {
   cleanup();
@@ -153,11 +158,44 @@ describe("CustomTestEditor (T-0709)", () => {
   });
 });
 
+const CUSTOM_TEST_ROWS = [
+  {
+    id: "ct-001",
+    name: "Check Inactive Mailboxes Retention",
+    category: "Exchange",
+    enabled: true,
+    alertsEnabled: true,
+    currentVersionId: "v1",
+    lastRunAt: "2026-10-01T06:00:00.000Z",
+    createdAt: "2026-09-15T00:00:00.000Z",
+    updatedAt: "2026-10-01T06:00:00.000Z",
+  },
+  {
+    id: "ct-002",
+    name: "Audit Guest User Access Rights",
+    category: "Identity",
+    enabled: false,
+    alertsEnabled: false,
+    currentVersionId: "v2",
+    lastRunAt: null,
+    createdAt: "2026-09-20T00:00:00.000Z",
+    updatedAt: "2026-09-20T00:00:00.000Z",
+  },
+];
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 describe("CustomTestsPage Table Actions (T-0709)", () => {
   it("exposes Edit, View versions, Enable/Disable test, Enable/Disable alerts, Delete, Save to GitHub", async () => {
-    render(<CustomTestsPage />);
+    const fetcher = vi.fn(async () => jsonResponse(CUSTOM_TEST_ROWS));
+    render(<CustomTestsPage fetcher={fetcher as unknown as typeof fetch} />);
 
-    expect(screen.getByText("Check Inactive Mailboxes Retention")).toBeDefined();
+    expect(await screen.findByText("Check Inactive Mailboxes Retention")).toBeDefined();
     expect(screen.getByText("Audit Guest User Access Rights")).toBeDefined();
 
     // Row actions
@@ -172,6 +210,28 @@ describe("CustomTestsPage Table Actions (T-0709)", () => {
     const ghButtons = screen.getAllByRole("button", { name: /^Save to GitHub$/ });
     expect(ghButtons).toHaveLength(2);
     expect(ghButtons[0].hasAttribute("disabled")).toBe(true);
+  });
+});
+
+describe("No fabricated data on API failure (T-0888)", () => {
+  it("CustomTestsPage shows the error state and no sample rows when the API fails", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({}, 500));
+    render(<CustomTestsPage fetcher={fetcher as unknown as typeof fetch} />);
+
+    expect(await screen.findByRole("alert")).toBeDefined();
+    expect(screen.queryByText("Check Inactive Mailboxes Retention")).toBeNull();
+    expect(screen.queryByText("Audit Guest User Access Rights")).toBeNull();
+    expect(screen.getByText(/No custom tests found/i)).toBeDefined();
+  });
+
+  it("TestPacksPage shows the error state and no sample catalogue when the API fails", async () => {
+    const fetcher = vi.fn(async () => jsonResponse({}, 500));
+    render(<TestPacksPage fetcher={fetcher as unknown as typeof fetch} />);
+
+    expect(await screen.findByRole("alert")).toBeDefined();
+    expect(screen.queryByText(/CIS Microsoft 365 Foundations Benchmark/)).toBeNull();
+    expect(screen.queryByText(/Essential Eight/)).toBeNull();
+    expect(screen.getByText(/No compliance test packs available/i)).toBeDefined();
   });
 });
 

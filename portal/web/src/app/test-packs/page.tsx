@@ -48,43 +48,32 @@ const subtitleStyle: CSSProperties = {
   margin: 0,
 };
 
-const DEFAULT_PACKS: TestPackItem[] = [
-  {
-    id: "cis",
-    name: "CIS Microsoft 365 Foundations Benchmark",
-    description: "Prescriptive guidance for establishing a secure baseline configuration for M365.",
-    frameworkId: "cis-m365-v6",
-    checks: Array.from({ length: 85 }, (_, i) => `CIS-M365-${i + 1}`),
-  },
-  {
-    id: "e8",
-    name: "Essential Eight (E8)",
-    description: "Australian Cyber Security Centre (ACSC) baseline mitigation strategies.",
-    frameworkId: "essential-eight",
-    checks: Array.from({ length: 42 }, (_, i) => `E8-ML-${i + 1}`),
-  },
-];
-
 export default function TestPacksPage({
   fetcher = fetch,
   tenantId = "tenant-current",
 }: TestPacksPageProps): ReactElement {
   const router = useRouter();
-  const [packs, setPacks] = useState<readonly TestPackItem[]>(DEFAULT_PACKS);
+  const [packs, setPacks] = useState<readonly TestPackItem[]>([]);
   const [runningPackId, setRunningPackId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadPacks = useCallback(async () => {
     try {
       const res = await fetcher("/v1/test-packs");
-      if (res.ok) {
-        const data = (await res.json()) as TestPackItem[];
-        if (Array.isArray(data) && data.length > 0) {
-          setPacks(data);
-        }
+      if (!res.ok) {
+        setPacks([]);
+        setLoadError(`Failed to load test packs (status ${res.status}).`);
+        return;
       }
-    } catch {
-      // Fallback to default catalogue
+      const data = (await res.json()) as TestPackItem[];
+      setPacks(Array.isArray(data) ? data : []);
+      setLoadError(null);
+    } catch (err) {
+      setPacks([]);
+      setLoadError(
+        `Failed to load test packs: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }, [fetcher]);
 
@@ -133,6 +122,22 @@ export default function TestPacksPage({
           </p>
         </div>
       </div>
+
+      {loadError && (
+        <div
+          style={{
+            padding: "10px 16px",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            fontSize: "13px",
+            color: "var(--danger-text, var(--text-soft))",
+          }}
+          role="alert"
+        >
+          {loadError}
+        </div>
+      )}
 
       {statusMessage && (
         <div

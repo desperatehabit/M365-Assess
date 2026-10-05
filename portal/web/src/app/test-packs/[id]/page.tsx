@@ -30,49 +30,39 @@ export default function PackDetailPage({
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const packId = typeof params?.id === "string" ? params.id : "default-pack";
-  const runId = searchParams?.get("runId") || `run-${packId}`;
+  const packId = typeof params?.id === "string" ? params.id : "";
+  const runId = searchParams?.get("runId") ?? null;
 
-  const [report, setReport] = useState<PackReportData>({
-    id: runId,
-    packId,
-    tenantId: "tenant-primary",
-    at: new Date().toISOString(),
-    score: 88,
-    results: [
-      {
-        findingId: `${packId.toUpperCase()}-001`,
-        status: "Pass",
-        title: "Multi-Factor Authentication",
-        message: "Enforced on all administrative accounts.",
-      },
-      {
-        findingId: `${packId.toUpperCase()}-002`,
-        status: "Pass",
-        title: "Legacy Authentication Protocols",
-        message: "Blocked via Conditional Access policies.",
-      },
-      {
-        findingId: `${packId.toUpperCase()}-003`,
-        status: "Fail",
-        title: "Self-Service Password Reset",
-        message: "SSPR not enabled for all users.",
-      },
-    ],
-  });
+  const [report, setReport] = useState<PackReportData | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadReport() {
+      if (!runId) {
+        setReport(null);
+        setLoadError("No test run selected. Run a pack to produce a report.");
+        return;
+      }
       try {
         const res = await fetcher(`/v1/test-runs/${encodeURIComponent(runId)}`);
-        if (res.ok) {
-          const data = (await res.json()) as PackReportData;
-          if (data && data.results) {
-            setReport(data);
-          }
+        if (!res.ok) {
+          setReport(null);
+          setLoadError(`Failed to load report (status ${res.status}).`);
+          return;
         }
-      } catch {
-        // Fallback to sample report
+        const data = (await res.json()) as PackReportData;
+        if (data && Array.isArray(data.results)) {
+          setReport(data);
+          setLoadError(null);
+        } else {
+          setReport(null);
+          setLoadError("No results are available for this run yet.");
+        }
+      } catch (err) {
+        setReport(null);
+        setLoadError(
+          `Failed to load report: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
     void loadReport();
@@ -80,11 +70,42 @@ export default function PackDetailPage({
 
   return (
     <div style={pageStyle} aria-label="Pack Detail Page">
-      <PackReport
-        report={report}
-        packName={packId.toUpperCase()}
-        onBack={() => router.push("/test-packs")}
-      />
+      {loadError && (
+        <div
+          style={{
+            padding: "10px 16px",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            fontSize: "13px",
+            color: "var(--danger-text, var(--text-soft))",
+          }}
+          role="alert"
+        >
+          {loadError}
+        </div>
+      )}
+
+      {report ? (
+        <PackReport
+          report={report}
+          packName={packId ? packId.toUpperCase() : "Pack"}
+          onBack={() => router.push("/test-packs")}
+        />
+      ) : (
+        <div
+          style={{
+            padding: "32px",
+            textAlign: "center",
+            color: "var(--muted)",
+            border: "1px dashed var(--border)",
+            borderRadius: "var(--radius)",
+            background: "var(--bg-elev)",
+          }}
+        >
+          No report to display.
+        </div>
+      )}
     </div>
   );
 }
