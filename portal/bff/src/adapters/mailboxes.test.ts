@@ -520,3 +520,68 @@ describe("vacation schedule store SQL (T-0850)", () => {
     ).rejects.toThrow();
   });
 });
+
+describe("mailbox rule recipients (T-0895)", () => {
+  const plan = { action: "create", mailboxId: "mbx-1" };
+
+  it("sends array recipient fields to the worker as arrays of addresses", async () => {
+    const { providers, calls } = await harness(() => plan);
+
+    await providers.mailboxRules.createRule(
+      "t-a",
+      "mbx-1",
+      {
+        name: "Fan out",
+        forwardTo: ["a@example.invalid", "b@example.invalid"],
+        forwardAsAttachmentTo: ["c@example.invalid"],
+        redirectTo: ["d@example.invalid", "e@example.invalid"],
+      },
+      true,
+    );
+
+    const payload = calls[0]?.job as Job;
+    expect(calls[0]?.entrypoint).toBe("set-mailbox-rule.ps1");
+    expect(payload["forwardTo"]).toEqual(["a@example.invalid", "b@example.invalid"]);
+    expect(payload["forwardAsAttachmentTo"]).toEqual(["c@example.invalid"]);
+    expect(payload["redirectTo"]).toEqual(["d@example.invalid", "e@example.invalid"]);
+  });
+
+  it("turns a single or delimited string into a list and trims blanks", async () => {
+    const { providers, calls } = await harness(() => plan);
+
+    await providers.mailboxRules.editRule(
+      "t-a",
+      "mbx-1",
+      "rule-1",
+      { forwardTo: "a@example.invalid", redirectTo: " b@example.invalid ; c@example.invalid, " },
+      true,
+    );
+
+    const payload = calls[0]?.job as Job;
+    expect(payload["forwardTo"]).toEqual(["a@example.invalid"]);
+    expect(payload["redirectTo"]).toEqual(["b@example.invalid", "c@example.invalid"]);
+  });
+
+  it("leaves absent recipient fields out of the job", async () => {
+    const { providers, calls } = await harness(() => plan);
+
+    await providers.mailboxRules.editRule("t-a", "mbx-1", "rule-1", { name: "Renamed" }, true);
+
+    const payload = calls[0]?.job as Job;
+    expect(payload).not.toHaveProperty("forwardTo");
+    expect(payload).not.toHaveProperty("forwardAsAttachmentTo");
+    expect(payload).not.toHaveProperty("redirectTo");
+  });
+
+  it("refuses a recipient value that is neither an address nor a list of addresses, with no worker call", async () => {
+    const { providers, calls } = await harness(() => plan);
+
+    await expect(
+      providers.mailboxRules.createRule("t-a", "mbx-1", { name: "Bad", forwardTo: { address: "a@example.invalid" } }, true),
+    ).rejects.toMatchObject({ status: 400 });
+    await expect(
+      providers.mailboxRules.editRule("t-a", "mbx-1", "rule-1", { redirectTo: ["a@example.invalid", 42] }, true),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(calls).toHaveLength(0);
+  });
+});

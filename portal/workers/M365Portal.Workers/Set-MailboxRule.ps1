@@ -16,6 +16,67 @@
 # before apply. The supervisor connects EXO in the child process after
 # materializing the tenant credential in-process; this file never touches secrets.
 
+function ConvertTo-MailboxRuleTargetList {
+    <#
+    .SYNOPSIS
+        Normalizes a recipient field (one address, a delimited string, or a list) to a clean list.
+    .DESCRIPTION
+        The BFF sends forwardTo / forwardAsAttachmentTo / redirectTo as arrays; a
+        direct run may pass one string or a ';' / ',' delimited string. Every form
+        becomes a flat string[] of trimmed, non-empty addresses so an array is never
+        collapsed into one space-joined string. Null and empty input give an empty list. Callers wrap the call in @() so a
+        zero- or one-element result stays an array.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [object]$Value
+    )
+
+    $targets = [System.Collections.Generic.List[string]]::new()
+    foreach ($item in @($Value)) {
+        if ($null -eq $item) {
+            continue
+        }
+        foreach ($part in ([string]$item -split '[;,]')) {
+            $trimmed = $part.Trim()
+            if ($trimmed.Length -gt 0) {
+                $targets.Add($trimmed)
+            }
+        }
+    }
+    return $targets.ToArray()
+}
+
+function Format-MailboxRuleFieldValue {
+    <#
+    .SYNOPSIS
+        Renders a snapshot field for the diff text; lists join with '; '.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object]$Value
+    )
+
+    if ($null -eq $Value) {
+        return ''
+    }
+    if ($Value -is [string]) {
+        return $Value
+    }
+    if ($Value -is [System.Collections.IEnumerable]) {
+        return (@($Value) -join '; ')
+    }
+    return [string]$Value
+}
+
 function Test-RuleTargetPresent {
     <#
     .SYNOPSIS
@@ -163,13 +224,22 @@ function Test-MailboxRuleInput {
         [Nullable[int]]$Priority = $null,
 
         [Parameter()]
-        [string]$ForwardTo = '',
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$ForwardTo = @(),
 
         [Parameter()]
-        [string]$ForwardAsAttachmentTo = '',
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$ForwardAsAttachmentTo = @(),
 
         [Parameter()]
-        [string]$RedirectTo = '',
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$RedirectTo = @(),
 
         [Parameter()]
         [Nullable[bool]]$DeleteMessage = $null
@@ -189,9 +259,9 @@ function Test-MailboxRuleInput {
         $hasChange = (-not [string]::IsNullOrWhiteSpace($Name)) -or
             ($null -ne $Enabled) -or
             ($null -ne $Priority) -or
-            (-not [string]::IsNullOrWhiteSpace($ForwardTo)) -or
-            (-not [string]::IsNullOrWhiteSpace($ForwardAsAttachmentTo)) -or
-            (-not [string]::IsNullOrWhiteSpace($RedirectTo)) -or
+            (@(ConvertTo-MailboxRuleTargetList -Value $ForwardTo).Count -gt 0) -or
+            (@(ConvertTo-MailboxRuleTargetList -Value $ForwardAsAttachmentTo).Count -gt 0) -or
+            (@(ConvertTo-MailboxRuleTargetList -Value $RedirectTo).Count -gt 0) -or
             ($null -ne $DeleteMessage)
         if (-not $hasChange) {
             $errors.Add('at least one rule field must be supplied for edit')
@@ -307,9 +377,9 @@ function Read-SetMailboxRuleJob {
         Name                  = if ($json.name) { [string]$json.name } else { '' }
         Enabled               = $enabled
         Priority              = $priority
-        ForwardTo             = if ($json.forwardTo) { [string]$json.forwardTo } else { '' }
-        ForwardAsAttachmentTo = if ($json.forwardAsAttachmentTo) { [string]$json.forwardAsAttachmentTo } else { '' }
-        RedirectTo            = if ($json.redirectTo) { [string]$json.redirectTo } else { '' }
+        ForwardTo             = @(ConvertTo-MailboxRuleTargetList -Value $json.forwardTo)
+        ForwardAsAttachmentTo = @(ConvertTo-MailboxRuleTargetList -Value $json.forwardAsAttachmentTo)
+        RedirectTo            = @(ConvertTo-MailboxRuleTargetList -Value $json.redirectTo)
         DeleteMessage         = $deleteMessage
         Confirmed             = [bool]($json.confirmed -eq $true)
         DryRun                = [bool]($json.dryRun -eq $true)
@@ -355,13 +425,22 @@ function Invoke-SetMailboxRule {
         [Nullable[int]]$Priority = $null,
 
         [Parameter()]
-        [string]$ForwardTo = '',
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$ForwardTo = @(),
 
         [Parameter()]
-        [string]$ForwardAsAttachmentTo = '',
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$ForwardAsAttachmentTo = @(),
 
         [Parameter()]
-        [string]$RedirectTo = '',
+        [AllowNull()]
+        [AllowEmptyCollection()]
+        [AllowEmptyString()]
+        [string[]]$RedirectTo = @(),
 
         [Parameter()]
         [Nullable[bool]]$DeleteMessage = $null,
@@ -378,6 +457,9 @@ function Invoke-SetMailboxRule {
         throw "ValidationFailed: $($failures -join '; ')"
     }
     $mailboxKey = $MailboxId.Trim()
+    $forwardToList = @(ConvertTo-MailboxRuleTargetList -Value $ForwardTo)
+    $forwardAsAttachmentToList = @(ConvertTo-MailboxRuleTargetList -Value $ForwardAsAttachmentTo)
+    $redirectToList = @(ConvertTo-MailboxRuleTargetList -Value $RedirectTo)
 
     $before = $null
     $after = $null
@@ -392,9 +474,9 @@ function Invoke-SetMailboxRule {
             name                  = $targetName
             enabled               = if ($null -ne $Enabled) { [bool]$Enabled } else { $true }
             priority              = $Priority
-            forwardTo             = $ForwardTo.Trim()
-            forwardAsAttachmentTo = $ForwardAsAttachmentTo.Trim()
-            redirectTo            = $RedirectTo.Trim()
+            forwardTo             = $forwardToList
+            forwardAsAttachmentTo = $forwardAsAttachmentToList
+            redirectTo            = $redirectToList
             deleteMessage         = ($null -ne $DeleteMessage -and $DeleteMessage -eq $true)
         }
         $diff.Add("Create inbox rule '$targetName' on mailbox '$mailboxKey'")
@@ -425,21 +507,23 @@ function Invoke-SetMailboxRule {
             if ($null -ne $Priority) {
                 $after['priority'] = $Priority
             }
-            if (-not [string]::IsNullOrWhiteSpace($ForwardTo)) {
-                $after['forwardTo'] = $ForwardTo.Trim()
+            if ($forwardToList.Count -gt 0) {
+                $after['forwardTo'] = $forwardToList
             }
-            if (-not [string]::IsNullOrWhiteSpace($ForwardAsAttachmentTo)) {
-                $after['forwardAsAttachmentTo'] = $ForwardAsAttachmentTo.Trim()
+            if ($forwardAsAttachmentToList.Count -gt 0) {
+                $after['forwardAsAttachmentTo'] = $forwardAsAttachmentToList
             }
-            if (-not [string]::IsNullOrWhiteSpace($RedirectTo)) {
-                $after['redirectTo'] = $RedirectTo.Trim()
+            if ($redirectToList.Count -gt 0) {
+                $after['redirectTo'] = $redirectToList
             }
             if ($null -ne $DeleteMessage) {
                 $after['deleteMessage'] = [bool]$DeleteMessage
             }
             foreach ($field in @('name', 'enabled', 'priority', 'forwardTo', 'forwardAsAttachmentTo', 'redirectTo', 'deleteMessage')) {
-                if ("$($before[$field])" -ne "$($after[$field])") {
-                    $diff.Add("Set $field from '$($before[$field])' to '$($after[$field])' on rule '$targetName' ($ruleKey)")
+                $beforeText = Format-MailboxRuleFieldValue -Value $before[$field]
+                $afterText = Format-MailboxRuleFieldValue -Value $after[$field]
+                if ($beforeText -ne $afterText) {
+                    $diff.Add("Set $field from '$beforeText' to '$afterText' on rule '$targetName' ($ruleKey)")
                 }
             }
             if ($diff.Count -eq 0) {
@@ -513,14 +597,14 @@ function Invoke-SetMailboxRule {
             Mailbox = $mailboxKey
             Name    = $targetName
         }
-        if (-not [string]::IsNullOrWhiteSpace($ForwardTo)) {
-            $createParams['ForwardTo'] = $ForwardTo.Trim()
+        if ($forwardToList.Count -gt 0) {
+            $createParams['ForwardTo'] = $forwardToList
         }
-        if (-not [string]::IsNullOrWhiteSpace($ForwardAsAttachmentTo)) {
-            $createParams['ForwardAsAttachmentTo'] = $ForwardAsAttachmentTo.Trim()
+        if ($forwardAsAttachmentToList.Count -gt 0) {
+            $createParams['ForwardAsAttachmentTo'] = $forwardAsAttachmentToList
         }
-        if (-not [string]::IsNullOrWhiteSpace($RedirectTo)) {
-            $createParams['RedirectTo'] = $RedirectTo.Trim()
+        if ($redirectToList.Count -gt 0) {
+            $createParams['RedirectTo'] = $redirectToList
         }
         if ($null -ne $DeleteMessage -and $DeleteMessage -eq $true) {
             $createParams['DeleteMessage'] = $true
@@ -555,14 +639,14 @@ function Invoke-SetMailboxRule {
         if ($null -ne $Priority) {
             $editParams['Priority'] = [int]$Priority
         }
-        if (-not [string]::IsNullOrWhiteSpace($ForwardTo)) {
-            $editParams['ForwardTo'] = $ForwardTo.Trim()
+        if ($forwardToList.Count -gt 0) {
+            $editParams['ForwardTo'] = $forwardToList
         }
-        if (-not [string]::IsNullOrWhiteSpace($ForwardAsAttachmentTo)) {
-            $editParams['ForwardAsAttachmentTo'] = $ForwardAsAttachmentTo.Trim()
+        if ($forwardAsAttachmentToList.Count -gt 0) {
+            $editParams['ForwardAsAttachmentTo'] = $forwardAsAttachmentToList
         }
-        if (-not [string]::IsNullOrWhiteSpace($RedirectTo)) {
-            $editParams['RedirectTo'] = $RedirectTo.Trim()
+        if ($redirectToList.Count -gt 0) {
+            $editParams['RedirectTo'] = $redirectToList
         }
         if ($null -ne $DeleteMessage) {
             $editParams['DeleteMessage'] = [bool]$DeleteMessage
