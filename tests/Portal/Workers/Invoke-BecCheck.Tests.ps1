@@ -355,3 +355,25 @@ Describe 'Invoke-BecCheck worker (T-0207)' {
         }
     }
 }
+
+Describe 'Invoke-BecCheck Graph URIs (T-0897)' {
+    It 'requests the password-change timestamp at the exact user URI with a literal $select' {
+        script:New-ClearMock
+
+        $null = Get-BecPasswordChanges -UserId 'user-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=lastPasswordChangeDateTime'
+        }
+    }
+
+    It 'issues the same exact URI when run through the full check' {
+        script:New-ClearMock
+
+        $null = Invoke-BecCheck -TenantId 'tenant-a' -UserId 'user-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Uri -ceq '/v1.0/users/user-1?$select=lastPasswordChangeDateTime'
+        }
+    }
+}

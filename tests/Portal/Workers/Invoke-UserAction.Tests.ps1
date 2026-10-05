@@ -242,3 +242,25 @@ Describe 'Invoke-UserAction worker (T-0204)' {
         }
     }
 }
+
+Describe 'Invoke-UserAction Graph URIs (T-0897)' {
+    BeforeEach {
+        script:New-ActionMock
+    }
+
+    It 'reads the live user state at the exact user URI with a literal $select' {
+        $null = Get-UserActionState -UserId 'user-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,userPrincipalName,accountEnabled,usageLocation'
+        }
+    }
+
+    It 'uses that URI for the before-state when an action runs' {
+        $null = Invoke-TenantUserAction -TenantId 'tenant-a' -UserId 'user-1' -Action 'enable'
+
+        Should -Invoke Invoke-MgGraphRequest -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,userPrincipalName,accountEnabled,usageLocation'
+        }
+    }
+}

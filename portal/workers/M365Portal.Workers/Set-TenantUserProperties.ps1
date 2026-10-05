@@ -100,7 +100,7 @@ function Get-TenantUserPatchState {
 
     try {
         $select = 'id,displayName,givenName,surname,department,jobTitle,officeLocation,mobilePhone,usageLocation'
-        $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/$UserId?`$select=$select"
+        $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/${UserId}?`$select=$select"
         if ($null -eq $user) {
             return $null
         }

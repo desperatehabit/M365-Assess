@@ -389,3 +389,28 @@ Describe 'Update-UserLicense worker (T-0645)' {
         }
     }
 }
+
+Describe 'Update-UserLicense Graph URIs (T-0897)' {
+    BeforeEach {
+        $script:mockUserId = 'user-1'
+        $script:mockLicenses = @()
+        $script:mockMissing = $false
+        script:New-GraphMock
+    }
+
+    It 'reads the license state at the exact user URI with a literal $select' {
+        $null = Get-UserLicenseState -UserId 'user-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,userPrincipalName,assignedLicenses'
+        }
+    }
+
+    It 'uses that URI when a license change runs' {
+        $null = Invoke-UserLicenseChange -TenantId 'tenant-a' -UserId 'user-1' -SkuId $script:sku -Action 'assign' -DryRun
+
+        Should -Invoke Invoke-MgGraphRequest -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,userPrincipalName,assignedLicenses'
+        }
+    }
+}

@@ -322,3 +322,25 @@ Describe 'Invoke-UserOffboarding worker (T-0206)' {
         }
     }
 }
+
+Describe 'Invoke-UserOffboarding Graph URIs (T-0897)' {
+    BeforeEach {
+        script:New-OffboardingMock
+    }
+
+    It 'reads the user state at the exact user URI with a literal $select' {
+        $null = Get-OffboardingUserState -UserId 'user-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,userPrincipalName,accountEnabled,assignedLicenses'
+        }
+    }
+
+    It 'uses that URI when an offboarding step runs' {
+        $null = Invoke-OffboardingStep -TenantId 'tenant-a' -JobId 'job-1' -UserId 'user-1' -Action 'disable-sign-in'
+
+        Should -Invoke Invoke-MgGraphRequest -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,userPrincipalName,accountEnabled,assignedLicenses'
+        }
+    }
+}

@@ -273,7 +273,7 @@ function Get-BecPasswordChanges {
         [ValidateNotNullOrEmpty()]
         [string]$UserId
     )
-    $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/$UserId?`$select=lastPasswordChangeDateTime"
+    $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/${UserId}?`$select=lastPasswordChangeDateTime"
     $changed = [string]$user.lastPasswordChangeDateTime
     if ($changed.Trim().Length -eq 0) {
         return New-BecCheckResult -Check 'passwordChanges' -State 'unknown' `
