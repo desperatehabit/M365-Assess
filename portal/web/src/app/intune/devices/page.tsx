@@ -4,9 +4,25 @@
 // Nav: Intune → Device Management → Devices.
 import React, { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { fetchDevices, type DeviceItem } from "../../../lib/deviceApi";
+import {
+  applyDestructiveDeviceAction,
+  applyDeviceAction,
+  fetchDevices,
+  type DeviceItem,
+} from "../../../lib/deviceApi";
 import { DeviceFilters } from "../../../components/devices/DeviceFilters";
 import { DeviceTable, type DeviceRowAction } from "../../../components/devices/DeviceTable";
+import {
+  DeviceActionDialogs,
+  type DeviceActionDialogType,
+} from "../../../components/devices/DeviceActionDialogs";
+
+const DIALOG_ACTIONS: ReadonlySet<DeviceRowAction> = new Set([
+  "sync",
+  "retire",
+  "wipe",
+  "fresh-start",
+]);
 
 export default function DevicesPage() {
   const router = useRouter();
@@ -19,6 +35,8 @@ export default function DevicesPage() {
   const [lastCheckIn, setLastCheckIn] = useState("");
   const [encrypted, setEncrypted] = useState("");
   const [search, setSearch] = useState("");
+  const [dialog, setDialog] = useState<{ device: DeviceItem; action: DeviceActionDialogType } | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -53,9 +71,12 @@ export default function DevicesPage() {
   }, [load]);
 
   function handleAction(action: DeviceRowAction, device: DeviceItem) {
-    if (action === "view") {
+    if (action === "view" || action === "bitlocker-key") {
       router.push(`/intune/devices/${encodeURIComponent(device.id)}`);
       return;
+    }
+    if (DIALOG_ACTIONS.has(action)) {
+      setDialog({ device, action: action as DeviceActionDialogType });
     }
   }
 
@@ -63,9 +84,35 @@ export default function DevicesPage() {
     router.push(`/intune/devices/${encodeURIComponent(device.id)}`);
   }
 
+  async function handleConfirm(
+    action: DeviceActionDialogType,
+    reason: string,
+    typedConfirmation: string,
+  ): Promise<void> {
+    if (!dialog) return;
+    const device = dialog.device;
+    if (action === "wipe" || action === "fresh-start") {
+      await applyDestructiveDeviceAction("current", device.id, action, {
+        deviceName: device.deviceName,
+        reason,
+        typedConfirmation,
+      });
+    } else {
+      await applyDeviceAction("current", device.id, action, reason);
+    }
+    setDialog(null);
+    setStatusMessage(`${action} applied to ${device.deviceName}.`);
+    void load();
+  }
+
   return (
     <main style={{ padding: "24px", maxWidth: "1280px", margin: "0 auto" }}>
       <h1 style={{ fontSize: "24px", fontWeight: 700, marginBottom: "16px" }}>Devices</h1>
+      {statusMessage && (
+        <div role="status" style={{ marginBottom: "12px", fontSize: "13px" }}>
+          {statusMessage}
+        </div>
+      )}
       <DeviceFilters
         platform={platform}
         compliance={compliance}
@@ -89,6 +136,15 @@ export default function DevicesPage() {
           onView={handleView}
         />
       </div>
+
+      {dialog && (
+        <DeviceActionDialogs
+          device={dialog.device}
+          action={dialog.action}
+          onConfirm={handleConfirm}
+          onClose={() => setDialog(null)}
+        />
+      )}
     </main>
   );
 }

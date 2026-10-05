@@ -164,3 +164,109 @@ export async function fetchDeviceActions(
   const body = (await res.json()) as { actions: DeviceAction[] };
   return body.actions ?? [];
 }
+
+export type DeviceActionKind = "sync" | "retire";
+export type DestructiveDeviceActionKind = "wipe" | "fresh-start";
+
+export interface DeviceActionResult {
+  readonly tenantId: string;
+  readonly deviceId: string;
+  readonly action: string;
+  readonly reason: string | null;
+  readonly state?: string;
+  readonly result: string;
+  readonly error: string;
+  readonly appliedAt: string;
+}
+
+export async function applyDeviceAction(
+  tenantId: string,
+  deviceId: string,
+  action: DeviceActionKind,
+  reason: string,
+  baseUrl = "",
+): Promise<DeviceActionResult> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/actions/${encodeURIComponent(action)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason }),
+    },
+  );
+  if (!res.ok) await throwApiError(res, "Failed to apply device action");
+  return res.json() as Promise<DeviceActionResult>;
+}
+
+export interface DestructiveDeviceActionInput {
+  readonly deviceName: string;
+  readonly reason: string;
+  readonly typedConfirmation: string;
+}
+
+export async function applyDestructiveDeviceAction(
+  tenantId: string,
+  deviceId: string,
+  action: DestructiveDeviceActionKind,
+  input: DestructiveDeviceActionInput,
+  baseUrl = "",
+): Promise<DeviceActionResult> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/device-actions/${encodeURIComponent(action)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) await throwApiError(res, "Failed to apply device action");
+  return res.json() as Promise<DeviceActionResult>;
+}
+
+export interface BitLockerKey {
+  readonly keyId: string;
+  readonly key: string;
+  readonly keyType: string;
+  readonly createdAt: string | null;
+}
+
+export interface BitLockerKeysResponse {
+  readonly tenantId: string;
+  readonly deviceId: string;
+  readonly keys: readonly BitLockerKey[];
+  readonly retrievedAt: string;
+}
+
+export interface LapsCredentialsResponse {
+  readonly tenantId: string;
+  readonly deviceId: string;
+  readonly backend: string;
+  readonly accountName: string | null;
+  readonly password: string;
+  readonly backedUpAt: string | null;
+  readonly retrievedAt: string;
+}
+
+export async function fetchBitLockerKeys(
+  tenantId: string,
+  deviceId: string,
+  baseUrl = "",
+): Promise<BitLockerKeysResponse> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/bitlocker`,
+  );
+  if (!res.ok) await throwApiError(res, "Failed to reveal BitLocker keys");
+  return res.json() as Promise<BitLockerKeysResponse>;
+}
+
+export async function fetchLapsCredentials(
+  tenantId: string,
+  deviceId: string,
+  baseUrl = "",
+): Promise<LapsCredentialsResponse> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/devices/${encodeURIComponent(deviceId)}/laps`,
+  );
+  if (!res.ok) await throwApiError(res, "Failed to reveal LAPS credentials");
+  return res.json() as Promise<LapsCredentialsResponse>;
+}
