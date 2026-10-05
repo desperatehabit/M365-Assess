@@ -60,14 +60,25 @@ if ($JobFile) {
     $SiteId = [string]$job.siteId
     if (-not $TenantId) { throw "job envelope '$JobFile' is missing 'tenantId'" }
     if (-not $SiteId) { throw "job envelope '$JobFile' is missing 'siteId'" }
-    if ($null -ne $job.ageThresholdDays) { $AgeThresholdDays = [int]$job.ageThresholdDays }
-    if ($null -ne $job.includeVersions) { $IncludeVersions = @($job.includeVersions) }
-    if ($null -ne $job.excludeVersions) { $ExcludeVersions = @($job.excludeVersions) }
-    if ($job.mode) { $Mode = [string]$job.mode }
-    if ($null -ne $job.confirmCount) { $ConfirmCount = [int]$job.confirmCount }
-    if ($job.actor) { $Actor = [string]$job.actor }
-    if ($job.correlationId) { $CorrelationId = [string]$job.correlationId }
-    if ($job.jobId) { $JobId = [string]$job.jobId }
+    # Optional fields are absent from the envelope when the adapter omits them;
+    # under StrictMode a missing property throws, so read them through a helper.
+    $jobField = { param([string]$Name) $prop = $job.PSObject.Properties[$Name]; if ($prop) { $prop.Value } else { $null } }
+    $value = & $jobField 'ageThresholdDays'
+    if ($null -ne $value) { $AgeThresholdDays = [int]$value }
+    $value = & $jobField 'includeVersions'
+    if ($null -ne $value) { $IncludeVersions = @($value) }
+    $value = & $jobField 'excludeVersions'
+    if ($null -ne $value) { $ExcludeVersions = @($value) }
+    $value = & $jobField 'mode'
+    if ($value) { $Mode = [string]$value }
+    $value = & $jobField 'confirmCount'
+    if ($null -ne $value) { $ConfirmCount = [int]$value }
+    $value = & $jobField 'actor'
+    if ($value) { $Actor = [string]$value }
+    $value = & $jobField 'correlationId'
+    if ($value) { $CorrelationId = [string]$value }
+    $value = & $jobField 'jobId'
+    if ($value) { $JobId = [string]$value }
     $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service Graph
 }
 try {

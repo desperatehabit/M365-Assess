@@ -28,14 +28,37 @@ BeforeAll {
                     )
                 }
             }
-            if ($key -like 'GET /v1.0/sites/site-1/drive*') {
-                return @{ quota = @{ used = 5368709120; total = 10737418240 }; owner = @{ user = @{ userPrincipalName = 'owner1@example.invalid' } } }
+            if ($key -like 'GET /v1.0/sites/site-1/drive/items/item-1/versions*') {
+                # Graph lists versions newest first: the first entry is the protected current version.
+                return @{ value = @(@{ id = 'v2'; size = 2048; lastModifiedDateTime = ((Get-Date).ToUniversalTime().AddDays(-1).ToString('o')) }, @{ id = 'v1'; size = 1024; lastModifiedDateTime = '2020-01-01T00:00:00Z' }) }
             }
             if ($key -like 'GET /v1.0/sites/site-1/drive/items*') {
                 return @{ value = @(@{ id = 'item-1' }) }
             }
-            if ($key -like 'GET /v1.0/sites/site-1/drive/items/item-1/versions*') {
-                return @{ value = @(@{ id = 'v1'; size = 1024; lastModifiedDateTime = '2026-01-01T00:00:00Z' }) }
+            if ($key -like 'GET /v1.0/sites/site-1/drives*') {
+                return @{ value = @(@{ id = 'drive-lib-1'; name = 'Documents'; webUrl = 'https://contoso.sharepoint.com/sites/alpha/Shared Documents'; driveType = 'documentLibrary'; quota = @{ used = 1024; total = 2048 } }) }
+            }
+            if ($key -like 'GET /v1.0/sites/site-1/drive*') {
+                return @{ quota = @{ used = 5368709120; total = 10737418240 }; owner = @{ user = @{ userPrincipalName = 'owner1@example.invalid' } } }
+            }
+            if ($key -like 'GET /v1.0/drives/drive-lib-1/root/children*') {
+                return @{ value = @(@{ id = 'child-1'; name = 'Plan.docx'; size = 2048; file = @{}; lastModifiedDateTime = '2026-08-01T00:00:00Z' }) }
+            }
+            if ($key -like 'GET /v1.0/sites/site-1/permissions*') {
+                return @{ value = @() }
+            }
+            # '?' is a -like wildcard, so the users list branch must follow the per-user branches.
+            if ($key -like 'GET https://graph.microsoft.com/v1.0/users/user-1/drive') {
+                return @{ id = 'drive-1'; quota = @{ used = 1024; total = 2048 }; lastModifiedDateTime = '2026-09-01T00:00:00Z' }
+            }
+            if ($key -like 'GET https://graph.microsoft.com/v1.0/drives/drive-1/root/permissions') {
+                return @{ value = @(@{ id = 'perm-1'; link = @{ scope = 'organization' } }) }
+            }
+            if ($key -like 'GET https://graph.microsoft.com/v1.0/users?*') {
+                return @{ value = @(@{ id = 'user-1'; displayName = 'Owner One'; userPrincipalName = 'owner1@example.invalid' }) }
+            }
+            if ($key -like 'POST /v1.0/groups') {
+                return @{ id = 'group-new' }
             }
             if ($key -like 'GET /v1.0/sites/site-1*') {
                 return @{ id = 'site-1'; webUrl = 'https://contoso.sharepoint.com/sites/alpha' }
@@ -48,9 +71,6 @@ BeforeAll {
             }
             if ($key -like 'GET /v1.0/directory/deletedItems/microsoft.graph.group') {
                 return @(@{ id = 'recycled-1'; displayName = 'Recycled One'; mail = 'one.example.invalid'; deletedDateTime = ((Get-Date).ToUniversalTime().AddDays(-5)) })
-            }
-            if ($key -like 'GET /v1.0/sites/site-1/drive*') {
-                return @{ quota = @{ used = 1024; total = 2048 } }
             }
             return $null
         }
@@ -153,6 +173,8 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.tenantId | Should -Be 't-a'
             $result.summary | Should -Not -BeNullOrEmpty
             $result.users | Should -Not -BeNullOrEmpty
+            $result.users[0].hasOneDrive | Should -BeTrue
+            $result.users[0].sharing.organization | Should -Be 1
         }
 
         It 'invoke-version-cleanup.ps1 reads the flat plan fields and answers the plan' {

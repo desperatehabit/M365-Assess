@@ -1,20 +1,24 @@
 "use client";
 
-// SharePoint Sites page (EPIC-025 SPEC.md §2 US-1/US-3, §3.1; T-0483).
+// SharePoint Sites page (EPIC-025 SPEC.md §2 US-1..US-3, §3.1, §3.2; T-0483, T-0855).
 // Page title "SharePoint Sites": the §3.1 site list read live from Graph via
-// GET /v1/tenants/{id}/sharepoint/sites (T-0482), rendered by SitesTable with
-// the §3.1 filters and an active/deleted view toggle. The deleted view reads
-// the recycle-bin list (T-0485). Row actions hand to the site browser
-// (T-0488) and the lifecycle UI (T-0485/T-0486); no writes happen on this
-// page. Strictly uses report theme tokens with zero colour literals.
+// GET /v1/tenants/{id}/sharepoint/sites, rendered by SitesTable with the §3.1
+// filters and an active/deleted view. The deleted view reads the recycle-bin list.
+// Row actions open the site detail pages (browse, edit, permissions, external
+// users), delete through SiteDeleteDialog, restore through the restore endpoint, and
+// hand the recycle bin to its own page; "Add site" opens AddSiteWizard. Strictly
+// uses report theme tokens with zero colour literals.
 
 import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
+import { AddSiteWizard } from "../../../components/sharepoint/AddSiteWizard";
+import { SiteDeleteDialog } from "../../../components/sharepoint/SiteDeleteDialog";
 import {
   SitesTable,
   type SharePointSite,
   type SitesView,
 } from "../../../components/sharepoint/SitesTable";
+import { fetchDeletedSites, fetchSites, restoreSite } from "../../../lib/sharepointApi";
 import { useCurrentTenantId } from "../../../lib/useCurrentTenant";
 
 const pageStyle: CSSProperties = {
@@ -78,7 +82,7 @@ const activeToggleStyle: CSSProperties = {
   borderColor: "var(--accent)",
 };
 
-const handoffBannerStyle: CSSProperties = {
+const noticeStyle: CSSProperties = {
   padding: "12px 14px",
   borderRadius: "6px",
   background: "var(--surface)",
@@ -88,39 +92,12 @@ const handoffBannerStyle: CSSProperties = {
   lineHeight: "1.5",
 };
 
-type Fetcher = typeof fetch;
-
-async function readError(response: Response, fallback: string): Promise<Error> {
-  let detail = fallback;
-  try {
-    const body = (await response.json()) as { message?: string };
-    if (body?.message) detail = body.message;
-  } catch {
-    detail = `${fallback}: HTTP ${response.status}`;
-  }
-  return new Error(detail);
-}
-
-async function fetchSites(tenantId: string, fetcher: Fetcher): Promise<SharePointSite[]> {
-  const response = await fetcher(`/v1/tenants/${encodeURIComponent(tenantId)}/sharepoint/sites?limit=100`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) throw await readError(response, "List SharePoint sites");
-  const payload = (await response.json()) as { items?: SharePointSite[] };
-  return payload.items ?? [];
-}
-
-// The recycle-bin list (T-0485) carries the same site shape as the list API.
-async function fetchDeletedSites(tenantId: string, fetcher: Fetcher): Promise<SharePointSite[]> {
-  const response = await fetcher(`/v1/tenants/${encodeURIComponent(tenantId)}/sharepoint/recyclebin`, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) throw await readError(response, "List deleted SharePoint sites");
-  const payload = (await response.json()) as { items?: SharePointSite[] };
-  return payload.items ?? [];
-}
+const wizardPanelStyle: CSSProperties = {
+  background: "var(--bg-elev)",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius, 10px)",
+  padding: "16px",
+};
 
 export default function SharePointSitesPage(): ReactElement {
   const router = useRouter();
@@ -130,6 +107,9 @@ export default function SharePointSitesPage(): ReactElement {
   const [sites, setSites] = useState<SharePointSite[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showWizard, setShowWizard] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<SharePointSite | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const loadSites = useCallback(
     async (tenant: string, targetView: SitesView): Promise<void> => {
@@ -142,8 +122,8 @@ export default function SharePointSitesPage(): ReactElement {
       try {
         const items =
           targetView === "deleted"
-            ? await fetchDeletedSites(tenant.trim(), fetch)
-            : await fetchSites(tenant.trim(), fetch);
+            ? await fetchDeletedSites(tenant.trim())
+            : await fetchSites(tenant.trim());
         setSites(items);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -165,20 +145,50 @@ export default function SharePointSitesPage(): ReactElement {
     window.open(site.url, "_blank", "noopener,noreferrer");
   }
 
+  // The detail pages default to the shell's tenant; a different tenant typed into the box
+  // here travels as ?tenantId= so it is not silently replaced.
+  function withTenant(path: string): string {
+    const typed = tenantId.trim();
+    return typed && typed !== currentTenant ? `${path}?tenantId=${encodeURIComponent(typed)}` : path;
+  }
+
+  function detailHref(site: SharePointSite, tab: string): string {
+    return withTenant(`/sharepoint/sites/${encodeURIComponent(site.id)}/${tab}`);
+  }
+
+  function recycleBinHref(): string {
+    return withTenant("/sharepoint/recycle-bin");
+  }
+
   function browseSite(site: SharePointSite): void {
-    void router.push(`/sharepoint/sites/${encodeURIComponent(site.id)}/browse`);
+    void router.push(detailHref(site, "browse"));
   }
 
   function editSite(site: SharePointSite): void {
-    void router.push(`/sharepoint/sites/${encodeURIComponent(site.id)}/edit`);
+    void router.push(detailHref(site, "edit"));
   }
 
   function permissionsSite(site: SharePointSite): void {
-    void router.push(`/sharepoint/sites/${encodeURIComponent(site.id)}/permissions`);
+    void router.push(detailHref(site, "permissions"));
   }
 
   function externalUsersSite(site: SharePointSite): void {
-    void router.push(`/sharepoint/sites/${encodeURIComponent(site.id)}/external-users`);
+    void router.push(detailHref(site, "external-users"));
+  }
+
+  function openRecycleBin(): void {
+    void router.push(recycleBinHref());
+  }
+
+  async function restoreDeletedSite(site: SharePointSite): Promise<void> {
+    setNotice(null);
+    try {
+      await restoreSite(tenantId.trim(), site.id);
+      setNotice(`Restored ${site.name}.`);
+      await loadSites(tenantId, "deleted");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   function showDeletedView(): void {
@@ -195,8 +205,7 @@ export default function SharePointSitesPage(): ReactElement {
         <div>
           <h1 style={titleStyle}>SharePoint Sites</h1>
           <p style={subtitleStyle}>
-            SharePoint sites read live from Graph, with filters and a deleted-sites view. Site lifecycle and
-            browser actions are handed to the owning tickets.
+            SharePoint sites read live from Graph, with filters and a deleted-sites view.
           </p>
         </div>
         <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
@@ -235,14 +244,33 @@ export default function SharePointSitesPage(): ReactElement {
           >
             Deleted sites
           </button>
+          <button
+            type="button"
+            style={buttonStyle}
+            onClick={() => setShowWizard((open) => !open)}
+            disabled={!tenantId.trim()}
+            data-testid="add-site-button"
+          >
+            Add site
+          </button>
         </div>
       </div>
 
-      <div style={handoffBannerStyle} data-testid="sites-handoff-banner">
-        Delete, restore, and recycle-bin operations are delivered with the site lifecycle UI (T-0485/T-0486);
-        the site browser (T-0488) renders libraries, permissions, and external users. No writes happen on this
-        page.
-      </div>
+      {showWizard && tenantId.trim() && (
+        <div style={wizardPanelStyle} data-testid="add-site-panel">
+          <AddSiteWizard
+            tenantId={tenantId.trim()}
+            onClose={() => setShowWizard(false)}
+            onCreated={() => void loadSites(tenantId, view)}
+          />
+        </div>
+      )}
+
+      {notice && (
+        <div style={noticeStyle} role="status" data-testid="sites-notice">
+          {notice}
+        </div>
+      )}
 
       <SitesTable
         key={view}
@@ -255,7 +283,21 @@ export default function SharePointSitesPage(): ReactElement {
         onEdit={editSite}
         onPermissions={permissionsSite}
         onExternalUsers={externalUsersSite}
-        onRecycleBin={showDeletedView}
+        onDelete={setDeleteTarget}
+        onRestore={(site) => void restoreDeletedSite(site)}
+        onRecycleBin={openRecycleBin}
+        onEmptyRecycleBin={openRecycleBin}
+      />
+
+      <SiteDeleteDialog
+        isOpen={deleteTarget !== null}
+        tenantId={tenantId.trim()}
+        site={deleteTarget ? { id: deleteTarget.id, name: deleteTarget.name, url: deleteTarget.url } : null}
+        onClose={() => setDeleteTarget(null)}
+        onDeleted={() => {
+          setNotice(`Deleted ${deleteTarget?.name ?? "site"}. It can be restored from the recycle bin.`);
+          void loadSites(tenantId, view);
+        }}
       />
     </div>
   );

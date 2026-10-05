@@ -2616,6 +2616,16 @@ paths:
       x-permission: Identity.User.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/onedrive:
+    get:
+      operationId: getTenantsTenantIdOnedrive
+      summary: GET /tenants/{tenantId}/onedrive
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.read
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/pim:
     get:
       operationId: getTenantsTenantIdPim
@@ -2692,6 +2702,94 @@ paths:
         "200":
           description: Successful response.
       x-permission: Identity.Role.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/recyclebin:
+    get:
+      operationId: getTenantsTenantIdSharepointRecyclebin
+      summary: GET /tenants/{tenantId}/sharepoint/recyclebin
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdSharepointRecyclebin
+      summary: POST /tenants/{tenantId}/sharepoint/recyclebin
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.write
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/sites:
+    get:
+      operationId: getTenantsTenantIdSharepointSites
+      summary: GET /tenants/{tenantId}/sharepoint/sites
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdSharepointSites
+      summary: POST /tenants/{tenantId}/sharepoint/sites
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.write
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/sites/{siteId}:
+    delete:
+      operationId: deleteTenantsTenantIdSharepointSitesSiteId
+      summary: DELETE /tenants/{tenantId}/sharepoint/sites/{siteId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.write
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/sites/{siteId}/browse:
+    get:
+      operationId: getTenantsTenantIdSharepointSitesSiteIdBrowse
+      summary: GET /tenants/{tenantId}/sharepoint/sites/{siteId}/browse
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/sites/{siteId}/restore:
+    post:
+      operationId: postTenantsTenantIdSharepointSitesSiteIdRestore
+      summary: POST /tenants/{tenantId}/sharepoint/sites/{siteId}/restore
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.write
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/sites/{siteId}/storage:
+    get:
+      operationId: getTenantsTenantIdSharepointSitesSiteIdStorage
+      summary: GET /tenants/{tenantId}/sharepoint/sites/{siteId}/storage
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/sharepoint/sites/{siteId}/versions/cleanup:
+    post:
+      operationId: postTenantsTenantIdSharepointSitesSiteIdVersionsCleanup
+      summary: POST /tenants/{tenantId}/sharepoint/sites/{siteId}/versions/cleanup
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: sharepoint.cleanup
       security:
         - bearerAuth: []
   /tenants/{tenantId}/users:

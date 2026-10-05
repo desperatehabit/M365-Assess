@@ -289,7 +289,7 @@ function Get-SiteBrowser {
         [string]$SiteId
     )
 
-    $site = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/sites/$SiteId?`$select=id,displayName,webUrl"
+    $site = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/sites/${SiteId}?`$select=id,displayName,webUrl"
     $siteUrl = if ($null -ne $site -and $site.webUrl) { [string]$site.webUrl } else { '' }
 
     $libraries = [System.Collections.Generic.List[object]]::new()
