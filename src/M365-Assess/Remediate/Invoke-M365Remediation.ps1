@@ -63,10 +63,10 @@
 .PARAMETER RequiredPermission
     Permission the caller must hold. Defaults to remediation.apply.
 .PARAMETER TestEligibility
-    Seam: scriptblock (CheckId) -> eligibility. Defaults to
+    Test seam, not for production callers. Scriptblock (CheckId) -> eligibility. Defaults to
     Test-RemediationApplyEligibility (the validation hard gate).
 .PARAMETER ExecuteAction
-    Seam: scriptblock (action) -> executor result. Defaults to
+    Test seam, not for production callers. Scriptblock (action) -> executor result. Defaults to
     Invoke-RemediationAction with the gate pass-through options.
 .EXAMPLE
     PS> Invoke-M365Remediation -Plan -Findings $findings -TenantId 'tenant-a' -AllowlistCheckIds @('SPO-SHARING-001')
@@ -76,6 +76,10 @@
 function Invoke-M365Remediation {
     [CmdletBinding(SupportsShouldProcess, DefaultParameterSetName = 'Plan', ConfirmImpact = 'High')]
     [OutputType([PSCustomObject])]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Plan',
+        Justification = 'Switch only selects the Plan parameter set.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Apply',
+        Justification = 'Switch only selects the Apply parameter set.')]
     param(
         [Parameter(ParameterSetName = 'Plan')]
         [switch]$Plan,

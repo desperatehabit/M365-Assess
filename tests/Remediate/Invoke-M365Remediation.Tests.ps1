@@ -247,6 +247,26 @@ Describe 'Invoke-M365Remediation -Apply (T-0890)' {
         }
     }
 
+    Context 'default executor' {
+        It 'routes through Invoke-RemediationAction and skips a check that is not allowlisted' {
+            $actions = @(
+                [PSCustomObject]@{ id = 'a1'; checkId = 'SPO-SHARING-001.1'; command = 'Set-SPOTenant' }
+            )
+            $eligibility = {
+                param($CheckId)
+                [PSCustomObject]@{ CheckId = $CheckId; Eligible = $true; SpecStatus = 'approved' }
+            }
+            $result = Invoke-M365Remediation -Apply -Actions $actions -TenantId 'tenant-a' `
+                -TestEligibility $eligibility -CallerContext (New-TestCaller) `
+                -AllowlistCheckIds @('OTHER-CHECK-001') -Actor 'tester' -Confirm:$false
+
+            $result.Results.Count | Should -Be 1
+            $result.Results[0].state | Should -Be 'skipped'
+            $result.Results[0].error | Should -Match 'not-allowlisted'
+            $result.Summary.applied | Should -Be 0
+        }
+    }
+
     Context 'gated execution' {
         It 'applies an approved action through the injected executor with before/after' {
             $actions = @(
