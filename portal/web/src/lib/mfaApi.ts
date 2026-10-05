@@ -146,7 +146,7 @@ export async function resetUserMfa(
   input: ResetMfaInput,
   fetcher: Fetcher = fetch,
 ): Promise<MfaResetResult> {
-  const url = `/v1/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/reset-mfa`;
+  const url = `/v1/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}/mfa/reset`;
   const res = await fetcher(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
@@ -178,7 +178,7 @@ export async function bulkResetMfa(
   input: BulkResetMfaInput,
   fetcher: Fetcher = fetch,
 ): Promise<MfaBulkResetResponse> {
-  const url = `/v1/tenants/${encodeURIComponent(tenantId)}/mfa-reset`;
+  const url = `/v1/tenants/${encodeURIComponent(tenantId)}/users/mfa/reset`;
   const res = await fetcher(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
