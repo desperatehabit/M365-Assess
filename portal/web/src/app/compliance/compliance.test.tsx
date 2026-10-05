@@ -308,3 +308,20 @@ describe("Safe Links page", () => {
     expect(apply?.body).toContain('"name":"New policy"');
   });
 });
+
+describe("compliance template save payloads (T-0860)", () => {
+  it("sends variables as an object so POST /v1/compliance-templates accepts it", async () => {
+    const { saveDlpTemplate } = await import("./dlp/page");
+    const { saveRetentionTemplate } = await import("./retention/page");
+    const { saveSafeLinksTemplate } = await import("./safelinks/page");
+
+    for (const save of [saveDlpTemplate, saveRetentionTemplate, saveSafeLinksTemplate]) {
+      const fetcher = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => jsonResponse({ id: "tpl-1" }, 201));
+      await save("Saved", {}, fetcher as unknown as typeof fetch);
+      const init = fetcher.mock.calls[0]![1] as RequestInit;
+      const body = JSON.parse(String(init.body)) as { variables: unknown };
+      expect(Array.isArray(body.variables)).toBe(false);
+      expect(body.variables).toEqual({});
+    }
+  });
+});

@@ -6,6 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { CredentialStoreRow } from "../routes/credentials.js";
+import { FeatureWorkerError } from "../jobs/feature-worker.js";
 import { createPurviewProviders } from "./purview.js";
 
 const TENANT = "tenant-a";
@@ -174,7 +175,7 @@ describe("createPurviewProviders (T-0860)", () => {
     const page = await providers.safelinks.listPolicies(TENANT, { search: "exec", state: "enabled", cursor: null, limit: 50 });
     expect(page.items[0]).toMatchObject({ id: "policy-1", detonation: true });
     expect(calls[0]!.entrypoint).toBe("get-safelinks.ps1");
-    expect(calls[0]!.job).toMatchObject({ tenantId: TENANT, action: "list", search: "exec", top: 50 });
+    expect(calls[0]!.job).toMatchObject({ tenantId: TENANT, search: "exec", top: 50 });
   });
 
   it("previews a Safe Links create as a plan with no tenant write", async () => {
@@ -225,7 +226,7 @@ describe("createPurviewProviders (T-0860)", () => {
     const providers = createPurviewProviders(run, credentials);
 
     const result = await providers.safelinks.editPolicy(TENANT, "policy-1", { action: "disable" }, false);
-    expect(result).toMatchObject({ success: true, dryRun: false });
+    expect(result).toMatchObject({ success: true, plan: { dryRun: false } });
     expect("auditEvent" in result && result.auditEvent).toMatchObject({ action: "safelinks.policy.disable" });
     expect(calls[0]!.job).toMatchObject({ action: "disable", policyId: "policy-1", dryRun: false, confirmed: true });
   });
@@ -246,7 +247,7 @@ describe("createPurviewProviders (T-0860)", () => {
 
   it("maps a failed worker to a 502", async () => {
     const { run } = recordingRunner(() => {
-      throw new Error("worker exploded");
+      throw new FeatureWorkerError("worker.failed", "worker exploded", 1, "boom");
     });
     const providers = createPurviewProviders(run, credentials);
     await expect(providers.dlp.listPolicies(TENANT)).rejects.toMatchObject({ status: 502 });

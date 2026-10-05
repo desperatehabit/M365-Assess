@@ -178,7 +178,7 @@ export async function saveDlpTemplate(
   const response = await fetcher("/v1/compliance-templates", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ area: "dlp", name, payload, variables: [], source: "local" }),
+    body: JSON.stringify({ area: "dlp", name, payload, variables: {}, source: "local" }),
   });
   if (!response.ok) throw await readError(response, "Save DLP template");
   return response.json();
