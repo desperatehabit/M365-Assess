@@ -45,6 +45,15 @@ import {
   GROUP_TEMPLATES_PERMISSION,
 } from "../routes/group-templates.js";
 import { HEALTH_PATH } from "../routes/health.js";
+import { ONEDRIVE_OPENAPI } from "../routes/onedrive.js";
+import { SHAREPOINT_BROWSE_OPENAPI } from "../routes/sharepoint-browse.js";
+import { SHAREPOINT_SITE_LIFECYCLE_OPENAPI } from "../routes/sharepoint-site-lifecycle.js";
+import { SHAREPOINT_SITES_OPENAPI } from "../routes/sharepoint-sites.js";
+import {
+  SHAREPOINT_SITES_BASE_PATH,
+  SHAREPOINT_WRITE_PERMISSION as SHAREPOINT_CREATE_PERMISSION,
+} from "../routes/sharepoint-sites-create.js";
+import { SHAREPOINT_STORAGE_OPENAPI } from "../routes/sharepoint-storage.js";
 import { INTUNE_TEMPLATE_PERMISSIONS } from "../routes/intune-templates.js";
 import { CREDENTIALS_OPENAPI } from "../routes/credentials.js";
 import { DEVICE_BITLOCKER_OPENAPI } from "../routes/device-bitlocker.js";
@@ -615,6 +624,14 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(DEVICES_OPENAPI),
   ...registryEntriesFromOpenApi(DEVICE_DETAIL_OPENAPI),
   ...registryEntriesFromOpenApi(DEVICE_ACTIONS_OPENAPI),
+  // EPIC-025 SharePoint & OneDrive (T-0855). The create route documents a single operation
+  // without a permission, so its entry names the permission the route enforces.
+  ...registryEntriesFromOpenApi(SHAREPOINT_SITES_OPENAPI),
+  { method: "POST", path: SHAREPOINT_SITES_BASE_PATH, permission: SHAREPOINT_CREATE_PERMISSION },
+  ...registryEntriesFromOpenApi(SHAREPOINT_SITE_LIFECYCLE_OPENAPI),
+  ...registryEntriesFromOpenApi(SHAREPOINT_BROWSE_OPENAPI),
+  ...registryEntriesFromOpenApi(SHAREPOINT_STORAGE_OPENAPI),
+  ...registryEntriesFromOpenApi(ONEDRIVE_OPENAPI),
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

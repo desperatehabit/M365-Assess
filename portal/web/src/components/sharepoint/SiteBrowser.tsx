@@ -68,8 +68,14 @@ export interface SiteBrowserData {
   };
 }
 
+export type SiteBrowserSection = "libraries" | "items" | "permissions" | "externalUsers";
+
+const ALL_SECTIONS: readonly SiteBrowserSection[] = ["libraries", "items", "permissions", "externalUsers"];
+
 export interface SiteBrowserProps {
   readonly browser?: SiteBrowserData | null;
+  /** Which panels to render; the site detail pages each show their own slice. Defaults to all four. */
+  readonly sections?: readonly SiteBrowserSection[];
   readonly loading?: boolean;
   readonly error?: string | null;
   readonly onEditPermissions?: (browser: SiteBrowserData) => void;
@@ -207,8 +213,10 @@ export function SiteBrowser({
   browser = null,
   loading = false,
   error = null,
+  sections = ALL_SECTIONS,
   onEditPermissions,
 }: SiteBrowserProps): ReactElement {
+  const show = (section: SiteBrowserSection): boolean => sections.includes(section);
   if (loading) {
     return (
       <div style={containerStyle} data-testid="site-browser-container">
@@ -301,157 +309,165 @@ export function SiteBrowser({
         permissions workflow; nothing is changed here.
       </p>
 
-      <div style={panelStyle}>
-        {sectionHeading("Document libraries", browser.libraries.length)}
-        {browser.libraries.length === 0 ? (
-          <div style={{ padding: "24px 16px", color: "var(--text-soft)" }} data-testid="libraries-empty">
-            No document libraries.
-          </div>
-        ) : (
-          <table style={tableStyle} aria-label="Site document libraries">
-            <thead>
-              <tr>
-                <th style={thStyle}>Library</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Storage</th>
-              </tr>
-            </thead>
-            <tbody>
-              {browser.libraries.map((library) => (
-                <tr key={library.id} data-testid={`library-row-${library.id}`}>
-                  <td style={tdStyle}>
-                    <a
-                      href={library.webUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      style={linkStyle}
-                    >
-                      {library.name}
-                    </a>
-                  </td>
-                  <td style={tdStyle}>{library.driveType}</td>
-                  <td style={tdStyle}>
-                    {formatBrowserBytes(library.quotaUsedBytes)} /{" "}
-                    {formatBrowserBytes(library.quotaTotalBytes)}
-                  </td>
+      {show("libraries") && (
+        <div style={panelStyle}>
+          {sectionHeading("Document libraries", browser.libraries.length)}
+          {browser.libraries.length === 0 ? (
+            <div style={{ padding: "24px 16px", color: "var(--text-soft)" }} data-testid="libraries-empty">
+              No document libraries.
+            </div>
+          ) : (
+            <table style={tableStyle} aria-label="Site document libraries">
+              <thead>
+                <tr>
+                  <th style={thStyle}>Library</th>
+                  <th style={thStyle}>Type</th>
+                  <th style={thStyle}>Storage</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {browser.libraries.map((library) => (
+                  <tr key={library.id} data-testid={`library-row-${library.id}`}>
+                    <td style={tdStyle}>
+                      <a
+                        href={library.webUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={linkStyle}
+                      >
+                        {library.name}
+                      </a>
+                    </td>
+                    <td style={tdStyle}>{library.driveType}</td>
+                    <td style={tdStyle}>
+                      {formatBrowserBytes(library.quotaUsedBytes)} /{" "}
+                      {formatBrowserBytes(library.quotaTotalBytes)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
-      <div style={panelStyle}>
-        {sectionHeading("Items", browser.items.length)}
-        {browser.items.length === 0 ? (
-          <div style={{ padding: "24px 16px", color: "var(--text-soft)" }} data-testid="items-empty">
-            No items.
-          </div>
-        ) : (
-          <table style={tableStyle} aria-label="Site library items">
-            <thead>
-              <tr>
-                <th style={thStyle}>Item</th>
-                <th style={thStyle}>Library</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Size</th>
-                <th style={thStyle}>Last modified</th>
-              </tr>
-            </thead>
-            <tbody>
-              {browser.items.map((item) => (
-                <tr key={item.id} data-testid={`item-row-${item.id}`}>
-                  <td style={tdStyle}>
-                    <a href={item.webUrl} target="_blank" rel="noopener noreferrer" style={linkStyle}>
-                      {item.name}
-                    </a>
-                  </td>
-                  <td style={tdStyle}>{item.libraryName}</td>
-                  <td style={tdStyle}>{item.isFolder ? "Folder" : "File"}</td>
-                  <td style={tdStyle}>{formatBrowserBytes(item.sizeBytes)}</td>
-                  <td style={tdStyle}>{item.lastModifiedDateTime ?? "—"}</td>
+      {show("items") && (
+        <div style={panelStyle}>
+          {sectionHeading("Items", browser.items.length)}
+          {browser.items.length === 0 ? (
+            <div style={{ padding: "24px 16px", color: "var(--text-soft)" }} data-testid="items-empty">
+              No items.
+            </div>
+          ) : (
+            <table style={tableStyle} aria-label="Site library items">
+              <thead>
+                <tr>
+                  <th style={thStyle}>Item</th>
+                  <th style={thStyle}>Library</th>
+                  <th style={thStyle}>Type</th>
+                  <th style={thStyle}>Size</th>
+                  <th style={thStyle}>Last modified</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {browser.items.map((item) => (
+                  <tr key={item.id} data-testid={`item-row-${item.id}`}>
+                    <td style={tdStyle}>
+                      <a href={item.webUrl} target="_blank" rel="noopener noreferrer" style={linkStyle}>
+                        {item.name}
+                      </a>
+                    </td>
+                    <td style={tdStyle}>{item.libraryName}</td>
+                    <td style={tdStyle}>{item.isFolder ? "Folder" : "File"}</td>
+                    <td style={tdStyle}>{formatBrowserBytes(item.sizeBytes)}</td>
+                    <td style={tdStyle}>{item.lastModifiedDateTime ?? "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
-      <div style={panelStyle}>
-        {sectionHeading("Permissions", browser.permissions.length)}
-        {browser.permissions.length === 0 ? (
-          <div style={{ padding: "24px 16px", color: "var(--text-soft)" }} data-testid="permissions-empty">
-            No permission grants.
-          </div>
-        ) : (
-          <table style={tableStyle} aria-label="Site permissions">
-            <thead>
-              <tr>
-                <th style={thStyle}>Principal</th>
-                <th style={thStyle}>Type</th>
-                <th style={thStyle}>Roles</th>
-                <th style={thStyle}>External</th>
-              </tr>
-            </thead>
-            <tbody>
-              {browser.permissions.map((permission, index) => (
-                <tr key={`${permission.id}-${index}`} data-testid={`permission-row-${index}`}>
-                  <td style={tdStyle}>
-                    {permission.displayName}
-                    {permission.email ? (
-                      <div style={{ ...monoStyle, color: "var(--text-soft)" }}>{permission.email}</div>
-                    ) : null}
-                  </td>
-                  <td style={tdStyle}>{permission.principalType}</td>
-                  <td style={tdStyle}>{permission.roles.join(", ")}</td>
-                  <td style={tdStyle}>
-                    {permission.external ? (
-                      <span style={badgeStyle("warn")} data-testid={`permission-external-${index}`}>
-                        External
-                      </span>
-                    ) : (
-                      <span style={badgeStyle("muted")}>Internal</span>
-                    )}
-                  </td>
+      {show("permissions") && (
+        <div style={panelStyle}>
+          {sectionHeading("Permissions", browser.permissions.length)}
+          {browser.permissions.length === 0 ? (
+            <div style={{ padding: "24px 16px", color: "var(--text-soft)" }} data-testid="permissions-empty">
+              No permission grants.
+            </div>
+          ) : (
+            <table style={tableStyle} aria-label="Site permissions">
+              <thead>
+                <tr>
+                  <th style={thStyle}>Principal</th>
+                  <th style={thStyle}>Type</th>
+                  <th style={thStyle}>Roles</th>
+                  <th style={thStyle}>External</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {browser.permissions.map((permission, index) => (
+                  <tr key={`${permission.id}-${index}`} data-testid={`permission-row-${index}`}>
+                    <td style={tdStyle}>
+                      {permission.displayName}
+                      {permission.email ? (
+                        <div style={{ ...monoStyle, color: "var(--text-soft)" }}>{permission.email}</div>
+                      ) : null}
+                    </td>
+                    <td style={tdStyle}>{permission.principalType}</td>
+                    <td style={tdStyle}>{permission.roles.join(", ")}</td>
+                    <td style={tdStyle}>
+                      {permission.external ? (
+                        <span style={badgeStyle("warn")} data-testid={`permission-external-${index}`}>
+                          External
+                        </span>
+                      ) : (
+                        <span style={badgeStyle("muted")}>Internal</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
 
-      <div style={panelStyle}>
-        {sectionHeading("External users", browser.externalUsers.length)}
-        {browser.externalUsers.length === 0 ? (
-          <div
-            style={{ padding: "24px 16px", color: "var(--text-soft)" }}
-            data-testid="external-users-empty"
-          >
-            No external users.
-          </div>
-        ) : (
-          <table style={tableStyle} aria-label="Site external users">
-            <thead>
-              <tr>
-                <th style={thStyle}>External user</th>
-                <th style={thStyle}>Email</th>
-                <th style={thStyle}>Roles</th>
-              </tr>
-            </thead>
-            <tbody>
-              {browser.externalUsers.map((user, index) => (
-                <tr key={`${user.permissionId}-${index}`} data-testid={`external-user-row-${index}`}>
-                  <td style={tdStyle}>{user.displayName}</td>
-                  <td style={tdStyle}>
-                    <span style={monoStyle}>{user.email}</span>
-                  </td>
-                  <td style={tdStyle}>{user.roles.join(", ")}</td>
+      {show("externalUsers") && (
+        <div style={panelStyle}>
+          {sectionHeading("External users", browser.externalUsers.length)}
+          {browser.externalUsers.length === 0 ? (
+            <div
+              style={{ padding: "24px 16px", color: "var(--text-soft)" }}
+              data-testid="external-users-empty"
+            >
+              No external users.
+            </div>
+          ) : (
+            <table style={tableStyle} aria-label="Site external users">
+              <thead>
+                <tr>
+                  <th style={thStyle}>External user</th>
+                  <th style={thStyle}>Email</th>
+                  <th style={thStyle}>Roles</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+              </thead>
+              <tbody>
+                {browser.externalUsers.map((user, index) => (
+                  <tr key={`${user.permissionId}-${index}`} data-testid={`external-user-row-${index}`}>
+                    <td style={tdStyle}>{user.displayName}</td>
+                    <td style={tdStyle}>
+                      <span style={monoStyle}>{user.email}</span>
+                    </td>
+                    <td style={tdStyle}>{user.roles.join(", ")}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   );
 }

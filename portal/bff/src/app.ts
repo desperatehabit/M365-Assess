@@ -72,6 +72,7 @@ import {
 } from "./adapters/baselines.js";
 import { createCaProviders } from "./adapters/conditional-access.js";
 import { createPurviewProviders } from "./adapters/purview.js";
+import { createSharePointProviders } from "./adapters/sharepoint.js";
 import {
   createDriftDeletionPort,
   createDriftRefresh,
@@ -285,6 +286,12 @@ import { createRetentionRoutes } from "./routes/retention.js";
 import { createVacationScheduleRoutes } from "./routes/vacation-schedules.js";
 import { createDeletedMailboxRoutes } from "./routes/deleted-mailboxes.js";
 import { createIntuneTemplateRoutes } from "./routes/intune-templates.js";
+import { createOneDriveUsageRoutes } from "./routes/onedrive.js";
+import { createSharePointBrowseRoute } from "./routes/sharepoint-browse.js";
+import { createSharePointSiteLifecycleRoutes } from "./routes/sharepoint-site-lifecycle.js";
+import { createSharePointSitesRoute } from "./routes/sharepoint-sites.js";
+import { createSharePointSitesCreateRoutes } from "./routes/sharepoint-sites-create.js";
+import { createSharePointStorageRoutes } from "./routes/sharepoint-storage.js";
 import type { RequestAuthenticator, RequestCaller, RequestContext, Route } from "./server.js";
 import { ProgressEventHub } from "./sse/hub.js";
 
@@ -498,6 +505,10 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const caller = { resolveCaller, authorize: authorizeCaller };
   const groups = createGroupProviders(run, credentialRows);
   const ca = createCaProviders(run, credentialRows, db);
+  // EPIC-025 SharePoint & OneDrive (T-0855): every read and write runs the feature
+  // workers through the tenant credential block; lifecycle writes also open and
+  // close a SiteOperation row and record the worker's audit events.
+  const sharepoint = createSharePointProviders(run, credentialRows);
   const caTemplates = new SqliteCaTemplateRepository(db);
   const groupTemplates = new SqliteGroupTemplateRepository(db);
   const audited = (route: Route) => recordResponseAudit(route, recordAudit);
@@ -1165,6 +1176,20 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       authorize: authorizeCaller,
       recordAudit: routeAudit,
     }),
+
+    // EPIC-025 SharePoint & OneDrive (T-0855). The factories existed but were never
+    // mounted, so every §6 endpoint 404'd; the providers enqueue the real workers.
+    createSharePointSitesRoute({ provider: sharepoint.sites, ...caller }),
+    ...createSharePointSitesCreateRoutes({ provider: sharepoint.sitesCreate, ...caller }),
+    ...createSharePointSiteLifecycleRoutes({
+      provider: sharepoint.lifecycle,
+      siteOperations: repo,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
+    createSharePointBrowseRoute({ provider: sharepoint.browse, ...caller }),
+    ...createSharePointStorageRoutes({ provider: sharepoint.storage, ...caller }),
+    ...createOneDriveUsageRoutes({ provider: sharepoint.onedrive, ...caller }),
   ];
 
   return {
