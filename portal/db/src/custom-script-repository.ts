@@ -70,6 +70,7 @@ export interface CustomScript {
   currentVersionId: string | null;
   createdAt: string;
   updatedAt: string;
+  deletedAt: string | null;
 }
 
 export interface CustomScriptVersion {
@@ -134,6 +135,7 @@ export interface CustomScriptRepository {
   getScript(scriptId: string): Promise<CustomScript | undefined>;
   listScripts(): Promise<CustomScript[]>;
   setScriptFlags(input: SetCustomScriptFlagsInput): Promise<CustomScript | undefined>;
+  deleteScript(scriptId: string): Promise<boolean>;
 
   appendVersion(input: AppendCustomScriptVersionInput): Promise<CustomScriptVersion>;
   getVersion(versionId: string): Promise<CustomScriptVersion | undefined>;
@@ -164,6 +166,7 @@ export class SqliteCustomScriptRepository implements CustomScriptRepository {
       currentVersionId: asNullableString(row["currentVersionId"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
     };
   }
 
@@ -256,15 +259,41 @@ export class SqliteCustomScriptRepository implements CustomScriptRepository {
 
   async getScript(scriptId: string): Promise<CustomScript | undefined> {
     const row = this.db
-      .prepare("SELECT * FROM custom_scripts WHERE id = ?")
+      .prepare("SELECT * FROM custom_scripts WHERE id = ? AND deletedAt IS NULL")
       .get(scriptId) as Row | undefined;
     return row ? this.mapScript(row) : undefined;
   }
 
   async listScripts(): Promise<CustomScript[]> {
     return (
-      this.db.prepare("SELECT * FROM custom_scripts ORDER BY name, id").all() as Row[]
+      this.db
+        .prepare("SELECT * FROM custom_scripts WHERE deletedAt IS NULL ORDER BY name, id")
+        .all() as Row[]
     ).map((row) => this.mapScript(row));
+  }
+
+  async deleteScript(scriptId: string): Promise<boolean> {
+    const existing = this.db
+      .prepare("SELECT * FROM custom_scripts WHERE id = ? AND deletedAt IS NULL")
+      .get(scriptId) as Row | undefined;
+    if (!existing) return false;
+    const at = nowIso();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE custom_scripts SET deletedAt = ?, updatedAt = ? WHERE id = ? AND deletedAt IS NULL",
+        )
+        .run(at, at, scriptId);
+      this.writeAudit({
+        action: "script.delete",
+        targetType: "customScript",
+        targetId: scriptId,
+        before: { id: scriptId, name: asString(existing["name"]), enabled: asBool(existing["enabled"]) },
+        after: { deletedAt: at },
+        at,
+      });
+    })();
+    return true;
   }
 
   async setScriptFlags(input: SetCustomScriptFlagsInput): Promise<CustomScript | undefined> {

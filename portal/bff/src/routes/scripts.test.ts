@@ -1,7 +1,13 @@
 // T-0127 — Custom script CRUD, versions, and dry-run/run API.
 // Route-level tests over in-memory seams: a script store and a sandbox stub.
 
+import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import {
+  SqliteCustomScriptRepository,
+  loadMigrations,
+  runMigrations,
+} from "@m365-assess/db";
 import { AppError } from "../errors.js";
 import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import { RbacErrorCodes, type Caller } from "../rbac/authorize.js";
@@ -336,5 +342,25 @@ describe("route set and contracts (T-0127)", () => {
     expect(SCRIPTS_OPENAPI["/v1/scripts/{scriptId}/run"].post.permission).toBe(
       SCRIPTS_PERMISSIONS.run,
     );
+  });
+});
+
+describe("custom script deletion through SQLite (T-0873)", () => {
+  it("soft-deletes via the real repository and returns 204", async () => {
+    const db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    const store = new SqliteCustomScriptRepository(db, runMigrations(db, loadMigrations()));
+    await store.registerScript({ id: "s-1", name: "Inactive users", author: "operator" });
+
+    const del = routeFor(
+      { store, sandbox: new FakeSandbox(), resolveCaller: () => adminCaller(), authorize: allowAll },
+      "DELETE",
+      SCRIPT_DETAIL_PATH,
+    );
+    const res = await del.handler(ctx("DELETE", SCRIPT_DETAIL_PATH, { params: { scriptId: "s-1" } }));
+    expect(res.status).toBe(204);
+    expect(await store.getScript("s-1")).toBeUndefined();
+    expect(await store.listScripts()).toHaveLength(0);
+    db.close();
   });
 });

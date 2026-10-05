@@ -298,3 +298,60 @@ describe("audit emission", () => {
     expect(auditRows(filename).map((row) => row.action)).toEqual(["script.create"]);
   });
 });
+
+describe("script deletion (T-0873)", () => {
+  it("soft-deletes a script while retaining its versions and audit trail", async () => {
+    const filename = tempDbPath();
+    const repo = await openSqliteCustomScriptRepository({ filename });
+    await repo.registerScript({ id: SCRIPT_A, name: "Inactive users", author: "operator" });
+    await repo.appendVersion({
+      id: VERSION_1,
+      scriptId: SCRIPT_A,
+      content: "Write-Output 'one'",
+      createdBy: "operator",
+    });
+
+    expect(await repo.deleteScript(SCRIPT_A)).toBe(true);
+    expect(await repo.getScript(SCRIPT_A)).toBeUndefined();
+    expect(await repo.listScripts()).toHaveLength(0);
+    // Versions are immutable history and survive the soft delete.
+    expect((await repo.listVersions(SCRIPT_A)).map((version) => version.id)).toEqual([VERSION_1]);
+    repo.close();
+
+    expect(columns(filename, "custom_scripts")).toContain("deletedAt");
+    const rows = auditRows(filename);
+    expect(rows.map((row) => row.action)).toEqual([
+      "script.create",
+      "script.version.create",
+      "script.delete",
+    ]);
+    expect(rows[2]?.targetType).toBe("customScript");
+    expect(rows[2]?.targetId).toBe(SCRIPT_A);
+    expect(JSON.parse(rows[2]?.after ?? "{}")).toMatchObject({ deletedAt: expect.any(String) });
+  });
+
+  it("returns false for an unknown or already-deleted script", async () => {
+    const repo = await openSqliteCustomScriptRepository({ filename: tempDbPath() });
+    expect(await repo.deleteScript("missing-script")).toBe(false);
+    await repo.registerScript({ id: SCRIPT_A, name: "Inactive users", author: "operator" });
+    expect(await repo.deleteScript(SCRIPT_A)).toBe(true);
+    expect(await repo.deleteScript(SCRIPT_A)).toBe(false);
+    repo.close();
+  });
+
+  it("refuses to append a version or toggle flags on a deleted script", async () => {
+    const repo = await openSqliteCustomScriptRepository({ filename: tempDbPath() });
+    await repo.registerScript({ id: SCRIPT_A, name: "Inactive users", author: "operator" });
+    await repo.deleteScript(SCRIPT_A);
+    await expect(
+      repo.appendVersion({
+        id: VERSION_1,
+        scriptId: SCRIPT_A,
+        content: "Write-Output 'one'",
+        createdBy: "operator",
+      }),
+    ).rejects.toBeInstanceOf(CustomScriptNotFoundError);
+    expect(await repo.setScriptFlags({ scriptId: SCRIPT_A, enabled: true })).toBeUndefined();
+    repo.close();
+  });
+});
