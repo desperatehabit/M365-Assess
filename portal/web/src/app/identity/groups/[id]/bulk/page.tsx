@@ -11,7 +11,11 @@ function BulkMembershipView({ tenantId }: { readonly tenantId: string }): React.
   const router = useRouter();
   const params = useParams();
 
+  const searchParams = useSearchParams();
+
   const groupId = String(params.id || "");
+  // The row's "Manage owners" action opens this page with ?role=owners.
+  const initialRole = searchParams.get("role") === "owners" ? "owners" : "members";
 
   return (
     <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -25,6 +29,7 @@ function BulkMembershipView({ tenantId }: { readonly tenantId: string }): React.
       <BulkMembershipWizard
         tenantId={tenantId}
         groupId={groupId}
+        initialRole={initialRole}
         onDone={() => {
           router.push(`/identity/groups?tenantId=${encodeURIComponent(tenantId)}`);
         }}

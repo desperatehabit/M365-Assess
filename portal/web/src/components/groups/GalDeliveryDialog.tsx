@@ -182,6 +182,9 @@ export function GalDeliveryDialog({
       if (preview) {
         setPreviewPlan(data);
       } else {
+        if (data?.success !== true) {
+          throw new Error("The BFF did not confirm the change was applied");
+        }
         setApplyResult(data);
         onSuccess?.(data);
       }

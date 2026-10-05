@@ -177,6 +177,9 @@ export function GroupForm({
           preview: false,
         });
       }
+      if (res?.success !== true) {
+        throw new Error("The BFF did not confirm the change was applied");
+      }
       onSuccess?.(res);
     } catch (err: any) {
       setError(err.message || "Failed to apply changes");
@@ -203,7 +206,10 @@ export function GroupForm({
         <select
           id="group-type-select"
           value={groupType}
-          onChange={(e) => setGroupType(e.target.value as GroupType)}
+          onChange={(e) => {
+            setGroupType(e.target.value as GroupType);
+            setPlan(null);
+          }}
           disabled={mode === "edit"}
           style={inputStyle}
           data-testid="input-group-type"
@@ -222,7 +228,10 @@ export function GroupForm({
           id="group-name-input"
           type="text"
           value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
+          onChange={(e) => {
+            setDisplayName(e.target.value);
+            setPlan(null);
+          }}
           placeholder="e.g. Finance Team"
           required
           style={inputStyle}
@@ -236,7 +245,10 @@ export function GroupForm({
         <textarea
           id="group-desc-input"
           value={description}
-          onChange={(e) => setDescription(e.target.value)}
+          onChange={(e) => {
+            setDescription(e.target.value);
+            setPlan(null);
+          }}
           placeholder="Group purpose or scope..."
           rows={3}
           style={{ ...inputStyle, resize: "vertical" }}
@@ -252,7 +264,10 @@ export function GroupForm({
             id="group-mail-nickname"
             type="text"
             value={mailNickname}
-            onChange={(e) => setMailNickname(e.target.value)}
+            onChange={(e) => {
+            setMailNickname(e.target.value);
+            setPlan(null);
+          }}
             placeholder="e.g. financeteam"
             style={inputStyle}
             data-testid="input-group-nickname"
@@ -267,11 +282,14 @@ export function GroupForm({
           onChange={(rule, valid) => {
             setDynamicRule(rule);
             setIsRuleValid(valid);
+            setPlan(null);
           }}
         />
       )}
 
-      {/* GAL and Delivery Settings */}
+      {/* GAL and Delivery Settings: create form only. An existing group's GAL and delivery
+          settings are changed from the Hide from GAL / Delivery management row actions. */}
+      {mode === "create" && (
       <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "4px" }}>
         <label style={checkboxRowStyle}>
           <input
@@ -293,16 +311,21 @@ export function GroupForm({
           <span style={{ fontSize: "14px" }}>Enable delivery management (restrict external senders)</span>
         </label>
       </div>
+      )}
 
       {/* Plan Preview Section */}
       {plan && (
         <div style={planBoxStyle} data-testid="plan-diff-preview">
           <div style={{ fontWeight: 600, fontSize: "14px" }}>Plan Preview &amp; Diff:</div>
-          <ul style={{ margin: 0, paddingLeft: "20px", fontSize: "13px" }}>
-            {plan.diff.map((item, idx) => (
-              <li key={idx} data-testid={`diff-item-${idx}`}>{item}</li>
-            ))}
-          </ul>
+          {plan.diff.length === 0 ? (
+            <div style={{ fontSize: "13px" }} data-testid="plan-no-changes">No changes detected.</div>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: "20px", fontSize: "13px" }}>
+              {plan.diff.map((item, idx) => (
+                <li key={idx} data-testid={`diff-item-${idx}`}>{item}</li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 
@@ -328,7 +351,7 @@ export function GroupForm({
             type="button"
             style={{ ...primaryButtonStyle, background: "var(--success, #16a34a)" }}
             onClick={handleApply}
-            disabled={loading}
+            disabled={loading || (mode === "edit" && plan.diff.length === 0)}
             data-testid="btn-confirm-apply"
           >
             {loading ? "Applying..." : "Confirm & Apply"}
