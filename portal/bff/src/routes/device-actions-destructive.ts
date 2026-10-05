@@ -11,7 +11,7 @@ import type { DeviceAction, DeviceActionRepository } from "../repository/device-
 import type { DeviceActionPolicyRepository } from "../repository/device-action-policies.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
-export const DEVICE_DESTRUCTIVE_ACTIONS_PATH = "/v1/tenants/:tenantId/devices/:deviceId/actions/:action";
+export const DEVICE_DESTRUCTIVE_ACTIONS_PATH = "/v1/tenants/:tenantId/devices/:deviceId/device-actions/:action";
 export const DEVICE_DESTRUCTIVE_ACTIONS_PERMISSION = "Endpoint.Device.ReadWrite";
 
 export type DestructiveActionKind = "wipe" | "fresh-start";
@@ -213,7 +213,7 @@ export function createDestructiveActionsRoute(options: DestructiveActionsRouteOp
 
 export const DEVICE_DESTRUCTIVE_ACTIONS_OPENAPI = {
   paths: {
-    "/tenants/{tenantId}/devices/{deviceId}/actions/{action}": {
+    "/tenants/{tenantId}/devices/{deviceId}/device-actions/{action}": {
       post: {
         operationId: "applyDestructiveDeviceAction",
         summary: "Apply a wipe or fresh-start action to a managed device",

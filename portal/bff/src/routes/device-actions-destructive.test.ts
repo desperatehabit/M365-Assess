@@ -15,6 +15,13 @@ import {
   type DestructiveActionResult,
   type DestructiveActionsCaller,
 } from "./device-actions-destructive.js";
+import {
+  DEVICE_ACTIONS_PERMISSION,
+  createDeviceActionsRoute,
+  type DeviceActionProvider,
+  type DeviceActionResult,
+  type DeviceActionsCaller,
+} from "./device-actions.js";
 
 const TENANT = "tenant-a";
 const DEVICE = "device-1";
@@ -255,7 +262,7 @@ describe("destructive device actions route (T-0345)", () => {
     const baseUrl = await startServer(routes);
 
     const response = await fetch(
-      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/actions/wipe`,
+      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/device-actions/wipe`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -274,7 +281,7 @@ describe("destructive device actions route (T-0345)", () => {
     const baseUrl = await startServer(routes);
 
     const response = await fetch(
-      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/actions/wipe`,
+      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/device-actions/wipe`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -293,7 +300,7 @@ describe("destructive device actions route (T-0345)", () => {
     const baseUrl = await startServer(routes);
 
     const response = await fetch(
-      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/actions/wipe`,
+      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/device-actions/wipe`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -308,7 +315,7 @@ describe("destructive device actions route (T-0345)", () => {
     const baseUrl = await startServer(routes);
 
     const response = await fetch(
-      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/actions/wipe`,
+      `${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/device-actions/wipe`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -319,10 +326,64 @@ describe("destructive device actions route (T-0345)", () => {
   });
 
   it("publishes the devices.actions permission through the route module", () => {
-    const path = DEVICE_DESTRUCTIVE_ACTIONS_OPENAPI.paths["/tenants/{tenantId}/devices/{deviceId}/actions/{action}"];
+    const path = DEVICE_DESTRUCTIVE_ACTIONS_OPENAPI.paths["/tenants/{tenantId}/devices/{deviceId}/device-actions/{action}"];
     expect(path.post.permission).toBe("Endpoint.Device.ReadWrite");
     expect(path.post.operationId).toBe("applyDestructiveDeviceAction");
     expect(DEVICE_DESTRUCTIVE_ACTIONS_PERMISSION).toBe("Endpoint.Device.ReadWrite");
-    expect(DEVICE_DESTRUCTIVE_ACTIONS_PATH).toBe("/v1/tenants/:tenantId/devices/:deviceId/actions/:action");
+    expect(DEVICE_DESTRUCTIVE_ACTIONS_PATH).toBe("/v1/tenants/:tenantId/devices/:deviceId/device-actions/:action");
+  });
+});
+
+describe("route shadowing (T-0871)", () => {
+  it("routes wipe to the destructive handler and sync to the non-destructive handler", async () => {
+    const syncCalls: string[] = [];
+    const syncProvider: DeviceActionProvider = {
+      async applyAction(tenantId, deviceId, action, reason): Promise<DeviceActionResult> {
+        syncCalls.push(action);
+        return { tenantId, deviceId, action, reason: reason || null, result: "success", error: "", appliedAt: AT };
+      },
+    };
+    const syncStore = new FakeActionStore();
+    const destructiveProvider = new FakeDestructiveProvider(destructiveResult());
+    const destructiveStore = new FakeActionStore();
+    const policyStore = new FakePolicyStore({ tenantId: TENANT, twoPersonRule: false, revealWindowSec: 30, updatedAt: AT });
+
+    const caller: DeviceActionsCaller & DestructiveActionsCaller = {
+      tenantScope: tenantScope([TENANT]),
+      permissions: [DEVICE_ACTIONS_PERMISSION, DEVICE_DESTRUCTIVE_ACTIONS_PERMISSION],
+      id: ACTOR,
+    };
+
+    // Mounted in the same order as portal/bff/src/app.ts: non-destructive first.
+    const routes = [
+      ...createDeviceActionsRoute({ provider: syncProvider, store: syncStore, resolveCaller: () => caller, now: () => AT }),
+      ...createDestructiveActionsRoute({
+        provider: destructiveProvider,
+        store: destructiveStore,
+        policyStore,
+        resolveCaller: () => caller,
+        now: () => AT,
+      }),
+    ];
+    const baseUrl = await startServer(routes);
+
+    const wipe = await fetch(`${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/device-actions/wipe`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ deviceName: DEVICE_NAME, reason: "Device lost", typedConfirmation: DEVICE_NAME }),
+    });
+    expect(wipe.status).toBe(200);
+    expect(((await wipe.json()) as DestructiveActionResult).action).toBe("wipe");
+    expect(destructiveProvider.calls).toHaveLength(1);
+    expect(syncCalls).toHaveLength(0);
+
+    const sync = await fetch(`${baseUrl}/v1/tenants/${TENANT}/devices/${DEVICE}/actions/sync`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{}",
+    });
+    expect(sync.status).toBe(200);
+    expect(((await sync.json()) as DeviceActionResult).action).toBe("sync");
+    expect(syncCalls).toEqual(["sync"]);
   });
 });
