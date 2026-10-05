@@ -36,6 +36,7 @@ import type {
   ScheduleStore,
 } from "../routes/schedules.js";
 import type { ScriptSandbox, ScriptSandboxResult } from "../routes/scripts.js";
+import type { CustomTestDispatcher, CustomTestWorkerOutput } from "../custom-tests/run.js";
 import type { TickSchedule, TickScheduleStore } from "../scheduler/tick.js";
 import type { TenantStore } from "../routes/tenants.js";
 import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock, type WorkerRunner } from "./workers.js";
@@ -644,6 +645,38 @@ export function createScriptSandbox(options: ScriptSandboxOptions): ScriptSandbo
         durationMs: result.durationMs ?? null,
       };
     },
+  };
+}
+
+/**
+ * Real custom-test dispatcher (T-0889): executes the version through the T-0126
+ * sandbox worker (run-custom-script.ps1) and maps its exit code to a test status.
+ * The route must inject this at the composition root; runCustomTest refuses to
+ * run without a dispatcher so a missing binding can never fabricate a Pass.
+ */
+export function createCustomTestDispatcher(options: ScriptSandboxOptions): CustomTestDispatcher {
+  const { run } = options;
+  return async (_envelope, data): Promise<CustomTestWorkerOutput> => {
+    const result = await run<ScriptSandboxResult>(CUSTOM_SCRIPT_WORKER, {
+      content: data.scriptContent,
+      tenantId: data.tenantId,
+      dryRun: data.dryRun,
+      parameters: data.parameters ?? null,
+    });
+    const status: CustomTestWorkerOutput["status"] =
+      result.error && result.exitCode !== 0 ? "Error" : result.exitCode === 0 ? "Pass" : "Fail";
+    return {
+      success: status === "Pass",
+      status,
+      output: result.output,
+      renderedMarkdown: data.markdownTemplate
+        ? data.markdownTemplate.replace(/\{\{\s*status\s*\}\}/g, status)
+        : result.output,
+      dryRun: data.dryRun,
+      exitCode: result.exitCode,
+      error: result.error ?? null,
+      durationMs: result.durationMs ?? null,
+    };
   };
 }
 

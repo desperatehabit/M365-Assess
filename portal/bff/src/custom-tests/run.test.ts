@@ -1,9 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
+import type { JobEnvelope } from "@m365-assess/contracts";
 import type { CustomTest, CustomTestVersion, TestRun } from "@m365-assess/db";
+import { createCustomTestDispatcher } from "../adapters/automation.js";
+import type { WorkerRunner } from "../adapters/workers.js";
 import type { Caller } from "../rbac/authorize.js";
 import { tenantScope } from "../rbac/scope.js";
 import type { RequestContext } from "../server.js";
 import {
+  CUSTOM_TEST_DISPATCHER_REQUIRED,
   CUSTOM_TEST_GATE_REQUIRED,
   CUSTOM_TEST_NOT_FOUND,
   CUSTOM_TEST_NO_VERSION,
@@ -272,6 +276,55 @@ describe("runCustomTest (T-0707)", () => {
     ).rejects.toMatchObject({
       status: 403,
     });
+  });
+
+  it("fails closed when no dispatcher is configured", async () => {
+    const { store, createdRuns } = createMockStore();
+    await expect(
+      runCustomTest("test-1", { tenantId: TENANT_1, dryRun: true }, { store, caller: CALLER }),
+    ).rejects.toMatchObject({
+      code: CUSTOM_TEST_DISPATCHER_REQUIRED,
+      status: 503,
+    });
+    expect(createdRuns).toHaveLength(0);
+  });
+});
+
+describe("createCustomTestDispatcher (T-0889)", () => {
+  const data = {
+    testId: "test-1",
+    versionId: "ver-1",
+    tenantId: TENANT_1,
+    scriptContent: "Write-Output 'password policy ok'",
+    markdownTemplate: "### Result: {{ status }}",
+    parameters: null,
+    dryRun: true,
+  };
+
+  it("runs the sandbox worker and maps a clean exit to Pass", async () => {
+    const run = vi.fn(async () => ({ output: "password policy ok", exitCode: 0, error: null, durationMs: 12 })) as unknown as WorkerRunner;
+    const dispatcher = createCustomTestDispatcher({ run });
+
+    const out = await dispatcher({} as JobEnvelope, data);
+
+    expect(run).toHaveBeenCalledWith(
+      "run-custom-script.ps1",
+      expect.objectContaining({ content: data.scriptContent, dryRun: true }),
+    );
+    expect(out.status).toBe("Pass");
+    expect(out.success).toBe(true);
+    expect(out.renderedMarkdown).toBe("### Result: Pass");
+    expect(out.durationMs).toBe(12);
+  });
+
+  it("maps a non-zero exit to Fail and an errored exit to Error", async () => {
+    const failing = vi.fn(async () => ({ output: "bad", exitCode: 1, error: null, durationMs: 5 })) as unknown as WorkerRunner;
+    const errored = vi.fn(async () => ({ output: "", exitCode: 1, error: "worker crashed", durationMs: 5 })) as unknown as WorkerRunner;
+
+    expect((await createCustomTestDispatcher({ run: failing })({} as JobEnvelope, data)).status).toBe("Fail");
+    const errorOut = await createCustomTestDispatcher({ run: errored })({} as JobEnvelope, data);
+    expect(errorOut.status).toBe("Error");
+    expect(errorOut.success).toBe(false);
   });
 });
 

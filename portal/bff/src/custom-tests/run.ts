@@ -31,6 +31,7 @@ export const CUSTOM_TEST_NOT_FOUND = "custom_test.not_found";
 export const CUSTOM_TEST_NO_VERSION = "custom_test.no_version";
 export const CUSTOM_TEST_GATE_REQUIRED = "custom_test.gate_required";
 export const CUSTOM_TEST_UNSANDBOXED_REFUSED = "custom_test.unsandboxed_write_refused";
+export const CUSTOM_TEST_DISPATCHER_REQUIRED = "custom_test.dispatcher_required";
 
 export interface CustomTestRunInput {
   readonly tenantId: string;
@@ -128,22 +129,6 @@ async function ensureAuthorized(
   requirePermission(caller, CUSTOM_TEST_RUN_PERMISSION as Permission);
 }
 
-/** Default mock dispatcher when none injected */
-const defaultDispatcher: CustomTestDispatcher = async (_envelope, data) => {
-  return {
-    success: true,
-    status: "Pass",
-    output: "Default test output",
-    renderedMarkdown: data.markdownTemplate
-      ? data.markdownTemplate.replace(/\{\{\s*status\s*\}\}/g, "Pass")
-      : "Default test output",
-    dryRun: data.dryRun,
-    exitCode: 0,
-    error: null,
-    durationMs: 10,
-  };
-};
-
 /**
  * Execute a custom test dry run or live run.
  */
@@ -227,7 +212,16 @@ export async function runCustomTest(
     },
   };
 
-  const dispatcher = options.dispatcher ?? defaultDispatcher;
+  // Fail closed: without a real dispatcher there is nothing to run, and returning
+  // a fabricated Pass would report success for a test that never executed.
+  const dispatcher = options.dispatcher;
+  if (!dispatcher) {
+    throw new AppError(
+      CUSTOM_TEST_DISPATCHER_REQUIRED,
+      "No custom-test dispatcher is configured; refusing to fabricate a result.",
+      503,
+    );
+  }
   const workerResult = await dispatcher(envelope, {
     testId,
     versionId,
