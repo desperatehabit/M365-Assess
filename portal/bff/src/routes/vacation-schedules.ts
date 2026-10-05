@@ -451,7 +451,16 @@ export function createVacationScheduleRoutes(options: VacationRouteOptions): Rou
         // A window that already started enables now through the gated apply;
         // otherwise the scheduler enable job fires at startsAt.
         if (Date.parse(created.startsAt) <= Date.parse(now())) {
-          const outcome = await options.apply.applyVacationPhase(tenantId, created, "enable");
+          let outcome: VacationApplyResult;
+          try {
+            outcome = await options.apply.applyVacationPhase(tenantId, created, "enable");
+          } catch (error) {
+            // A worker that throws (EXO unreachable, mailbox missing) must not leave the row
+            // `scheduled` with no job registered: nothing would ever enable or revert it.
+            await options.store.updateVacationSchedule(tenantId, created.id, { state: "failed" });
+            await disableVacationSchedulerJobs(options.scheduler, created.id);
+            throw error;
+          }
           if (!outcome.success) {
             await options.store.updateVacationSchedule(tenantId, created.id, {
               state: "failed",
@@ -518,6 +527,23 @@ export function createVacationScheduleRoutes(options: VacationRouteOptions): Rou
             status: 200,
             headers: { "content-type": "application/json" },
             body: { schedule: toVacationItem(schedule), ended: false, reason: "already_ended" },
+          };
+        }
+
+        if (schedule.state === "scheduled") {
+          // The window never started, so there is nothing to revert. Running the revert
+          // worker would clear forwarding and OoO the mailbox already had (the worker's
+          // revert is unconditional), so the schedule is cancelled with no tenant write.
+          const cancelled = await options.store.updateVacationSchedule(tenantId, schedule.id, { state: "ended" });
+          await disableVacationSchedulerJobs(options.scheduler, schedule.id);
+          return {
+            status: 200,
+            headers: { "content-type": "application/json" },
+            body: {
+              schedule: toVacationItem(cancelled ?? { ...schedule, state: "ended" }),
+              ended: true,
+              reason: "never_started",
+            },
           };
         }
 

@@ -172,12 +172,16 @@ describe("RulesView", () => {
 
 describe("VacationView", () => {
   it("lists schedules with End now and ends immediately on confirm", async () => {
-    const calls: string[] = [];
-    const fetcher = vi.fn(async (url: string) => {
-      calls.push(String(url));
+    const calls: { url: string; method: string }[] = [];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url: String(url), method: init?.method ?? "GET" });
+      if (init?.method === "DELETE") return jsonResponse({ ended: true });
+      // The BFF's list shape: { tenantId, items: [{ ...schedule, status }] }.
       return jsonResponse({
-        schedules: [
-          { id: "sched-1", tenantId: "tenant-1", mailboxId: "mbx-1", startsAt: "2026-09-01T00:00:00Z", endsAt: "2026-10-01T00:00:00Z", oooMessage: "Away", forwardTo: "cover@example.invalid", state: "active" },
+        tenantId: "tenant-1",
+        items: [
+          { id: "sched-1", tenantId: "tenant-1", mailboxId: "mbx-1", startsAt: "2026-09-01T00:00:00Z", endsAt: "2026-10-01T00:00:00Z", oooMessage: "Away", forwardTo: "cover@example.invalid", state: "active", status: "active" },
+          { id: "sched-2", tenantId: "tenant-1", mailboxId: "mbx-2", startsAt: "2026-11-01T00:00:00Z", endsAt: "2026-11-08T00:00:00Z", oooMessage: "Away", forwardTo: null, state: "scheduled", status: "upcoming" },
         ],
       });
     });
@@ -187,8 +191,9 @@ describe("VacationView", () => {
     await waitFor(() => expect(screen.getByTestId("vacation-end-sched-1")).toBeTruthy());
     fireEvent.click(screen.getByTestId("vacation-end-sched-1"));
 
+    expect(screen.getByTestId("vacation-row-sched-2").textContent).toContain("upcoming");
     await waitFor(() =>
-      expect(calls.some((url) => url.includes("/vacation-schedules/sched-1/end"))).toBe(true),
+      expect(calls).toContainEqual({ url: "/v1/tenants/tenant-1/vacation-schedules/sched-1", method: "DELETE" }),
     );
   });
 });
@@ -211,5 +216,19 @@ describe("RetentionView", () => {
     fireEvent.click(screen.getByTestId("retention-assign-preview"));
 
     await waitFor(() => expect(screen.getByTestId("retention-affected").textContent).toContain("mbx-1"));
+  });
+});
+
+describe("RetentionView tag read unavailable", () => {
+  it("shows an explicit not-available state instead of an empty tag list when the BFF answers 501", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      if (String(url).endsWith("/retention/policies")) return jsonResponse({ policies: [{ id: "p-1", name: "Policy" }] });
+      return jsonResponse({ code: "mailboxes.retention_tag_read_unavailable", message: "retention tag list is not available yet: no worker backs the read" }, 501);
+    });
+    render(<RetentionView tenantId="tenant-1" fetcher={fetcher as unknown as typeof fetch} />);
+
+    await waitFor(() => expect(screen.getByTestId("retention-tags-unavailable").textContent).toContain("not available yet"));
+    expect(screen.getByTestId("retention-policy-p-1")).toBeTruthy();
+    expect(screen.queryByTestId("retention-error")).toBeNull();
   });
 });

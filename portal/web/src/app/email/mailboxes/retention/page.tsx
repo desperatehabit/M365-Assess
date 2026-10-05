@@ -34,17 +34,31 @@ export interface RetentionAssignPlan {
   readonly affectedMailboxes?: readonly string[];
 }
 
-export async function listRetention(
-  tenantId: string,
-  fetcher: Fetcher = fetch,
-): Promise<{ policies: RetentionPolicy[]; tags: RetentionTag[] }> {
+export interface RetentionListing {
+  readonly policies: RetentionPolicy[];
+  readonly tags: RetentionTag[];
+  /** Set when the BFF answers 501 for the tag read: no worker backs it yet. Never an empty-list stand-in. */
+  readonly tagsUnavailable?: string;
+}
+
+export async function listRetention(tenantId: string, fetcher: Fetcher = fetch): Promise<RetentionListing> {
   const [policiesResponse, tagsResponse] = await Promise.all([
     fetcher(`/v1/tenants/${encodeURIComponent(tenantId)}/retention/policies`),
     fetcher(`/v1/tenants/${encodeURIComponent(tenantId)}/retention/tags`),
   ]);
   if (!policiesResponse.ok) throw new Error(`List retention policies failed: HTTP ${policiesResponse.status}`);
-  if (!tagsResponse.ok) throw new Error(`List retention tags failed: HTTP ${tagsResponse.status}`);
   const policies = (await policiesResponse.json()) as { policies?: RetentionPolicy[] };
+  if (tagsResponse.status === 501) {
+    let message = "Retention tags are not available yet.";
+    try {
+      const body = (await tagsResponse.json()) as { message?: string };
+      if (body?.message) message = body.message;
+    } catch {
+      // Keep the default message.
+    }
+    return { policies: [...(policies.policies ?? [])], tags: [], tagsUnavailable: message };
+  }
+  if (!tagsResponse.ok) throw new Error(`List retention tags failed: HTTP ${tagsResponse.status}`);
   const tags = (await tagsResponse.json()) as { tags?: RetentionTag[] };
   return { policies: [...(policies.policies ?? [])], tags: [...(tags.tags ?? [])] };
 }
@@ -57,8 +71,9 @@ export async function previewRetentionTagWrite(
 ): Promise<{ diff: readonly string[]; valid: boolean; dryRun: boolean; requiresConfirmation: boolean }> {
   const base = `/v1/tenants/${encodeURIComponent(tenantId)}/retention/tags`;
   const url = tagId ? `${base}/${encodeURIComponent(tagId)}` : base;
+  // Create is POST /retention/tags; edit is PATCH /retention/tags/:tagId (SPEC §6 route table).
   const response = await fetcher(url, {
-    method: "POST",
+    method: tagId ? "PATCH" : "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...payload, preview: true }),
   });
@@ -75,7 +90,7 @@ export async function applyRetentionTagWrite(
   const base = `/v1/tenants/${encodeURIComponent(tenantId)}/retention/tags`;
   const url = tagId ? `${base}/${encodeURIComponent(tagId)}` : base;
   const response = await fetcher(url, {
-    method: "POST",
+    method: tagId ? "PATCH" : "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ ...payload, preview: false, confirm: true }),
   });
@@ -209,6 +224,7 @@ export interface RetentionViewProps {
 export function RetentionView({ tenantId, canWrite = true, fetcher = fetch }: RetentionViewProps): ReactElement {
   const [policies, setPolicies] = useState<RetentionPolicy[]>([]);
   const [tags, setTags] = useState<RetentionTag[]>([]);
+  const [tagsUnavailable, setTagsUnavailable] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -232,6 +248,7 @@ export function RetentionView({ tenantId, canWrite = true, fetcher = fetch }: Re
       const result = await listRetention(tenantId, fetcher);
       setPolicies(result.policies);
       setTags(result.tags);
+      setTagsUnavailable(result.tagsUnavailable ?? null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -367,8 +384,13 @@ export function RetentionView({ tenantId, canWrite = true, fetcher = fetch }: Re
       </section>
 
       <section style={cardStyle} aria-label="Retention tags" data-testid="retention-tags-card">
-        <h2 style={{ margin: 0, fontSize: "16px" }}>Tags ({tags.length})</h2>
-        <div style={{ overflowX: "auto" }}>
+        <h2 style={{ margin: 0, fontSize: "16px" }}>{tagsUnavailable ? "Tags" : `Tags (${tags.length})`}</h2>
+        {tagsUnavailable && (
+          <div role="status" style={{ color: "var(--text-soft)", fontSize: "14px" }} data-testid="retention-tags-unavailable">
+            <strong>Not available.</strong> {tagsUnavailable}
+          </div>
+        )}
+        <div style={{ overflowX: "auto", ...(tagsUnavailable ? { display: "none" } : {}) }}>
           <table style={tableStyle} data-testid="retention-tags-table">
             <thead><tr><th style={thStyle}>Name</th><th style={thStyle}>Type</th><th style={thStyle}>Days</th><th style={thStyle}>Actions</th></tr></thead>
             <tbody>

@@ -44,6 +44,9 @@ param(
     [string]$Scope = '',
 
     [Parameter()]
+    [string]$MailboxId = '',
+
+    [Parameter()]
     [string]$Search = '',
 
     [Parameter()]
@@ -64,7 +67,7 @@ $tenantSession = $null
 if ($JobFile) {
     $job = Read-MailboxPermissionsJob -Path $JobFile
     $TenantId = $job['TenantId']
-    foreach ($name in @('Scope', 'Search', 'Top', 'Cursor')) {
+    foreach ($name in @('Scope', 'MailboxId', 'Search', 'Top', 'Cursor')) {
         if (-not $PSBoundParameters.ContainsKey($name)) {
             Set-Variable -Name $name -Value $job[$name]
         }
@@ -72,7 +75,7 @@ if ($JobFile) {
     $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service ExchangeOnline
 }
 try {
-    $result = Get-MailboxPermissions -TenantId $TenantId -Scope $Scope -Search $Search -Top $Top -Cursor $Cursor
+    $result = Get-MailboxPermissions -TenantId $TenantId -Scope $Scope -MailboxId $MailboxId -Search $Search -Top $Top -Cursor $Cursor
     $result | ConvertTo-Json -Depth 8 -Compress
 }
 finally {

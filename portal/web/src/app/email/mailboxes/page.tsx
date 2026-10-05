@@ -384,6 +384,10 @@ export function MailboxesView({ tenantId, canWrite = true, fetcher = fetch }: Ma
         <p style={{ margin: "4px 0 0", color: "var(--text-soft)", fontSize: "14px" }}>
           List, search, and filter mailboxes, then act on rows. Writes preview a plan before apply.
         </p>
+        <nav aria-label="Mailbox sections" style={{ display: "flex", gap: "16px", marginTop: "8px", fontSize: "14px" }}>
+          <a href={`/email/mailboxes/reports?tenantId=${encodeURIComponent(tenantId)}`} data-testid="mailboxes-link-reports">Mailbox reports</a>
+          <a href={`/email/mailboxes/deleted?tenantId=${encodeURIComponent(tenantId)}`} data-testid="mailboxes-link-deleted">Deleted mailboxes</a>
+        </nav>
       </div>
 
       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }} data-testid="mailboxes-filters">

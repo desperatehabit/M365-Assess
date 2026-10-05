@@ -84,6 +84,10 @@ function Get-MailboxPermissions {
     .PARAMETER Scope
         'mailbox' or 'calendar' restricts the report to one permission family;
         empty returns both.
+    .PARAMETER MailboxId
+        Restricts the read to one mailbox (ExchangeObjectId, primary SMTP, or
+        alias). Empty reads every tenant mailbox. A mailbox that does not exist
+        fails the read rather than returning an empty report.
     .PARAMETER Search
         Case-insensitive substring match against mailbox display name, primary
         SMTP, and principal.
@@ -93,6 +97,8 @@ function Get-MailboxPermissions {
         Opaque page cursor from a previous result. Empty starts at the first page.
     .EXAMPLE
         Get-MailboxPermissions -TenantId 'tenant-a' -Scope 'calendar' -Top 50
+    .EXAMPLE
+        Get-MailboxPermissions -TenantId 'tenant-a' -MailboxId 'support@example.invalid'
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -106,6 +112,9 @@ function Get-MailboxPermissions {
         [string]$Scope = '',
 
         [Parameter()]
+        [string]$MailboxId = '',
+
+        [Parameter()]
         [string]$Search = '',
 
         [Parameter()]
@@ -116,7 +125,24 @@ function Get-MailboxPermissions {
         [string]$Cursor = ''
     )
 
-    $allMailboxes = @(Get-EXOMailbox -ResultSize Unlimited -Properties DisplayName, PrimarySmtpAddress, RecipientTypeDetails, GrantSendOnBehalfTo, ExchangeObjectId)
+    $mailboxProperties = @('DisplayName', 'PrimarySmtpAddress', 'RecipientTypeDetails', 'GrantSendOnBehalfTo', 'ExchangeObjectId', 'Alias')
+    $mailboxKey = $MailboxId.Trim()
+    if ($mailboxKey.Length -gt 0) {
+        # Per-mailbox read: look up only the requested mailbox so one mailbox's
+        # permissions are never returned for another. The identity match below is
+        # a second guard in case a lookup ever returns more than the one mailbox.
+        $allMailboxes = @(Get-EXOMailbox -Identity $mailboxKey -Properties $mailboxProperties -ErrorAction Stop | Where-Object {
+            [string]$_.ExchangeObjectId -eq $mailboxKey -or
+            [string]$_.PrimarySmtpAddress -eq $mailboxKey -or
+            [string]$_.Alias -eq $mailboxKey
+        })
+        if ($allMailboxes.Count -eq 0) {
+            throw "NotFound: Mailbox '$mailboxKey' not found"
+        }
+    }
+    else {
+        $allMailboxes = @(Get-EXOMailbox -ResultSize Unlimited -Properties $mailboxProperties)
+    }
 
     $rows = [System.Collections.Generic.List[object]]::new()
     foreach ($mailbox in $allMailboxes) {
@@ -275,11 +301,12 @@ function Read-MailboxPermissionsJob {
     }
 
     return @{
-        TenantId = $tenantId
-        Scope    = [string]$job['scope']
-        Search   = [string]$job['search']
-        Top      = Get-MailboxPermissionsJobInt -Value $job['top'] -Default 100
-        Cursor   = [string]$job['cursor']
+        TenantId  = $tenantId
+        Scope     = [string]$job['scope']
+        MailboxId = [string]$job['mailboxId']
+        Search    = [string]$job['search']
+        Top       = Get-MailboxPermissionsJobInt -Value $job['top'] -Default 100
+        Cursor    = [string]$job['cursor']
     }
 }
 

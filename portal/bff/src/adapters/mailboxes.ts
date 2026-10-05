@@ -8,7 +8,6 @@
 // 0025), which the EPIC-007 scheduler enables and reverts.
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import { paginate } from "../pagination.js";
 import type { CredentialStoreRow } from "../routes/credentials.js";
 import type {
   CreateSharedMailboxInput,
@@ -26,13 +25,14 @@ import type {
   MailboxWriteResult,
 } from "../routes/mailboxes.js";
 import {
-  createMailboxPermissionsReportAdapter,
   type GrantMailboxPermissionInput,
   type MailboxPermissionPlan,
+  type MailboxPermissionReportEntry,
   type MailboxPermissionReportFilter,
   type MailboxPermissionResult,
   type MailboxPermissionsList,
   type MailboxPermissionsProvider,
+  type MailboxPermissionsReportPage,
   type MailboxPermissionsReportProvider,
   type RemoveMailboxPermissionInput,
 } from "../routes/mailbox-permissions.js";
@@ -69,18 +69,28 @@ import type {
   VacationScheduleState,
   VacationScheduleStore,
 } from "../routes/vacation-schedules.js";
-import type {
-  DeletedMailboxesFilter,
-  DeletedMailboxesPage,
-  DeletedMailboxesProvider,
-  DeletedMailboxRestorePlan,
-  DeletedMailboxRestoreResult,
-  RestoreDeletedMailboxInput,
+import {
+  notSoftDeletedError,
+  type DeletedMailboxesFilter,
+  type DeletedMailboxesPage,
+  type DeletedMailboxesProvider,
+  type DeletedMailboxRestorePlan,
+  type DeletedMailboxRestoreResult,
+  type RestoreDeletedMailboxInput,
 } from "../routes/deleted-mailboxes.js";
-import { createTenantWorker, raiseWorkerError, type WorkerRunner } from "./workers.js";
+import { asArray, createTenantWorker, raiseWorkerError, WORKER_FAILED, type WorkerRunner } from "./workers.js";
 import { AppError } from "../errors.js";
+import { MAILBOX_NOT_FOUND } from "../routes/mailboxes.js";
 
 export const RETENTION_TAG_WRITE_UNAVAILABLE = "mailboxes.retention_tag_write_unavailable";
+export const RETENTION_TAG_READ_UNAVAILABLE = "mailboxes.retention_tag_read_unavailable";
+export const MAILFLOW_REPORT_UNAVAILABLE = "mailboxes.mailflow_report_unavailable";
+
+/** get-mailboxes.ps1 and get-mailbox-permissions.ps1 cap a page at 999 rows (ValidateRange 1..999). */
+const WORKER_MAX_PAGE = 999;
+/** Upper bound on worker pages followed for one per-mailbox read; a mailbox has far fewer rows. */
+const MAX_PERMISSION_PAGES = 50;
+const MAX_POLICY_PAGES = 20;
 
 export interface MailboxProviders {
   readonly mailboxes: MailboxesProvider;
@@ -142,6 +152,30 @@ function asNullableString(value: unknown): string | null {
   return value === null || value === undefined ? null : String(value);
 }
 
+/** The workers emit an empty string, not null, when a page is the last one. */
+function cursorOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function mailboxNotFound(mailboxId: string): AppError {
+  return new AppError(MAILBOX_NOT_FOUND, `mailbox '${mailboxId}' was not found`, 404, [
+    { field: "mailboxId", reason: "not_found" },
+  ]);
+}
+
+/** The mailbox workers fail with "NotFound: ..." or EXO's "couldn't be found" for an unknown mailbox. */
+function isMailboxNotFound(error: unknown): boolean {
+  return (
+    error instanceof AppError &&
+    error.code === WORKER_FAILED &&
+    /NotFound|couldn't be found|could not be found|ManagementObjectNotFound/i.test(error.message)
+  );
+}
+
+function sameIdentity(a: unknown, b: string): boolean {
+  return typeof a === "string" && a.trim().toLowerCase() === b.trim().toLowerCase();
+}
+
 /**
  * The vacation schedule store over the shared connection. Migration 0025 creates
  * vacation_schedules; the db package's own repository is not exported from the
@@ -161,6 +195,37 @@ export function createSqliteVacationScheduleStore(db: Database.Database): Vacati
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
+  }
+
+  // Mirrors SqliteVacationScheduleRepository: every create and state change appends an
+  // audit_events row in the same transaction, so apply and revert stay audited.
+  function writeAuditEvent(
+    action: string,
+    schedule: VacationSchedule,
+    before: VacationSchedule | null,
+  ): void {
+    const timestamp = nowIso();
+    db.prepare(
+      `INSERT INTO audit_events
+         (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      randomUUID(),
+      timestamp,
+      null,
+      "system",
+      schedule.tenantId,
+      action,
+      "vacation_schedule",
+      schedule.id,
+      before === null ? null : JSON.stringify(before),
+      JSON.stringify(schedule),
+      "success",
+      null,
+      "request",
+      null,
+      timestamp,
+    );
   }
 
   return {
@@ -189,22 +254,37 @@ export function createSqliteVacationScheduleStore(db: Database.Database): Vacati
       state: VacationScheduleState;
     }): Promise<VacationSchedule> {
       const createdAt = nowIso();
-      db.prepare(
-        `INSERT INTO vacation_schedules
-           (id, tenantId, mailboxId, startsAt, endsAt, oooMessage, forwardTo, state, createdAt, updatedAt)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(
-        input.id,
-        input.tenantId,
-        input.mailboxId,
-        input.startsAt,
-        input.endsAt,
-        input.oooMessage,
-        input.forwardTo,
-        input.state,
+      const schedule: VacationSchedule = {
+        id: input.id,
+        tenantId: input.tenantId,
+        mailboxId: input.mailboxId,
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        oooMessage: input.oooMessage,
+        forwardTo: input.forwardTo,
+        state: input.state,
         createdAt,
-        createdAt,
-      );
+        updatedAt: createdAt,
+      };
+      db.transaction(() => {
+        db.prepare(
+          `INSERT INTO vacation_schedules
+             (id, tenantId, mailboxId, startsAt, endsAt, oooMessage, forwardTo, state, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(
+          schedule.id,
+          schedule.tenantId,
+          schedule.mailboxId,
+          schedule.startsAt,
+          schedule.endsAt,
+          schedule.oooMessage,
+          schedule.forwardTo,
+          schedule.state,
+          schedule.createdAt,
+          schedule.updatedAt,
+        );
+        writeAuditEvent("vacation.schedule.create", schedule, null);
+      })();
       const persisted = await this.getVacationSchedule(input.tenantId, input.id);
       if (persisted === undefined) throw new Error(`vacation schedule ${input.id} was not persisted`);
       return persisted;
@@ -217,14 +297,17 @@ export function createSqliteVacationScheduleStore(db: Database.Database): Vacati
     ): Promise<VacationSchedule | undefined> {
       const existing = await this.getVacationSchedule(tenantId, scheduleId);
       if (existing === undefined) return undefined;
-      const updatedAt = nowIso();
-      db.prepare("UPDATE vacation_schedules SET state = ?, updatedAt = ? WHERE id = ? AND tenantId = ?").run(
-        update.state,
-        updatedAt,
-        scheduleId,
-        tenantId,
-      );
-      return { ...existing, state: update.state, updatedAt };
+      const updated: VacationSchedule = { ...existing, state: update.state, updatedAt: nowIso() };
+      db.transaction(() => {
+        db.prepare("UPDATE vacation_schedules SET state = ?, updatedAt = ? WHERE id = ? AND tenantId = ?").run(
+          updated.state,
+          updated.updatedAt,
+          scheduleId,
+          tenantId,
+        );
+        writeAuditEvent("vacation.schedule.update", updated, existing);
+      })();
+      return updated;
     },
   };
 }
@@ -252,7 +335,7 @@ export function createMailboxProviders(
     archive: filter.archive === undefined ? "" : String(filter.archive),
     quotaPercent: filter.quotaPercent ?? 0,
     inactiveDays: filter.inactiveDays ?? 0,
-    top: filter.limit,
+    top: Math.min(filter.limit, WORKER_MAX_PAGE),
     cursor: filter.cursor ?? "",
   });
 
@@ -260,12 +343,22 @@ export function createMailboxProviders(
     async listMailboxes(tenantId: string, filter: MailboxesFilter): Promise<MailboxesPage> {
       const page = await callMailboxesJob(tenantId, mailboxListPayload(filter));
       raiseWorkerError(page);
-      return page as unknown as MailboxesPage;
+      return { ...(page as unknown as MailboxesPage), nextCursor: cursorOrNull(page.nextCursor) };
     },
 
     async getMailbox(tenantId: string, mailboxId: string): Promise<MailboxDetail | null> {
-      const detail = await callMailboxesJob(tenantId, { mailboxId });
+      let detail: MailboxesWorkerPage;
+      try {
+        detail = await callMailboxesJob(tenantId, { mailboxId });
+      } catch (error) {
+        // An unknown mailbox is a 404 (the route maps null), not a worker failure.
+        if (isMailboxNotFound(error)) return null;
+        throw error;
+      }
       raiseWorkerError(detail);
+      if (detail === null || detail === undefined || (detail as unknown as Row)["settings"] === undefined) {
+        return null;
+      }
       return detail as unknown as MailboxDetail;
     },
   };
@@ -307,38 +400,58 @@ export function createMailboxProviders(
 
   const mailboxPermissions: MailboxPermissionsProvider = {
     async listPermissions(tenantId: string, mailboxId: string): Promise<MailboxPermissionsList> {
-      const page = await call<MailboxPermissionsWorkerPage>("get-mailbox-permissions.ps1", tenantId, {
-        scope: "",
-        top: 999,
-      });
-      raiseWorkerError(page);
-      const permissions = page.items
+      // The worker reads only this mailbox (mailboxId in the job); the identity filter
+      // below is a second guard so a row for another mailbox can never be returned.
+      const rows: Row[] = [];
+      let retrievedAt = nowIso();
+      let cursor = "";
+      for (let pages = 0; pages < MAX_PERMISSION_PAGES; pages += 1) {
+        let page: MailboxPermissionsWorkerPage;
+        try {
+          page = await call<MailboxPermissionsWorkerPage>("get-mailbox-permissions.ps1", tenantId, {
+            scope: "",
+            mailboxId,
+            top: WORKER_MAX_PAGE,
+            cursor,
+          });
+        } catch (error) {
+          if (isMailboxNotFound(error)) throw mailboxNotFound(mailboxId);
+          throw error;
+        }
+        raiseWorkerError(page);
+        rows.push(...page.items);
+        retrievedAt = page.retrievedAt;
+        const next = cursorOrNull(page.nextCursor);
+        if (next === null) break;
+        cursor = next;
+        if (pages === MAX_PERMISSION_PAGES - 1) {
+          throw new AppError(WORKER_FAILED, `mailbox '${mailboxId}' permissions exceed the page limit`, 502);
+        }
+      }
+      const own = rows.filter(
+        (item) => sameIdentity(item["mailboxId"], mailboxId) || sameIdentity(item["mailboxPrimarySmtp"], mailboxId),
+      );
+      const permissions = own
         .filter((item) => asString(item["scope"]) === "mailbox")
         .map((item) => ({
           scope: "mailbox" as const,
           permissionType: asString(item["permissionType"]) as "FullAccess" | "SendAs" | "SendOnBehalf",
           principal: asString(item["principal"]),
-          accessRights: (item["accessRights"] as readonly string[] | undefined) ?? [],
+          accessRights: asArray<string>(item["accessRights"] as string | readonly string[] | undefined),
           automap: Boolean(item["automap"]),
           inherited: Boolean(item["inherited"]),
         }));
-      const calendarPermissions = page.items
+      const calendarPermissions = own
         .filter((item) => asString(item["scope"]) === "calendar")
         .map((item) => ({
           scope: "calendar" as const,
           permissionType: "Calendar" as const,
           principal: asString(item["principal"]),
-          accessRights: (item["accessRights"] as readonly string[] | undefined) ?? [],
+          accessRights: asArray<string>(item["accessRights"] as string | readonly string[] | undefined),
           automap: false,
           inherited: false,
         }));
-      return {
-        tenantId,
-        mailboxId,
-        permissions,
-        calendarPermissions,
-        retrievedAt: page.retrievedAt,
-      };
+      return { tenantId, mailboxId, permissions, calendarPermissions, retrievedAt };
     },
 
     grantPermission: (
@@ -376,10 +489,29 @@ export function createMailboxProviders(
       }),
   };
 
-  const mailboxPermissionsReport: MailboxPermissionsReportProvider = createMailboxPermissionsReportAdapter({
-    mailboxes,
-    permissions: mailboxPermissions,
-  });
+  // The tenant-wide report is one cursor-paged worker read (the worker already pages, filters
+  // by scope and search, and emits the report row shape), not a per-mailbox fan-out.
+  const mailboxPermissionsReport: MailboxPermissionsReportProvider = {
+    async listMailboxPermissions(
+      tenantId: string,
+      filter: MailboxPermissionReportFilter,
+    ): Promise<MailboxPermissionsReportPage> {
+      const page = await call<MailboxPermissionsWorkerPage>("get-mailbox-permissions.ps1", tenantId, {
+        scope: filter.scope ?? "",
+        ...(filter.search !== undefined ? { search: filter.search } : {}),
+        top: Math.min(filter.limit, WORKER_MAX_PAGE),
+        cursor: filter.cursor ?? "",
+      });
+      raiseWorkerError(page);
+      return {
+        tenantId,
+        items: page.items as unknown as readonly MailboxPermissionReportEntry[],
+        nextCursor: cursorOrNull(page.nextCursor),
+        totalCount: page.totalCount,
+        retrievedAt: page.retrievedAt,
+      };
+    },
+  };
 
   const mailboxReports: MailboxReportsProvider = {
     async getMailboxReport(
@@ -391,20 +523,21 @@ export function createMailboxProviders(
         case "calendarPermissions": {
           const page = await call<MailboxPermissionsWorkerPage>("get-mailbox-permissions.ps1", tenantId, {
             scope: filter.report === "permissions" ? "mailbox" : "calendar",
+            ...(filter.mailboxId !== undefined ? { mailboxId: filter.mailboxId } : {}),
             ...(filter.search !== undefined ? { search: filter.search } : {}),
-            top: filter.limit,
+            top: Math.min(filter.limit, WORKER_MAX_PAGE),
             cursor: filter.cursor ?? "",
           });
           raiseWorkerError(page);
-          return { rows: page.items, nextCursor: page.nextCursor, retrievedAt: page.retrievedAt };
+          return { rows: page.items, nextCursor: cursorOrNull(page.nextCursor), retrievedAt: page.retrievedAt };
         }
         case "statistics":
         case "activity":
         case "forwarding": {
-          const page = await callMailboxesJob(tenantId, {
-            ...mailboxListPayload({ ...filter, limit: 999 }),
-            top: 999,
-          });
+          // The worker applies the cursor and page size itself (its cursor is the same
+          // base64url row offset the BFF uses), so the cursor is forwarded once and the
+          // worker's page is returned as is; paginating it again would skip a second time.
+          const page = await callMailboxesJob(tenantId, mailboxListPayload(filter));
           raiseWorkerError(page);
           const rows = page.items.map((item) => {
             if (filter.report === "statistics") {
@@ -436,12 +569,16 @@ export function createMailboxProviders(
               deliverToMailboxAndForward: item["deliverToMailboxAndForward"],
             };
           });
-          const page2 = paginate(rows, { cursor: filter.cursor, limit: filter.limit });
-          return { rows: page2.items, nextCursor: page2.nextCursor, retrievedAt: page.retrievedAt };
+          return { rows, nextCursor: cursorOrNull(page.nextCursor), retrievedAt: page.retrievedAt };
         }
-        // No worker entrypoint wraps the module's Get-MailFlowReport collector yet.
+        // No worker entrypoint wraps the module's Get-MailFlowReport collector, so the
+        // report is refused rather than answered with an empty (and falsely fresh) page.
         case "mailflow":
-          return { rows: [], nextCursor: null, retrievedAt: nowIso() };
+          throw new AppError(
+            MAILFLOW_REPORT_UNAVAILABLE,
+            "the mail-flow report is not available yet: no worker backs it",
+            501,
+          );
       }
     },
   };
@@ -449,13 +586,11 @@ export function createMailboxProviders(
   const mailboxRules: MailboxRulesProvider = {
     async listRules(tenantId: string, mailboxId: string): Promise<MailboxRulesListResponse> {
       const detail = await mailboxes.getMailbox(tenantId, mailboxId);
-      if (detail === null) {
-        return { tenantId, mailboxId, rules: [], retrievedAt: nowIso() };
-      }
+      if (detail === null) throw mailboxNotFound(mailboxId);
       return {
         tenantId,
         mailboxId,
-        rules: detail.rules.map((rule) => ({ ...rule })),
+        rules: asArray(detail.rules).map((rule) => ({ ...rule })),
         retrievedAt: detail.retrievedAt,
       };
     },
@@ -514,22 +649,40 @@ export function createMailboxProviders(
 
   const retention: RetentionProvider = {
     async listPolicies(tenantId: string): Promise<RetentionPolicy[]> {
-      const page = await call<PurviewRetentionWorkerPage>("get-purview-retention.ps1", tenantId, {
-        schemaVersion: "v1",
-        top: 999,
-      });
-      raiseWorkerError(page);
-      return page.items.map((item) => ({
-        id: asString(item["id"]),
-        name: asString(item["name"]),
-        enabled: asString(item["state"]) === "enabled",
-        retrievedAt: page.retrievedAt,
-      }));
+      // get-purview-retention.ps1 reads its filters from the envelope's `payload`; follow
+      // its cursor until the policy set is exhausted rather than returning the first page.
+      const policies: RetentionPolicy[] = [];
+      let cursor = "";
+      for (let pages = 0; pages < MAX_POLICY_PAGES; pages += 1) {
+        const page = await call<PurviewRetentionWorkerPage>("get-purview-retention.ps1", tenantId, {
+          schemaVersion: "v1",
+          payload: { top: WORKER_MAX_PAGE, cursor },
+        });
+        raiseWorkerError(page);
+        for (const item of page.items) {
+          policies.push({
+            id: asString(item["id"]),
+            name: asString(item["name"]),
+            enabled: asString(item["state"]) === "enabled",
+            retrievedAt: page.retrievedAt,
+          });
+        }
+        const next = cursorOrNull(page.nextCursor);
+        if (next === null) return policies;
+        cursor = next;
+      }
+      throw new AppError(WORKER_FAILED, "retention policies exceed the page limit", 502);
     },
 
-    // No worker entrypoint reads retention tags (Get-RetentionComplianceTag) yet.
-    async listTags(_tenantId: string): Promise<RetentionTag[]> {
-      return [];
+    // No worker entrypoint reads retention tags (Get-RetentionPolicyTag) yet; an empty list
+    // would be indistinguishable from a tenant with no tags, so the read is refused like
+    // the writes below.
+    listTags: (_tenantId: string): Promise<RetentionTag[]> => {
+      throw new AppError(
+        RETENTION_TAG_READ_UNAVAILABLE,
+        "retention tag list is not available yet: no worker backs the read",
+        501,
+      );
     },
 
     // set-retention-tag.ps1 covers assign/assignBulk only; no worker creates or
@@ -574,7 +727,7 @@ export function createMailboxProviders(
   const vacationApply: VacationApplyProvider = {
     applyVacationPhase: (tenantId: string, schedule: VacationSchedule, phase: VacationPhase) => {
       const revertNotAfter = new Date(Date.parse(schedule.endsAt) + 24 * 3600 * 1000).toISOString();
-      return call<VacationApplyResult>("invoke-vacation-schedule.ps1", tenantId, {
+      return call<VacationApplyResult & { alertEvent?: VacationApplyResult["alert"] }>("invoke-vacation-schedule.ps1", tenantId, {
         scheduleId: schedule.id,
         phase,
         mailboxId: schedule.mailboxId,
@@ -584,6 +737,10 @@ export function createMailboxProviders(
         ...(schedule.forwardTo !== null ? { forwardTo: schedule.forwardTo } : {}),
         notAfter: phase === "enable" ? schedule.endsAt : revertNotAfter,
         confirmed: true,
+      }).then(({ alertEvent, ...result }) => {
+        // The worker names the failed-revert alert `alertEvent`; the route type calls it `alert`.
+        raiseWorkerError(result);
+        return alertEvent === undefined || result.alert !== undefined ? result : { ...result, alert: alertEvent };
       });
     },
   };
@@ -593,25 +750,33 @@ export function createMailboxProviders(
       const page = await call<DeletedMailboxesWorkerPage>("restore-mailbox.ps1", tenantId, {
         action: "list",
         ...(filter.search !== undefined ? { search: filter.search } : {}),
-        top: filter.limit,
+        top: Math.min(filter.limit, WORKER_MAX_PAGE),
         cursor: filter.cursor ?? "",
       });
       raiseWorkerError(page);
-      return page as unknown as DeletedMailboxesPage;
+      return { ...(page as unknown as DeletedMailboxesPage), nextCursor: cursorOrNull(page.nextCursor) };
     },
 
-    restoreMailbox: (
+    async restoreMailbox(
       tenantId: string,
       mailboxId: string,
       _input: RestoreDeletedMailboxInput,
       preview: boolean,
-    ): Promise<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan> =>
-      call<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan>("restore-mailbox.ps1", tenantId, {
-        action: "restore",
-        mailboxId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+    ): Promise<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan> {
+      try {
+        return await call<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan>("restore-mailbox.ps1", tenantId, {
+          action: "restore",
+          mailboxId,
+          dryRun: preview,
+          confirmed: !preview,
+        });
+      } catch (error) {
+        // The worker refuses a mailbox outside the soft-deleted set with "NotFound: ...";
+        // the route contract for that is a structured 404, not a worker 502.
+        if (isMailboxNotFound(error)) throw notSoftDeletedError(mailboxId);
+        throw error;
+      }
+    },
   };
 
   return {

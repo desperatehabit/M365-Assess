@@ -1049,10 +1049,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createGroupMembersRoutes({ provider: groups.members, ...caller }).map(audited),
     audited(createGroupTemplatesDeployRoute({ repository: groupTemplates, provider: groups.templateDeploy, ...caller })),
 
-    // EPIC-020 mailboxes (T-0850). Reads run get-mailboxes.ps1 /
-    // get-mailbox-permissions.ps1 / get-purview-retention.ps1 live from EXO; writes
-    // run the set-mailbox*.ps1, set-retention-tag.ps1, and invoke-vacation-schedule.ps1
-    // workers. Write routes are wrapped with the audit sink, which records the worker's
+    // EPIC-020 mailboxes (T-0850). Reads run their feature workers live from EXO; writes
+    // run the mailbox, permission, rule, retention, and vacation workers through the
+    // adapter. Write routes are wrapped with the audit sink, which records the worker's
     // auditEvent under the signed-in actor; retention and deleted-mailbox routes record
     // their own events through recordAudit.
     ...createMailboxRoutes({ provider: mailboxes.mailboxes, ...caller }),
