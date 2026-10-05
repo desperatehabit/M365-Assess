@@ -9,7 +9,9 @@
 import React, { useEffect, useCallback, useState, type CSSProperties, type ReactElement } from "react";
 import { MfaKpiStrip } from "../../components/mfa/MfaKpiStrip";
 import { MfaReportTable, type MfaRowAction } from "../../components/mfa/MfaReportTable";
-import { fetchMfaReport, type MfaReport, type MfaUserRow } from "../../lib/mfaApi";
+import { ResetMfaDialog } from "../../components/mfa/ResetMfaDialog";
+import { DefaultMethodDialog, SendPushDialog, TapDialog } from "../../components/mfa/TapDialog";
+import { fetchMfaReport, sendPushNotification, type MfaReport, type MfaUserRow } from "../../lib/mfaApi";
 import { useCurrentTenantId } from "../../lib/useCurrentTenant";
 
 const pageStyle: CSSProperties = {
@@ -66,16 +68,6 @@ const buttonStyle: CSSProperties = {
   cursor: "pointer",
 };
 
-const DISABLED_REASONS = {
-  resetMfa: "Reset MFA dialog will be mounted in T-0229",
-  requireReregistration: "Require re-registration dialog will be mounted in T-0229",
-  sendPush: "Send push dialog will be mounted in T-0229",
-  setDefaultMethod: "Set default method dialog will be mounted in T-0229",
-  createTap: "Create TAP dialog will be mounted in T-0229",
-  bulkReset: "Bulk require re-registration dialog will be mounted in T-0229",
-  bulkPush: "Bulk send push dialog will be mounted in T-0229",
-};
-
 export default function MfaReportPage(): ReactElement {
   const [tenantId, setTenantId] = useState("");
   // Follow the tenant chosen in the shell; the box still accepts another id.
@@ -89,6 +81,11 @@ export default function MfaReportPage(): ReactElement {
   const [report, setReport] = useState<MfaReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [resetTargets, setResetTargets] = useState<readonly MfaUserRow[] | null>(null);
+  const [tapUser, setTapUser] = useState<MfaUserRow | null>(null);
+  const [pushUser, setPushUser] = useState<MfaUserRow | null>(null);
+  const [defaultUser, setDefaultUser] = useState<MfaUserRow | null>(null);
 
   const loadReport = useCallback(async (tenant: string): Promise<void> => {
     if (!tenant.trim()) {
@@ -107,16 +104,50 @@ export default function MfaReportPage(): ReactElement {
     }
   }, []);
 
-  const handleAction = (_action: MfaRowAction, _row: MfaUserRow): void => {
-    // Row actions will delegate to T-0229 dialogs once mounted
+  const refresh = useCallback((): void => {
+    if (tenantId.trim()) void loadReport(tenantId.trim());
+  }, [loadReport, tenantId]);
+
+  const handleAction = (action: MfaRowAction, row: MfaUserRow): void => {
+    switch (action) {
+      case "resetMfa":
+      case "requireReregistration":
+        setResetTargets([row]);
+        break;
+      case "createTap":
+        setTapUser(row);
+        break;
+      case "sendPush":
+        setPushUser(row);
+        break;
+      case "setDefaultMethod":
+        setDefaultUser(row);
+        break;
+      default:
+        break;
+    }
   };
 
-  const handleBulkReset = (_rows: readonly MfaUserRow[]): void => {
-    // Bulk reset will delegate to T-0229 dialogs once mounted
+  const handleBulkReset = (rows: readonly MfaUserRow[]): void => {
+    if (rows.length > 0) setResetTargets(rows);
   };
 
-  const handleBulkPush = (_rows: readonly MfaUserRow[]): void => {
-    // Bulk push will delegate to T-0229 dialogs once mounted
+  const handleBulkPush = async (rows: readonly MfaUserRow[]): Promise<void> => {
+    if (rows.length === 0) return;
+    if (typeof window !== "undefined" && !window.confirm(`Send a push notification to ${rows.length} user(s)?`)) {
+      return;
+    }
+    let sent = 0;
+    let failed = 0;
+    for (const row of rows) {
+      try {
+        await sendPushNotification(tenantId.trim(), row.userId, { reason: "Bulk push notification" });
+        sent += 1;
+      } catch {
+        failed += 1;
+      }
+    }
+    setStatusMessage(`Push sent to ${sent} user(s)${failed > 0 ? `; ${failed} failed` : ""}.`);
   };
 
   return (
@@ -152,6 +183,23 @@ export default function MfaReportPage(): ReactElement {
 
       <MfaKpiStrip kpis={report?.kpis} loading={loading} />
 
+      {statusMessage && (
+        <div
+          role="status"
+          data-testid="mfa-status"
+          style={{
+            padding: "10px 14px",
+            borderRadius: "6px",
+            background: "var(--bg-elev)",
+            border: "1px solid var(--border)",
+            fontSize: "13px",
+            color: "var(--text-soft)",
+          }}
+        >
+          {statusMessage}
+        </div>
+      )}
+
       <MfaReportTable
         rows={report?.rows ?? []}
         loading={loading}
@@ -159,8 +207,61 @@ export default function MfaReportPage(): ReactElement {
         onAction={handleAction}
         onBulkReset={handleBulkReset}
         onBulkPush={handleBulkPush}
-        disabledReasons={DISABLED_REASONS}
       />
+
+      {resetTargets && (
+        <ResetMfaDialog
+          isOpen={true}
+          onClose={() => setResetTargets(null)}
+          tenantId={tenantId.trim()}
+          targetUsers={resetTargets}
+          onSuccess={() => {
+            setResetTargets(null);
+            setStatusMessage("MFA reset applied.");
+            refresh();
+          }}
+        />
+      )}
+
+      {tapUser && (
+        <TapDialog
+          isOpen={true}
+          onClose={() => setTapUser(null)}
+          tenantId={tenantId.trim()}
+          user={tapUser}
+          onSuccess={() => {
+            setTapUser(null);
+            setStatusMessage("Temporary Access Pass created.");
+          }}
+        />
+      )}
+
+      {pushUser && (
+        <SendPushDialog
+          isOpen={true}
+          onClose={() => setPushUser(null)}
+          tenantId={tenantId.trim()}
+          user={pushUser}
+          onSuccess={() => {
+            setPushUser(null);
+            setStatusMessage("Push notification sent.");
+          }}
+        />
+      )}
+
+      {defaultUser && (
+        <DefaultMethodDialog
+          isOpen={true}
+          onClose={() => setDefaultUser(null)}
+          tenantId={tenantId.trim()}
+          user={defaultUser}
+          onSuccess={() => {
+            setDefaultUser(null);
+            setStatusMessage("Default method updated.");
+            refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
