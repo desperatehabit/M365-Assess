@@ -17,11 +17,11 @@ worktrees  = "/home/wcoulter/Projects/.m365-fleet-wt"       # outside the repo o
 base_branch = "main"
 
 [model]
-# Worker model (LongCat 2.5 Preview Free, Go plan — the Zen variant of the same
-# model rate-limits quickly; the Go variant is the one to use).
-coder = "opencode-go/longcat-2.5-preview-free"
-# Retry/escalation target: same free model while paid-model credits are exhausted.
-escalate = "opencode-go/longcat-2.5-preview-free"
+# Worker model (DeepSeek V4.1 Flash, Go plan). Switched from the free LongCat
+# model once paid-model credits were available again; it is the stronger coder.
+coder = "opencode-go/deepseek-v4.1-flash"
+# Retry/escalation target: the larger DeepSeek model.
+escalate = "opencode-go/deepseek-v4-pro"
 
 [limits]
 workers           = 6      # concurrent OpenCode sessions. The portal work touches
