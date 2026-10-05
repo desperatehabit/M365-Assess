@@ -359,3 +359,147 @@ Describe 'Set-MailboxRule worker (T-0385)' {
         }
     }
 }
+
+Describe 'Set-MailboxRule recipient lists (T-0895)' {
+
+    BeforeEach {
+        Mock New-InboxRule {
+            param($Mailbox, $Name, $ForwardTo, $ForwardAsAttachmentTo, $RedirectTo, $DeleteMessage, $Enabled, $Priority)
+            return @{ Identity = 'rule-new'; Name = $Name }
+        }
+        Mock Get-InboxRule {
+            param($Mailbox, $Identity)
+            return @((script:New-PlainRuleMock))
+        }
+        Mock Set-InboxRule {
+            param($Identity, $Name, $Enabled, $Priority, $ForwardTo, $ForwardAsAttachmentTo, $RedirectTo, $DeleteMessage)
+            return @{ Identity = $Identity }
+        }
+    }
+
+    Context 'ConvertTo-MailboxRuleTargetList' {
+        It 'flattens an array without collapsing it into one string' {
+            $list = @(ConvertTo-MailboxRuleTargetList -Value @('a@example.invalid', 'b@example.invalid'))
+            $list | Should -HaveCount 2
+            $list[0] | Should -Be 'a@example.invalid'
+            $list[1] | Should -Be 'b@example.invalid'
+        }
+
+        It 'splits a delimited string and drops blanks and whitespace' {
+            $list = @(ConvertTo-MailboxRuleTargetList -Value ' a@example.invalid; b@example.invalid ,, ')
+            $list | Should -HaveCount 2
+            $list[1] | Should -Be 'b@example.invalid'
+        }
+
+        It 'gives an empty list for null, empty string, and empty array' {
+            @(ConvertTo-MailboxRuleTargetList -Value $null) | Should -HaveCount 0
+            @(ConvertTo-MailboxRuleTargetList -Value '') | Should -HaveCount 0
+            @(ConvertTo-MailboxRuleTargetList -Value @()) | Should -HaveCount 0
+        }
+    }
+
+    Context 'job envelope' {
+        It 'reads array recipient fields as lists of addresses' {
+            $jobPath = Join-Path ([System.IO.Path]::GetTempPath()) ('mailbox-rule-job-' + [guid]::NewGuid().ToString() + '.json')
+            try {
+                @{
+                    tenantId              = 'tenant-test'
+                    action                = 'create'
+                    mailboxId             = 'mbx-1'
+                    name                  = 'Fan out'
+                    forwardTo             = @('a@example.invalid', 'b@example.invalid')
+                    forwardAsAttachmentTo = @('c@example.invalid', 'd@example.invalid')
+                    redirectTo            = @('e@example.invalid')
+                } | ConvertTo-Json -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
+                $job = Read-SetMailboxRuleJob -Path $jobPath
+                $job['ForwardTo'] | Should -HaveCount 2
+                $job['ForwardTo'][0] | Should -Be 'a@example.invalid'
+                $job['ForwardTo'][1] | Should -Be 'b@example.invalid'
+                $job['ForwardAsAttachmentTo'] | Should -HaveCount 2
+                $job['RedirectTo'] | Should -HaveCount 1
+                $job['RedirectTo'][0] | Should -Be 'e@example.invalid'
+            }
+            finally {
+                Remove-Item -LiteralPath $jobPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It 'reads absent recipient fields as empty lists' {
+            $jobPath = Join-Path ([System.IO.Path]::GetTempPath()) ('mailbox-rule-job-' + [guid]::NewGuid().ToString() + '.json')
+            try {
+                @{ tenantId = 'tenant-test'; action = 'delete'; mailboxId = 'mbx-1'; ruleId = 'rule-1' } | ConvertTo-Json -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
+                $job = Read-SetMailboxRuleJob -Path $jobPath
+                @($job['ForwardTo']) | Should -HaveCount 0
+                @($job['ForwardAsAttachmentTo']) | Should -HaveCount 0
+                @($job['RedirectTo']) | Should -HaveCount 0
+            }
+            finally {
+                Remove-Item -LiteralPath $jobPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+
+    Context 'create' {
+        It 'passes every recipient to New-InboxRule as a separate address' {
+            $res = Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'create' -MailboxId 'mbx-1' -Name 'Fan out' `
+                -ForwardTo @('a@example.invalid', 'b@example.invalid') `
+                -ForwardAsAttachmentTo @('c@example.invalid', 'd@example.invalid') `
+                -RedirectTo @('e@example.invalid', 'f@example.invalid') `
+                -DryRun $false -Confirmed $true
+
+            $res.success | Should -BeTrue
+            Should -Invoke New-InboxRule -Times 1 -Exactly -ParameterFilter {
+                @($ForwardTo).Count -eq 2 -and $ForwardTo[0] -eq 'a@example.invalid' -and $ForwardTo[1] -eq 'b@example.invalid' -and
+                @($ForwardAsAttachmentTo).Count -eq 2 -and $ForwardAsAttachmentTo[1] -eq 'd@example.invalid' -and
+                @($RedirectTo).Count -eq 2 -and $RedirectTo[0] -eq 'e@example.invalid'
+            }
+            @($res.plan.after['forwardTo']) | Should -HaveCount 2
+            @($res.auditEvent.after['forwardTo']) | Should -HaveCount 2
+        }
+
+        It 'plans the list with no write on dry run and flags it security-sensitive' {
+            $plan = Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'create' -MailboxId 'mbx-1' -Name 'Fan out' `
+                -ForwardTo @('a@example.invalid', 'b@example.invalid') -DryRun $true
+
+            @($plan.after['forwardTo']) | Should -HaveCount 2
+            $plan.securitySensitive | Should -BeTrue
+            Should -Invoke New-InboxRule -Times 0 -Exactly
+        }
+    }
+
+    Context 'edit' {
+        It 'passes every recipient to Set-InboxRule as a separate address' {
+            $res = Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'edit' -MailboxId 'mbx-1' -RuleId 'rule-2' `
+                -ForwardTo @('a@example.invalid', 'b@example.invalid') -DryRun $false -Confirmed $true
+
+            $res.success | Should -BeTrue
+            Should -Invoke Set-InboxRule -Times 1 -Exactly -ParameterFilter {
+                $Identity -eq 'rule-2' -and @($ForwardTo).Count -eq 2 -and $ForwardTo[0] -eq 'a@example.invalid' -and $ForwardTo[1] -eq 'b@example.invalid'
+            }
+        }
+
+        It 'describes the change with the addresses joined, not mangled' {
+            $plan = Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'edit' -MailboxId 'mbx-1' -RuleId 'rule-2' `
+                -RedirectTo @('a@example.invalid', 'b@example.invalid') -DryRun $true
+
+            (@($plan.diff) -join "`n") | Should -Match "redirectTo from '' to 'a@example.invalid; b@example.invalid'"
+        }
+
+        It 'rejects an edit whose only fields are empty recipient lists' {
+            { Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'edit' -MailboxId 'mbx-1' -RuleId 'rule-2' -ForwardTo @() -DryRun $true } |
+                Should -Throw '*at least one rule field*'
+            Should -Invoke Set-InboxRule -Times 0 -Exactly
+        }
+    }
+
+    Context 'the entrypoint' {
+        It 'declares the recipient parameters as string arrays' {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:entrypoint, [ref]$null, [ref]$null)
+            foreach ($name in @('ForwardTo', 'ForwardAsAttachmentTo', 'RedirectTo')) {
+                $parameter = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq $name }
+                $parameter | Should -Not -BeNullOrEmpty
+                $parameter.StaticType.FullName | Should -Be 'System.String[]'
+            }
+        }
+    }
+}

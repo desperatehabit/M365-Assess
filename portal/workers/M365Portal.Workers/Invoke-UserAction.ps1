@@ -85,7 +85,7 @@ function Get-UserActionState {
             $uri = "/v1.0/directory/deletedItems/$UserId"
         }
         else {
-            $uri = "/v1.0/users/$UserId?`$select=id,displayName,userPrincipalName,accountEnabled,usageLocation"
+            $uri = "/v1.0/users/${UserId}?`$select=id,displayName,userPrincipalName,accountEnabled,usageLocation"
         }
         $user = Invoke-MgGraphRequest -Method GET -Uri $uri
         if ($null -eq $user) {

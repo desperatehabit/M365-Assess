@@ -10,7 +10,7 @@
 // forwarding changes are flagged security-sensitive (T-0385). Write controls
 // are disabled unless `canWrite` (RBAC) is set.
 
-import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import React, { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
 import { RequireTenant } from "../../../components/shell/RequireTenant";
 import { resolveTenantId, useCurrentTenantId } from "../../../lib/useCurrentTenant";
@@ -55,7 +55,7 @@ export interface MailboxPlan {
 export type Fetcher = typeof fetch;
 
 /** Builds the BFF query string for GET /v1/tenants/:id/mailboxes (§3.1 filters). */
-export function buildMailboxesQuery(filter: MailboxesFilter, limit = 100): string {
+export function buildMailboxesQuery(filter: MailboxesFilter, limit = 100, cursor: string | null = null): string {
   const params = new URLSearchParams();
   if (filter.search) params.set("search", filter.search);
   if (filter.type) params.set("type", filter.type);
@@ -65,6 +65,7 @@ export function buildMailboxesQuery(filter: MailboxesFilter, limit = 100): strin
   if (filter.quotaPercent !== undefined) params.set("quotaPercent", String(filter.quotaPercent));
   if (filter.inactiveDays !== undefined) params.set("inactiveDays", String(filter.inactiveDays));
   params.set("limit", String(limit));
+  if (cursor) params.set("cursor", cursor);
   return `?${params.toString()}`;
 }
 
@@ -88,9 +89,10 @@ export async function listMailboxes(
   tenantId: string,
   filter: MailboxesFilter,
   fetcher: Fetcher = fetch,
+  cursor: string | null = null,
 ): Promise<{ items: MailboxItem[]; nextCursor: string | null }> {
   const response = await fetcher(
-    `/v1/tenants/${encodeURIComponent(tenantId)}/mailboxes${buildMailboxesQuery(filter)}`,
+    `/v1/tenants/${encodeURIComponent(tenantId)}/mailboxes${buildMailboxesQuery(filter, 100, cursor)}`,
   );
   if (!response.ok) throw await readError(response, "List mailboxes");
   const body = (await response.json()) as { items?: MailboxItem[]; nextCursor?: string | null };
@@ -287,7 +289,9 @@ const SETTINGS_PRESETS: Record<Exclude<MailboxRowAction, "view" | "permissions" 
 export function MailboxesView({ tenantId, canWrite = true, fetcher = fetch }: MailboxesViewProps): ReactElement {
   const [filter, setFilter] = useState<MailboxesFilter>({});
   const [items, setItems] = useState<MailboxItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selected, setSelected] = useState<MailboxItem | null>(null);
@@ -296,17 +300,36 @@ export function MailboxesView({ tenantId, canWrite = true, fetcher = fetch }: Ma
   const [planBusy, setPlanBusy] = useState(false);
   const [planError, setPlanError] = useState<string | null>(null);
 
+  // Each fetch takes a sequence number; a response that is no longer the latest request
+  // (the filter or tenant changed while it was in flight) is dropped instead of being
+  // appended to a list it does not belong to.
+  const requestSeq = useRef(0);
+
   const fetchList = useCallback(
-    async (next: MailboxesFilter): Promise<void> => {
-      setLoading(true);
+    async (next: MailboxesFilter, cursor: string | null = null): Promise<void> => {
+      const append = cursor !== null;
+      const seq = ++requestSeq.current;
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+        setLoadingMore(false);
+        setNextCursor(null);
+      }
       setError(null);
       try {
-        const page = await listMailboxes(tenantId, next, fetcher);
-        setItems(page.items);
+        const page = await listMailboxes(tenantId, next, fetcher, cursor);
+        if (seq !== requestSeq.current) return;
+        setItems((prev) => (append ? [...prev, ...page.items] : page.items));
+        setNextCursor(page.nextCursor);
       } catch (err) {
+        if (seq !== requestSeq.current) return;
         setError(err instanceof Error ? err.message : String(err));
       } finally {
-        setLoading(false);
+        if (seq === requestSeq.current) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
       }
     },
     [tenantId, fetcher],
@@ -545,6 +568,20 @@ export function MailboxesView({ tenantId, canWrite = true, fetcher = fetch }: Ma
           </tbody>
         </table>
       </div>
+
+      {nextCursor && !loading && (
+        <div>
+          <button
+            type="button"
+            style={loadingMore ? { ...buttonStyle, ...disabledStyle } : buttonStyle}
+            disabled={loadingMore}
+            onClick={() => void fetchList(filter, nextCursor)}
+            data-testid="mailboxes-load-more"
+          >
+            {loadingMore ? "Loading…" : "Load more"}
+          </button>
+        </div>
+      )}
 
       {selected && (
         <>

@@ -66,7 +66,7 @@ function Get-UserLicenseState {
     )
 
     try {
-        $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/$UserId?`$select=id,displayName,userPrincipalName,assignedLicenses"
+        $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/${UserId}?`$select=id,displayName,userPrincipalName,assignedLicenses"
     }
     catch {
         return $null

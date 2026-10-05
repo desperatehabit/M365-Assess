@@ -272,3 +272,25 @@ Describe 'Set-TenantUserProperties worker (T-0203)' {
         }
     }
 }
+
+Describe 'Set-TenantUserProperties Graph URIs (T-0897)' {
+    BeforeEach {
+        script:New-PatchMock
+    }
+
+    It 'reads the user at the exact user URI with a literal $select' {
+        $null = Get-TenantUserPatchState -UserId 'user-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,givenName,surname,department,jobTitle,officeLocation,mobilePhone,usageLocation'
+        }
+    }
+
+    It 'uses that URI when properties are patched' {
+        $null = Set-TenantUserProperties -TenantId 'tenant-a' -UserId 'user-1' -Properties @{ department = 'Finance' }
+
+        Should -Invoke Invoke-MgGraphRequest -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq '/v1.0/users/user-1?$select=id,displayName,givenName,surname,department,jobTitle,officeLocation,mobilePhone,usageLocation'
+        }
+    }
+}

@@ -26,11 +26,11 @@
 .PARAMETER Priority
     Rule priority for create/edit; -1 leaves it unchanged.
 .PARAMETER ForwardTo
-    Forwarding target for create/edit.
+    Forwarding targets for create/edit: one or more addresses (an array, or a ';' / ',' delimited string).
 .PARAMETER ForwardAsAttachmentTo
-    Forward-as-attachment target for create/edit.
+    Forward-as-attachment targets for create/edit (same forms as -ForwardTo).
 .PARAMETER RedirectTo
-    Redirect target for create/edit.
+    Redirect targets for create/edit (same forms as -ForwardTo).
 .PARAMETER DeleteMessage
     'true' or 'false' to set message deletion; empty leaves it unchanged.
 .PARAMETER DryRun
@@ -74,13 +74,13 @@ param(
     [int]$Priority = -1,
 
     [Parameter(ParameterSetName = 'ByTenant')]
-    [string]$ForwardTo = '',
+    [string[]]$ForwardTo = @(),
 
     [Parameter(ParameterSetName = 'ByTenant')]
-    [string]$ForwardAsAttachmentTo = '',
+    [string[]]$ForwardAsAttachmentTo = @(),
 
     [Parameter(ParameterSetName = 'ByTenant')]
-    [string]$RedirectTo = '',
+    [string[]]$RedirectTo = @(),
 
     [Parameter(ParameterSetName = 'ByTenant')]
     [ValidateSet('', 'true', 'false')]

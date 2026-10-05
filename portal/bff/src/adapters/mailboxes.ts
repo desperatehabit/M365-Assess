@@ -79,7 +79,7 @@ import {
   type RestoreDeletedMailboxInput,
 } from "../routes/deleted-mailboxes.js";
 import { asArray, createTenantWorker, raiseWorkerError, WORKER_FAILED, type WorkerRunner } from "./workers.js";
-import { AppError } from "../errors.js";
+import { AppError, ErrorCodes } from "../errors.js";
 import { MAILBOX_NOT_FOUND } from "../routes/mailboxes.js";
 
 export const RETENTION_TAG_WRITE_UNAVAILABLE = "mailboxes.retention_tag_write_unavailable";
@@ -155,6 +155,50 @@ function asNullableString(value: unknown): string | null {
 /** The workers emit an empty string, not null, when a page is the last one. */
 function cursorOrNull(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * The rule worker takes each recipient field as a list of addresses. The route hands the
+ * body value through untyped, so accept one address, a delimited string, or an array of
+ * addresses, and refuse anything else rather than letting it stringify into a bogus address.
+ */
+function normalizeRuleRecipients(field: string, value: unknown): string[] {
+  const parts: unknown[] = Array.isArray(value) ? value : [value];
+  const out: string[] = [];
+  for (const part of parts) {
+    if (typeof part !== "string") {
+      throw new AppError(
+        ErrorCodes.validationFailed,
+        `${field} must be an address or a list of addresses`,
+        400,
+        [{ field, reason: "invalid" }],
+      );
+    }
+    for (const address of part.split(/[;,]/)) {
+      const trimmed = address.trim();
+      if (trimmed.length > 0) out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+/** The recipient fields present on a create/edit input, normalized for the job envelope. */
+function ruleRecipientFields(input: {
+  readonly forwardTo?: unknown;
+  readonly forwardAsAttachmentTo?: unknown;
+  readonly redirectTo?: unknown;
+}): Record<string, string[]> {
+  const fields: Record<string, string[]> = {};
+  if (input.forwardTo !== undefined && input.forwardTo !== null) {
+    fields["forwardTo"] = normalizeRuleRecipients("forwardTo", input.forwardTo);
+  }
+  if (input.forwardAsAttachmentTo !== undefined && input.forwardAsAttachmentTo !== null) {
+    fields["forwardAsAttachmentTo"] = normalizeRuleRecipients("forwardAsAttachmentTo", input.forwardAsAttachmentTo);
+  }
+  if (input.redirectTo !== undefined && input.redirectTo !== null) {
+    fields["redirectTo"] = normalizeRuleRecipients("redirectTo", input.redirectTo);
+  }
+  return fields;
 }
 
 function mailboxNotFound(mailboxId: string): AppError {
@@ -595,7 +639,7 @@ export function createMailboxProviders(
       };
     },
 
-    createRule: (
+    createRule: async (
       tenantId: string,
       mailboxId: string,
       input: CreateMailboxRuleInput,
@@ -607,15 +651,13 @@ export function createMailboxProviders(
         name: input.name,
         ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
         ...(input.priority !== undefined ? { priority: input.priority } : {}),
-        ...(input.forwardTo !== undefined ? { forwardTo: input.forwardTo } : {}),
-        ...(input.forwardAsAttachmentTo !== undefined ? { forwardAsAttachmentTo: input.forwardAsAttachmentTo } : {}),
-        ...(input.redirectTo !== undefined ? { redirectTo: input.redirectTo } : {}),
+        ...ruleRecipientFields(input),
         ...(input.deleteMessage !== undefined ? { deleteMessage: input.deleteMessage } : {}),
         dryRun: preview,
         confirmed: !preview,
       }),
 
-    editRule: (
+    editRule: async (
       tenantId: string,
       mailboxId: string,
       ruleId: string,
@@ -629,9 +671,7 @@ export function createMailboxProviders(
         ...(input.name !== undefined ? { name: input.name } : {}),
         ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
         ...(input.priority !== undefined ? { priority: input.priority } : {}),
-        ...(input.forwardTo !== undefined ? { forwardTo: input.forwardTo } : {}),
-        ...(input.forwardAsAttachmentTo !== undefined ? { forwardAsAttachmentTo: input.forwardAsAttachmentTo } : {}),
-        ...(input.redirectTo !== undefined ? { redirectTo: input.redirectTo } : {}),
+        ...ruleRecipientFields(input),
         ...(input.deleteMessage !== undefined ? { deleteMessage: input.deleteMessage } : {}),
         dryRun: preview,
         confirmed: !preview,

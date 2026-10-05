@@ -20,7 +20,7 @@ function Get-LapsCredentials {
         [string] $DeviceId
     )
 
-    $windowsUri = "https://graph.microsoft.com/v1.0/directory/deviceLocalCredentials/$DeviceId?`$select=id,credentials"
+    $windowsUri = "https://graph.microsoft.com/v1.0/directory/deviceLocalCredentials/${DeviceId}?`$select=id,credentials"
     $windowsResponse = $null
     try {
         $windowsResponse = Invoke-MgGraphRequest -Method GET -Uri $windowsUri

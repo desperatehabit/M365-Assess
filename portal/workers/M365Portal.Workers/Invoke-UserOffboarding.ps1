@@ -81,7 +81,7 @@ function Get-OffboardingUserState {
     )
 
     try {
-        $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/$UserId?`$select=id,displayName,userPrincipalName,accountEnabled,assignedLicenses"
+        $user = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/users/${UserId}?`$select=id,displayName,userPrincipalName,accountEnabled,assignedLicenses"
         if ($null -eq $user) {
             return $null
         }

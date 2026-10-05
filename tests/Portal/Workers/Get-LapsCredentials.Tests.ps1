@@ -128,3 +128,18 @@ Describe 'Get-LapsCredentials worker (T-0347)' {
         }
     }
 }
+
+Describe 'Get-LapsCredentials Graph URIs (T-0897)' {
+    It 'requests the Windows LAPS credential at the exact device URI with a literal $select' {
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            return @{ credentials = @(@{ accountName = 'Administrator'; passwordBase64 = 'secret' }) }
+        }
+
+        $null = Get-LapsCredentials -TenantId 'tenant-a' -DeviceId 'device-1'
+
+        Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter {
+            $Method -eq 'GET' -and $Uri -ceq 'https://graph.microsoft.com/v1.0/directory/deviceLocalCredentials/device-1?$select=id,credentials'
+        }
+    }
+}

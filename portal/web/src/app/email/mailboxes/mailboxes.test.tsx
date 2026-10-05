@@ -63,6 +63,14 @@ describe("buildMailboxesQuery", () => {
   });
 });
 
+describe("buildMailboxesQuery cursor (T-0895)", () => {
+  it("adds the cursor only when one is supplied", () => {
+    expect(new URLSearchParams(buildMailboxesQuery({}, 100, "c1")).get("cursor")).toBe("c1");
+    expect(new URLSearchParams(buildMailboxesQuery({})).has("cursor")).toBe(false);
+    expect(new URLSearchParams(buildMailboxesQuery({}, 100, null)).has("cursor")).toBe(false);
+  });
+});
+
 describe("isSecuritySensitiveAction", () => {
   it("flags forwarding, convert, and delete as security-sensitive", () => {
     expect(isSecuritySensitiveAction("forwarding")).toBe(true);
@@ -148,6 +156,87 @@ describe("MailboxesView", () => {
     await waitFor(() => expect(screen.getByTestId("mailboxes-notice")).toBeTruthy());
     const apply = calls.find((call) => call.body.includes('"preview":false'));
     expect(apply?.body).toContain('"confirm":true');
+  });
+});
+
+function mailboxRow(id: string) {
+  return { ...SAMPLE_MAILBOXES.items[0]!, id, displayName: `Mailbox ${id}`, primarySmtpAddress: `${id}@example.invalid` };
+}
+
+describe("MailboxesView paging (T-0895)", () => {
+  it("offers Load more while the BFF returns a nextCursor and appends the next page", async () => {
+    const urls: string[] = [];
+    const fetcher = vi.fn(async (url: string) => {
+      urls.push(String(url));
+      const cursor = new URL(String(url), "http://x").searchParams.get("cursor");
+      if (cursor === null) return jsonResponse({ items: [mailboxRow("m1"), mailboxRow("m2")], nextCursor: "cursor-2" });
+      if (cursor === "cursor-2") return jsonResponse({ items: [mailboxRow("m3")], nextCursor: "cursor-3" });
+      return jsonResponse({ items: [mailboxRow("m4")], nextCursor: null });
+    });
+    render(<MailboxesView tenantId="tenant-1" fetcher={fetcher as unknown as typeof fetch} />);
+
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-m2")).toBeTruthy());
+    expect(screen.queryByTestId("mailbox-row-m3")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("mailboxes-load-more"));
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-m3")).toBeTruthy());
+    expect(screen.getByTestId("mailbox-row-m1")).toBeTruthy();
+    expect(urls[1]).toContain("cursor=cursor-2");
+
+    fireEvent.click(screen.getByTestId("mailboxes-load-more"));
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-m4")).toBeTruthy());
+    expect(urls[2]).toContain("cursor=cursor-3");
+    expect(screen.getAllByTestId(/^mailbox-row-/)).toHaveLength(4);
+    expect(screen.queryByTestId("mailboxes-load-more")).toBeNull();
+  });
+
+  it("shows no Load more when the first page is the whole list", async () => {
+    const fetcher = vi.fn(async () => jsonResponse(SAMPLE_MAILBOXES));
+    render(<MailboxesView tenantId="tenant-1" fetcher={fetcher} />);
+
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-mbx-1")).toBeTruthy());
+    expect(screen.queryByTestId("mailboxes-load-more")).toBeNull();
+  });
+
+  it("keeps the active filters on the next page request and restarts from page one when a filter changes", async () => {
+    const urls: string[] = [];
+    const fetcher = vi.fn(async (url: string) => {
+      urls.push(String(url));
+      const params = new URL(String(url), "http://x").searchParams;
+      if (params.get("type") === "shared") return jsonResponse({ items: [mailboxRow("s1")], nextCursor: null });
+      if (params.get("cursor") === null) return jsonResponse({ items: [mailboxRow("m1")], nextCursor: "cursor-2" });
+      return jsonResponse({ items: [mailboxRow("m2")], nextCursor: "cursor-3" });
+    });
+    render(<MailboxesView tenantId="tenant-1" fetcher={fetcher as unknown as typeof fetch} />);
+
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-m1")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("mailboxes-load-more"));
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-m2")).toBeTruthy());
+
+    fireEvent.change(screen.getByTestId("mailboxes-filter-type"), { target: { value: "shared" } });
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-s1")).toBeTruthy());
+
+    const last = new URL(urls[urls.length - 1]!, "http://x").searchParams;
+    expect(last.get("type")).toBe("shared");
+    expect(last.has("cursor")).toBe(false);
+    expect(screen.queryByTestId("mailbox-row-m1")).toBeNull();
+    expect(screen.queryByTestId("mailbox-row-m2")).toBeNull();
+    expect(screen.queryByTestId("mailboxes-load-more")).toBeNull();
+  });
+
+  it("keeps the loaded rows and shows the error when a later page fails", async () => {
+    const fetcher = vi.fn(async (url: string) => {
+      const cursor = new URL(String(url), "http://x").searchParams.get("cursor");
+      if (cursor === null) return jsonResponse({ items: [mailboxRow("m1")], nextCursor: "cursor-2" });
+      return jsonResponse({ message: "EXO unreachable" }, 502);
+    });
+    render(<MailboxesView tenantId="tenant-1" fetcher={fetcher as unknown as typeof fetch} />);
+
+    await waitFor(() => expect(screen.getByTestId("mailbox-row-m1")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("mailboxes-load-more"));
+
+    await waitFor(() => expect(screen.getByTestId("mailboxes-error").textContent).toContain("EXO unreachable"));
+    expect(screen.getByTestId("mailbox-row-m1")).toBeTruthy();
   });
 });
 
