@@ -204,7 +204,7 @@ describe("Mailbox restore routes (T-0467)", () => {
     );
   });
 
-  it("refuses callers lacking mailtools.restore with 403", async () => {
+  it("refuses callers lacking Exchange.MailRestore.Execute with 403", async () => {
     const provider = new FakeMailRestoresProvider();
     const routes = createMailRestoreRoutes({
       provider,

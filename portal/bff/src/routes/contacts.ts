@@ -5,7 +5,7 @@
 // cursor-paginated page. Contacts are read live from EXO and never
 // mirrored: the injected provider is backed by the worker queue running
 // the Get-Contacts child job, so this module holds no M365 SDK call and
-// issues no tenant write. Reads require `contacts.read` (SPEC §7)
+// issues no tenant write. Reads require `Exchange.Contact.Read` (SPEC §7)
 // intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
@@ -13,7 +13,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const CONTACTS_PATH = "/v1/tenants/:tenantId/contacts";
-export const CONTACTS_READ_PERMISSION = "contacts.read";
+export const CONTACTS_READ_PERMISSION = "Exchange.Contact.Read";
 export const CONTACTS_UNAUTHENTICATED = "request.unauthenticated";
 
 export type ContactType = "mailContact" | "mailUser";
@@ -102,7 +102,7 @@ async function requireContactsRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(CONTACTS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing contacts.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Contact.Read", 403);
   }
 }
 
@@ -208,7 +208,7 @@ export const CONTACTS_OPENAPI = {
           "200": { description: "Cursor-paginated contacts with the §3.1 columns." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks contacts.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Contact.Read or the tenant is out of scope." },
         },
       },
     },

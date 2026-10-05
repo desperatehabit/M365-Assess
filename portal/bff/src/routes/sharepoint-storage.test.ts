@@ -122,7 +122,7 @@ describe("SharePoint storage route (T-0487)", () => {
     await expect(routes[0]?.handler(ctxFor(`/v1/tenants/${TENANT}/sharepoint/sites/${SITE}/storage`))).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects GET without sharepoint.read with 403", async () => {
+  it("rejects GET without SharePoint.Site.Read with 403", async () => {
     const provider = new FakeSharePointStorageProvider();
     const routes = createSharePointStorageRoutes({
       provider,
@@ -147,7 +147,7 @@ describe("SharePoint storage route (T-0487)", () => {
     expect(body.totalBytes).toBe(1715470336);
   });
 
-  it("rejects POST without sharepoint.cleanup with 403", async () => {
+  it("rejects POST without SharePoint.Cleanup.ReadWrite with 403", async () => {
     const provider = new FakeSharePointStorageProvider();
     const routes = createSharePointStorageRoutes({
       provider,

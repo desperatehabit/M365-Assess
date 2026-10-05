@@ -1,6 +1,6 @@
 // T-0860 — Compliance template CRUD + deploy API.
-// Route-level tests: CRUD is gated on purview.templates and persists through the
-// injected repository; deploy is gated on purview.write (or Remediation.Apply),
+// Route-level tests: CRUD is gated on Purview.Template.ReadWrite and persists through the
+// injected repository; deploy is gated on Purview.Compliance.ReadWrite (or Remediation.Apply),
 // checks tenant scope per target, enqueues one EPIC-006 gated apply job per
 // target, records a CompliancePolicyChange row per target, and reports partial
 // failures.
@@ -22,6 +22,7 @@ import {
   COMPLIANCE_TEMPLATE_ITEM_PATH,
   COMPLIANCE_TEMPLATES_PATH,
   COMPLIANCE_TEMPLATES_UNAUTHENTICATED,
+  PURVIEW_READ_PERMISSION,
   PURVIEW_TEMPLATES_PERMISSION,
   PURVIEW_WRITE_PERMISSION,
   REMEDIATION_APPLY_PERMISSION,
@@ -236,15 +237,40 @@ describe("compliance templates routes (T-0860)", () => {
     ).rejects.toMatchObject({ status: 401, code: COMPLIANCE_TEMPLATES_UNAUTHENTICATED });
   });
 
-  it("rejects callers missing purview.templates with a structured 403", async () => {
+  it("rejects callers missing Purview.Compliance.Read with a structured 403", async () => {
     const routes = createComplianceTemplatesRoutes(
-      makeOptions({ resolveCaller: () => templatesCaller(["purview.read"]) }),
+      makeOptions({ resolveCaller: () => templatesCaller(["Tenant.Read"]) }),
     );
     await expect(
       routeByPath(routes, "GET", COMPLIANCE_TEMPLATES_PATH).handler(
         ctx(COMPLIANCE_TEMPLATES_PATH),
       ),
     ).rejects.toMatchObject({ status: 403, code: "auth.forbidden" });
+  });
+
+  it("lets a Purview read-only caller list and fetch templates but not change them", async () => {
+    const repository = new FakeRepository();
+    const seeded = createComplianceTemplatesRoutes(makeOptions({ repository }));
+    const created = (await routeByPath(seeded, "POST", COMPLIANCE_TEMPLATES_PATH).handler(
+      ctx(COMPLIANCE_TEMPLATES_PATH, { body: CREATE_BODY }),
+    )) as { body: ComplianceTemplateRecord };
+    const routes = createComplianceTemplatesRoutes(
+      makeOptions({ repository, resolveCaller: () => templatesCaller([PURVIEW_READ_PERMISSION]) }),
+    );
+    const itemCtx = () =>
+      ctx(`${COMPLIANCE_TEMPLATES_PATH}/${created.body.id}`, { params: { id: created.body.id } });
+
+    expect((await routeByPath(routes, "GET", COMPLIANCE_TEMPLATES_PATH).handler(ctx(COMPLIANCE_TEMPLATES_PATH))).status).toBe(200);
+    expect((await routeByPath(routes, "GET", COMPLIANCE_TEMPLATE_ITEM_PATH).handler(itemCtx())).status).toBe(200);
+    await expect(
+      routeByPath(routes, "POST", COMPLIANCE_TEMPLATES_PATH).handler(ctx(COMPLIANCE_TEMPLATES_PATH, { body: CREATE_BODY })),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(
+      routeByPath(routes, "PATCH", COMPLIANCE_TEMPLATE_ITEM_PATH).handler({ ...itemCtx(), body: { name: "x" } } as never),
+    ).rejects.toMatchObject({ status: 403 });
+    await expect(routeByPath(routes, "DELETE", COMPLIANCE_TEMPLATE_ITEM_PATH).handler(itemCtx())).rejects.toMatchObject({
+      status: 403,
+    });
   });
 
   it("lists templates filtered by area", async () => {
@@ -362,7 +388,7 @@ describe("compliance templates routes (T-0860)", () => {
     expect((afterDelete.body as { items: unknown[] }).items).toHaveLength(0);
   });
 
-  it("refuses a deploy to a caller missing purview.write", async () => {
+  it("refuses a deploy to a caller missing Purview.Compliance.ReadWrite", async () => {
     const routes = createComplianceTemplatesRoutes(
       makeOptions({ resolveCaller: () => templatesCaller([PURVIEW_TEMPLATES_PERMISSION]) }),
     );
@@ -376,7 +402,7 @@ describe("compliance templates routes (T-0860)", () => {
     ).rejects.toMatchObject({ status: 403, code: "auth.forbidden" });
   });
 
-  it("accepts Remediation.Apply in place of purview.write for deploy", async () => {
+  it("accepts Remediation.Apply in place of Purview.Compliance.ReadWrite for deploy", async () => {
     const repository = new FakeRepository();
     const queue = new FakeQueue();
     const routes = createComplianceTemplatesRoutes(

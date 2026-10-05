@@ -6,11 +6,11 @@
 // both quarantine policy types. Policies are read live from EXO and never
 // persisted: the injected provider is backed by the worker queue (T-0010),
 // so this module holds no M365 SDK call and issues no tenant write on reads.
-// Reads require `quarantine.read` (SPEC §7) intersected with the caller
+// Reads require `Exchange.Quarantine.Read` (SPEC §7) intersected with the caller
 // tenant scope.
 //
 // Writes (create/edit/delete) apply only through the EPIC-006 gated path
-// (T-0107): the route validates `quarantine.act` + tenant scope, builds a
+// (T-0107): the route validates `Exchange.Quarantine.ReadWrite` + tenant scope, builds a
 // before/after plan with the affected entries shown before apply, and
 // enqueues a `remediation` job carrying the change. A deleting change is
 // flagged security-impacting before apply and requires explicit
@@ -28,8 +28,8 @@ export const QUARANTINE_POLICIES_PATH = "/v1/tenants/:tenantId/quarantine-polici
 export const QUARANTINE_POLICIES_ITEM_PATH =
   "/v1/tenants/:tenantId/quarantine-policies/:policyName";
 
-export const QUARANTINE_POLICIES_READ_PERMISSION = "quarantine.read";
-export const QUARANTINE_POLICIES_WRITE_PERMISSION = "quarantine.act";
+export const QUARANTINE_POLICIES_READ_PERMISSION = "Exchange.Quarantine.Read";
+export const QUARANTINE_POLICIES_WRITE_PERMISSION = "Exchange.Quarantine.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const QUARANTINE_POLICIES_UNAUTHENTICATED = "request.unauthenticated";
 export const QUARANTINE_POLICIES_NOT_FOUND = "quarantine_policies.not_found";
@@ -223,7 +223,7 @@ async function requireQuarantinePoliciesRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(QUARANTINE_POLICIES_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing quarantine.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Quarantine.Read", 403);
   }
 }
 
@@ -742,7 +742,7 @@ export const QUARANTINE_POLICIES_OPENAPI = {
         responses: {
           "200": { description: "Quarantine policies with the §3.5 columns, read live from EXO." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -759,7 +759,7 @@ export const QUARANTINE_POLICIES_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "name, policyType, or settings failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.act or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -778,7 +778,7 @@ export const QUARANTINE_POLICIES_OPENAPI = {
           "200": { description: "Edit plan preview or the applied change with before/after and audit event." },
           "400": { description: "policyType or settings failed validation, or confirm is required for a security-impacting change." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.act or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.ReadWrite or the tenant is out of scope." },
           "404": { description: "Quarantine policy not found." },
         },
       },
@@ -797,7 +797,7 @@ export const QUARANTINE_POLICIES_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to delete a quarantine policy." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.act or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.ReadWrite or the tenant is out of scope." },
           "404": { description: "Quarantine policy not found." },
         },
       },

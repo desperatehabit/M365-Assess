@@ -2,9 +2,9 @@
 // Exposes GET /v1/tenants/:tenantId/mail/messages/:messageId: the full delivery
 // timeline (events, connectors, filters hit) and headers, read-only. Metadata
 // and headers ship to every permitted caller; the message body is behind the
-// higher mailtools.content permission (§11.2) — without it the provider runs
+// higher Exchange.MailContent.Reveal permission (§11.2) — without it the provider runs
 // ungated-off (includeBody false) and the response reports the body as gated
-// rather than 403ing the whole read. Reads require `mailtools.read`
+// rather than 403ing the whole read. Reads require `Exchange.MailTools.Read`
 // intersected with the caller tenant scope, and every successful read is
 // reported through the optional recordAudit seam (§9: audit every read) since
 // the viewer exposes message metadata. Message data stays live in EXO (§5);
@@ -16,8 +16,8 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const MESSAGE_DETAIL_PATH = "/v1/tenants/:tenantId/mail/messages/:messageId";
-export const MESSAGES_READ_PERMISSION = "mailtools.read";
-export const MESSAGES_CONTENT_PERMISSION = "mailtools.content";
+export const MESSAGES_READ_PERMISSION = "Exchange.MailTools.Read";
+export const MESSAGES_CONTENT_PERMISSION = "Exchange.MailContent.Reveal";
 export const MESSAGES_UNAUTHENTICATED = "request.unauthenticated";
 export const MESSAGE_NOT_FOUND = "messages.not_found";
 
@@ -136,7 +136,7 @@ async function requireMessagesRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(MESSAGES_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailtools.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.MailTools.Read", 403);
   }
 }
 
@@ -216,7 +216,7 @@ export const MESSAGES_OPENAPI = {
       get: {
         operationId: "getMessageDetail",
         summary:
-          "Message viewer: delivery timeline (events, connectors, filters hit) and headers; the body ships only for callers holding mailtools.content and is otherwise reported as gated",
+          "Message viewer: delivery timeline (events, connectors, filters hit) and headers; the body ships only for callers holding Exchange.MailContent.Reveal and is otherwise reported as gated",
         permission: MESSAGES_READ_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -230,7 +230,7 @@ export const MESSAGES_OPENAPI = {
           },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks mailtools.read or the tenant is out of scope.",
+            description: "The caller lacks Exchange.MailTools.Read or the tenant is out of scope.",
           },
           "404": { description: "The message was not found." },
         },

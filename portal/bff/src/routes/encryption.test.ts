@@ -190,7 +190,7 @@ describe("Message encryption routes (T-0469)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("requires mailtools.read for the GET", async () => {
+  it("requires Exchange.MailTools.Read for the GET", async () => {
     const routes = createEncryptionRoutes({
       provider: new FakeEncryptionProvider(),
       resolveCaller: () => ({
@@ -227,7 +227,7 @@ describe("Message encryption routes (T-0469)", () => {
     expect(provider.readCalls).toEqual([TENANT]);
   });
 
-  it("requires mailtools.write or Remediation.Apply for the PUT", async () => {
+  it("requires Exchange.MailTools.ReadWrite or Remediation.Apply for the PUT", async () => {
     const routes = createEncryptionRoutes({
       provider: new FakeEncryptionProvider(),
       resolveCaller: readCaller,
@@ -243,7 +243,7 @@ describe("Message encryption routes (T-0469)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("permits the PUT with Remediation.Apply in place of mailtools.write", async () => {
+  it("permits the PUT with Remediation.Apply in place of Exchange.MailTools.ReadWrite", async () => {
     const provider = new FakeEncryptionProvider();
     const routes = createEncryptionRoutes({ provider, resolveCaller: applyCaller });
 

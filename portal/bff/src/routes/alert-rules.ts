@@ -7,8 +7,8 @@
 //   POST   /v1/alert-rules/{ruleId}/toggle -> enable/disable a rule (audited)
 //
 // Built-ins come from the curated catalog (domain/alerts/builtin-catalog.ts) and are
-// seeded as disabled rules the operator can enable. Reads require `alerts.read` and
-// every mutation requires `alerts.write`; full RBAC is EPIC-038, so this uses the
+// seeded as disabled rules the operator can enable. Reads require `CIPP.Alert.Read` and
+// every mutation requires `CIPP.Alert.ReadWrite`; full RBAC is EPIC-038, so this uses the
 // EPIC-001 T-0013 authorizer seam and denies without one. Alerting never writes to a
 // tenant (SPEC §8): this route only persists rule configuration. `Test` is T-0564.
 
@@ -33,8 +33,8 @@ export const ALERT_RULES_PATH = "/v1/alert-rules";
 export const ALERT_RULE_PATH = "/v1/alert-rules/:ruleId";
 export const ALERT_RULE_TOGGLE_PATH = "/v1/alert-rules/:ruleId/toggle";
 
-export const ALERT_RULES_READ_PERMISSION = "alerts.read";
-export const ALERT_RULES_WRITE_PERMISSION = "alerts.write";
+export const ALERT_RULES_READ_PERMISSION = "CIPP.Alert.Read";
+export const ALERT_RULES_WRITE_PERMISSION = "CIPP.Alert.ReadWrite";
 export const ALERT_RULES_UNAUTHENTICATED = "request.unauthenticated";
 export const ALERT_RULE_NOT_FOUND = "alert.rule_not_found";
 
@@ -357,7 +357,7 @@ export const ALERT_RULES_OPENAPI = {
         responses: {
           "200": { description: "Built-in and custom rules." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks alerts.read." },
+          "403": { description: "The caller lacks CIPP.Alert.Read." },
         },
       },
       post: {
@@ -369,7 +369,7 @@ export const ALERT_RULES_OPENAPI = {
         responses: {
           "201": { description: "Rule created." },
           "400": { description: "The rule body is invalid." },
-          "403": { description: "The caller lacks alerts.write." },
+          "403": { description: "The caller lacks CIPP.Alert.ReadWrite." },
         },
       },
     },

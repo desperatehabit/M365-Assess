@@ -520,7 +520,7 @@ export function EncryptionPanel({
                       ...(!canWrite || busy ? { opacity: 0.45, cursor: "not-allowed" } : {}),
                     }}
                     disabled={!canWrite || busy || !onApply}
-                    title={!canWrite ? "Requires mailtools.write or Remediation.Apply" : "Apply the OME template change"}
+                    title={!canWrite ? "Requires Exchange.MailTools.ReadWrite or Remediation.Apply" : "Apply the OME template change"}
                     onClick={() => void handleApply()}
                     data-testid="encryption-apply"
                   >

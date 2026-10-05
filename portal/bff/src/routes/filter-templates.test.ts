@@ -261,7 +261,7 @@ describe("filter template routes (T-0423)", () => {
     await expect(routes[0].handler(ctx("/v1/filter-templates"))).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects callers missing spam.read on reads and spam.write on writes", async () => {
+  it("rejects callers missing Exchange.SpamFilter.Read on reads and Exchange.SpamFilter.ReadWrite on writes", async () => {
     const readOnly = createFilterTemplateRoutes({
       store: new FakeFilterTemplateStore(),
       resolveCaller: () => ({ tenantScope: tenantScope([TENANT]), permissions: [] }),

@@ -1,5 +1,5 @@
 // OneDrive usage API (EPIC-025 SPEC.md §2 US-6, §3.5, §6, §7; T-0489).
-// Exposes GET /v1/tenants/:tenantId/onedrive behind RBAC sharepoint.read.
+// Exposes GET /v1/tenants/:tenantId/onedrive behind RBAC SharePoint.Site.Read.
 // Read-only: per-user OneDrive usage and sharing state, cursor-paginated.
 // Bulk sharing-link removal is handed to EPIC-027
 // (POST /v1/tenants/{id}/sharing/links/remove); this route performs no writes.
@@ -10,7 +10,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const ONEDRIVE_PATH = "/v1/tenants/:tenantId/onedrive";
 
-export const SHAREPOINT_READ_PERMISSION = "sharepoint.read";
+export const SHAREPOINT_READ_PERMISSION = "SharePoint.Site.Read";
 export const ONEDRIVE_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface OneDriveSharingLinkRef {
@@ -113,7 +113,7 @@ async function authorizeRead(
   } else {
     const permissions = caller.permissions ?? [];
     if (!permissions.includes(SHAREPOINT_READ_PERMISSION) && !permissions.includes("*")) {
-      throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharepoint.read", 403);
+      throw new AppError(ErrorCodes.forbidden, "forbidden: missing SharePoint.Site.Read", 403);
     }
   }
 }
@@ -166,7 +166,7 @@ export const ONEDRIVE_OPENAPI = {
         responses: {
           "200": { description: "Cursor-paginated per-user OneDrive usage and sharing state." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Site.Read or the tenant is out of scope." },
         },
       },
     },

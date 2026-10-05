@@ -263,11 +263,11 @@ describe("Teams Business Voice routes (T-0508)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing teams.voice with 403", async () => {
+  it("rejects callers missing Teams.Voice.ReadWrite with 403", async () => {
     const routes = createTeamsVoiceRoutes(
       optionsWith(new FakeTeamsVoiceProvider(LICENSED), {
         tenantScope: tenantScope([TENANT]),
-        permissions: ["teams.read"],
+        permissions: ["Teams.Team.Read"],
       }),
     );
     await expect(
@@ -307,7 +307,7 @@ describe("Teams Business Voice routes (T-0508)", () => {
     const routes = createTeamsVoiceRoutes(
       optionsWith(provider, {
         tenantScope: tenantScope([TENANT]),
-        permissions: ["teams.read", TEAMS_VOICE_WRITE_PERMISSION],
+        permissions: ["Teams.Team.Read", TEAMS_VOICE_WRITE_PERMISSION],
       }),
     );
     const response = await routeByPath(routes, "GET", TEAMS_VOICE_NUMBERS_PATH).handler({

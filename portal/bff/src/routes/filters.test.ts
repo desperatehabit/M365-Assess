@@ -89,7 +89,7 @@ describe("Filter policy routes (T-0421)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing spam.read with 403", async () => {
+  it("rejects callers missing Exchange.SpamFilter.Read with 403", async () => {
     const routes = createFilterRoutes({
       provider: new FakeFiltersProvider(),
       resolveCaller: () => ({

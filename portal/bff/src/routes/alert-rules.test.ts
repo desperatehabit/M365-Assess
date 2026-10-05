@@ -160,7 +160,7 @@ describe("GET /v1/alert-rules (T-0562)", () => {
     expect(custom["state"]).toBe("Disabled");
   });
 
-  it("requires alerts.read", async () => {
+  it("requires CIPP.Alert.Read", async () => {
     const seen: string[] = [];
     const route = routeFor(
       makeOptions(new FakeStore(), {
@@ -208,7 +208,7 @@ describe("POST /v1/alert-rules (T-0562)", () => {
     expect(store.rules).toHaveLength(1);
   });
 
-  it("requires alerts.write and audits the create", async () => {
+  it("requires CIPP.Alert.ReadWrite and audits the create", async () => {
     const seen: string[] = [];
     const audits: Record<string, unknown>[] = [];
     const route = routeFor(
@@ -334,7 +334,7 @@ describe("POST /v1/alert-rules/{ruleId}/toggle (T-0562)", () => {
     expect(audits[0]!["enabled"]).toBe(true);
   });
 
-  it("honors an explicit enabled value and requires alerts.write", async () => {
+  it("honors an explicit enabled value and requires CIPP.Alert.ReadWrite", async () => {
     const seen: string[] = [];
     const store = new FakeStore();
     const route = routeFor(

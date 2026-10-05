@@ -1,7 +1,7 @@
 // Teams LIS locations CRUD API (EPIC-026 SPEC.md §2 US-5, §3.4, §4.4, §6, §7, §8; T-0509).
 // Exposes GET/POST /v1/tenants/:tenantId/teams/lis and
 // PATCH/DELETE /v1/tenants/:tenantId/teams/lis/:locationId.
-// Reads run the LIS worker for the tenant. Writes validate `teams.voice` +
+// Reads run the LIS worker for the tenant. Writes validate `Teams.Voice.ReadWrite` +
 // `Remediation.Apply` and tenant scope, validate required civic address fields,
 // then apply through the EPIC-006 gated executor (T-0108): the route enqueues a
 // `remediation` job carrying the change and records a TeamOperation (T-0501)
@@ -15,8 +15,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const TEAMS_LIS_BASE_PATH = "/v1/tenants/:tenantId/teams/lis";
 export const TEAMS_LIS_ITEM_PATH = "/v1/tenants/:tenantId/teams/lis/:locationId";
 
-export const TEAMS_READ_PERMISSION = "teams.read";
-export const TEAMS_VOICE_PERMISSION = "teams.voice";
+export const TEAMS_READ_PERMISSION = "Teams.Team.Read";
+export const TEAMS_VOICE_PERMISSION = "Teams.Voice.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const TEAMS_LIS_UNAUTHENTICATED = "request.unauthenticated";
 export const TEAMS_LIS_CONFIRM_REQUIRED = "teams.lis.confirm_required";
@@ -680,7 +680,7 @@ export const TEAMS_LIS_OPENAPI = {
         responses: {
           "200": { description: "LIS locations for the tenant, read live from the LIS worker." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -717,7 +717,7 @@ export const TEAMS_LIS_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "A required civic field is missing or the country code is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.voice or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Voice.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
         },
       },
     },
@@ -756,7 +756,7 @@ export const TEAMS_LIS_OPENAPI = {
           "202": { description: "The edit was queued through the EPIC-006 gated path." },
           "400": { description: "A required civic field is missing or the country code is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.voice or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Voice.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "LIS location not found." },
         },
       },
@@ -774,7 +774,7 @@ export const TEAMS_LIS_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirmName is required and must match the location display name." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.voice or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Voice.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "LIS location not found." },
         },
       },

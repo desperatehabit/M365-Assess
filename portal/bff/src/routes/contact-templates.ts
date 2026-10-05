@@ -1,7 +1,7 @@
 // Contact template CRUD (EPIC-023 SPEC.md §2 US-2, §3.2, §5, §6; T-0446).
 //
-//   GET    /v1/contact-templates              list     (contacts.read)
-//   POST   /v1/contact-templates              create   (contacts.write)
+//   GET    /v1/contact-templates              list     (Exchange.Contact.Read)
+//   POST   /v1/contact-templates              create   (Exchange.Contact.ReadWrite)
 //   GET    /v1/contact-templates/:id          read
 //   PATCH  /v1/contact-templates/:id          update
 //   DELETE /v1/contact-templates/:id          soft-delete
@@ -9,7 +9,7 @@
 // Templates persist through the T-0441 repository (`listContactTemplates`,
 // `getContactTemplate`, `upsertContactTemplate`, `softDeleteContactTemplate`);
 // deployment is T-0447. They carry no tenant writes and no credential material.
-// Writes are gated on `contacts.write`, reads on `contacts.read` (SPEC §7); the
+// Writes are gated on `Exchange.Contact.ReadWrite`, reads on `Exchange.Contact.Read` (SPEC §7); the
 // gate is an injected `authorize` seam so EPIC-038's resolver can supply the
 // real permission set without touching route code. Invalid template shapes are
 // rejected with a structured `contact_template.invalid` error and are never
@@ -24,8 +24,8 @@ export const CONTACT_TEMPLATES_PATH = "/v1/contact-templates";
 export const CONTACT_TEMPLATE_PATH = "/v1/contact-templates/:id";
 
 export const CONTACT_TEMPLATE_PERMISSIONS = {
-  read: "contacts.read",
-  write: "contacts.write",
+  read: "Exchange.Contact.Read",
+  write: "Exchange.Contact.ReadWrite",
 } as const;
 
 export const CONTACT_TEMPLATE_NOT_FOUND = "contact_template.not_found";
@@ -309,7 +309,7 @@ export const CONTACT_TEMPLATES_OPENAPI = {
         ],
         responses: {
           "200": { description: "Cursor-paginated contact templates." },
-          "403": { description: "The caller lacks contacts.read." },
+          "403": { description: "The caller lacks Exchange.Contact.Read." },
         },
       },
       post: {
@@ -337,7 +337,7 @@ export const CONTACT_TEMPLATES_OPENAPI = {
         responses: {
           "201": { description: "The stored contact template." },
           "400": { description: "The template failed shape validation." },
-          "403": { description: "The caller lacks contacts.write." },
+          "403": { description: "The caller lacks Exchange.Contact.ReadWrite." },
         },
       },
     },

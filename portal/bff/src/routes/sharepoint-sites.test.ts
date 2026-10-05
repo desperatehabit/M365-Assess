@@ -110,7 +110,7 @@ describe("SharePoint sites list route (T-0482)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing sharepoint.read with 403", async () => {
+  it("rejects callers missing SharePoint.Site.Read with 403", async () => {
     const provider = new FakeSharePointSitesProvider();
     const route = createSharePointSitesRoute({
       provider,

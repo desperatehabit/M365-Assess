@@ -134,7 +134,7 @@ describe("Bulk quarantine routes (T-0425)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects a caller without quarantine.act with 403", async () => {
+  it("rejects a caller without Exchange.Quarantine.ReadWrite with 403", async () => {
     const route = routeFor({
       provider: new FakeQuarantineProvider(),
       resolveCaller: () => ({

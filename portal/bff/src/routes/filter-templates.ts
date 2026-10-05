@@ -4,8 +4,8 @@
 //   GET/PATCH/DELETE /v1/filter-templates/:templateId
 //   POST         /v1/filter-templates/:templateId/clone
 //   POST         /v1/filter-templates/:templateId/deploy
-// Templates persist only locally (SPEC §5); reads require `spam.read` and
-// writes require `spam.write` (SPEC §7). Deploy resolves the template's
+// Templates persist only locally (SPEC §5); reads require `Exchange.SpamFilter.Read` and
+// writes require `Exchange.SpamFilter.ReadWrite` (SPEC §7). Deploy resolves the template's
 // %name% variables (domains, IPs, action overrides) and applies the resolved
 // policy through the EPIC-006 gate (T-0107): a missing required variable is a
 // validation error, never a partial apply, and every applied deploy enqueues a
@@ -36,8 +36,8 @@ export const FILTER_TEMPLATE_ITEM_PATH = "/v1/filter-templates/:templateId";
 export const FILTER_TEMPLATE_CLONE_PATH = "/v1/filter-templates/:templateId/clone";
 export const FILTER_TEMPLATE_DEPLOY_PATH = "/v1/filter-templates/:templateId/deploy";
 
-export const FILTER_TEMPLATES_READ_PERMISSION = "spam.read";
-export const FILTER_TEMPLATES_WRITE_PERMISSION = "spam.write";
+export const FILTER_TEMPLATES_READ_PERMISSION = "Exchange.SpamFilter.Read";
+export const FILTER_TEMPLATES_WRITE_PERMISSION = "Exchange.SpamFilter.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const FILTER_TEMPLATES_UNAUTHENTICATED = "request.unauthenticated";
 export const FILTER_TEMPLATE_NOT_FOUND = "filter_template.not_found";
@@ -206,7 +206,7 @@ async function requireRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(FILTER_TEMPLATES_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing spam.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.SpamFilter.Read", 403);
   }
 }
 
@@ -224,7 +224,7 @@ async function requireWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing spam.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.SpamFilter.ReadWrite", 403);
   }
 }
 
@@ -643,7 +643,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
         responses: {
           "200": { description: "Filter templates with name, filterType, variables, and source." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.read." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.Read." },
         },
       },
       post: {
@@ -655,7 +655,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
           "201": { description: "The created filter template." },
           "400": { description: "name, filterType, or policyJson failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite." },
         },
       },
     },
@@ -669,7 +669,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
         responses: {
           "200": { description: "The filter template." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.read." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.Read." },
           "404": { description: "Filter template not found." },
         },
       },
@@ -683,7 +683,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
           "200": { description: "The updated filter template." },
           "400": { description: "No editable field was supplied, or a field failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite." },
           "404": { description: "Filter template not found." },
         },
       },
@@ -696,7 +696,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
         responses: {
           "204": { description: "Removed; no body." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite." },
           "404": { description: "Filter template not found." },
         },
       },
@@ -711,7 +711,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
         responses: {
           "201": { description: "The cloned filter template." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite." },
           "404": { description: "Filter template not found." },
         },
       },
@@ -729,7 +729,7 @@ export const FILTER_TEMPLATES_OPENAPI = {
           "202": { description: "The deploy was queued through the EPIC-006 gated path." },
           "400": { description: "A required variable is missing, or the change is security-impacting without confirm." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
           "404": { description: "Filter template not found." },
         },
       },

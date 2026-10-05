@@ -100,7 +100,7 @@ describe("GET /v1/tenants/:tenantId/licenses/gates (T-0646)", () => {
     ).rejects.toThrow("tenant is outside the caller scope");
   });
 
-  it("rejects a caller without licenses.read", async () => {
+  it("rejects a caller without Tenant.Licenses.Read", async () => {
     const harness = createHarness();
     harness.setCaller({
       userId: "user-2",

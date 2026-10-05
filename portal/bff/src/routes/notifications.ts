@@ -5,7 +5,7 @@
 //   PUT  /v1/notifications        -> update one channel's target/enabled (audited)
 //   POST /v1/notifications/test   -> test-send a channel through its T-0565 adapter
 //
-// Reads require `alerts.read`; writes and test-send require `alerts.write`, via
+// Reads require `CIPP.Alert.Read`; writes and test-send require `CIPP.Alert.ReadWrite`, via
 // the same EPIC-001 authorizer seam as alert-rules.ts (alerts.* is not in the
 // roles.ts union yet, EPIC-038). PSA and Slack are exposed in the schema but have
 // no adapter yet (PSA is deferred to EPIC-041, SPEC §11.3), so a test-send for
@@ -35,8 +35,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const NOTIFICATIONS_PATH = "/v1/notifications";
 export const NOTIFICATIONS_TEST_PATH = "/v1/notifications/test";
 
-export const NOTIFICATIONS_READ_PERMISSION = "alerts.read";
-export const NOTIFICATIONS_WRITE_PERMISSION = "alerts.write";
+export const NOTIFICATIONS_READ_PERMISSION = "CIPP.Alert.Read";
+export const NOTIFICATIONS_WRITE_PERMISSION = "CIPP.Alert.ReadWrite";
 
 export const NOTIFICATIONS_UNAUTHENTICATED = "request.unauthenticated";
 export const NOTIFICATION_CHANNEL_NOT_FOUND = "notification.channel_not_found";
@@ -294,7 +294,7 @@ export const NOTIFICATIONS_OPENAPI = {
         responses: {
           "200": { description: "The configured channels." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks alerts.read." },
+          "403": { description: "The caller lacks CIPP.Alert.Read." },
         },
       },
       put: {
@@ -322,7 +322,7 @@ export const NOTIFICATIONS_OPENAPI = {
         responses: {
           "200": { description: "The updated channel." },
           "400": { description: "The update body is invalid." },
-          "403": { description: "The caller lacks alerts.write." },
+          "403": { description: "The caller lacks CIPP.Alert.ReadWrite." },
           "404": { description: "No such channel." },
         },
       },
@@ -352,7 +352,7 @@ export const NOTIFICATIONS_OPENAPI = {
         responses: {
           "200": { description: "The delivery outcome; no AlertEvent is recorded." },
           "400": { description: "The test body is invalid." },
-          "403": { description: "The caller lacks alerts.write." },
+          "403": { description: "The caller lacks CIPP.Alert.ReadWrite." },
           "501": {
             description: "The channel has no delivery adapter yet (PSA is deferred to EPIC-041).",
           },

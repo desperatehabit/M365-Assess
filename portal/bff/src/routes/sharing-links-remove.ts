@@ -1,7 +1,7 @@
 // Bulk sharing-link removal (EPIC-027 SPEC.md §2 US-4, §3.4, §4.2, §6, §8; T-0527).
 // POST /v1/tenants/{id}/sharing/links/remove plans or applies removal of the
 // selected links. `preview: true` returns exactly which links will be removed
-// and performs no writes. Apply is high-blast-radius: it needs `sharing.write`
+// and performs no writes. Apply is high-blast-radius: it needs `Sharing.Permissions.ReadWrite`
 // plus `Remediation.Apply`, an explicit `{ "confirm": true }`, and a
 // `confirmCount` naming the submitted link count. Every removal attempt emits
 // one audit event and lands in a LinkRemovalJob (T-0526 store seam), so a
@@ -17,7 +17,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const SHARING_LINKS_REMOVE_PATH = "/v1/tenants/:tenantId/sharing/links/remove";
 
-export const SHARING_WRITE_PERMISSION = "sharing.write";
+export const SHARING_WRITE_PERMISSION = "Sharing.Permissions.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const SHARING_LINKS_UNAUTHENTICATED = "request.unauthenticated";
@@ -400,7 +400,7 @@ export function createSharingLinksRemoveRoutes(options: SharingLinksRemoveRouteO
     } else {
       const permissions = caller.permissions ?? [];
       if (!permissions.includes(SHARING_WRITE_PERMISSION) && !permissions.includes("*")) {
-        throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharing.write", 403);
+        throw new AppError(ErrorCodes.forbidden, "forbidden: missing Sharing.Permissions.ReadWrite", 403);
       }
     }
     const result = await postSharingLinksRemove(options, ctx, tenantId, caller);
@@ -416,7 +416,7 @@ export const SHARING_LINKS_REMOVE_OPENAPI = {
     "/tenants/{tenantId}/sharing/links/remove": {
       post: {
         operationId: "removeSharingLinks",
-        summary: "Preview (preview: true) or apply bulk sharing-link removal; apply needs sharing.write plus Remediation.Apply, confirm, and the confirmed link count",
+        summary: "Preview (preview: true) or apply bulk sharing-link removal; apply needs Sharing.Permissions.ReadWrite plus Remediation.Apply, confirm, and the confirmed link count",
         permission: SHARING_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -457,7 +457,7 @@ export const SHARING_LINKS_REMOVE_OPENAPI = {
           "200": { description: "The plan preview, or the per-link removal results with the job id." },
           "400": { description: "Invalid links, or missing confirmation/count/reason." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharing.write (or Remediation.Apply) or the tenant is out of scope." },
+          "403": { description: "The caller lacks Sharing.Permissions.ReadWrite (or Remediation.Apply) or the tenant is out of scope." },
           "501": { description: "Removal is not wired for this tenant." },
         },
       },

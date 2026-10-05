@@ -513,7 +513,7 @@ export function TemplatesView({
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires purview.templates permission" : "";
+  const writeTitle = writeDisabled ? "Requires Purview.Template.ReadWrite permission" : "";
 
   return (
     <div style={pageStyle} data-testid="compliance-templates-page">

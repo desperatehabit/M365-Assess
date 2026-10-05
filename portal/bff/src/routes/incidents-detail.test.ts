@@ -151,7 +151,7 @@ describe("incident detail route (T-0545)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing incidents.read with 403", async () => {
+  it("rejects callers missing Security.Incident.Read with 403", async () => {
     const provider = new FakeIncidentDetailProvider();
     const [route] = createIncidentsDetailRoute({
       provider,
@@ -308,11 +308,11 @@ describe("incident detail route (T-0545)", () => {
     expect(body.overview.title).toBe("Suspicious sign-in burst");
   });
 
-  it("publishes the incidents.read permission through the route module", () => {
+  it("publishes the Security.Incident.Read permission through the route module", () => {
     const path = INCIDENT_DETAIL_OPENAPI.paths["/tenants/{tenantId}/incidents/{incidentId}"];
-    expect(path.get.permission).toBe("incidents.read");
+    expect(path.get.permission).toBe("Security.Incident.Read");
     expect(path.get.operationId).toBe("getIncidentDetail");
-    expect(INCIDENT_DETAIL_READ_PERMISSION).toBe("incidents.read");
+    expect(INCIDENT_DETAIL_READ_PERMISSION).toBe("Security.Incident.Read");
     expect(INCIDENT_DETAIL_PATH).toBe("/v1/tenants/:tenantId/incidents/:incidentId");
   });
 });

@@ -134,7 +134,7 @@ describe("Domains list route (T-0662)", () => {
     ).rejects.toThrow(AppError);
   });
 
-  it("rejects missing domains.read permission with 403", async () => {
+  it("rejects missing Tenant.Domains.Read permission with 403", async () => {
     const provider = new FakeDomainsProvider();
     const route = createDomainsRoute({
       provider,
@@ -327,11 +327,11 @@ describe("Domains list route (T-0662)", () => {
     expect(onmicrosoftDomain?.lastChecked).toBeNull();
   });
 
-  it("publishes the domains.read permission through the route module", () => {
+  it("publishes the Tenant.Domains.Read permission through the route module", () => {
     const operation = DOMAINS_OPENAPI.paths["/tenants/{tenantId}/domains"].get;
     expect(operation.permission).toBe(DOMAINS_READ_PERMISSION);
     expect(operation.operationId).toBe("listTenantDomains");
-    expect(DOMAINS_READ_PERMISSION).toBe("domains.read");
+    expect(DOMAINS_READ_PERMISSION).toBe("Tenant.Domains.Read");
     expect(DOMAINS_PATH).toBe("/v1/tenants/:tenantId/domains");
   });
 });

@@ -169,7 +169,7 @@ describe("POST /v1/alert-rules/{ruleId}/test (T-0564)", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("requires alerts.write through the authorizer seam", async () => {
+  it("requires CIPP.Alert.ReadWrite through the authorizer seam", async () => {
     const seen: string[] = [];
     const route = routeFor({
       store: makeStore(rule()),
@@ -203,7 +203,7 @@ describe("POST /v1/alert-rules/{ruleId}/test (T-0564)", () => {
 });
 
 describe("alert-rules test OpenAPI fragment (T-0564)", () => {
-  it("publishes the dry-run operation under alerts.write", () => {
+  it("publishes the dry-run operation under CIPP.Alert.ReadWrite", () => {
     const paths = ALERT_RULES_TEST_OPENAPI.paths;
     expect(Object.keys(paths)).toEqual(["/alert-rules/{ruleId}/test"]);
     expect(paths["/alert-rules/{ruleId}/test"].post.permission).toBe(ALERT_RULES_TEST_PERMISSION);

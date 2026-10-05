@@ -93,7 +93,7 @@ Rules and connectors are read live from EXO; templates persist.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `transport.read`, `transport.write`, `transport.templates`; writes require
+- **RBAC:** `Exchange.Transport.Read`, `Exchange.Transport.ReadWrite` (templates share it); writes require
   `Remediation.Apply` semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** EXO app-only certificate.
 

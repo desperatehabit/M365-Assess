@@ -24,8 +24,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const SAFELINKS_PATH = "/v1/tenants/:tenantId/safelinks";
 export const SAFELINKS_ITEM_PATH = "/v1/tenants/:tenantId/safelinks/:policyId";
 
-export const SAFELINKS_READ_PERMISSION = "purview.read";
-export const SAFELINKS_WRITE_PERMISSION = "purview.write";
+export const SAFELINKS_READ_PERMISSION = "Purview.Compliance.Read";
+export const SAFELINKS_WRITE_PERMISSION = "Purview.Compliance.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const SAFELINKS_UNAUTHENTICATED = "request.unauthenticated";
 export const SAFELINKS_NOT_FOUND = "safelinks.not_found";
@@ -194,7 +194,7 @@ async function requireSafeLinksRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(SAFELINKS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.Read", 403);
   }
 }
 
@@ -484,7 +484,7 @@ export const SAFELINKS_OPENAPI = {
           "200": { description: "Cursor-paginated Safe Links policies with the §3.5 columns." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -500,7 +500,7 @@ export const SAFELINKS_OPENAPI = {
           "201": { description: "The created policy with before/after and audit event." },
           "400": { description: "name, settings, or confirm failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -519,7 +519,7 @@ export const SAFELINKS_OPENAPI = {
           "200": { description: "Edit plan preview or the applied policy with before/after and audit event." },
           "400": { description: "action, settings, or confirm failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
         },
       },
       delete: {
@@ -537,7 +537,7 @@ export const SAFELINKS_OPENAPI = {
           "200": { description: "Delete plan preview or the applied delete with before/after and audit event." },
           "400": { description: "confirmName or confirm failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
         },
       },
     },

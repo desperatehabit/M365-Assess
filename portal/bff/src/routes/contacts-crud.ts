@@ -10,7 +10,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const CONTACTS_CRUD_BASE_PATH = "/v1/tenants/:tenantId/contacts";
 export const CONTACTS_CRUD_ITEM_PATH = "/v1/tenants/:tenantId/contacts/:contactId";
 
-export const CONTACTS_WRITE_PERMISSION = "contacts.write";
+export const CONTACTS_WRITE_PERMISSION = "Exchange.Contact.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const CONTACTS_CRUD_UNAUTHENTICATED = "request.unauthenticated";
 
@@ -141,7 +141,7 @@ async function authorizeWrite(
                    permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
                    permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing contacts.write permission", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Contact.ReadWrite permission", 403);
   }
 }
 
@@ -298,7 +298,7 @@ export const CONTACTS_CRUD_OPENAPI = {
           "201": { description: "The contact was created." },
           "400": { description: "A required field is missing or invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks contacts.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -333,7 +333,7 @@ export const CONTACTS_CRUD_OPENAPI = {
           "200": { description: "The contact was updated, or a plan preview when preview is set." },
           "400": { description: "A required field is missing or invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks contacts.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope." },
         },
       },
       delete: {
@@ -364,7 +364,7 @@ export const CONTACTS_CRUD_OPENAPI = {
           "200": { description: "The contact was deleted, or a plan preview when preview is set." },
           "400": { description: "The confirm flag is required for deletion." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks contacts.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope." },
         },
       },
     },

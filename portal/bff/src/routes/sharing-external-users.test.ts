@@ -225,7 +225,7 @@ describe("SharePoint external users routes (T-0525)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing sharing.read with 403", async () => {
+  it("rejects callers missing Sharing.Permissions.Read with 403", async () => {
     const routes = createExternalUsersRoutes({
       provider: new FakeExternalUsersProvider(),
       resolveCaller: () => ({
@@ -255,14 +255,14 @@ describe("SharePoint external users routes (T-0525)", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it("publishes both path items with the sharing.read permission", () => {
+  it("publishes both path items with the Sharing.Permissions.Read permission", () => {
     const list = SHARING_EXTERNAL_USERS_OPENAPI.paths["/tenants/{tenantId}/sharing/external-users"].get;
     const access =
       SHARING_EXTERNAL_USERS_OPENAPI.paths[
         "/tenants/{tenantId}/sharing/external-users/{externalUserId}/access"
       ].get;
-    expect(list.permission).toBe("sharing.read");
-    expect(access.permission).toBe("sharing.read");
+    expect(list.permission).toBe("Sharing.Permissions.Read");
+    expect(access.permission).toBe("Sharing.Permissions.Read");
     expect(list.operationId).not.toBe(access.operationId);
   });
 });

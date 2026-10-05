@@ -6,7 +6,7 @@
 // by severity across only the tenants in the caller's RBAC scope (SPEC §4.2).
 // Incidents are read live by the worker from Graph/Defender (SPEC §5, §7); this
 // route performs no Graph call directly and no writes.
-// Requires RBAC `incidents.read` and tenant in caller scope.
+// Requires RBAC `Security.Incident.Read` and tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { MAX_PAGE_LIMIT, parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
@@ -15,7 +15,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const INCIDENTS_PATH = "/v1/tenants/:tenantId/incidents";
 export const INCIDENTS_ALL_PATH = "/v1/incidents";
-export const INCIDENTS_READ_PERMISSION = "incidents.read";
+export const INCIDENTS_READ_PERMISSION = "Security.Incident.Read";
 export const INCIDENTS_UNAUTHENTICATED = "request.unauthenticated";
 
 export const INCIDENT_SEVERITIES = [
@@ -116,7 +116,7 @@ async function ensureRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(INCIDENTS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing incidents.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Security.Incident.Read", 403);
   }
 }
 
@@ -341,7 +341,7 @@ export const INCIDENTS_OPENAPI = {
           "200": { description: "The tenant's filtered incident page." },
           "400": { description: "A path or query parameter is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the incidents.read permission." },
+          "403": { description: "The caller lacks the Security.Incident.Read permission." },
         },
       },
     },
@@ -363,7 +363,7 @@ export const INCIDENTS_OPENAPI = {
         responses: {
           "200": { description: "Open incidents aggregated by severity." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the incidents.read permission." },
+          "403": { description: "The caller lacks the Security.Incident.Read permission." },
         },
       },
     },

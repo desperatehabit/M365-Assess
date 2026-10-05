@@ -221,7 +221,7 @@ describe("Backups routes (T-0685)", () => {
     }
   });
 
-  it("refuses callers lacking backup.read on list with 403", async () => {
+  it("refuses callers lacking Tenant.Backup.Read on list with 403", async () => {
     const store = new FakeBackupsStore();
     const routes = createBackupRoutes({
       store,
@@ -389,7 +389,7 @@ describe("Backups routes (T-0685)", () => {
     expect(store.backups.size).toBe(0);
   });
 
-  it("refuses create callers lacking backup.write with 403", async () => {
+  it("refuses create callers lacking Tenant.Backup.ReadWrite with 403", async () => {
     const store = new FakeBackupsStore();
     const routes = createBackupRoutes({
       store,
@@ -514,7 +514,7 @@ describe("Backups routes (T-0685)", () => {
     expect(store.backups.has(row.id)).toBe(true);
   });
 
-  it("refuses delete callers lacking backup.write with 403", async () => {
+  it("refuses delete callers lacking Tenant.Backup.ReadWrite with 403", async () => {
     const store = new FakeBackupsStore();
     const row = backup("bk-del", "instance");
     store.backups.set(row.id, row);

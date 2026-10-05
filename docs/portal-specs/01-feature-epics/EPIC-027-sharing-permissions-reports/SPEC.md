@@ -101,7 +101,7 @@ Sharing/permission data is read live (or cached) from Graph/SPO; only removal jo
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `sharing.read`, `sharing.write`; bulk removal requires `Remediation.Apply` semantics.
+- **RBAC:** `Sharing.Permissions.Read`, `Sharing.Permissions.ReadWrite`; bulk removal requires `Remediation.Apply` semantics.
   Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph `Sites.FullControl.All` / `Sites.ReadWrite.All`.
 

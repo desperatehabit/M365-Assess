@@ -9,7 +9,7 @@
 //   POST   /v1/custom-tests/{id}/versions      -> append a version (repoints currentVersionId)
 //
 // Authoring and execution are high privilege (arbitrary script, SPEC §7), so
-// every call is gated on the `tests.read` / `tests.write` seam and the route
+// every call is gated on the `CIPP.Tests.Read` / `CIPP.Tests.ReadWrite` seam and the route
 // enforces it by contract: the wiring ticket injects `authorize`, tests stub it.
 // Version parameters are validated against the T-0705 schema before they reach
 // the store, and the store's mutating methods emit the AuditEvent (T-0704), so
@@ -37,8 +37,8 @@ export const CUSTOM_TESTS_PATH = "/v1/custom-tests";
 export const CUSTOM_TEST_ITEM_PATH = "/v1/custom-tests/:id";
 export const CUSTOM_TEST_VERSIONS_PATH = "/v1/custom-tests/:id/versions";
 
-export const CUSTOM_TESTS_READ_PERMISSION = "tests.read";
-export const CUSTOM_TESTS_WRITE_PERMISSION = "tests.write";
+export const CUSTOM_TESTS_READ_PERMISSION = "CIPP.Tests.Read";
+export const CUSTOM_TESTS_WRITE_PERMISSION = "CIPP.Tests.ReadWrite";
 
 export const CUSTOM_TESTS_UNAUTHENTICATED = "request.unauthenticated";
 export const CUSTOM_TEST_NOT_FOUND = "custom_test.not_found";
@@ -319,7 +319,7 @@ export const CUSTOM_TESTS_OPENAPI = {
         responses: {
           "200": { description: "The custom tests." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.read." },
+          "403": { description: "The caller lacks CIPP.Tests.Read." },
         },
       },
       post: {
@@ -349,7 +349,7 @@ export const CUSTOM_TESTS_OPENAPI = {
           "201": { description: "The created custom test." },
           "400": { description: "name failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.write." },
+          "403": { description: "The caller lacks CIPP.Tests.ReadWrite." },
         },
       },
     },
@@ -364,7 +364,7 @@ export const CUSTOM_TESTS_OPENAPI = {
         responses: {
           "200": { description: "The custom test." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.read." },
+          "403": { description: "The caller lacks CIPP.Tests.Read." },
           "404": { description: "Custom test not found." },
         },
       },
@@ -396,7 +396,7 @@ export const CUSTOM_TESTS_OPENAPI = {
           "200": { description: "The updated custom test." },
           "400": { description: "No editable field was supplied, or a field failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.write." },
+          "403": { description: "The caller lacks CIPP.Tests.ReadWrite." },
           "404": { description: "Custom test not found." },
         },
       },
@@ -410,7 +410,7 @@ export const CUSTOM_TESTS_OPENAPI = {
         responses: {
           "204": { description: "Removed; no body." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.write." },
+          "403": { description: "The caller lacks CIPP.Tests.ReadWrite." },
           "404": { description: "Custom test not found." },
         },
       },
@@ -426,7 +426,7 @@ export const CUSTOM_TESTS_OPENAPI = {
         responses: {
           "200": { description: "The version history, oldest first." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.read." },
+          "403": { description: "The caller lacks CIPP.Tests.Read." },
           "404": { description: "Custom test not found." },
         },
       },
@@ -463,7 +463,7 @@ export const CUSTOM_TESTS_OPENAPI = {
           "201": { description: "The appended immutable version." },
           "400": { description: "content is missing or the parameters failed T-0705 validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks tests.write." },
+          "403": { description: "The caller lacks CIPP.Tests.ReadWrite." },
           "404": { description: "Custom test not found." },
         },
       },

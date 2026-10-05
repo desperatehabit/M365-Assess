@@ -297,7 +297,7 @@ describe("contact-template routes", () => {
     expect(missingDelete.status).toBe(404);
   });
 
-  it("gates writes behind contacts.write and reads behind contacts.read", async () => {
+  it("gates writes behind Exchange.Contact.ReadWrite and reads behind Exchange.Contact.Read", async () => {
     const store = new InMemoryContactTemplateStore();
     const routes = createContactTemplateRoutes({
       store,
@@ -316,7 +316,7 @@ describe("contact-template routes", () => {
     expect(list.status).toBe(200);
   });
 
-  it("default authorizer accepts contacts.write or an admin wildcard", async () => {
+  it("default authorizer accepts Exchange.Contact.ReadWrite or an admin wildcard", async () => {
     const store = new InMemoryContactTemplateStore();
     const routes = createContactTemplateRoutes({ store });
     const post = handlerFor(routes, "POST", "/v1/contact-templates");

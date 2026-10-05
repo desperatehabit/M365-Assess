@@ -3,7 +3,7 @@
 // Name/URL, Type (team/communication), Owners, Storage used, Last activity,
 // Sensitivity, External sharing — and filters (type, sharing, storagePercent,
 // lastActivity, sensitivity) over cursor pagination.
-// Requires RBAC `sharepoint.read` and tenant in caller scope. The route makes
+// Requires RBAC `SharePoint.Site.Read` and tenant in caller scope. The route makes
 // no Graph call itself: it hands the filter to a provider that enqueues the
 // get-sharepoint-sites worker, so large tenants are filtered in the worker.
 import { AppError, ErrorCodes } from "../errors.js";
@@ -12,7 +12,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const SHAREPOINT_SITES_PATH = "/v1/tenants/:tenantId/sharepoint/sites";
-export const SHAREPOINT_SITES_READ_PERMISSION = "sharepoint.read";
+export const SHAREPOINT_SITES_READ_PERMISSION = "SharePoint.Site.Read";
 export const SHAREPOINT_SITES_UNAUTHENTICATED = "request.unauthenticated";
 
 export type SharePointSiteType = "team" | "communication";
@@ -101,7 +101,7 @@ export const SHAREPOINT_SITES_OPENAPI = {
           "200": { description: "Cursor-paginated SharePoint sites for the tenant." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.read or the tenant is outside the caller scope." },
+          "403": { description: "The caller lacks SharePoint.Site.Read or the tenant is outside the caller scope." },
         },
       },
     },
@@ -224,7 +224,7 @@ export function createSharePointSitesRoute(options: SharePointSitesListRouteOpti
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(SHAREPOINT_SITES_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharepoint.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing SharePoint.Site.Read", 403);
         }
       }
 

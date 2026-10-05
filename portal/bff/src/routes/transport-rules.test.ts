@@ -71,7 +71,7 @@ describe("Transport rules list route (T-0401)", () => {
     ).rejects.toThrow(AppError);
   });
 
-  it("rejects missing transport.read permission with 403", async () => {
+  it("rejects missing Exchange.Transport.Read permission with 403", async () => {
     const provider = new FakeTransportRulesProvider();
     const route = createTransportRulesRoute({
       provider,

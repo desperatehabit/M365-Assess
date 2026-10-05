@@ -4,7 +4,7 @@
 //   POST /v1/test-packs/{id}/run     -> run a pack against a tenant, scored TestRun
 //   GET  /v1/test-runs/{id}          -> one tenant's pack report (results + score)
 //
-// Tenant-scoped and gated on the `tests.read` / `tests.run` seam (SPEC §7). The
+// Tenant-scoped and gated on the `CIPP.Tests.Read` / `CIPP.Tests.Execute` seam (SPEC §7). The
 // run reuses the create-run API (T-0043) through the pack run service, so no
 // check logic is duplicated here. Standard packs never write to the tenant (§8).
 
@@ -31,8 +31,8 @@ export const TEST_PACKS_LIST_PATH = "/v1/test-packs";
 export const TEST_PACKS_RUN_PATH = "/v1/test-packs/:id/run";
 export const TEST_RUNS_DETAIL_PATH = "/v1/test-runs/:id";
 
-export const TEST_PACKS_READ_PERMISSION = "tests.read";
-export const TEST_PACKS_RUN_PERMISSION = "tests.run";
+export const TEST_PACKS_READ_PERMISSION = "CIPP.Tests.Read";
+export const TEST_PACKS_RUN_PERMISSION = "CIPP.Tests.Execute";
 
 export const TEST_PACKS_UNAUTHENTICATED = "request.unauthenticated";
 export const TEST_RUN_NOT_FOUND = "test_run.not_found";

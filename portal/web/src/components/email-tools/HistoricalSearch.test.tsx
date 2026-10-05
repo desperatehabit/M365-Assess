@@ -37,7 +37,7 @@ beforeEach(() => {
   (URL as unknown as Record<string, unknown>).revokeObjectURL = vi.fn();
   // PermissionGate resolves the download permission through /v1/me.
   global.fetch = vi.fn().mockResolvedValue(
-    jsonResponse({ roles: ["operator"], permissions: ["mailtools.search", "mailtools.download"] }),
+    jsonResponse({ roles: ["operator"], permissions: ["Exchange.MailSearch.Execute", "Exchange.MailSearchResults.Read"] }),
   );
 });
 
@@ -253,7 +253,7 @@ describe("HistoricalSearchResults (T-0466)", () => {
 
   it("hides the download affordance from callers without the download permission", async () => {
     global.fetch = vi.fn().mockResolvedValue(
-      jsonResponse({ roles: ["operator"], permissions: ["mailtools.search"] }),
+      jsonResponse({ roles: ["operator"], permissions: ["Exchange.MailSearch.Execute"] }),
     );
 
     render(<HistoricalSearchResults result={SUCCEEDED_RESULT} loading={false} onCancel={() => undefined} />);

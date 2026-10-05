@@ -97,7 +97,7 @@ describe("Contacts list routes (T-0442)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing contacts.read with 403", async () => {
+  it("rejects callers missing Exchange.Contact.Read with 403", async () => {
     const routes = createContactsRoutes({
       provider: new FakeContactsProvider(),
       resolveCaller: () => ({

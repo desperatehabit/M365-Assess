@@ -139,7 +139,7 @@ describe("secure score trend routes (T-0604)", () => {
     expect(store.recorded).toHaveLength(0);
   });
 
-  it("rejects callers missing secure-score.read with a structured 403", async () => {
+  it("rejects callers missing Security.SecureScore.Read with a structured 403", async () => {
     const { post, provider } = routesFor({
       caller: () => ({
         tenantScope: tenantScope([TENANT]),
@@ -251,14 +251,14 @@ describe("secure score trend routes (T-0604)", () => {
     expect(store.pruneCalls).toEqual([]);
   });
 
-  it("publishes the secure-score.read permission through the route module", () => {
-    expect(SECURE_SCORE_TREND_PERMISSION).toBe("secure-score.read");
+  it("publishes the Security.SecureScore.Read permission through the route module", () => {
+    expect(SECURE_SCORE_TREND_PERMISSION).toBe("Security.SecureScore.Read");
     const trend = SECURE_SCORE_TREND_OPENAPI.paths["/tenants/{tenantId}/secure-score/trend"];
     const snapshot =
       SECURE_SCORE_TREND_OPENAPI.paths["/tenants/{tenantId}/secure-score/snapshot"];
-    expect(trend.get.permission).toBe("secure-score.read");
+    expect(trend.get.permission).toBe("Security.SecureScore.Read");
     expect(trend.get.operationId).toBe("getSecureScoreTrend");
-    expect(snapshot.post.permission).toBe("secure-score.read");
+    expect(snapshot.post.permission).toBe("Security.SecureScore.Read");
     expect(snapshot.post.operationId).toBe("recordSecureScoreSnapshot");
   });
 });

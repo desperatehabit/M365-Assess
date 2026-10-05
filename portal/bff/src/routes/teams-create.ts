@@ -2,7 +2,7 @@
 // Exposes POST /v1/tenants/:tenantId/teams for the `Add team` wizard fields:
 // name, owners, members, template, and visibility. A supplied local
 // TeamTemplate (T-0501) expands its owners/members/settings into the new team
-// (SPEC §11 item 3: templates are local in v1). Writes validate `teams.write`
+// (SPEC §11 item 3: templates are local in v1). Writes validate `Teams.Team.ReadWrite`
 // plus `Remediation.Apply` and tenant scope, then route through the EPIC-006
 // gated path (T-0108): `preview` returns the plan with no write, otherwise the
 // create is enqueued as a gated job and the route records a TeamOperation
@@ -14,7 +14,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TEAMS_CREATE_PATH = "/v1/tenants/:tenantId/teams";
-export const TEAMS_WRITE_PERMISSION = "teams.write";
+export const TEAMS_WRITE_PERMISSION = "Teams.Team.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const TEAMS_CREATE_UNAUTHENTICATED = "request.unauthenticated";
 
@@ -148,7 +148,7 @@ async function authorizeWrite(
   const hasWrite = permissions.includes(TEAMS_WRITE_PERMISSION) || permissions.includes("*");
   const hasApply = permissions.includes(REMEDIATION_APPLY_PERMISSION) || permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing teams.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Teams.Team.ReadWrite", 403);
   }
   if (!hasApply) {
     throw new AppError(ErrorCodes.forbidden, "forbidden: missing Remediation.Apply", 403);
@@ -434,7 +434,7 @@ export const TEAMS_CREATE_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path with a TeamOperation." },
           "400": { description: "name is missing or visibility is not public/private." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The referenced TeamTemplate does not exist." },
         },
       },

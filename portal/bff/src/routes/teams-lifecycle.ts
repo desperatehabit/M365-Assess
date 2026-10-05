@@ -3,7 +3,7 @@
 // edits a team, DELETE .../teams/:teamId deletes one, POST .../teams/:teamId/archive
 // archives one, and POST .../teams/:teamId/clone clones one. Every write routes
 // through EPIC-006 remediation semantics (T-0108): `preview` plans without
-// writing, apply requires `teams.write` plus `Remediation.Apply`, delete
+// writing, apply requires `Teams.Team.ReadWrite` plus `Remediation.Apply`, delete
 // additionally requires `{ "confirm": true }` naming the team, and every apply
 // returns before/after plus one audit event and updates a TeamOperation row
 // (T-0501) with state and result. An unknown team is a structured 4xx, never a
@@ -17,7 +17,7 @@ export const TEAMS_LIFECYCLE_ITEM_PATH = "/v1/tenants/:tenantId/teams/:teamId";
 export const TEAMS_LIFECYCLE_ARCHIVE_PATH = "/v1/tenants/:tenantId/teams/:teamId/archive";
 export const TEAMS_LIFECYCLE_CLONE_PATH = "/v1/tenants/:tenantId/teams/:teamId/clone";
 
-export const TEAMS_WRITE_PERMISSION = "teams.write";
+export const TEAMS_WRITE_PERMISSION = "Teams.Team.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const TEAMS_LIFECYCLE_UNAUTHENTICATED = "request.unauthenticated";
@@ -600,7 +600,7 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
     "/tenants/{tenantId}/teams/{teamId}": {
       patch: {
         operationId: "editTeam",
-        summary: "Edit a team (preview with preview:true; apply needs teams.write, Remediation.Apply)",
+        summary: "Edit a team (preview with preview:true; apply needs Teams.Team.ReadWrite, Remediation.Apply)",
         permission: TEAMS_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -627,13 +627,13 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
           "200": { description: "Edit plan preview, or the applied result with before/after and audit event." },
           "400": { description: "changes is missing or not an object." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The team is not live." },
         },
       },
       delete: {
         operationId: "deleteTeam",
-        summary: "Delete a team (preview with preview:true; apply needs teams.write, Remediation.Apply, confirm:true, and confirmName naming the team)",
+        summary: "Delete a team (preview with preview:true; apply needs Teams.Team.ReadWrite, Remediation.Apply, confirm:true, and confirmName naming the team)",
         permission: TEAMS_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -660,7 +660,7 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
           "200": { description: "Delete plan preview, or the applied result with before/after and audit event." },
           "400": { description: "Confirmation naming the team is missing for the delete." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The team is not live." },
         },
       },
@@ -668,7 +668,7 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
     "/tenants/{tenantId}/teams/{teamId}/archive": {
       post: {
         operationId: "archiveTeam",
-        summary: "Archive a team (preview with preview:true; apply needs teams.write and Remediation.Apply)",
+        summary: "Archive a team (preview with preview:true; apply needs Teams.Team.ReadWrite and Remediation.Apply)",
         permission: TEAMS_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -693,7 +693,7 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
         responses: {
           "200": { description: "Archive plan preview, or the applied result with before/after and audit event." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The team is not live." },
         },
       },
@@ -701,7 +701,7 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
     "/tenants/{tenantId}/teams/{teamId}/clone": {
       post: {
         operationId: "cloneTeam",
-        summary: "Clone a team (preview with preview:true; apply needs teams.write and Remediation.Apply)",
+        summary: "Clone a team (preview with preview:true; apply needs Teams.Team.ReadWrite and Remediation.Apply)",
         permission: TEAMS_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -731,7 +731,7 @@ export const TEAMS_LIFECYCLE_OPENAPI = {
           "200": { description: "Clone plan preview, or the applied result with before/after and audit event." },
           "400": { description: "newName is missing." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The source team is not live." },
         },
       },

@@ -575,7 +575,7 @@ export function ConnectorTemplatesView({
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires transport.write permission" : "";
+  const writeTitle = writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "";
 
   return (
     <div style={pageStyle} data-testid="connector-templates-page">

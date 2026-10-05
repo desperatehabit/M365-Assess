@@ -7,7 +7,7 @@
 // on reads.
 //
 // Changes apply only through the EPIC-006 gated path (T-0108): the route
-// validates `purview.write` + tenant scope, builds a before/after plan, enqueues
+// validates `Purview.Compliance.ReadWrite` + tenant scope, builds a before/after plan, enqueues
 // a `remediation` job carrying the change, and records the append-only
 // CompliancePolicyChange row (T-0581) plus an audit event. Any change that
 // alters a label's encryption settings is refused until a second reviewer
@@ -41,8 +41,8 @@ export const PURVIEW_LABEL_PUBLISH_PATH = "/v1/tenants/:tenantId/purview/labels/
 export const PURVIEW_SITS_PATH = "/v1/tenants/:tenantId/purview/sits";
 export const PURVIEW_SIT_ITEM_PATH = "/v1/tenants/:tenantId/purview/sits/:sitId";
 
-export const PURVIEW_READ_PERMISSION = "purview.read";
-export const PURVIEW_WRITE_PERMISSION = "purview.write";
+export const PURVIEW_READ_PERMISSION = "Purview.Compliance.Read";
+export const PURVIEW_WRITE_PERMISSION = "Purview.Compliance.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const PURVIEW_LABELS_UNAUTHENTICATED = "request.unauthenticated";
@@ -257,7 +257,7 @@ async function requirePurviewRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(PURVIEW_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.Read", 403);
   }
 }
 
@@ -275,7 +275,7 @@ async function requirePurviewWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.ReadWrite", 403);
   }
 }
 
@@ -1202,7 +1202,7 @@ export const PURVIEW_LABELS_OPENAPI = {
         responses: {
           "200": { description: "The live sensitivity labels." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -1215,7 +1215,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "name failed validation, or publishing-policy fields were supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "409": { description: "An encryption change needs a distinct second reviewer's approval." },
         },
       },
@@ -1233,7 +1233,7 @@ export const PURVIEW_LABELS_OPENAPI = {
         responses: {
           "200": { description: "The live sensitivity label." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
           "404": { description: "Sensitivity label not found." },
         },
       },
@@ -1250,7 +1250,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The edit was queued through the EPIC-006 gated path." },
           "400": { description: "No editable field was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Sensitivity label not found." },
           "409": { description: "An encryption change needs a distinct second reviewer's approval." },
         },
@@ -1268,7 +1268,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to delete a sensitivity label." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Sensitivity label not found." },
           "409": { description: "Deleting an encrypted label needs a distinct second reviewer's approval." },
         },
@@ -1288,7 +1288,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The publishing-policy assignment was queued through the EPIC-006 gated path." },
           "400": { description: "A publishing policy was not supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Sensitivity label not found." },
         },
       },
@@ -1309,7 +1309,7 @@ export const PURVIEW_LABELS_OPENAPI = {
         responses: {
           "200": { description: "The live sensitive information types." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -1322,7 +1322,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "name failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -1339,7 +1339,7 @@ export const PURVIEW_LABELS_OPENAPI = {
         responses: {
           "200": { description: "The live sensitive information type." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
           "404": { description: "Sensitive information type not found." },
         },
       },
@@ -1356,7 +1356,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The edit was queued through the EPIC-006 gated path." },
           "400": { description: "No editable field was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Sensitive information type not found." },
           "409": { description: "Built-in sensitive information types cannot be edited." },
         },
@@ -1374,7 +1374,7 @@ export const PURVIEW_LABELS_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to delete a sensitive information type." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Sensitive information type not found." },
           "409": { description: "Built-in sensitive information types cannot be deleted." },
         },

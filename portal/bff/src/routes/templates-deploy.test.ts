@@ -307,7 +307,7 @@ describe("transport template deploy routes (T-0406)", () => {
     ]);
   });
 
-  it("gates the deploy behind transport.write", async () => {
+  it("gates the deploy behind Exchange.Transport.ReadWrite", async () => {
     const executor = auditCapturingExecutor(async () => ({ auditEvent: { id: "no" } }));
     const routes = createConnectorTemplateRoutes({
       store: connectorStore(connectorTemplate()),

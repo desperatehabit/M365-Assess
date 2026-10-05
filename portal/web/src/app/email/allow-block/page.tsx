@@ -403,7 +403,7 @@ export function AllowBlockView({
           type="button"
           style={{ ...primaryButtonStyle, ...(writeDisabled ? disabledStyle : {}) }}
           disabled={writeDisabled}
-          title={writeDisabled ? "Requires spam.write permission" : "Add entry"}
+          title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Add entry"}
           onClick={openCreate}
           data-testid="allow-block-add"
         >
@@ -449,8 +449,8 @@ export function AllowBlockView({
                   <td style={tdStyle}>{entry.notes || "—"}</td>
                   <td style={tdStyle}>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Edit"} onClick={() => openEdit(entry)} data-testid={`allow-block-edit-${entry.type}-${entry.value}`}>Edit</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Remove"} onClick={() => removeEntry(entry)} data-testid={`allow-block-remove-${entry.type}-${entry.value}`}>Remove</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Edit"} onClick={() => openEdit(entry)} data-testid={`allow-block-edit-${entry.type}-${entry.value}`}>Edit</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Remove"} onClick={() => removeEntry(entry)} data-testid={`allow-block-remove-${entry.type}-${entry.value}`}>Remove</button>
                     </div>
                   </td>
                 </tr>

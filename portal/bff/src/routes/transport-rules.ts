@@ -1,7 +1,7 @@
 // Transport rules list read (EPIC-021 SPEC.md §2 US-1, §3.1, §5, §6; T-0401).
 // Exposes GET /v1/tenants/:tenantId/transport-rules with the §3.1 columns:
 // name, priority, state, conditions, actions, exceptions, last modified.
-// Requires RBAC `transport.read` and tenant in caller scope. Rules are read
+// Requires RBAC `Exchange.Transport.Read` and tenant in caller scope. Rules are read
 // live from EXO and never persisted: the injected provider is backed by the
 // worker queue (T-0010) running the Get-TransportRules child job, so this
 // module holds no M365 SDK call and issues no tenant write.
@@ -15,7 +15,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TRANSPORT_RULES_PATH = "/v1/tenants/:tenantId/transport-rules";
-export const TRANSPORT_READ_PERMISSION = "transport.read";
+export const TRANSPORT_READ_PERMISSION = "Exchange.Transport.Read";
 export const TRANSPORT_RULES_UNAUTHENTICATED = "request.unauthenticated";
 
 export type TransportRuleState = "enabled" | "disabled";
@@ -130,7 +130,7 @@ export function createTransportRulesRoute(options: TransportRulesRouteOptions): 
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(TRANSPORT_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing transport.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Transport.Read", 403);
         }
       }
 
@@ -157,7 +157,7 @@ export function createTransportRulesRoute(options: TransportRulesRouteOptions): 
 // holds no M365 SDK call and issues no tenant write.
 
 export const TRANSPORT_RULES_ITEM_PATH = "/v1/tenants/:tenantId/transport-rules/:ruleId";
-export const TRANSPORT_WRITE_PERMISSION = "transport.write";
+export const TRANSPORT_WRITE_PERMISSION = "Exchange.Transport.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const TRANSPORT_RULE_CONFIRM_REQUIRED = "transport.rule_confirm_required";
 
@@ -485,7 +485,7 @@ export const TRANSPORT_RULES_OPENAPI = {
           "200": { description: "Cursor-paginated transport rules with the §3.1 columns." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks transport.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Transport.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -510,7 +510,7 @@ export const TRANSPORT_RULES_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks transport.write or the tenant is out of scope.",
+              "The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.",
           },
         },
       },
@@ -538,7 +538,7 @@ export const TRANSPORT_RULES_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks transport.write or the tenant is out of scope.",
+              "The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.",
           },
           "404": { description: "The rule was not found." },
         },
@@ -559,7 +559,7 @@ export const TRANSPORT_RULES_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks transport.write or the tenant is out of scope.",
+              "The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.",
           },
           "404": { description: "The rule was not found." },
         },

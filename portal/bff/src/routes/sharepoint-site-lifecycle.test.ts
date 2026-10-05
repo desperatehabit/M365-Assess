@@ -344,7 +344,7 @@ describe("SharePoint site lifecycle routes (T-0485)", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects a caller missing sharepoint.write with 403", async () => {
+  it("rejects a caller missing SharePoint.Site.ReadWrite with 403", async () => {
     const { provider, routes } = harness(callerFor([TENANT], [REMEDIATION_APPLY_PERMISSION]));
     const route = routes.find((r) => r.method === "DELETE")!;
     await expect(

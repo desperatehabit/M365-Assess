@@ -1,5 +1,5 @@
 // Teams activity report API (EPIC-026 SPEC.md §3.2, §4.2, §6, §9; T-0507).
-// Exposes GET /v1/tenants/:tenantId/teams/activity behind RBAC teams.read.
+// Exposes GET /v1/tenants/:tenantId/teams/activity behind RBAC Teams.Team.Read.
 // Read-only: the BFF performs no reporting call directly. It enqueues the
 // Get-TeamsActivity worker (Graph usage reports with the Teams admin report as
 // fallback) and paginates/shapes the result; the worker indicates the source.
@@ -9,7 +9,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TEAMS_ACTIVITY_PATH = "/v1/tenants/:tenantId/teams/activity";
-export const TEAMS_READ_PERMISSION = "teams.read";
+export const TEAMS_READ_PERMISSION = "Teams.Team.Read";
 export const TEAMS_ACTIVITY_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface TeamsActivitySources {
@@ -133,7 +133,7 @@ async function authorizeRead(
     if (!hasPermission) {
       throw new AppError(
         ErrorCodes.forbidden,
-        "forbidden: missing teams.read permission",
+        "forbidden: missing Teams.Team.Read permission",
         403,
       );
     }

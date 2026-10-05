@@ -35,7 +35,7 @@ const GATED_DETAIL: MessageDetail = {
   headers: [{ name: "Authentication-Results", value: "dkim=pass" }],
   body: null,
   bodyGated: true,
-  bodyGateReason: "The message body requires the mailtools.content permission.",
+  bodyGateReason: "The message body requires the Exchange.MailContent.Reveal permission.",
   retrievedAt: "2026-09-26T10:01:00.000Z",
 };
 
@@ -125,7 +125,7 @@ describe("Message viewer detail route (T-0464)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailtools.read with 403", async () => {
+  it("rejects callers missing Exchange.MailTools.Read with 403", async () => {
     const routes = createMessageRoutes({
       provider: new FakeMessagesProvider(),
       resolveCaller: () => ({
@@ -184,7 +184,7 @@ describe("Message viewer detail route (T-0464)", () => {
     });
   });
 
-  it("returns the body for callers holding mailtools.content and audits the read", async () => {
+  it("returns the body for callers holding Exchange.MailContent.Reveal and audits the read", async () => {
     const provider = new FakeMessagesProvider();
     const audits: MessageReadAuditEvent[] = [];
     const routes = createMessageRoutes({

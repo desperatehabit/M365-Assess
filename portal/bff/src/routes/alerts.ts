@@ -12,8 +12,8 @@
 // route through the EPIC-006 gated executor seam: every applied change records
 // an AlertStateChange (from/to/by/at/reason) and an audit event, and resolving
 // an alert or creating an incident requires explicit confirmation. The list
-// route requires RBAC `incidents.read`; the action route requires
-// `incidents.triage` plus `Remediation.Apply`; both require the tenant in
+// route requires RBAC `Security.Incident.Read`; the action route requires
+// `Security.Incident.ReadWrite` plus `Remediation.Apply`; both require the tenant in
 // caller scope.
 import { randomUUID } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
@@ -25,8 +25,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const ALERTS_PATH = "/v1/tenants/:tenantId/alerts";
 export const ALERT_ACTIONS_PATH = "/v1/tenants/:tenantId/alerts/:alertId/:action";
 
-export const ALERTS_READ_PERMISSION = "incidents.read";
-export const ALERT_ACTIONS_TRIAGE_PERMISSION = "incidents.triage";
+export const ALERTS_READ_PERMISSION = "Security.Incident.Read";
+export const ALERT_ACTIONS_TRIAGE_PERMISSION = "Security.Incident.ReadWrite";
 export const ALERT_ACTIONS_APPLY_PERMISSION = "Remediation.Apply";
 
 export const ALERTS_UNAUTHENTICATED = "request.unauthenticated";
@@ -335,7 +335,7 @@ async function ensureRead(options: AlertsRouteOptions, caller: AlertsCaller): Pr
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(ALERTS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing incidents.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Security.Incident.Read", 403);
   }
 }
 
@@ -770,7 +770,7 @@ export const ALERTS_OPENAPI = {
           },
           "400": { description: "A path or query parameter is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the incidents.read permission." },
+          "403": { description: "The caller lacks the Security.Incident.Read permission." },
         },
       },
     },
@@ -837,7 +837,7 @@ export const ALERTS_OPENAPI = {
           "401": { description: "Authentication is required." },
           "403": {
             description:
-              "The caller lacks incidents.triage or Remediation.Apply, or the tenant is out of scope.",
+              "The caller lacks Security.Incident.ReadWrite or Remediation.Apply, or the tenant is out of scope.",
           },
           "501": { description: "Alert actions are not wired for this tenant." },
         },

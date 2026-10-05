@@ -12,7 +12,7 @@
 import React, { type CSSProperties, type ReactElement } from "react";
 import { PermissionGate } from "../PermissionGate";
 
-export const HISTORICAL_SEARCH_DOWNLOAD_PERMISSION = "mailtools.download";
+export const HISTORICAL_SEARCH_DOWNLOAD_PERMISSION = "Exchange.MailSearchResults.Read";
 
 export interface HistoricalSearchJob {
   readonly id: string;

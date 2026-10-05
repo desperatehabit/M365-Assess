@@ -8,7 +8,7 @@
 // variable values. Preview returns the resolved contacts and writes nothing;
 // apply routes every valid target through the EPIC-006 gated executor (the
 // worker calls Invoke-ContactAction) and audits each one. The route is gated on
-// `contacts.write` or `Remediation.Apply` (SPEC §7) and is tenant-scoped. The
+// `Exchange.Contact.ReadWrite` or `Remediation.Apply` (SPEC §7) and is tenant-scoped. The
 // provider seam keeps the route testable without a live worker.
 import type { ContactTemplate } from "@m365-assess/db";
 import { AppError, ErrorCodes } from "../errors.js";
@@ -307,7 +307,7 @@ export const CONTACT_TEMPLATE_DEPLOY_OPENAPI = {
         responses: {
           "200": { description: "Plan preview, or every target deployed." },
           "207": { description: "Some targets deployed and some failed." },
-          "403": { description: "The caller lacks contacts.write / Remediation.Apply or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Contact.ReadWrite / Remediation.Apply or the tenant is out of scope." },
           "404": { description: "No live template has that id." },
           "422": { description: "Every target failed." },
         },

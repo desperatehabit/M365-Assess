@@ -1,7 +1,7 @@
 // SharePoint site browser API (EPIC-025 SPEC.md §2 US-5, §3.4, §4.3, §6, §7; T-0488).
 // Exposes GET /v1/tenants/:tenantId/sharepoint/sites/:siteId/browse: per-site
 // libraries, items, permissions, and external users, read-only, behind RBAC
-// `sharepoint.read` and tenant scope. Permission changes are not performed here;
+// `SharePoint.Site.Read` and tenant scope. Permission changes are not performed here;
 // the response carries the EPIC-027 hand-off paths and an SPO admin-center deep
 // link for advanced actions not in v1 (SPEC §11 item 4). The route makes no
 // Graph call itself: it hands the site id to a provider that enqueues the
@@ -13,7 +13,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const SHAREPOINT_BROWSE_PATH =
   "/v1/tenants/:tenantId/sharepoint/sites/:siteId/browse";
 
-export const SHAREPOINT_READ_PERMISSION = "sharepoint.read";
+export const SHAREPOINT_READ_PERMISSION = "SharePoint.Site.Read";
 export const SHAREPOINT_BROWSE_UNAUTHENTICATED = "request.unauthenticated";
 
 export type SharePointPrincipalType =
@@ -121,7 +121,7 @@ export const SHAREPOINT_BROWSE_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks sharepoint.read or the tenant is outside the caller scope.",
+              "The caller lacks SharePoint.Site.Read or the tenant is outside the caller scope.",
           },
         },
       },
@@ -163,7 +163,7 @@ async function authorizeRead(
   } else {
     const permissions = caller.permissions ?? [];
     if (!permissions.includes(SHAREPOINT_READ_PERMISSION) && !permissions.includes("*")) {
-      throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharepoint.read", 403);
+      throw new AppError(ErrorCodes.forbidden, "forbidden: missing SharePoint.Site.Read", 403);
     }
   }
 }

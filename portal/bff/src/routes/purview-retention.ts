@@ -7,7 +7,7 @@
 // on reads.
 //
 // Changes (create/edit/enable/disable/delete) apply only through the EPIC-006
-// gated path (T-0108): the route validates `purview.write` + tenant scope, builds
+// gated path (T-0108): the route validates `Purview.Compliance.ReadWrite` + tenant scope, builds
 // a before/after plan, enqueues a `remediation` job carrying the change, and
 // records the append-only CompliancePolicyChange row (T-0581) plus an audit
 // event. Disable and delete are flagged compliance-impacting and require
@@ -29,8 +29,8 @@ import type {
 export const PURVIEW_RETENTION_PATH = "/v1/tenants/:tenantId/purview/retention";
 export const PURVIEW_RETENTION_ITEM_PATH = "/v1/tenants/:tenantId/purview/retention/:policyId";
 
-export const PURVIEW_READ_PERMISSION = "purview.read";
-export const PURVIEW_WRITE_PERMISSION = "purview.write";
+export const PURVIEW_READ_PERMISSION = "Purview.Compliance.Read";
+export const PURVIEW_WRITE_PERMISSION = "Purview.Compliance.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const PURVIEW_RETENTION_UNAUTHENTICATED = "request.unauthenticated";
@@ -185,7 +185,7 @@ async function requirePurviewRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(PURVIEW_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.Read", 403);
   }
 }
 
@@ -203,7 +203,7 @@ async function requirePurviewWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.ReadWrite", 403);
   }
 }
 
@@ -663,7 +663,7 @@ export const PURVIEW_RETENTION_OPENAPI = {
         responses: {
           "200": { description: "The live retention policies." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -678,7 +678,7 @@ export const PURVIEW_RETENTION_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "name or confirm failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -696,7 +696,7 @@ export const PURVIEW_RETENTION_OPENAPI = {
           "202": { description: "The change was queued through the EPIC-006 gated path." },
           "400": { description: "No editable field was supplied, or confirm is required for disable." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Retention policy not found." },
         },
       },
@@ -713,7 +713,7 @@ export const PURVIEW_RETENTION_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to delete a retention policy." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "Retention policy not found." },
         },
       },

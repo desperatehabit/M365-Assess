@@ -120,7 +120,7 @@ Snooze suppresses a rule/event until a time; disable stops evaluation. Both audi
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `alerts.read`, `alerts.write`, `alerts.deliver`; script-mode alerts are high privilege
+- **RBAC:** `CIPP.Alert.Read`, `CIPP.Alert.ReadWrite`, `CIPP.Alert.Execute` (planned, no route yet); script-mode alerts are high privilege
   (arbitrary script) and gated like EPIC-007 custom scripts. Tenant-scoped (EPIC-038).
 - **Tenant auth:** read scopes for evaluation; channel credentials for delivery (stored per
   EPIC-002 credential rules).

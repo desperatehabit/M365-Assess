@@ -153,7 +153,7 @@ function writerCaller(): TransportRulesWriteCaller {
 function readCaller(): TransportRulesWriteCaller {
   return {
     tenantScope: tenantScope([TENANT]),
-    permissions: ["transport.read"],
+    permissions: ["Exchange.Transport.Read"],
   };
 }
 
@@ -209,7 +209,7 @@ describe("Transport rule write routes (T-0402)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing transport.write on writes with 403", async () => {
+  it("rejects callers missing Exchange.Transport.ReadWrite on writes with 403", async () => {
     const routes = createTransportRulesWriteRoutes({
       provider: new FakeTransportRulesWriteProvider(),
       resolveCaller: readCaller,

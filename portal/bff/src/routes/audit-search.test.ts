@@ -160,7 +160,7 @@ describe("Audit search routes (T-0622)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses search callers lacking audit.search with a structured 403", async () => {
+  it("refuses search callers lacking Security.AuditSearch.ReadWrite with a structured 403", async () => {
     const provider = new FakeAuditSearchProvider();
     const routes = createAuditSearchRoutes({
       provider,
@@ -181,7 +181,7 @@ describe("Audit search routes (T-0622)", () => {
     expect(provider.searchCalls).toHaveLength(0);
   });
 
-  it("refuses directory callers lacking audit.read with a structured 403", async () => {
+  it("refuses directory callers lacking Security.Audit.Read with a structured 403", async () => {
     const provider = new FakeAuditSearchProvider();
     const routes = createAuditSearchRoutes({
       provider,
@@ -201,7 +201,7 @@ describe("Audit search routes (T-0622)", () => {
     expect(provider.directoryCalls).toHaveLength(0);
   });
 
-  it("runs a manual search and writes the audit.search AuditEvent", async () => {
+  it("runs a manual search and writes the Security.AuditSearch.ReadWrite AuditEvent", async () => {
     const provider = new FakeAuditSearchProvider();
     const audit = new FakeAuditEventStore();
     const routes = createAuditSearchRoutes({

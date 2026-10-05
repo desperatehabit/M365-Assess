@@ -215,7 +215,7 @@ describe("secure score fleet route (T-0606)", () => {
     expect(repository.calls).toHaveLength(0);
   });
 
-  it("rejects callers missing secure-score.read with a structured 403", async () => {
+  it("rejects callers missing Security.SecureScore.Read with a structured 403", async () => {
     const repository = new FakeSnapshotRepository();
     const routes = createSecureScoreFleetRoutes(
       options(repository, [TENANT_A], {

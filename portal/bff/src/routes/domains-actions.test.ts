@@ -1,5 +1,5 @@
 // T-0663 — domain add/verify/remove/set-default writes through the EPIC-006
-// apply contract: domains.write gate, tenant scope, confirmation, dry-run
+// apply contract: Tenant.Domains.ReadWrite gate, tenant scope, confirmation, dry-run
 // default, Idempotency-Key replay, and per-write audit events.
 
 import { describe, expect, it } from "vitest";
@@ -279,7 +279,7 @@ describe("gates and Idempotency-Key (T-0663, EPIC-006 contract)", () => {
     await expect(route.handler(addContext())).rejects.toMatchObject({ status: 401 });
   });
 
-  it("returns 403 without domains.write", async () => {
+  it("returns 403 without Tenant.Domains.ReadWrite", async () => {
     const provider = new FakeDomainActionProvider();
     const route = routeFor(baseOptions(provider, { authorize: denyAll }), "POST", DOMAINS_ADD_PATH);
     await expect(route.handler(addContext())).rejects.toMatchObject({ status: 403 });
@@ -360,7 +360,7 @@ describe("route set (T-0663)", () => {
     );
   });
 
-  it("publishes every operation with the domains.write permission", () => {
+  it("publishes every operation with the Tenant.Domains.ReadWrite permission", () => {
     const paths = DOMAINS_ACTIONS_OPENAPI.paths;
     expect(paths["/tenants/{tenantId}/domains"].post.permission).toBe(DOMAINS_WRITE_PERMISSION);
     expect(paths["/tenants/{tenantId}/domains/{domain}/verify"].post.permission).toBe(DOMAINS_WRITE_PERMISSION);

@@ -119,7 +119,7 @@ Create a window; scheduled searches skip it; the window auto-expires.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `audit.read`, `audit.search`, `audit.manage`; webhook management requires
+- **RBAC:** `Security.Audit.Read`, `Security.AuditSearch.ReadWrite`, `Security.Audit.ReadWrite`; webhook management requires
   `CIPP.Admin.*`. Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph `AuditLog.Read.All`, `Directory.Read.All`; subscription management needs
   `Subscription.ReadWrite.All` (app-only).

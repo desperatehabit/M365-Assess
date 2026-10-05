@@ -237,7 +237,7 @@ describe("sharing-link removal apply (T-0527)", () => {
 });
 
 describe("sharing-link removal route wiring (T-0527)", () => {
-  it("requires sharing.write on the route and Remediation.Apply on apply", async () => {
+  it("requires Sharing.Permissions.ReadWrite on the route and Remediation.Apply on apply", async () => {
     const seen: string[] = [];
     const routes = createSharingLinksRemoveRoutes({
       provider: new FakeRemovalProvider(),
@@ -259,11 +259,11 @@ describe("sharing-link removal route wiring (T-0527)", () => {
     await handler.handler(contextFor({ links: LINKS, reason: "risky links", confirm: true, confirmCount: 2 }));
     expect(seen).toEqual([SHARING_WRITE_PERMISSION, SHARING_WRITE_PERMISSION, REMEDIATION_APPLY_PERMISSION]);
     expect(SHARING_LINKS_REMOVE_OPENAPI.paths["/tenants/{tenantId}/sharing/links/remove"].post.permission).toBe(
-      "sharing.write",
+      "Sharing.Permissions.ReadWrite",
     );
   });
 
-  it("refuses callers without sharing.write and tenants outside scope", async () => {
+  it("refuses callers without Sharing.Permissions.ReadWrite and tenants outside scope", async () => {
     const routes = createSharingLinksRemoveRoutes({
       provider: new FakeRemovalProvider(),
       jobs: new FakeJobStore(),

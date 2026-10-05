@@ -4,7 +4,7 @@
 // GET .../external-users/:externalUserId/access, the drill-through listing the
 // sites/items that one external user can access. External users are aggregated
 // live from Graph/SPO by the get-external-users worker (§7); the routes make no
-// Graph call themselves and are read-only. Requires RBAC `sharing.read` and
+// Graph call themselves and are read-only. Requires RBAC `Sharing.Permissions.Read` and
 // tenant in caller scope. Enumeration is cursor-paginated (§9).
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
@@ -13,7 +13,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const EXTERNAL_USERS_PATH = "/v1/tenants/:tenantId/sharing/external-users";
 export const EXTERNAL_USER_ACCESS_PATH = `${EXTERNAL_USERS_PATH}/:externalUserId/access`;
-export const SHARING_READ_PERMISSION = "sharing.read";
+export const SHARING_READ_PERMISSION = "Sharing.Permissions.Read";
 export const EXTERNAL_USERS_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface ExternalUserItem {
@@ -130,7 +130,7 @@ async function requireSharingRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(SHARING_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharing.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Sharing.Permissions.Read", 403);
   }
 }
 
@@ -216,7 +216,7 @@ export const SHARING_EXTERNAL_USERS_OPENAPI = {
           "200": { description: "Cursor-paginated external users with their site counts." },
           "400": { description: "A required path parameter is missing." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharing.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Sharing.Permissions.Read or the tenant is out of scope." },
         },
       },
     },
@@ -236,7 +236,7 @@ export const SHARING_EXTERNAL_USERS_OPENAPI = {
           "200": { description: "Cursor-paginated sites/items the external user can access." },
           "400": { description: "A required path parameter is missing." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharing.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Sharing.Permissions.Read or the tenant is out of scope." },
         },
       },
     },

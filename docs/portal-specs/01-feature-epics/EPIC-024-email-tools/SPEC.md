@@ -104,7 +104,7 @@ Message data is **not** persisted by the portal; only job and audit records.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `mailtools.read`, `mailtools.search`, `mailtools.restore`; search and restore are
+- **RBAC:** `Exchange.MailTools.Read`, `Exchange.MailSearch.Execute`, `Exchange.MailRestore.Execute`; search and restore are
   sensitive and require high privilege + tenant scope (EPIC-038).
 - **Tenant auth:** EXO app-only certificate; some search operations need compliance/Purview roles.
 
@@ -140,7 +140,7 @@ audited. Trace/search/view are read-only but audited because they expose message
    per-tenant EXO process; callers need high privilege plus the compliance/eDiscovery
    administrator roles.
 2. **Message viewer content** — **Resolved (adopted):** metadata + headers first; the message
-   body is behind a higher permission (`mailtools.content`).
+   body is behind a higher permission (`Exchange.MailContent.Reveal`).
 3. **Restore scope** — **Resolved (adopted):** mailbox-only first, then item-level restore.
 4. **Retention of search results** — **Resolved (adopted):** ephemeral; search matches are not
    persisted — only job and audit records persist.

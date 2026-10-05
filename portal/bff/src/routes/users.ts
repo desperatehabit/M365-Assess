@@ -1129,7 +1129,7 @@ export const USERS_OPENAPI = {
 // portal-local store, unlike the Graph-backed tenant directory above. The
 // injected store is the seam the production wiring backs with the portal user
 // store; this module holds no database or Graph client. Every method requires
-// the CIPP.Admin.* scope (SPEC §7 admin surface) through the T-0743 resolver
+// the CIPP.Admin.Users permission (SPEC §7 admin surface: CIPP.Admin.*) through the T-0743 resolver
 // via the authorize seam, and every mutation writes one access AuditEvent
 // through the recordAudit seam (T-0750 provides the writer). A user holds
 // exactly one of the four base roles (SPEC §4.1).
@@ -1137,7 +1137,7 @@ export const USERS_OPENAPI = {
 export const PORTAL_USERS_PATH = "/v1/users";
 export const PORTAL_USER_PATH = "/v1/users/:id";
 export const PORTAL_USER_SCOPE_PATH = "/v1/users/:id/scope";
-export const USERS_ADMIN_SCOPE = "CIPP.Admin.*";
+export const USERS_ADMIN_SCOPE = "CIPP.Admin.Users";
 
 export const PORTAL_USER_NOT_FOUND = "users.not_found";
 
@@ -1512,7 +1512,7 @@ export const PORTAL_USERS_OPENAPI = {
     "/users": {
       get: {
         operationId: "listPortalUsers",
-        summary: "List portal users (CIPP.Admin.* surface).",
+        summary: "List portal users (CIPP.Admin.Users surface).",
         permission: USERS_ADMIN_SCOPE,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -1522,7 +1522,7 @@ export const PORTAL_USERS_OPENAPI = {
         responses: {
           "200": { description: "Cursor-paginated portal users." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "403": { description: "The caller lacks CIPP.Admin.Users." },
         },
       },
       post: {
@@ -1534,7 +1534,7 @@ export const PORTAL_USERS_OPENAPI = {
           "201": { description: "The created portal user." },
           "400": { description: "The request body is invalid or the upn is already assigned." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "403": { description: "The caller lacks CIPP.Admin.Users." },
         },
       },
     },
@@ -1548,7 +1548,7 @@ export const PORTAL_USERS_OPENAPI = {
           "200": { description: "The updated portal user." },
           "400": { description: "The request body is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "403": { description: "The caller lacks CIPP.Admin.Users." },
           "404": { description: "No portal user has that id." },
         },
       },
@@ -1560,7 +1560,7 @@ export const PORTAL_USERS_OPENAPI = {
         responses: {
           "204": { description: "The portal user was removed." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "403": { description: "The caller lacks CIPP.Admin.Users." },
           "404": { description: "No portal user has that id." },
         },
       },
@@ -1577,7 +1577,7 @@ export const PORTAL_USERS_OPENAPI = {
             description: "The scope is invalid or an all scope was assigned to a non-superadmin.",
           },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks the CIPP.Admin.* scope." },
+          "403": { description: "The caller lacks CIPP.Admin.Users." },
           "404": { description: "No portal user has that id." },
         },
       },

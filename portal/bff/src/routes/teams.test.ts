@@ -97,7 +97,7 @@ describe("Teams list route (T-0502)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects callers missing teams.read with 403 and performs no provider call", async () => {
+  it("rejects callers missing Teams.Team.Read with 403 and performs no provider call", async () => {
     const provider = new FakeTeamsProvider();
     const route = createTeamsListRoute({
       provider,
@@ -164,10 +164,10 @@ describe("Teams list route (T-0502)", () => {
     expect(() => parseTeamsFilter(new URLSearchParams("to=not-a-date"))).toThrow(AppError);
   });
 
-  it("publishes the teams.read permission through the route module", () => {
+  it("publishes the Teams.Team.Read permission through the route module", () => {
     const entry = TEAMS_OPENAPI.paths["/tenants/{tenantId}/teams"];
-    expect(entry.get.permission).toBe("teams.read");
+    expect(entry.get.permission).toBe("Teams.Team.Read");
     expect(entry.get.operationId).toBe("listTeams");
-    expect(TEAMS_READ_PERMISSION).toBe("teams.read");
+    expect(TEAMS_READ_PERMISSION).toBe("Teams.Team.Read");
   });
 });

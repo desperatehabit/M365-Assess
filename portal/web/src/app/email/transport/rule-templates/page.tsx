@@ -576,7 +576,7 @@ export function TransportRuleTemplatesView({
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires transport.write permission" : "";
+  const writeTitle = writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "";
 
   return (
     <div style={pageStyle} data-testid="transport-rule-templates-page">

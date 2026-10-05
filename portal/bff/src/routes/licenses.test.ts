@@ -89,7 +89,7 @@ describe("Licenses list route (T-0642)", () => {
     ).rejects.toThrow(AppError);
   });
 
-  it("rejects missing licenses.read permission with 403", async () => {
+  it("rejects missing Tenant.Licenses.Read permission with 403", async () => {
     const provider = new FakeLicensesProvider();
     const route = createLicensesRoute({
       provider,

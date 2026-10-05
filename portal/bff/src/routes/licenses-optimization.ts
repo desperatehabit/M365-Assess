@@ -3,7 +3,7 @@
 // (assigned but inactive past the configurable window, default 30 days), overused
 // (Graph assignment errors), and expiring (upcoming SKU expiry), each row listing
 // the affected users. Advisory only: no licence is removed by this endpoint.
-// Requires RBAC `licenses.read` and tenant in caller scope.
+// Requires RBAC `Tenant.Licenses.Read` and tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
@@ -17,7 +17,7 @@ import {
 } from "../domain/license-optimization.js";
 
 export const LICENSE_OPTIMIZATION_PATH = "/v1/tenants/:tenantId/licenses/optimization";
-export const LICENSE_OPTIMIZATION_READ_PERMISSION = "licenses.read";
+export const LICENSE_OPTIMIZATION_READ_PERMISSION = "Tenant.Licenses.Read";
 export const LICENSE_OPTIMIZATION_UNAUTHENTICATED = "request.unauthenticated";
 
 export type LicenseOptimizationResponse = LicenseOptimizationResult;
@@ -96,7 +96,7 @@ export function createLicenseOptimizationRoute(options: LicenseOptimizationRoute
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(LICENSE_OPTIMIZATION_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing licenses.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Tenant.Licenses.Read", 403);
         }
       }
 
@@ -134,7 +134,7 @@ export const LICENSE_OPTIMIZATION_OPENAPI = {
       get: {
         operationId: "getLicenseOptimization",
         summary: "Advisory unused, overused, and expiring licence findings with affected users",
-        permission: "licenses.read",
+        permission: "Tenant.Licenses.Read",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -155,7 +155,7 @@ export const LICENSE_OPTIMIZATION_OPENAPI = {
           "200": { description: "Grouped unused, overused, and expiring licences with affected users." },
           "400": { description: "A path or query parameter is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the licenses.read permission or tenant is out of scope." },
+          "403": { description: "The caller lacks the Tenant.Licenses.Read permission or tenant is out of scope." },
         },
       },
     },

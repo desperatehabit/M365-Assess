@@ -5,7 +5,7 @@
 // read-only: the injected provider is backed by the worker queue running the
 // Get-PermissionsReport child job (live Graph/SPO reads, no tenant write), so
 // this module holds no M365 SDK call and issues no write. Reads require
-// `sharing.read` (SPEC §7) intersected with the caller tenant scope. Filtering
+// `Sharing.Permissions.Read` (SPEC §7) intersected with the caller tenant scope. Filtering
 // is pushed to the worker so the BFF never materializes a large tenant's full
 // permission set.
 import { AppError, ErrorCodes } from "../errors.js";
@@ -14,7 +14,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const SHARING_PERMISSIONS_PATH = "/v1/tenants/:tenantId/sharing/permissions";
-export const SHARING_READ_PERMISSION = "sharing.read";
+export const SHARING_READ_PERMISSION = "Sharing.Permissions.Read";
 export const SHARING_PERMISSIONS_UNAUTHENTICATED = "request.unauthenticated";
 
 export type SharingPermissionPrincipalType = "user" | "group" | "servicePrincipal";
@@ -153,7 +153,7 @@ export function createSharingPermissionsRoute(options: SharingPermissionsRouteOp
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(SHARING_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharing.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Sharing.Permissions.Read", 403);
         }
       }
 
@@ -195,7 +195,7 @@ export const SHARING_PERMISSIONS_OPENAPI = {
           "200": { description: "Cursor-paginated site/OneDrive permission rows." },
           "400": { description: "An unsupported principal-type value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharing.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Sharing.Permissions.Read or the tenant is out of scope." },
         },
       },
     },

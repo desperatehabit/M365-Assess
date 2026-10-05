@@ -1,6 +1,6 @@
 // T-0584 — Purview retention read + change gating.
-// Route-level tests: the read route validates purview.read + tenant scope and
-// returns the live page; the change routes validate purview.write, require
+// Route-level tests: the read route validates Purview.Compliance.Read + tenant scope and
+// returns the live page; the change routes validate Purview.Compliance.ReadWrite, require
 // confirmation for disable/delete, enqueue the EPIC-006 gated job, and record
 // the CompliancePolicyChange row plus an audit event.
 
@@ -209,7 +209,7 @@ describe("Purview retention read + change routes (T-0584)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing purview.read with 403", async () => {
+  it("rejects callers missing Purview.Compliance.Read with 403", async () => {
     const routes = createPurviewRetentionRoutes({
       provider: new FakeRetentionProvider(),
       queue: new FakeQueue(),
@@ -271,7 +271,7 @@ describe("Purview retention read + change routes (T-0584)", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects callers missing purview.write with 403", async () => {
+  it("rejects callers missing Purview.Compliance.ReadWrite with 403", async () => {
     const routes = createPurviewRetentionRoutes({
       provider: new FakeRetentionProvider(),
       queue: new FakeQueue(),

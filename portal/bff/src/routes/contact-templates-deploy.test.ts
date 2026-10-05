@@ -162,11 +162,11 @@ describe("contact template deploy route (T-0447)", () => {
     });
   });
 
-  it("rejects callers without contacts.write or Remediation.Apply with 403", async () => {
+  it("rejects callers without Exchange.Contact.ReadWrite or Remediation.Apply with 403", async () => {
     const route = createContactTemplateDeployRoute(
       makeOptions(new FakeStore(), new FakeProvider(), {
         tenantScope: tenantScope([TENANT_1]),
-        permissions: ["contacts.read"],
+        permissions: ["Exchange.Contact.Read"],
       }),
     );
     await expect(route.handler(context({ body: { targets: [TENANT_1] } }))).rejects.toMatchObject({

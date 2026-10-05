@@ -99,10 +99,10 @@ describe("SitesTable (T-0483)", () => {
   });
 
   it("renders error state", () => {
-    const view = render(<SitesTable error="Forbidden: missing sharepoint.read" />);
+    const view = render(<SitesTable error="Forbidden: missing SharePoint.Site.Read" />);
     try {
       expect(screen.getByTestId("sites-error")).toBeTruthy();
-      expect(screen.getByTestId("sites-error").textContent).toContain("sharepoint.read");
+      expect(screen.getByTestId("sites-error").textContent).toContain("SharePoint.Site.Read");
     } finally {
       view.unmount();
     }
@@ -406,13 +406,13 @@ describe("SharePoint Sites page (T-0483)", () => {
   });
 
   it("surfaces API failures as an error state", async () => {
-    const fetcher = vi.fn(async () => jsonResponse({ message: "forbidden: missing sharepoint.read" }, 403));
+    const fetcher = vi.fn(async () => jsonResponse({ message: "forbidden: missing SharePoint.Site.Read" }, 403));
     vi.stubGlobal("fetch", fetcher);
 
     const view = render(<SitesPage />);
     try {
       await waitFor(() => expect(screen.getByTestId("sites-error")).toBeTruthy());
-      expect(screen.getByTestId("sites-error").textContent).toContain("sharepoint.read");
+      expect(screen.getByTestId("sites-error").textContent).toContain("SharePoint.Site.Read");
     } finally {
       view.unmount();
     }

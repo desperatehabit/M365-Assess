@@ -109,7 +109,7 @@ Sites are read live from Graph/SPO; templates and operation records persist.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `sharepoint.read`, `sharepoint.write`, `sharepoint.cleanup`; writes/cleanup require
+- **RBAC:** `SharePoint.Site.Read`, `SharePoint.Site.ReadWrite`, `SharePoint.Cleanup.ReadWrite`; writes/cleanup require
   `Remediation.Apply` semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph `Sites.FullControl.All` / `Sites.ReadWrite.All` (app-only).
 

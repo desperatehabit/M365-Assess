@@ -100,7 +100,7 @@ Teams/voice/LIS read live from Graph/Teams; templates and operation records pers
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `teams.read`, `teams.write`, `teams.voice`; writes require `Remediation.Apply`
+- **RBAC:** `Teams.Team.Read`, `Teams.Team.ReadWrite`, `Teams.Voice.ReadWrite`; writes require `Remediation.Apply`
   semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph Teams scopes; Teams PowerShell for voice where required.
 

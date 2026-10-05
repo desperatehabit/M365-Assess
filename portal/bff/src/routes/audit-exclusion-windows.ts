@@ -16,8 +16,8 @@ import type { AuditExclusionWindow, AuditExclusionWindowInput } from "@m365-asse
 export const AUDIT_EXCLUSION_WINDOWS_PATH = "/v1/tenants/:tenantId/audit/exclusion-windows";
 
 export const AUDIT_EXCLUSION_WINDOW_PERMISSIONS = {
-  read: "audit.read",
-  manage: "audit.manage",
+  read: "Security.Audit.Read",
+  manage: "Security.Audit.ReadWrite",
 } as const;
 
 export const AUDIT_EXCLUSION_WINDOW_UNAUTHENTICATED = "request.unauthenticated";
@@ -261,7 +261,7 @@ export const AUDIT_EXCLUSION_WINDOWS_OPENAPI = {
           "200": { description: "The tenant's exclusion windows with display status." },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks audit.read or the tenant is out of scope.",
+            description: "The caller lacks Security.Audit.Read or the tenant is out of scope.",
           },
         },
       },
@@ -287,7 +287,7 @@ export const AUDIT_EXCLUSION_WINDOWS_OPENAPI = {
           "400": { description: "startsAt or endsAt is missing or invalid." },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks audit.manage or the tenant is out of scope.",
+            description: "The caller lacks Security.Audit.ReadWrite or the tenant is out of scope.",
           },
         },
       },

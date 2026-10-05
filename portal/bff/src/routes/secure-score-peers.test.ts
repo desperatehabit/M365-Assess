@@ -117,7 +117,7 @@ describe("secure score peers routes (T-0605)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects callers missing secure-score.read with a structured 403", async () => {
+  it("rejects callers missing Security.SecureScore.Read with a structured 403", async () => {
     const provider = new FakeSecureScorePeersProvider(COMPARISONS);
     const { found } = routesFor({
       provider,
@@ -207,10 +207,10 @@ describe("secure score peers routes (T-0605)", () => {
     expect(body.comparisons).toEqual([{ basis: "Seats", averageScore: 47 }]);
   });
 
-  it("publishes the secure-score.read permission through the route module", () => {
+  it("publishes the Security.SecureScore.Read permission through the route module", () => {
     const entry = SECURE_SCORE_PEERS_OPENAPI.paths["/tenants/{tenantId}/secure-score/peers"];
-    expect(entry.get.permission).toBe("secure-score.read");
+    expect(entry.get.permission).toBe("Security.SecureScore.Read");
     expect(entry.get.operationId).toBe("getSecureScorePeers");
-    expect(SECURE_SCORE_PEERS_PERMISSION).toBe("secure-score.read");
+    expect(SECURE_SCORE_PEERS_PERMISSION).toBe("Security.SecureScore.Read");
   });
 });

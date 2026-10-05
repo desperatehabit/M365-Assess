@@ -142,7 +142,7 @@ describe("GET /v1/notifications (T-0566)", () => {
     expect(channels[1]!.enabled).toBe(false);
   });
 
-  it("requires alerts.read", async () => {
+  it("requires CIPP.Alert.Read", async () => {
     const seen: string[] = [];
     const route = routeFor(
       makeOptions(new FakeStore(), {
@@ -189,7 +189,7 @@ describe("PUT /v1/notifications (T-0566)", () => {
     expect(store.channels[0]!.enabled).toBe(false);
   });
 
-  it("requires alerts.write and audits the change without the target value", async () => {
+  it("requires CIPP.Alert.ReadWrite and audits the change without the target value", async () => {
     const seen: string[] = [];
     const audits: Record<string, unknown>[] = [];
     const store = new FakeStore(seedChannels());
@@ -362,7 +362,7 @@ describe("POST /v1/notifications/test (T-0566)", () => {
     ).rejects.toMatchObject({ status: 501, code: "notification.channel_not_supported" });
   });
 
-  it("requires alerts.write", async () => {
+  it("requires CIPP.Alert.ReadWrite", async () => {
     const seen: string[] = [];
     const route = routeFor(
       makeOptions(new FakeStore(), {

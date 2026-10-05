@@ -121,7 +121,7 @@ records persist.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `spam.read`, `spam.write`, `quarantine.read`, `quarantine.act`; writes/actions require
+- **RBAC:** `Exchange.SpamFilter.Read`, `Exchange.SpamFilter.ReadWrite`, `Exchange.Quarantine.Read`, `Exchange.Quarantine.ReadWrite`; writes/actions require
   `Remediation.Apply` semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** EXO/Purview app-only; quarantine operations use Exchange Online PowerShell.
 

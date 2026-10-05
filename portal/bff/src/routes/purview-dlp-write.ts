@@ -2,7 +2,7 @@
 // §7, §8; T-0583).
 //
 // Create/edit/enable/disable/delete apply only through the EPIC-006 gated path
-// (T-0108): the route validates `purview.write` (or `Remediation.Apply`) + tenant
+// (T-0108): the route validates `Purview.Compliance.ReadWrite` (or `Remediation.Apply`) + tenant
 // scope, requires an Idempotency-Key, classifies the change with the DLP guard
 // (disable/delete are compliance-impacting and need explicit confirmation),
 // builds a before/after plan preview, enqueues a `remediation` apply job, and
@@ -37,7 +37,7 @@ import {
 
 export { PURVIEW_DLP_ITEM_PATH, PURVIEW_DLP_PATH, DLP_COMPLIANCE_IMPACTING_CODE };
 
-export const PURVIEW_WRITE_PERMISSION = "purview.write";
+export const PURVIEW_WRITE_PERMISSION = "Purview.Compliance.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const PURVIEW_DLP_WRITE_UNAUTHENTICATED = "request.unauthenticated";
@@ -167,7 +167,7 @@ async function requirePurviewWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.ReadWrite", 403);
   }
 }
 
@@ -603,7 +603,7 @@ export const PURVIEW_DLP_WRITE_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "name failed validation or the Idempotency-Key is missing." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -629,7 +629,7 @@ export const PURVIEW_DLP_WRITE_OPENAPI = {
             description: "No editable field was supplied, or confirm is required to disable a policy.",
           },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "DLP policy not found." },
         },
       },
@@ -652,7 +652,7 @@ export const PURVIEW_DLP_WRITE_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to delete a DLP policy." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.ReadWrite or the tenant is out of scope." },
           "404": { description: "DLP policy not found." },
         },
       },

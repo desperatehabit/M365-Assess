@@ -8,7 +8,7 @@
 // Results are ephemeral (§11.4): matches and the download reference are
 // returned but never persisted — only job and audit records persist. Search
 // and restore-adjacent reads are sensitive: every endpoint requires the
-// elevated `mailtools.search` permission (SPEC §7) intersected with the
+// elevated `Exchange.MailSearch.Execute` permission (SPEC §7) intersected with the
 // caller tenant scope, and start/cancel/finish each write an audit record.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
@@ -18,7 +18,7 @@ export const HISTORICAL_SEARCH_PATH = "/v1/tenants/:tenantId/mail/historical-sea
 export const HISTORICAL_SEARCH_JOB_PATH = "/v1/tenants/:tenantId/mail/historical-search/:jobId";
 export const HISTORICAL_SEARCH_CANCEL_PATH =
   "/v1/tenants/:tenantId/mail/historical-search/:jobId/cancel";
-export const HISTORICAL_SEARCH_PERMISSION = "mailtools.search";
+export const HISTORICAL_SEARCH_PERMISSION = "Exchange.MailSearch.Execute";
 export const HISTORICAL_SEARCH_UNAUTHENTICATED = "request.unauthenticated";
 export const HISTORICAL_SEARCH_NOT_CANCELLABLE = "historical-search.not_cancellable";
 export const HISTORICAL_SEARCH_JOB_NOT_FOUND = "historical-search.not_found";
@@ -176,7 +176,7 @@ async function requireHistoricalSearchPermission(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(HISTORICAL_SEARCH_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailtools.search", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.MailSearch.Execute", 403);
   }
 }
 
@@ -377,7 +377,7 @@ export const HISTORICAL_SEARCH_OPENAPI = {
           "202": { description: "The enqueued historical-search job with progress." },
           "400": { description: "The scoped search parameters are invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailtools.search or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.MailSearch.Execute or the tenant is out of scope." },
         },
       },
     },
@@ -394,7 +394,7 @@ export const HISTORICAL_SEARCH_OPENAPI = {
         responses: {
           "200": { description: "Job progress, or matches with the download reference when complete." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailtools.search or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.MailSearch.Execute or the tenant is out of scope." },
           "404": { description: "The historical search job was not found." },
         },
       },
@@ -412,7 +412,7 @@ export const HISTORICAL_SEARCH_OPENAPI = {
         responses: {
           "200": { description: "The cancelled historical-search job." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailtools.search or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.MailSearch.Execute or the tenant is out of scope." },
           "404": { description: "The historical search job was not found." },
           "409": { description: "The job is terminal and cannot be cancelled." },
         },

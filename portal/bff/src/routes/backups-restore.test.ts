@@ -208,7 +208,7 @@ describe("Backup restore route (T-0687)", () => {
       makeOptions(new FakeRestoreStore(), new FakeRestoreArtifacts(), {
         resolveCaller: () => ({
           tenantScope: tenantScope([TENANT_A]),
-          permissions: ["backup.write"],
+          permissions: ["Tenant.Backup.ReadWrite"],
           userId: "operator-1",
         }),
       }),

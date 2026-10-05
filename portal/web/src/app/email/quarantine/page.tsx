@@ -649,7 +649,7 @@ export function QuarantineView({
           type="button"
           style={{ ...buttonStyle, ...(writeDisabled || selectedIds.size === 0 ? disabledStyle : {}) }}
           disabled={writeDisabled || selectedIds.size === 0}
-          title={writeDisabled ? "Requires quarantine.act permission" : "Release the selected messages"}
+          title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Release the selected messages"}
           onClick={() => openBulk("release")}
           data-testid="quarantine-bulk-release"
         >
@@ -659,7 +659,7 @@ export function QuarantineView({
           type="button"
           style={{ ...buttonStyle, ...(writeDisabled || selectedIds.size === 0 ? disabledStyle : {}) }}
           disabled={writeDisabled || selectedIds.size === 0}
-          title={writeDisabled ? "Requires quarantine.act permission" : "Delete the selected messages"}
+          title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Delete the selected messages"}
           onClick={() => openBulk("delete")}
           data-testid="quarantine-bulk-delete"
         >
@@ -715,11 +715,11 @@ export function QuarantineView({
                   <td style={tdStyle}>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                       <button type="button" style={buttonStyle} onClick={() => void openPreview(message)} data-testid={`quarantine-preview-${message.messageId}`}>Preview</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires quarantine.act permission" : "Release"} onClick={() => void runActionPreview({ action: "release", label: "Release", message })} data-testid={`quarantine-release-${message.messageId}`}>Release</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires quarantine.act permission" : "Release to all"} onClick={() => void runActionPreview({ action: "releaseAll", label: "Release to all", message })} data-testid={`quarantine-release-all-${message.messageId}`}>Release to all</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Release"} onClick={() => void runActionPreview({ action: "release", label: "Release", message })} data-testid={`quarantine-release-${message.messageId}`}>Release</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Release to all"} onClick={() => void runActionPreview({ action: "releaseAll", label: "Release to all", message })} data-testid={`quarantine-release-all-${message.messageId}`}>Release to all</button>
                       <button type="button" style={buttonStyle} onClick={() => void downloadRow(message)} data-testid={`quarantine-download-${message.messageId}`}>Download</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires quarantine.act permission" : "Block sender"} onClick={() => void runActionPreview({ action: "block", label: "Block sender", message })} data-testid={`quarantine-block-${message.messageId}`}>Block sender</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires quarantine.act permission" : "Delete"} onClick={() => void runActionPreview({ action: "delete", label: "Delete", message })} data-testid={`quarantine-delete-${message.messageId}`}>Delete</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Block sender"} onClick={() => void runActionPreview({ action: "block", label: "Block sender", message })} data-testid={`quarantine-block-${message.messageId}`}>Block sender</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Delete"} onClick={() => void runActionPreview({ action: "delete", label: "Delete", message })} data-testid={`quarantine-delete-${message.messageId}`}>Delete</button>
                       <button type="button" style={{ ...buttonStyle, ...disabledStyle }} disabled title="Submit for review is not yet available" data-testid={`quarantine-submit-${message.messageId}`}>Submit for review</button>
                     </div>
                   </td>

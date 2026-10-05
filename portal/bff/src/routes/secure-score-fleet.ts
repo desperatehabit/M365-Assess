@@ -87,7 +87,7 @@ async function ensureRead(
   ) {
     throw new AppError(
       ErrorCodes.forbidden,
-      "forbidden: missing secure-score.read",
+      "forbidden: missing Security.SecureScore.Read",
       403,
       [{ field: "permission", reason: SECURE_SCORE_READ_PERMISSION }],
     );
@@ -190,7 +190,7 @@ export const SECURE_SCORE_FLEET_OPENAPI = {
           "401": { description: "Authentication is required." },
           "403": {
             description:
-              "The caller lacks the secure-score.read permission.",
+              "The caller lacks the Security.SecureScore.Read permission.",
           },
         },
       },

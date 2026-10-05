@@ -24,8 +24,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const CONNECTORS_PATH = "/v1/tenants/:tenantId/connectors";
 export const CONNECTOR_ITEM_PATH = "/v1/tenants/:tenantId/connectors/:connectorId";
-export const TRANSPORT_READ_PERMISSION = "transport.read";
-export const TRANSPORT_WRITE_PERMISSION = "transport.write";
+export const TRANSPORT_READ_PERMISSION = "Exchange.Transport.Read";
+export const TRANSPORT_WRITE_PERMISSION = "Exchange.Transport.ReadWrite";
 export const CONNECTORS_UNAUTHENTICATED = "request.unauthenticated";
 export const CONNECTOR_CONFIRM_REQUIRED = "connector.confirm_required";
 
@@ -264,7 +264,7 @@ async function requireConnectorsRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(TRANSPORT_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing transport.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Transport.Read", 403);
   }
 }
 
@@ -278,7 +278,7 @@ async function requireConnectorsWrite(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(TRANSPORT_WRITE_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing transport.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Transport.ReadWrite", 403);
   }
 }
 
@@ -612,7 +612,7 @@ export const CONNECTORS_OPENAPI = {
           "200": { description: "Cursor-paginated connectors with the §3.2 columns." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks transport.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Transport.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -629,7 +629,7 @@ export const CONNECTORS_OPENAPI = {
           "201": { description: "The created connector with before/after and audit event; secret reference only." },
           "400": { description: "Validation failed." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks transport.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -648,7 +648,7 @@ export const CONNECTORS_OPENAPI = {
           "200": { description: "Edit/enable/disable plan preview or applied result with before/after and audit event." },
           "400": { description: "Validation failed, or a mail-flow-affecting change lacks confirm:true." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks transport.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope." },
           "404": { description: "The connector was not found." },
         },
       },
@@ -665,7 +665,7 @@ export const CONNECTORS_OPENAPI = {
           "200": { description: "Delete plan preview or applied result with before/after and audit event." },
           "400": { description: "Confirmation is missing for the removal." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks transport.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope." },
           "404": { description: "The connector was not found." },
         },
       },

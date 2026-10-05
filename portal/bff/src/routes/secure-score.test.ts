@@ -116,7 +116,7 @@ describe("secure score routes (T-0602)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects callers missing secure-score.read with a structured 403", async () => {
+  it("rejects callers missing Security.SecureScore.Read with a structured 403", async () => {
     const provider = new FakeSecureScoreProvider();
     const routes = createSecureScoreRoutes({
       provider,
@@ -204,10 +204,10 @@ describe("secure score routes (T-0602)", () => {
     expect(action?.standardKey).toBeNull();
   });
 
-  it("publishes the secure-score.read permission through the route module", () => {
+  it("publishes the Security.SecureScore.Read permission through the route module", () => {
     const entry = SECURE_SCORE_OPENAPI.paths["/tenants/{tenantId}/secure-score"];
-    expect(entry.get.permission).toBe("secure-score.read");
+    expect(entry.get.permission).toBe("Security.SecureScore.Read");
     expect(entry.get.operationId).toBe("getSecureScore");
-    expect(SECURE_SCORE_READ_PERMISSION).toBe("secure-score.read");
+    expect(SECURE_SCORE_READ_PERMISSION).toBe("Security.SecureScore.Read");
   });
 });

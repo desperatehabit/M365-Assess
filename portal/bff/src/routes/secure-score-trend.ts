@@ -8,7 +8,7 @@
 // window, so the on-demand snapshot prunes to the configured window after
 // recording. The on-demand read reuses the T-0602 provider. Secure Score stays
 // read-only against the tenant (SPEC §8): the only write is a portal-local
-// snapshot row. Requires RBAC `secure-score.read` and the tenant in caller
+// snapshot row. Requires RBAC `Security.SecureScore.Read` and the tenant in caller
 // scope (SPEC §7).
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope } from "../rbac/authorize.js";
@@ -114,7 +114,7 @@ async function ensureRead(
   ) {
     throw new AppError(
       ErrorCodes.forbidden,
-      "forbidden: missing secure-score.read",
+      "forbidden: missing Security.SecureScore.Read",
       403,
       [{ field: "permission", reason: SECURE_SCORE_TREND_PERMISSION }],
     );
@@ -232,7 +232,7 @@ export const SECURE_SCORE_TREND_OPENAPI = {
           "401": { description: "Authentication is required." },
           "403": {
             description:
-              "The caller lacks the secure-score.read permission or the tenant is out of scope.",
+              "The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.",
           },
         },
       },
@@ -257,7 +257,7 @@ export const SECURE_SCORE_TREND_OPENAPI = {
           "401": { description: "Authentication is required." },
           "403": {
             description:
-              "The caller lacks the secure-score.read permission or the tenant is out of scope.",
+              "The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.",
           },
         },
       },

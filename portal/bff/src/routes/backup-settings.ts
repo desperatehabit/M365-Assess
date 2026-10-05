@@ -7,7 +7,7 @@
 // `upsertBackupConfig`, and audits the change with before/after. GET returns the
 // seeded defaults when the singleton has never been written. RBAC enforcement is
 // owned by EPIC-038; this route enforces the permission seam by contract
-// (`backup.read`/`backup.write`) and stubs it in tests. The OpenAPI path items
+// (`Tenant.Backup.Read`/`Tenant.Backup.ReadWrite`) and stubs it in tests. The OpenAPI path items
 // are published here so `portal.v1.yaml` stays untouched (EPIC-001 SPEC §1).
 import { randomUUID } from "node:crypto";
 import type { BackupConfig, BackupConfigInput } from "@m365-assess/db";
@@ -233,7 +233,7 @@ export const BACKUP_SETTINGS_OPENAPI = {
         responses: {
           "200": { description: "The instance-global BackupConfig singleton." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks backup.read." },
+          "403": { description: "The caller lacks Tenant.Backup.Read." },
         },
       },
       put: {
@@ -262,7 +262,7 @@ export const BACKUP_SETTINGS_OPENAPI = {
           "200": { description: "The saved BackupConfig singleton." },
           "400": { description: "retentionDays or a target/schedule value is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks backup.write." },
+          "403": { description: "The caller lacks Tenant.Backup.ReadWrite." },
         },
       },
     },

@@ -113,7 +113,7 @@ Policies are read live from Purview/Graph/EXO; templates and change records pers
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `purview.read`, `purview.write`, `purview.templates`; writes require
+- **RBAC:** `Purview.Compliance.Read`, `Purview.Compliance.ReadWrite`, `Purview.Template.ReadWrite`; writes require
   `Remediation.Apply` semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** Purview (`Connect-IPPSSession`) app-only; EXO for Safe Links. Purview↔EXO mutual
   exclusion handled by the per-tenant process.

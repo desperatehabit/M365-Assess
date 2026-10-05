@@ -125,11 +125,11 @@ describe("SharePoint sites create routes (T-0484)", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects callers missing sharepoint.write with 403", async () => {
+  it("rejects callers missing SharePoint.Site.ReadWrite with 403", async () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: ["sharepoint.read"],
+      permissions: ["SharePoint.Site.Read"],
     };
     await expect(
       postRoute(provider, caller).handler({

@@ -7,7 +7,7 @@
 // Writes route through the EPIC-006 gated executor seam: every applied change
 // records an AlertStateChange (from/to/by/at/reason) and an audit event, bulk
 // changes require explicit confirmation, and a status change to resolved can
-// never silently auto-resolve. Requires RBAC `incidents.triage` plus
+// never silently auto-resolve. Requires RBAC `Security.Incident.ReadWrite` plus
 // `Remediation.Apply` and tenant in caller scope.
 import { randomUUID } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
@@ -21,7 +21,7 @@ import type {
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const INCIDENT_ACTIONS_PATH = "/v1/tenants/:tenantId/incidents/:incidentId/:action";
-export const INCIDENT_ACTIONS_TRIAGE_PERMISSION = "incidents.triage";
+export const INCIDENT_ACTIONS_TRIAGE_PERMISSION = "Security.Incident.ReadWrite";
 export const INCIDENT_ACTIONS_APPLY_PERMISSION = "Remediation.Apply";
 
 export const INCIDENT_ACTIONS_UNKNOWN = "incidents.unknown_action";
@@ -599,7 +599,7 @@ export const INCIDENT_ACTIONS_OPENAPI = {
           "401": { description: "Authentication is required." },
           "403": {
             description:
-              "The caller lacks incidents.triage or Remediation.Apply, or the tenant is out of scope.",
+              "The caller lacks Security.Incident.ReadWrite or Remediation.Apply, or the tenant is out of scope.",
           },
           "501": { description: "Incident actions are not wired for this tenant." },
         },

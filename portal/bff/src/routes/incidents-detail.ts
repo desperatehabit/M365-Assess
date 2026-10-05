@@ -2,13 +2,13 @@
 // Exposes GET /v1/tenants/:tenantId/incidents/:incidentId with the §3.2 tab
 // data: Overview, Alerts (T-0542 normalized), Entities, Timeline, Notes.
 // Portal notes and triage state changes (T-0541) are merged by the provider.
-// Requires RBAC `incidents.read` and tenant in caller scope.
+// Requires RBAC `Security.Incident.Read` and tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const INCIDENT_DETAIL_PATH = "/v1/tenants/:tenantId/incidents/:incidentId";
-export const INCIDENT_DETAIL_READ_PERMISSION = "incidents.read";
+export const INCIDENT_DETAIL_READ_PERMISSION = "Security.Incident.Read";
 export const INCIDENT_NOT_FOUND_CODE = "incident.not_found";
 
 export interface IncidentOverview {
@@ -153,7 +153,7 @@ export function createIncidentsDetailRoute(options: IncidentDetailRouteOptions):
     } else {
       const permissions = caller.permissions ?? [];
       if (!permissions.includes(INCIDENT_DETAIL_READ_PERMISSION) && !permissions.includes("*")) {
-        throw new AppError(ErrorCodes.forbidden, "forbidden: missing incidents.read", 403);
+        throw new AppError(ErrorCodes.forbidden, "forbidden: missing Security.Incident.Read", 403);
       }
     }
 
@@ -189,7 +189,7 @@ export const INCIDENT_DETAIL_OPENAPI = {
       get: {
         operationId: "getIncidentDetail",
         summary: "Get a security incident with its alerts, entities, timeline, and notes",
-        permission: "incidents.read",
+        permission: "Security.Incident.Read",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -209,7 +209,7 @@ export const INCIDENT_DETAIL_OPENAPI = {
           "200": { description: "The incident's detail tab data." },
           "400": { description: "A required path parameter is missing." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the incidents.read permission." },
+          "403": { description: "The caller lacks the Security.Incident.Read permission." },
           "404": { description: "No incident with that id exists in the tenant." },
         },
       },

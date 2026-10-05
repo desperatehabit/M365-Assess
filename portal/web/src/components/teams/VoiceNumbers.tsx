@@ -380,8 +380,8 @@ export function VoiceNumbers({ tenantId, canWrite = true, fetcher = fetch }: Voi
       )}
 
       <div style={{ display: "flex", gap: "8px" }}>
-        <button type="button" style={{ ...primaryButtonStyle, ...gated }} disabled={!canWrite || !licensed} title={!canWrite ? "Requires teams.voice permission" : !licensed ? "Requires a Phone System license" : "Assign number"} onClick={() => openAssign()} data-testid="voice-assign">Assign number</button>
-        <button type="button" style={{ ...buttonStyle, ...gated }} disabled={!canWrite || !licensed} title={!canWrite ? "Requires teams.voice permission" : !licensed ? "Requires a Phone System license" : "Assign policy"} onClick={() => openPolicy()} data-testid="voice-policy">Assign policy</button>
+        <button type="button" style={{ ...primaryButtonStyle, ...gated }} disabled={!canWrite || !licensed} title={!canWrite ? "Requires Teams.Voice.ReadWrite permission" : !licensed ? "Requires a Phone System license" : "Assign number"} onClick={() => openAssign()} data-testid="voice-assign">Assign number</button>
+        <button type="button" style={{ ...buttonStyle, ...gated }} disabled={!canWrite || !licensed} title={!canWrite ? "Requires Teams.Voice.ReadWrite permission" : !licensed ? "Requires a Phone System license" : "Assign policy"} onClick={() => openPolicy()} data-testid="voice-policy">Assign policy</button>
       </div>
 
       {notice && <div style={{ color: "var(--success-text)", fontSize: "14px" }} data-testid="voice-notice">{notice}</div>}
@@ -408,7 +408,7 @@ export function VoiceNumbers({ tenantId, canWrite = true, fetcher = fetch }: Voi
                         type="button"
                         style={{ ...buttonStyle, ...gated }}
                         disabled={!canWrite || !licensed}
-                        title={!canWrite ? "Requires teams.voice permission" : !licensed ? "Requires a Phone System license" : "Release number"}
+                        title={!canWrite ? "Requires Teams.Voice.ReadWrite permission" : !licensed ? "Requires a Phone System license" : "Release number"}
                         onClick={() => openRelease(number)}
                         data-testid={`voice-release-${number.id}`}
                       >

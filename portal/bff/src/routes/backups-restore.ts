@@ -27,7 +27,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const BACKUP_RESTORE_PATH = "/v1/backups/:id/restore";
 
-export const BACKUP_RESTORE_PERMISSION = "backup.restore";
+export const BACKUP_RESTORE_PERMISSION = "CIPP.Admin.BackupRestore";
 export const BACKUP_RESTORE_ADMIN_SCOPE = "CIPP.Admin.*";
 
 export const BACKUP_RESTORE_UNAUTHENTICATED = "request.unauthenticated";

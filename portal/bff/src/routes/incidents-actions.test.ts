@@ -173,7 +173,7 @@ function context(tenantId: string, incidentId: string, action: string, body: unk
 }
 
 describe("incident triage actions (T-0546)", () => {
-  it("registers the action route with the incidents.triage permission", () => {
+  it("registers the action route with the Security.Incident.ReadWrite permission", () => {
     const { routes } = optionsFor(callerFor([TENANT], TRIAGE_PERMISSIONS), true);
     const post = routes.find((route) => route.method === "POST" && route.path === INCIDENT_ACTIONS_PATH);
 
@@ -185,8 +185,8 @@ describe("incident triage actions (T-0546)", () => {
     expect(
       INCIDENT_ACTIONS_OPENAPI.paths["/tenants/{tenantId}/incidents/{incidentId}/{action}"].post
         .permission,
-    ).toBe("incidents.triage");
-    expect(INCIDENT_ACTIONS_TRIAGE_PERMISSION).toBe("incidents.triage");
+    ).toBe("Security.Incident.ReadWrite");
+    expect(INCIDENT_ACTIONS_TRIAGE_PERMISSION).toBe("Security.Incident.ReadWrite");
   });
 
   it("writes a status change back and records an AlertStateChange with from/to/by/at/reason", async () => {
@@ -364,7 +364,7 @@ describe("incident triage actions (T-0546)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("requires both incidents.triage and Remediation.Apply", async () => {
+  it("requires both Security.Incident.ReadWrite and Remediation.Apply", async () => {
     const onlyTriage = optionsFor(callerFor([TENANT], [INCIDENT_ACTIONS_TRIAGE_PERMISSION]), true);
     await expect(
       actionHandler(onlyTriage.routes)(context(TENANT, INCIDENT, "comment", { comment: "hi" })),

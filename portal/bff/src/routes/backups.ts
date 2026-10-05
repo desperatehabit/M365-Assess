@@ -8,7 +8,7 @@
 // download streams the archive artifact from the artifact tier so it is never
 // buffered wholly into memory; delete removes the artifact and the row. Create and
 // delete are audited (SPEC §8). RBAC enforcement is owned by EPIC-038; this route
-// enforces the permission seam by contract (`backup.read`/`backup.write`) and the
+// enforces the permission seam by contract (`Tenant.Backup.Read`/`Tenant.Backup.ReadWrite`) and the
 // tenant-scope seam, and stubs them in tests.
 import { createReadStream, promises as fs } from "node:fs";
 import path from "node:path";
@@ -27,8 +27,8 @@ export const BACKUPS_PATH = "/v1/backups";
 export const BACKUP_PATH = "/v1/backups/:id";
 export const BACKUP_DOWNLOAD_PATH = "/v1/backups/:id/download";
 
-export const BACKUP_READ_PERMISSION = "backup.read";
-export const BACKUP_WRITE_PERMISSION = "backup.write";
+export const BACKUP_READ_PERMISSION = "Tenant.Backup.Read";
+export const BACKUP_WRITE_PERMISSION = "Tenant.Backup.ReadWrite";
 
 export const BACKUP_UNAUTHENTICATED = "request.unauthenticated";
 export const BACKUP_NOT_FOUND = "backup.not_found";
@@ -382,7 +382,7 @@ export const BACKUPS_OPENAPI = {
         responses: {
           "200": { description: "Cursor-paginated backups visible to the caller." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks backup.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Tenant.Backup.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -410,7 +410,7 @@ export const BACKUPS_OPENAPI = {
           "201": { description: "The created backup." },
           "400": { description: "The backup input is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks backup.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Tenant.Backup.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -426,7 +426,7 @@ export const BACKUPS_OPENAPI = {
         responses: {
           "200": { description: "The backup archive, streamed." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks backup.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Tenant.Backup.Read or the tenant is out of scope." },
           "404": { description: "The backup or its artifact was not found." },
         },
       },
@@ -443,7 +443,7 @@ export const BACKUPS_OPENAPI = {
         responses: {
           "204": { description: "The backup was deleted." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks backup.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Tenant.Backup.ReadWrite or the tenant is out of scope." },
           "404": { description: "The backup was not found." },
         },
       },

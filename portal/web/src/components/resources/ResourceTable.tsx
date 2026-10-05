@@ -290,7 +290,7 @@ export function ResourceTable({
                             type="button"
                             style={isWriteAction && writeDisabled ? { ...actionBtnStyle, ...disabledStyle } : actionBtnStyle}
                             disabled={isWriteAction && writeDisabled}
-                            title={isWriteAction && writeDisabled ? "Requires resources.write permission" : label}
+                            title={isWriteAction && writeDisabled ? "Requires Exchange.Resource.ReadWrite permission" : label}
                             onClick={() => onAction?.(action, resource)}
                             aria-label={`${label} ${resource.name ?? resource.id}`}
                             data-testid={`resource-action-${action}-${resource.id}`}

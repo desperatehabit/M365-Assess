@@ -162,6 +162,17 @@ IP, correlation ID. Append-only; export to SIEM is EPIC-041.
 - **Permission taxonomy:** `{Area}.{Resource}.{Action}` — e.g. `Tenant.Read`,
   `Tenant.Standards.ReadWrite`, `Remediation.Plan`, `Remediation.Apply`, `CIPP.Admin`,
   `CIPP.SuperAdmin`. Aligns with CIPP's `Tenant.Standards.ReadWrite` / `CIPP.Alert.ReadWrite`.
+- **Feature-area permissions (T-0893):** every route permission is `{Area}.{Resource}.Read` or
+  `{Area}.{Resource}.ReadWrite`, so the base roles in §4.1 grant them by wildcard
+  (`readonly` -> `*.Read`, `editor` -> `*.Read` + `*.ReadWrite`). The older per-epic names map as
+  `purview.read/write/templates` -> `Purview.Compliance.Read` / `Purview.Compliance.ReadWrite` /
+  `Purview.Template.ReadWrite`; `sharepoint.read/write/cleanup` -> `SharePoint.Site.Read` /
+  `SharePoint.Site.ReadWrite` / `SharePoint.Cleanup.ReadWrite`; mailbox routes use
+  `Mailboxes.Mailbox.*`, `Mailboxes.Permission.ReadWrite`, `Mailboxes.Vacation.ReadWrite`; the
+  remaining EPIC-021..036 names follow their epics' RBAC bullets. High-privilege operations stay
+  outside Read/ReadWrite so editors never inherit them: `CIPP.Admin.Users`,
+  `CIPP.Admin.BackupRestore`, `CIPP.Tests.Execute`, `Exchange.MailSearch.Execute`,
+  `Exchange.MailRestore.Execute`, `Exchange.MailContent.Reveal` (admin and superadmin only, via `*`).
 - **Endpoint registry:** one permission per endpoint; a test fails the build if an endpoint
   lacks one.
 - **Admin surface:** role/user/API-client changes require `CIPP.Admin.*` (superadmin for

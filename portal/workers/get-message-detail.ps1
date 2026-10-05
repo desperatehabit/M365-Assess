@@ -6,7 +6,7 @@
     directly), reads the message detail live from Exchange Online via
     Get-MessageDetail, and emits it as JSON on stdout. The body is included
     only with -IncludeBody, which the BFF passes solely for callers holding
-    mailtools.content; otherwise the response reports the body as gated.
+    Exchange.MailContent.Reveal; otherwise the response reports the body as gated.
     Stdout is the response transport; message data is never mirrored to disk.
     The supervisor connects EXO in this child process after materializing the
     tenant credential (T-0011) before invoking this script, so no secret
@@ -19,7 +19,7 @@
     Direct message identity for runs without a job envelope.
 .PARAMETER IncludeBody
     Fetch the privileged message body. Only the BFF sets this, and only for
-    callers holding mailtools.content.
+    callers holding Exchange.MailContent.Reveal.
 .EXAMPLE
     PS> pwsh -NoProfile -File portal/workers/get-message-detail.ps1 -JobFile './run/message-detail-job.json'
 .EXAMPLE

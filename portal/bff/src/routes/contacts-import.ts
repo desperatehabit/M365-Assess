@@ -1,6 +1,6 @@
 // Contacts bulk CSV import (EPIC-023 SPEC.md §3.1, §4.1, §6, §7, §8, §9; T-0444).
 // Exposes POST /v1/tenants/:tenantId/contacts/import. The route accepts a CSV
-// payload (or a JSON rows array), requires `contacts.write` (SPEC §7) within
+// payload (or a JSON rows array), requires `Exchange.Contact.ReadWrite` (SPEC §7) within
 // the caller tenant scope, and returns one result per input row — created,
 // skipped-duplicate, invalid, or failed — so a malformed address or a duplicate
 // never aborts the rest of the file. The injected provider is backed by the
@@ -11,7 +11,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const CONTACTS_IMPORT_PATH = "/v1/tenants/:tenantId/contacts/import";
-export const CONTACTS_WRITE_PERMISSION = "contacts.write";
+export const CONTACTS_WRITE_PERMISSION = "Exchange.Contact.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const CONTACTS_IMPORT_UNAUTHENTICATED = "request.unauthenticated";
 
@@ -116,7 +116,7 @@ async function authorizeWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing contacts.write permission", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Contact.ReadWrite permission", 403);
   }
 }
 
@@ -212,7 +212,7 @@ export const CONTACTS_IMPORT_OPENAPI = {
           "200": { description: "Per-row import results (created, skipped-duplicate, invalid, failed)." },
           "400": { description: "The request shape or CSV is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks contacts.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope." },
         },
       },
     },

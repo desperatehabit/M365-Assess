@@ -71,7 +71,7 @@ describe("OpenAPI 3.1 generation", () => {
   it("publishes the declared permission as x-permission and drops the internal field", () => {
     const operation = OPENAPI_DOCUMENT.paths["/users"]?.["get"];
     expect(operation?.["permission"]).toBeUndefined();
-    expect(operation?.["x-permission"]).toBe("CIPP.Admin.*");
+    expect(operation?.["x-permission"]).toBe("CIPP.Admin.Users");
   });
 
   it("declares the authenticated-only identity and access preflight routes", () => {

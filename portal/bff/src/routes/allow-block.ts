@@ -5,11 +5,11 @@
 // (sender/domain/URL/file), value, action (allow/block), expires, notes —
 // read live from EXO and never persisted: the injected provider is backed by
 // the worker queue (T-0010), so this module holds no M365 SDK call and issues
-// no tenant write on reads. Reads require `spam.read` (SPEC §7) intersected
+// no tenant write on reads. Reads require `Exchange.SpamFilter.Read` (SPEC §7) intersected
 // with the caller tenant scope.
 //
 // Writes (add/edit/remove) apply only through the EPIC-006 gated path
-// (T-0107): the route validates `spam.write` + tenant scope, builds a
+// (T-0107): the route validates `Exchange.SpamFilter.ReadWrite` + tenant scope, builds a
 // before/after plan with the affected entry shown before apply, and enqueues a
 // `remediation` job carrying the change. Adding an allow entry or removing a
 // block entry is flagged security-impacting before apply and requires explicit
@@ -27,8 +27,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const ALLOW_BLOCK_PATH = "/v1/tenants/:tenantId/allow-block";
 export const ALLOW_BLOCK_IMPORT_PATH = "/v1/tenants/:tenantId/allow-block/import";
 
-export const ALLOW_BLOCK_READ_PERMISSION = "spam.read";
-export const ALLOW_BLOCK_WRITE_PERMISSION = "spam.write";
+export const ALLOW_BLOCK_READ_PERMISSION = "Exchange.SpamFilter.Read";
+export const ALLOW_BLOCK_WRITE_PERMISSION = "Exchange.SpamFilter.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const ALLOW_BLOCK_UNAUTHENTICATED = "request.unauthenticated";
 export const ALLOW_BLOCK_INVALID_TYPE = "allow_block.invalid_type";
@@ -220,7 +220,7 @@ async function requireAllowBlockRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(ALLOW_BLOCK_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing spam.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.SpamFilter.Read", 403);
   }
 }
 
@@ -238,7 +238,7 @@ async function requireAllowBlockWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing spam.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.SpamFilter.ReadWrite", 403);
   }
 }
 
@@ -888,7 +888,7 @@ export const ALLOW_BLOCK_OPENAPI = {
         responses: {
           "200": { description: "Allow/block entries with the §3.4 columns, read live from EXO." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -905,7 +905,7 @@ export const ALLOW_BLOCK_OPENAPI = {
           "202": { description: "The add was queued through the EPIC-006 gated path." },
           "400": { description: "type, value, action, or expiresOn failed validation, or confirm is required." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
         },
       },
       patch: {
@@ -921,7 +921,7 @@ export const ALLOW_BLOCK_OPENAPI = {
           "200": { description: "Edit plan preview or the applied change with before/after and audit event." },
           "400": { description: "No editable field was supplied, or confirm is required." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
           "404": { description: "Allow/block entry not found." },
         },
       },
@@ -939,7 +939,7 @@ export const ALLOW_BLOCK_OPENAPI = {
           "202": { description: "The remove was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to remove a block entry." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
           "404": { description: "Allow/block entry not found." },
         },
       },
@@ -972,7 +972,7 @@ export const ALLOW_BLOCK_OPENAPI = {
           "200": { description: "Per-row import results (queued, ready, invalid)." },
           "400": { description: "The request shape or a row failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
         },
       },
     },

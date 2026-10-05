@@ -1,5 +1,5 @@
 // T-0422 — Filter write route gating.
-// Route-level tests: the write routes validate spam.write + tenant scope,
+// Route-level tests: the write routes validate Exchange.SpamFilter.ReadWrite + tenant scope,
 // build a before/after plan via the policy guard, flag disabling/weakening
 // changes as security-impacting before apply, require confirmation for them,
 // support plan preview (preview:true) with no tenant write, and enqueue the
@@ -136,7 +136,7 @@ describe("Filter write routes (T-0422)", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects callers missing spam.write with 403", async () => {
+  it("rejects callers missing Exchange.SpamFilter.ReadWrite with 403", async () => {
     const routes = createFilterRoutes({
       provider: new FakeFiltersProvider(),
       queue: new FakeQueue(),

@@ -1,7 +1,7 @@
 // T-0509 — LIS location route gating, civic-field validation, gated-executor
 // enqueue, and TeamOperation audit.
-// Route-level tests: the read route validates teams.read + tenant scope; the
-// write routes validate teams.voice + Remediation.Apply + tenant scope, reject
+// Route-level tests: the read route validates Teams.Team.Read + tenant scope; the
+// write routes validate Teams.Voice.ReadWrite + Remediation.Apply + tenant scope, reject
 // missing required civic fields before any write, enqueue the EPIC-006 gated
 // job, and record a TeamOperation plus an audit event.
 
@@ -186,7 +186,7 @@ describe("GET /v1/tenants/:tenantId/teams/lis (T-0509)", () => {
     ).rejects.toThrow(AppError);
   });
 
-  it("rejects a caller without teams.read", async () => {
+  it("rejects a caller without Teams.Team.Read", async () => {
     const harness = createHarness();
     harness.setCaller({ tenantScope: tenantScope([TENANT]), permissions: [] });
     const route = harness.getRoute("GET", TEAMS_LIS_BASE_PATH);
@@ -217,7 +217,7 @@ describe("GET /v1/tenants/:tenantId/teams/lis (T-0509)", () => {
 });
 
 describe("POST /v1/tenants/:tenantId/teams/lis (T-0509)", () => {
-  it("rejects a caller without teams.voice", async () => {
+  it("rejects a caller without Teams.Voice.ReadWrite", async () => {
     const harness = createHarness();
     harness.setCaller(readerCaller());
     const route = harness.getRoute("POST", TEAMS_LIS_BASE_PATH);

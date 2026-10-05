@@ -6,7 +6,7 @@
 //   POST   /v1/tenants/:tenantId/domains/:domain/default      set as default
 //
 // Every write executes through the EPIC-006 apply contract (T-0108): the caller
-// needs `domains.write` and the tenant in scope (gates), a non-dry-run write
+// needs `Tenant.Domains.ReadWrite` and the tenant in scope (gates), a non-dry-run write
 // needs explicit `{ "confirm": true }`, an Idempotency-Key is required and a
 // repeated key replays the prior outcome instead of re-running the worker,
 // and every applied/failed write's audit event is recorded. The worker
@@ -25,7 +25,7 @@ export const DOMAIN_VERIFY_PATH = "/v1/tenants/:tenantId/domains/:domain/verify"
 export const DOMAIN_REMOVE_PATH = "/v1/tenants/:tenantId/domains/:domain";
 export const DOMAIN_DEFAULT_PATH = "/v1/tenants/:tenantId/domains/:domain/default";
 
-export const DOMAINS_WRITE_PERMISSION = "domains.write";
+export const DOMAINS_WRITE_PERMISSION = "Tenant.Domains.ReadWrite";
 
 export const DOMAINS_ACTION_UNAUTHENTICATED = "request.unauthenticated";
 export const DOMAINS_IDEMPOTENCY_REQUIRED = "domains.idempotency_key_required";

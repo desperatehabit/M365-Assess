@@ -98,7 +98,7 @@ describe("OneDrive usage routes (T-0489)", () => {
     await expect(callGet(provider, caller)).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects a caller without sharepoint.read with 403", async () => {
+  it("rejects a caller without SharePoint.Site.Read with 403", async () => {
     const provider = new FakeOneDriveUsageProvider();
     const caller: OneDriveUsageCaller = {
       tenantScope: tenantScope([TENANT]),

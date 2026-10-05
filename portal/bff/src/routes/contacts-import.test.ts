@@ -101,11 +101,11 @@ describe("Contacts import route (T-0444)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects callers missing contacts.write with 403", async () => {
+  it("rejects callers missing Exchange.Contact.ReadWrite with 403", async () => {
     const provider = new FakeContactsImportProvider();
     const readOnly: ContactsImportCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: ["contacts.read"],
+      permissions: ["Exchange.Contact.Read"],
     };
     await expect(
       postHandler(provider, readOnly)({
