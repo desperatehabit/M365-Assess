@@ -20,8 +20,8 @@ base_branch = "main"
 # Worker model (DeepSeek V4.1 Flash, Go plan). Switched from the free LongCat
 # model once paid-model credits were available again; it is the stronger coder.
 coder = "opencode-go/deepseek-v4.1-flash"
-# Retry/escalation target: the larger DeepSeek model.
-escalate = "opencode-go/deepseek-v4-pro"
+# Retry/escalation target: same model (v4.1-flash is used universally).
+escalate = "opencode-go/deepseek-v4.1-flash"
 
 [limits]
 workers           = 6      # concurrent OpenCode sessions. The portal work touches
