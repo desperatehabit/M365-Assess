@@ -7,7 +7,7 @@
 // §3.3: snoozed items move to the Snoozed tab and auto-return; the return is
 // resolved by the scheduler-aware seam in domain/alerts/snooze.ts (SPEC §4.1),
 // which flips due snoozed events back to open on tick. §4.4: snooze is audited.
-// Reads require `alerts.read` and snooze requires `alerts.write`; full RBAC is
+// Reads require `CIPP.Alert.Read` and snooze requires `CIPP.Alert.ReadWrite`; full RBAC is
 // EPIC-038, so this uses the EPIC-001 T-0013 authorizer seam and denies without
 // one (the same convention as alert-rules.ts). Alerting never writes to a
 // tenant (SPEC §8): this route only persists event state.
@@ -28,8 +28,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const ALERT_EVENTS_PATH = "/v1/alert-events";
 export const ALERT_RULE_SNOOZE_PATH = "/v1/alert-rules/:ruleId/snooze";
 
-export const ALERT_EVENTS_READ_PERMISSION = "alerts.read";
-export const ALERT_EVENTS_WRITE_PERMISSION = "alerts.write";
+export const ALERT_EVENTS_READ_PERMISSION = "CIPP.Alert.Read";
+export const ALERT_EVENTS_WRITE_PERMISSION = "CIPP.Alert.ReadWrite";
 export const ALERT_EVENTS_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface AlertEventFilter {
@@ -262,7 +262,7 @@ export const ALERT_EVENTS_OPENAPI = {
           },
           "400": { description: "A query parameter is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks alerts.read." },
+          "403": { description: "The caller lacks CIPP.Alert.Read." },
         },
       },
     },
@@ -301,7 +301,7 @@ export const ALERT_EVENTS_OPENAPI = {
           },
           "400": { description: "The snooze body is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks alerts.write." },
+          "403": { description: "The caller lacks CIPP.Alert.ReadWrite." },
         },
       },
     },

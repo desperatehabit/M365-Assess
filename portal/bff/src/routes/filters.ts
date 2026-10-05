@@ -5,10 +5,10 @@
 // read live from EXO and never persisted: the injected provider is backed by
 // the worker queue (T-0010) running the Get-Filters child job, so this module
 // holds no M365 SDK call and issues no tenant write on reads. Reads require
-// `spam.read` (SPEC §7) intersected with the caller tenant scope.
+// `Exchange.SpamFilter.Read` (SPEC §7) intersected with the caller tenant scope.
 //
 // Writes (create/edit/enable/disable/delete) apply only through the EPIC-006
-// gated path (T-0107): the route validates `spam.write` + tenant scope, builds
+// gated path (T-0107): the route validates `Exchange.SpamFilter.ReadWrite` + tenant scope, builds
 // a before/after plan via the policy guard, and enqueues a `remediation` job
 // carrying the change. A disabling or weakening change is flagged
 // security-impacting before apply and requires explicit confirmation. The
@@ -33,8 +33,8 @@ export { FILTER_TYPES, type FilterType } from "../domain/filters/policy-guard.js
 
 export const FILTERS_PATH = "/v1/tenants/:tenantId/filters/:filterType";
 export const FILTERS_ITEM_PATH = "/v1/tenants/:tenantId/filters/:filterType/:policyName";
-export const FILTERS_READ_PERMISSION = "spam.read";
-export const FILTERS_WRITE_PERMISSION = "spam.write";
+export const FILTERS_READ_PERMISSION = "Exchange.SpamFilter.Read";
+export const FILTERS_WRITE_PERMISSION = "Exchange.SpamFilter.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const FILTERS_UNAUTHENTICATED = "request.unauthenticated";
 export const FILTER_INVALID_TYPE = "filters.invalid_type";
@@ -184,7 +184,7 @@ async function requireFiltersRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(FILTERS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing spam.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.SpamFilter.Read", 403);
   }
 }
 
@@ -202,7 +202,7 @@ async function requireFiltersWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing spam.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.SpamFilter.ReadWrite", 403);
   }
 }
 
@@ -655,7 +655,7 @@ export const FILTERS_OPENAPI = {
           "200": { description: "Filter policies with the §3.1 columns, read live from EXO." },
           "400": { description: "An unknown filter type was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -677,7 +677,7 @@ export const FILTERS_OPENAPI = {
           "202": { description: "The create was queued through the EPIC-006 gated path." },
           "400": { description: "name or settings failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -701,7 +701,7 @@ export const FILTERS_OPENAPI = {
           "200": { description: "Edit plan preview or the applied change with before/after and audit event." },
           "400": { description: "No editable field was supplied, or confirm is required for a security-impacting change." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
           "404": { description: "Filter policy not found." },
         },
       },
@@ -725,7 +725,7 @@ export const FILTERS_OPENAPI = {
           "202": { description: "The delete was queued through the EPIC-006 gated path." },
           "400": { description: "confirm is required to delete a filter policy." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks spam.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope." },
           "404": { description: "Filter policy not found." },
         },
       },

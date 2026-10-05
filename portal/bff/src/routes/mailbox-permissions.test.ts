@@ -520,7 +520,7 @@ describe("Mailbox permissions report route (T-0529)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing sharing.read with 403", async () => {
+  it("rejects callers missing Sharing.Permissions.Read with 403", async () => {
     const route = createMailboxPermissionsReportRoute({
       provider: new FakeMailboxPermissionsReportProvider(),
       resolveCaller: () => ({
@@ -557,9 +557,9 @@ describe("Mailbox permissions report route (T-0529)", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it("publishes the report path item with the sharing.read permission", () => {
+  it("publishes the report path item with the Sharing.Permissions.Read permission", () => {
     expect(MAILBOX_PERMISSIONS_REPORT_OPENAPI.paths["/tenants/{tenantId}/mailbox-permissions"].get.permission).toBe(
-      "sharing.read",
+      "Sharing.Permissions.Read",
     );
   });
 

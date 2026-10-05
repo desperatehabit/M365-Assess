@@ -204,7 +204,7 @@ export function SharingTable({
           title={
             canRemove
               ? "Removes the selected links through the bulk-removal dialog (T-0528), which confirms the count before any apply."
-              : "Removing links requires sharing.write and Remediation.Apply (T-0527/T-0528)."
+              : "Removing links requires Sharing.Permissions.ReadWrite and Remediation.Apply (T-0527/T-0528)."
           }
           onClick={() => onRemoveSelected?.(selectedItems)}
           data-testid="sharing-remove-selected"
@@ -323,7 +323,7 @@ export function SharingTable({
                           title={
                             canRemove
                               ? "Opens the bulk-removal dialog; the removal is confirmed there (T-0528)."
-                              : "Removing links requires sharing.write and Remediation.Apply (T-0527/T-0528)."
+                              : "Removing links requires Sharing.Permissions.ReadWrite and Remediation.Apply (T-0527/T-0528)."
                           }
                           onClick={() => onRemoveLink?.(item)}
                           data-testid={`sharing-remove-${item.linkId}`}

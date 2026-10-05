@@ -123,7 +123,7 @@ describe("Message trace route (T-0462)", () => {
     await expect(routes[0]!.handler(postBody({}))).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing mailtools.read and mailtools.search with 403", async () => {
+  it("rejects callers missing Exchange.MailTools.Read and Exchange.MailSearch.Execute with 403", async () => {
     const routes = createMessageTraceRoutes({
       provider: new FakeMessageTraceProvider(),
       resolveCaller: () => ({
@@ -135,7 +135,7 @@ describe("Message trace route (T-0462)", () => {
     await expect(routes[0]!.handler(postBody({}))).rejects.toMatchObject({ status: 403 });
   });
 
-  it("accepts a caller holding mailtools.search", async () => {
+  it("accepts a caller holding Exchange.MailSearch.Execute", async () => {
     const provider = new FakeMessageTraceProvider();
     const routes = createMessageTraceRoutes({ provider, resolveCaller: searchCaller });
 

@@ -1,5 +1,5 @@
 // T-0703 — test-pack routes. Asserts the three endpoints are tenant-scoped,
-// gated on the tests.read/tests.run seam, and that the run reuses the engine
+// gated on the CIPP.Tests.Read/CIPP.Tests.Execute seam, and that the run reuses the engine
 // through the injected create-run route.
 
 import { describe, expect, it } from "vitest";
@@ -157,7 +157,7 @@ describe("GET /v1/test-packs", () => {
     });
   });
 
-  it("requires the tests.read permission", async () => {
+  it("requires the CIPP.Tests.Read permission", async () => {
     const routes = buildRoutes({
       caller: adminCaller(),
       authorize: () => {
@@ -197,7 +197,7 @@ describe("POST /v1/test-packs/{id}/run", () => {
     expect(store.runs.get(run.id)).toBeDefined();
   });
 
-  it("requires the tests.run permission", async () => {
+  it("requires the CIPP.Tests.Execute permission", async () => {
     const routes = buildRoutes({
       caller: adminCaller(),
       authorize: (caller, permission) => {

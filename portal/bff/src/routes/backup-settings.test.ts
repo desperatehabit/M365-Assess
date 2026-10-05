@@ -1,6 +1,6 @@
 // Tests for the backup-settings route: GET/PUT /v1/backup-settings persist and
 // return retentionDays and replicationTarget, validate the body, enforce the
-// backup.read/backup.write permission seam, and audit the change
+// Tenant.Backup.Read/Tenant.Backup.ReadWrite permission seam, and audit the change
 // (EPIC-035 §3.3, §5, §6, §7; T-0688).
 import { describe, expect, it } from "vitest";
 import type { BackupConfig, BackupConfigInput } from "@m365-assess/db";

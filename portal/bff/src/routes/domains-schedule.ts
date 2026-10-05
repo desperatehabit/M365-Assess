@@ -7,7 +7,7 @@
 // `Invoke-DomainAnalysisSchedule`, so the T-0123 tick enqueues the domain
 // analyser for the tenant with no new engine. This route is the operator's
 // control over it: the first POST creates the task, later POSTs edit the cron
-// or flip `enabled`. Reads require `domains.read`, writes require `domains.write`
+// or flip `enabled`. Reads require `Tenant.Domains.Read`, writes require `Tenant.Domains.ReadWrite`
 // (SPEC §7) and the tenant in the caller scope. The OpenAPI fragment is
 // published here so `portal.v1.yaml` stays untouched (EPIC-001 SPEC §1).
 
@@ -31,8 +31,8 @@ export const DOMAIN_ANALYSIS_SCHEDULE_TYPE = "assessment";
 export const DOMAIN_ANALYSIS_SCHEDULE_DEFAULT_CRON = "0 0 6 * * *";
 export const DOMAIN_ANALYSIS_SCHEDULE_NAME = "Domain analysis";
 
-export const DOMAINS_SCHEDULE_READ_PERMISSION = "domains.read";
-export const DOMAINS_SCHEDULE_WRITE_PERMISSION = "domains.write";
+export const DOMAINS_SCHEDULE_READ_PERMISSION = "Tenant.Domains.Read";
+export const DOMAINS_SCHEDULE_WRITE_PERMISSION = "Tenant.Domains.ReadWrite";
 export const DOMAINS_SCHEDULE_UNAUTHENTICATED = "request.unauthenticated";
 export const DOMAINS_SCHEDULE_NOT_FOUND = "domain_analysis_schedule.not_found";
 
@@ -347,7 +347,7 @@ const TENANT_ID_PARAMETER = {
 
 const ERROR_RESPONSES = {
   "401": { description: "Authentication required." },
-  "403": { description: "The caller lacks domains.read/domains.write or the tenant is out of scope." },
+  "403": { description: "The caller lacks Tenant.Domains.Read/Tenant.Domains.ReadWrite or the tenant is out of scope." },
 } as const;
 
 export const DOMAINS_SCHEDULE_OPENAPI = {

@@ -13,7 +13,13 @@
 // the same object, so a stale file fails the build.
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { PermissionRegistry, PUBLIC_PERMISSION, permissionForEndpoint } from "../rbac/permissions.js";
+import {
+  OPENAPI_JSON_PATH,
+  OPENAPI_VERSIONED_JSON_PATH,
+  PermissionRegistry,
+  PUBLIC_PERMISSION,
+  permissionForEndpoint,
+} from "../rbac/permissions.js";
 import type { Route, RouteResponse } from "../server.js";
 import { ACCESS_CHECK_OPENAPI } from "./access.js";
 import { API_CLIENTS_OPENAPI } from "./api-clients.js";
@@ -480,8 +486,7 @@ const ROUTE_SOURCES = collectRouteMetadata(MOUNTED_ENDPOINTS, ROUTE_METADATA);
 /** The generated document, served as JSON and rendered into portal.v1.yaml. */
 export const OPENAPI_DOCUMENT: OpenApiDocument = buildOpenApiDocument(ROUTE_SOURCES);
 
-export const OPENAPI_JSON_PATH = "/openapi.json";
-export const OPENAPI_VERSIONED_JSON_PATH = "/v1/openapi.json";
+export { OPENAPI_JSON_PATH, OPENAPI_VERSIONED_JSON_PATH };
 
 // `yaml` is a tooling-only dependency (the served document is JSON), so it is
 // imported lazily: the route never loads it, and generation/reading YAML does.

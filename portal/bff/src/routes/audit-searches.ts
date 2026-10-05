@@ -35,9 +35,9 @@ export const AUDIT_SEARCH_SCHEDULE_PATH =
   "/v1/tenants/:tenantId/audit/searches/:searchId/schedule";
 
 export const AUDIT_SEARCH_PERMISSIONS = {
-  read: "audit.read",
-  search: "audit.search",
-  manage: "audit.manage",
+  read: "Security.Audit.Read",
+  search: "Security.AuditSearch.ReadWrite",
+  manage: "Security.Audit.ReadWrite",
 } as const;
 
 export const AUDIT_SEARCH_UNAUTHENTICATED = "request.unauthenticated";
@@ -428,7 +428,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
         responses: {
           "200": { description: "The tenant's saved searches." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.Audit.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -451,7 +451,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
           "201": { description: "The created saved search." },
           "400": { description: "The filter or name is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.manage or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.Audit.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -468,7 +468,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
         responses: {
           "200": { description: "The saved search." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.Audit.Read or the tenant is out of scope." },
           "404": { description: "Saved search not found." },
         },
       },
@@ -493,7 +493,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
           "200": { description: "The updated saved search." },
           "400": { description: "The filter or name is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.manage or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.Audit.ReadWrite or the tenant is out of scope." },
           "404": { description: "Saved search not found." },
         },
       },
@@ -509,7 +509,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
         responses: {
           "204": { description: "Soft-deleted; no body." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.manage or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.Audit.ReadWrite or the tenant is out of scope." },
           "404": { description: "Saved search not found." },
         },
       },
@@ -527,7 +527,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
         responses: {
           "202": { description: "The enqueued search job and the updated saved search." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.search or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.AuditSearch.ReadWrite or the tenant is out of scope." },
           "404": { description: "Saved search not found." },
         },
       },
@@ -554,7 +554,7 @@ export const AUDIT_SEARCHES_OPENAPI = {
           "200": { description: "The updated saved search and its schedule." },
           "400": { description: "The cron expression is invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks audit.manage or the tenant is out of scope." },
+          "403": { description: "The caller lacks Security.Audit.ReadWrite or the tenant is out of scope." },
           "404": { description: "Saved search or the referenced schedule was not found." },
         },
       },

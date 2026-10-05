@@ -1,7 +1,7 @@
 // Connector template CRUD and clone (EPIC-021 SPEC.md §3.3, §5, §6, §7, §11.3; T-0405).
 //
-//   GET    /v1/connector-templates              list            (transport.read)
-//   POST   /v1/connector-templates              create          (transport.write)
+//   GET    /v1/connector-templates              list            (Exchange.Transport.Read)
+//   POST   /v1/connector-templates              create          (Exchange.Transport.ReadWrite)
 //   GET    /v1/connector-templates/:id          read
 //   PATCH  /v1/connector-templates/:id          update
 //   DELETE /v1/connector-templates/:id          delete
@@ -12,7 +12,7 @@
 // Connector secrets travel by reference only (SPEC §11.2; T-0404): a
 // connectorJson that carries secret material is rejected before it is persisted,
 // and every response is redacted as defence in depth. Writes are gated on
-// `transport.write`, reads on `transport.read` (SPEC §7); the gate is an
+// `Exchange.Transport.ReadWrite`, reads on `Exchange.Transport.Read` (SPEC §7); the gate is an
 // injected `authorize` seam so EPIC-038's resolver can supply the real
 // permission set without touching route code.
 import { randomUUID } from "node:crypto";
@@ -38,8 +38,8 @@ export const CONNECTOR_TEMPLATE_CLONE_PATH = "/v1/connector-templates/:id/clone"
 export const CONNECTOR_TEMPLATE_DEPLOY_PATH = "/v1/connector-templates/:id/deploy";
 
 export const CONNECTOR_TEMPLATE_PERMISSIONS = {
-  read: "transport.read",
-  write: "transport.write",
+  read: "Exchange.Transport.Read",
+  write: "Exchange.Transport.ReadWrite",
 } as const;
 
 export const CONNECTOR_TEMPLATE_NOT_FOUND = "connector_template.not_found";
@@ -159,7 +159,7 @@ function requirePermission(
   }
 }
 
-// Deploy is a tenant write: it needs transport.write or the EPIC-006
+// Deploy is a tenant write: it needs Exchange.Transport.ReadWrite or the EPIC-006
 // Remediation.Apply semantics (SPEC §7), and never a direct write.
 function requireDeployPermission(
   ctx: ConnectorTemplateRequestContext,
@@ -628,7 +628,7 @@ export const CONNECTOR_TEMPLATES_OPENAPI = {
         ],
         responses: {
           "200": { description: "Cursor-paginated connector templates." },
-          "403": { description: "The caller lacks transport.read." },
+          "403": { description: "The caller lacks Exchange.Transport.Read." },
         },
       },
       post: {
@@ -640,7 +640,7 @@ export const CONNECTOR_TEMPLATES_OPENAPI = {
         responses: {
           "201": { description: "The stored template." },
           "400": { description: "The template failed validation, or connectorJson carried secret material." },
-          "403": { description: "The caller lacks transport.write." },
+          "403": { description: "The caller lacks Exchange.Transport.ReadWrite." },
         },
       },
     },
@@ -708,7 +708,7 @@ export const CONNECTOR_TEMPLATES_OPENAPI = {
           },
           "400": { description: "A required variable is missing or the payload is invalid." },
           "403": {
-            description: "The caller lacks transport.write or a target is out of scope.",
+            description: "The caller lacks Exchange.Transport.ReadWrite or a target is out of scope.",
           },
           "404": { description: "No live template has that id." },
           "422": { description: "Every target failed; per-target results are returned." },

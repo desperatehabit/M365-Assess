@@ -129,13 +129,13 @@ describe("Sharing report route (T-0521)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing sharing.read with 403", async () => {
+  it("rejects callers missing Sharing.Permissions.Read with 403", async () => {
     const provider = new FakeSharingReportProvider();
     const route = createSharingReportRoute({
       provider,
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),
-        permissions: ["sharepoint.read"],
+        permissions: ["SharePoint.Site.Read"],
       }),
     });
 
@@ -218,9 +218,9 @@ describe("Sharing report route (T-0521)", () => {
     ).toThrow(AppError);
   });
 
-  it("publishes the report path item with the sharing.read permission", () => {
+  it("publishes the report path item with the Sharing.Permissions.Read permission", () => {
     const operation = SHARING_REPORT_OPENAPI.paths["/tenants/{tenantId}/sharing/report"].get;
     expect(operation.operationId).toBe("listSharingReport");
-    expect(operation.permission).toBe("sharing.read");
+    expect(operation.permission).toBe("Sharing.Permissions.Read");
   });
 });

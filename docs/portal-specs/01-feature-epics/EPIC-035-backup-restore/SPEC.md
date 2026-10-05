@@ -92,7 +92,7 @@ secondary target.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `backup.read`, `backup.write`, `backup.restore`; restore requires `CIPP.Admin.*`.
+- **RBAC:** `Tenant.Backup.Read`, `Tenant.Backup.ReadWrite`, `CIPP.Admin.BackupRestore`; restore requires `CIPP.Admin.*`.
   Tenant backups are tenant-scoped (EPIC-038).
 
 ## 8. Remediation behavior

@@ -192,7 +192,7 @@ describe("Connector routes (T-0404)", () => {
     await expect(routes[0]!.handler(listCtx())).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing transport.read on GET with 403", async () => {
+  it("rejects callers missing Exchange.Transport.Read on GET with 403", async () => {
     const routes = createConnectorRoutes({
       provider: new FakeConnectorsProvider(),
       resolveCaller: () => ({
@@ -204,7 +204,7 @@ describe("Connector routes (T-0404)", () => {
     await expect(routes[0]!.handler(listCtx())).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing transport.write on writes with 403", async () => {
+  it("rejects callers missing Exchange.Transport.ReadWrite on writes with 403", async () => {
     const routes = createConnectorRoutes({
       provider: new FakeConnectorsProvider(),
       resolveCaller: () => ({

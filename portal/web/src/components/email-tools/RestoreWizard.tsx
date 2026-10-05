@@ -500,7 +500,7 @@ export function RestoreWizard({
               </label>
               {canRestore === false && (
                 <p style={noticeStyle} data-testid="restore-wizard-rbac-note">
-                  Starting a restore requires mailtools.restore and Remediation.Apply.
+                  Starting a restore requires Exchange.MailRestore.Execute and Remediation.Apply.
                 </p>
               )}
             </div>

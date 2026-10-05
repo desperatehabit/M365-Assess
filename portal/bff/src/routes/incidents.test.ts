@@ -115,7 +115,7 @@ describe("Incident list routes (T-0543)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects callers missing incidents.read with 403 and performs no provider call", async () => {
+  it("rejects callers missing Security.Incident.Read with 403 and performs no provider call", async () => {
     const provider = new FakeIncidentsProvider({});
     const all = routes(provider, {
       tenantScope: tenantScope([TENANT]),
@@ -220,7 +220,7 @@ describe("Incident list routes (T-0543)", () => {
     expect(calledTenants).not.toContain(OUT_OF_SCOPE);
   });
 
-  it("refuses the aggregate view without incidents.read and calls no provider", async () => {
+  it("refuses the aggregate view without Security.Incident.Read and calls no provider", async () => {
     const provider = new FakeIncidentsProvider({ [TENANT]: [incident({ id: "a-1" })] });
     const all = routes(provider, {
       tenantScope: tenantScope([TENANT]),
@@ -238,10 +238,10 @@ describe("Incident list routes (T-0543)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("publishes the incidents.read permission through the route module", () => {
+  it("publishes the Security.Incident.Read permission through the route module", () => {
     const entry = INCIDENTS_OPENAPI.paths["/tenants/{tenantId}/incidents"];
-    expect(entry.get.permission).toBe("incidents.read");
+    expect(entry.get.permission).toBe("Security.Incident.Read");
     expect(entry.get.operationId).toBe("listIncidents");
-    expect(INCIDENTS_READ_PERMISSION).toBe("incidents.read");
+    expect(INCIDENTS_READ_PERMISSION).toBe("Security.Incident.Read");
   });
 });

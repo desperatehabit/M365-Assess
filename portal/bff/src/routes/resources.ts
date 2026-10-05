@@ -5,7 +5,7 @@
 // (SPEC §11 item 3). Resource objects are read live from EXO and never
 // mirrored: the injected provider is backed by the worker queue (T-0010)
 // running the Get-Resources child job, so this module holds no M365 SDK call
-// and issues no tenant write. Reads require `resources.read` or `contacts.read`
+// and issues no tenant write. Reads require `Exchange.Resource.Read` or `Exchange.Contact.Read`
 // (SPEC §7) intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
@@ -13,8 +13,8 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const RESOURCES_PATH = "/v1/tenants/:tenantId/resources/:kind";
-export const RESOURCES_READ_PERMISSION = "resources.read";
-export const CONTACTS_READ_PERMISSION = "contacts.read";
+export const RESOURCES_READ_PERMISSION = "Exchange.Resource.Read";
+export const CONTACTS_READ_PERMISSION = "Exchange.Contact.Read";
 export const RESOURCES_UNAUTHENTICATED = "request.unauthenticated";
 export const RESOURCE_KIND_UNKNOWN = "resources.kind_unknown";
 
@@ -219,7 +219,7 @@ export const RESOURCES_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks resources.read or contacts.read, or the tenant is out of scope.",
+              "The caller lacks Exchange.Resource.Read or Exchange.Contact.Read, or the tenant is out of scope.",
           },
         },
       },

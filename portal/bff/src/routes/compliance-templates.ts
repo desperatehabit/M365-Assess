@@ -3,7 +3,8 @@
 //
 // Templates persist in the Purview compliance repository (0038_purview_compliance.sql);
 // tenant policy state stays live in Purview, so this module stores and deploys
-// templates only. CRUD is gated on `purview.templates`; deploy resolves the
+// templates only. Reads are gated on `Purview.Compliance.Read`, create/update/delete on
+// `Purview.Template.ReadWrite`; deploy (`Purview.Compliance.ReadWrite`) resolves the
 // template plus variables and applies per target through the EPIC-006 gated path
 // (one remediation apply job per target), recording a CompliancePolicyChange row
 // per target and reporting partial failures.
@@ -22,8 +23,9 @@ export const COMPLIANCE_TEMPLATES_PATH = "/v1/compliance-templates";
 export const COMPLIANCE_TEMPLATE_ITEM_PATH = "/v1/compliance-templates/:id";
 export const COMPLIANCE_TEMPLATE_DEPLOY_PATH = "/v1/compliance-templates/:id/deploy";
 
-export const PURVIEW_TEMPLATES_PERMISSION = "purview.templates";
-export const PURVIEW_WRITE_PERMISSION = "purview.write";
+export const PURVIEW_READ_PERMISSION = "Purview.Compliance.Read";
+export const PURVIEW_TEMPLATES_PERMISSION = "Purview.Template.ReadWrite";
+export const PURVIEW_WRITE_PERMISSION = "Purview.Compliance.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const COMPLIANCE_TEMPLATES_UNAUTHENTICATED = "request.unauthenticated";
@@ -96,6 +98,24 @@ function requireIdParam(ctx: RequestContext): string {
   return value.trim();
 }
 
+async function requireReadPermission(
+  options: ComplianceTemplatesRouteOptions,
+  caller: ComplianceTemplatesCaller,
+): Promise<void> {
+  if (options.authorize) {
+    await options.authorize(caller, PURVIEW_READ_PERMISSION);
+    return;
+  }
+  const permissions = caller.permissions ?? [];
+  if (
+    !permissions.includes(PURVIEW_READ_PERMISSION) &&
+    !permissions.includes(PURVIEW_TEMPLATES_PERMISSION) &&
+    !permissions.includes("*")
+  ) {
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.Read", 403);
+  }
+}
+
 async function requireTemplatesPermission(
   options: ComplianceTemplatesRouteOptions,
   caller: ComplianceTemplatesCaller,
@@ -106,7 +126,7 @@ async function requireTemplatesPermission(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(PURVIEW_TEMPLATES_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.templates", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Template.ReadWrite", 403);
   }
 }
 
@@ -124,7 +144,7 @@ async function requireDeployPermission(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.write", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.ReadWrite", 403);
   }
 }
 
@@ -235,7 +255,7 @@ export function createComplianceTemplatesRoutes(options: ComplianceTemplatesRout
 
   async function handleList(ctx: RequestContext): Promise<RouteResponse> {
     const caller = requireCaller(options.resolveCaller, ctx);
-    await requireTemplatesPermission(options, caller);
+    await requireReadPermission(options, caller);
 
     const areaParam = ctx.query.get("area");
     const templates = await options.repository.listTemplates(
@@ -281,7 +301,7 @@ export function createComplianceTemplatesRoutes(options: ComplianceTemplatesRout
 
   async function handleGet(ctx: RequestContext): Promise<RouteResponse> {
     const caller = requireCaller(options.resolveCaller, ctx);
-    await requireTemplatesPermission(options, caller);
+    await requireReadPermission(options, caller);
 
     const id = requireIdParam(ctx);
     const template = await options.repository.getTemplate(id);

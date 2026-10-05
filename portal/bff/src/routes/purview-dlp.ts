@@ -3,7 +3,7 @@
 // Reads are served live from Purview through the injected provider, which is
 // backed by the worker queue (get-purview-dlp.ps1 over the T-0582 Purview
 // session seam); this module holds no Purview SDK call and issues no tenant
-// write. The list route validates `purview.read` + tenant scope and returns the
+// write. The list route validates `Purview.Compliance.Read` + tenant scope and returns the
 // provider's cursor page; the detail route returns one policy. DLP change
 // actions (edit/enable/disable/clone/delete) are deferred to their own gated
 // tickets, so this module is read-only.
@@ -15,7 +15,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const PURVIEW_DLP_PATH = "/v1/tenants/:tenantId/purview/dlp";
 export const PURVIEW_DLP_ITEM_PATH = "/v1/tenants/:tenantId/purview/dlp/:policyId";
 
-export const PURVIEW_READ_PERMISSION = "purview.read";
+export const PURVIEW_READ_PERMISSION = "Purview.Compliance.Read";
 
 export const PURVIEW_DLP_UNAUTHENTICATED = "request.unauthenticated";
 export const PURVIEW_DLP_NOT_FOUND = "dlp.not_found";
@@ -103,7 +103,7 @@ async function requirePurviewRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(PURVIEW_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing purview.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Purview.Compliance.Read", 403);
   }
 }
 
@@ -177,7 +177,7 @@ export const PURVIEW_DLP_OPENAPI = {
         responses: {
           "200": { description: "The live DLP policies." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
         },
       },
     },
@@ -194,7 +194,7 @@ export const PURVIEW_DLP_OPENAPI = {
         responses: {
           "200": { description: "The live DLP policy." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks purview.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Purview.Compliance.Read or the tenant is out of scope." },
           "404": { description: "DLP policy not found." },
         },
       },

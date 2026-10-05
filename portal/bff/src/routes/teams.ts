@@ -4,14 +4,14 @@
 // and filters (visibility, archived, activity date window).
 // Teams are read live by the worker from the Graph Teams scopes (SPEC §7,
 // app-only per tenant); this route performs no Graph call directly and no writes.
-// Requires RBAC `teams.read` and tenant in caller scope.
+// Requires RBAC `Teams.Team.Read` and tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TEAMS_PATH = "/v1/tenants/:tenantId/teams";
-export const TEAMS_READ_PERMISSION = "teams.read";
+export const TEAMS_READ_PERMISSION = "Teams.Team.Read";
 export const TEAMS_UNAUTHENTICATED = "request.unauthenticated";
 
 export const TEAM_VISIBILITIES = ["public", "private"] as const;
@@ -92,7 +92,7 @@ async function ensureRead(options: TeamsRouteOptions, caller: TeamsCaller): Prom
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(TEAMS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing teams.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Teams.Team.Read", 403);
   }
 }
 
@@ -217,7 +217,7 @@ export const TEAMS_OPENAPI = {
           "200": { description: "The tenant's filtered team page." },
           "400": { description: "A path or query parameter is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the teams.read permission." },
+          "403": { description: "The caller lacks the Teams.Team.Read permission." },
         },
       },
     },

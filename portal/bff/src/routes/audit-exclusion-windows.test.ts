@@ -124,7 +124,7 @@ describe("Audit exclusion-window routes (T-0626)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses callers lacking audit.manage on create with a structured 403", async () => {
+  it("refuses callers lacking Security.Audit.ReadWrite on create with a structured 403", async () => {
     const store = new FakeAuditExclusionWindowStore();
     const routes = createAuditExclusionWindowRoutes(
       buildOptions({

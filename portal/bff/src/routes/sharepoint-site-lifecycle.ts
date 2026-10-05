@@ -18,8 +18,8 @@ export const SHAREPOINT_SITE_RESTORE_PATH =
   "/v1/tenants/:tenantId/sharepoint/sites/:siteId/restore";
 export const SHAREPOINT_RECYCLE_BIN_PATH = "/v1/tenants/:tenantId/sharepoint/recyclebin";
 
-export const SHAREPOINT_READ_PERMISSION = "sharepoint.read";
-export const SHAREPOINT_WRITE_PERMISSION = "sharepoint.write";
+export const SHAREPOINT_READ_PERMISSION = "SharePoint.Site.Read";
+export const SHAREPOINT_WRITE_PERMISSION = "SharePoint.Site.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const SHAREPOINT_SITE_UNAUTHENTICATED = "request.unauthenticated";
@@ -631,7 +631,7 @@ export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
     "/tenants/{tenantId}/sharepoint/sites/{siteId}": {
       delete: {
         operationId: "deleteSharePointSite",
-        summary: "Soft-delete a SharePoint site (preview with preview:true; apply needs sharepoint.write, Remediation.Apply, and confirm:true)",
+        summary: "Soft-delete a SharePoint site (preview with preview:true; apply needs SharePoint.Site.ReadWrite, Remediation.Apply, and confirm:true)",
         permission: SHAREPOINT_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -642,7 +642,7 @@ export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
           "200": { description: "Delete plan preview, or the applied result with before/after and audit event." },
           "400": { description: "Confirmation is missing for the delete." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Site.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The site is not live." },
         },
       },
@@ -650,7 +650,7 @@ export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
     "/tenants/{tenantId}/sharepoint/sites/{siteId}/restore": {
       post: {
         operationId: "restoreSharePointSite",
-        summary: "Restore a soft-deleted SharePoint site (preview with preview:true; apply needs sharepoint.write and Remediation.Apply)",
+        summary: "Restore a soft-deleted SharePoint site (preview with preview:true; apply needs SharePoint.Site.ReadWrite and Remediation.Apply)",
         permission: SHAREPOINT_WRITE_PERMISSION,
         security: [{ bearerAuth: [] }],
         parameters: [
@@ -660,7 +660,7 @@ export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
         responses: {
           "200": { description: "Restore plan preview, or the applied result with before/after and audit event." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Site.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The site is not in the soft-deleted set." },
         },
       },
@@ -680,7 +680,7 @@ export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
         responses: {
           "200": { description: "Cursor-paginated recycle-bin entries." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Site.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -713,7 +713,7 @@ export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
           "200": { description: "The plan preview, or the per-entry results with audit events." },
           "400": { description: "Invalid action/items, or missing confirmation for empty." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.write or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Site.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
         },
       },
     },

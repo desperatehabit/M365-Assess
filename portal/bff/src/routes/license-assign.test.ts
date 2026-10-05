@@ -346,9 +346,9 @@ describe("POST /v1/tenants/:tenantId/licenses/remove (T-0645)", () => {
 });
 
 describe("licence assign/remove gates (T-0645)", () => {
-  it("returns 403 when the caller lacks licenses.write and calls no provider", async () => {
+  it("returns 403 when the caller lacks Tenant.Licenses.ReadWrite and calls no provider", async () => {
     const provider = new FakeProvider();
-    const { routes } = optionsFor(provider, { resolveCaller: () => callerFor([TENANT_1], ["licenses.read"]) });
+    const { routes } = optionsFor(provider, { resolveCaller: () => callerFor([TENANT_1], ["Tenant.Licenses.Read"]) });
 
     await expect(
       routeFor(routes, "POST", LICENSE_ASSIGN_PATH).handler(
@@ -393,7 +393,7 @@ describe("licence assign/remove gates (T-0645)", () => {
     ).rejects.toMatchObject({ status: 400 });
   });
 
-  it("publishes both operations with the licenses.write permission", () => {
+  it("publishes both operations with the Tenant.Licenses.ReadWrite permission", () => {
     expect(LICENSE_ASSIGN_OPENAPI.paths["/tenants/{tenantId}/licenses/assign"].post.permission).toBe(
       LICENSES_WRITE_PERMISSION,
     );

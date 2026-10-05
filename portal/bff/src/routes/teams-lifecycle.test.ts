@@ -1,7 +1,7 @@
 // T-0505 — teams edit/archive/clone/delete route gating, delete confirmation
 // naming the team, EPIC-006 preview/apply, and TeamOperation audit.
 // Route-level tests: PATCH/DELETE /v1/tenants/:tenantId/teams/:teamId plus the
-// archive and clone subpaths validate teams.write + Remediation.Apply + tenant
+// archive and clone subpaths validate Teams.Team.ReadWrite + Remediation.Apply + tenant
 // scope, return a plan preview without writing, and on apply record a
 // TeamOperation (state + result) plus an audit event. Delete additionally
 // requires an explicit confirmation naming the team.
@@ -269,7 +269,7 @@ describe("Teams lifecycle routes (T-0505)", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects a caller missing teams.write with 403 and writes nothing", async () => {
+  it("rejects a caller missing Teams.Team.ReadWrite with 403 and writes nothing", async () => {
     const { provider, routes } = harness(callerFor([TENANT], [REMEDIATION_APPLY_PERMISSION]));
     await expect(
       routeFor(routes, "PATCH", TEAMS_LIFECYCLE_ITEM_PATH).handler(

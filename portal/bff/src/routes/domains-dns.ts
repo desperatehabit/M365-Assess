@@ -8,7 +8,7 @@
 // pressure (SPEC §9). On a miss the injected analyser runs the T-0664 job, the
 // T-0661 repository appends a DomainCheck, and the persisted check is cached.
 // History returns the stored checks ordered for the trend view. Both routes
-// require RBAC `domains.read` and the tenant in the caller scope. The OpenAPI
+// require RBAC `Tenant.Domains.Read` and the tenant in the caller scope. The OpenAPI
 // fragment is published here so `portal.v1.yaml` stays untouched (EPIC-001
 // SPEC §1).
 
@@ -24,7 +24,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const DOMAIN_CHECK_DNS_PATH = "/v1/tenants/:tenantId/domains/:domain/check-dns";
 export const DOMAIN_HISTORY_PATH = "/v1/tenants/:tenantId/domains/:domain/history";
 
-export const DOMAINS_DNS_READ_PERMISSION = "domains.read";
+export const DOMAINS_DNS_READ_PERMISSION = "Tenant.Domains.Read";
 export const DOMAINS_DNS_UNAUTHENTICATED = "request.unauthenticated";
 
 // ─── Result and dependency seams ─────────────────────────────────────────────
@@ -127,7 +127,7 @@ async function authorizeRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(DOMAINS_DNS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing domains.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Tenant.Domains.Read", 403);
   }
 }
 
@@ -219,7 +219,7 @@ const DOMAIN_PARAMETER = {
 
 const ERROR_RESPONSES = {
   "401": { description: "Authentication required." },
-  "403": { description: "The caller lacks domains.read or the tenant is out of scope." },
+  "403": { description: "The caller lacks Tenant.Domains.Read or the tenant is out of scope." },
 } as const;
 
 export const DOMAINS_DNS_OPENAPI = {

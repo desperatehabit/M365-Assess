@@ -17,10 +17,10 @@
 // Quarantine messages are read live from EXO/Graph and never mirrored: the
 // injected provider is backed by the worker queue (T-0010), so this module
 // holds no M365 SDK call and issues no tenant write on reads. Reads require
-// `quarantine.read` (SPEC §7) intersected with the caller tenant scope.
+// `Exchange.Quarantine.Read` (SPEC §7) intersected with the caller tenant scope.
 //
 // Release and delete are security actions (SPEC §4.2, §8, §9): the route
-// validates `quarantine.act` plus `Remediation.Apply`, requires explicit
+// validates `Exchange.Quarantine.ReadWrite` plus `Remediation.Apply`, requires explicit
 // `confirm: true`, builds a preview plan showing the affected message before
 // apply (`preview: true` writes nothing), and enqueues a `remediation` job
 // through the EPIC-006 gated path (T-0107). Every apply writes one
@@ -40,8 +40,8 @@ export const QUARANTINE_ITEM_PATH = "/v1/tenants/:tenantId/quarantine/:messageId
 export const QUARANTINE_ACTION_PATH = "/v1/tenants/:tenantId/quarantine/:messageId/:action";
 export const QUARANTINE_SUBMIT_PATH = "/v1/tenants/:tenantId/quarantine/:messageId/submit";
 
-export const QUARANTINE_READ_PERMISSION = "quarantine.read";
-export const QUARANTINE_ACT_PERMISSION = "quarantine.act";
+export const QUARANTINE_READ_PERMISSION = "Exchange.Quarantine.Read";
+export const QUARANTINE_ACT_PERMISSION = "Exchange.Quarantine.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 export const QUARANTINE_UNAUTHENTICATED = "request.unauthenticated";
@@ -312,7 +312,7 @@ async function requireQuarantineRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(QUARANTINE_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing quarantine.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Quarantine.Read", 403);
   }
 }
 
@@ -849,7 +849,7 @@ export const QUARANTINE_OPENAPI = {
           "200": { description: "The §3.3 quarantine table for the requested tab, read live from EXO/Graph." },
           "400": { description: "tab or a filter value failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.Read or the tenant is out of scope." },
         },
       },
     },
@@ -867,7 +867,7 @@ export const QUARANTINE_OPENAPI = {
         responses: {
           "200": { description: "The message metadata plus a preview whose source is exo or graph." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.Read or the tenant is out of scope." },
           "404": { description: "The quarantined message was not found." },
         },
       },
@@ -889,7 +889,7 @@ export const QUARANTINE_OPENAPI = {
           "202": { description: "The action was queued through the EPIC-006 gated path with a QuarantineAction and an AuditEvent." },
           "400": { description: "action failed validation or confirm is required for release/delete." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.act or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The quarantined message was not found." },
         },
       },
@@ -927,7 +927,7 @@ export const QUARANTINE_OPENAPI = {
           "202": { description: "The message was queued for review through the EPIC-006 gated path with a QuarantineAction and an AuditEvent." },
           "400": { description: "The request body failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks quarantine.act or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Quarantine.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
           "404": { description: "The quarantined message, or its tracked submission, was not found." },
         },
       },

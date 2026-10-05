@@ -487,7 +487,7 @@ export function TemplatesView({
           type="button"
           style={{ ...primaryButtonStyle, ...(writeDisabled ? disabledStyle : {}) }}
           disabled={writeDisabled}
-          title={writeDisabled ? "Requires spam.write permission" : "New template"}
+          title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "New template"}
           onClick={openCreate}
           data-testid="template-new"
         >
@@ -534,11 +534,11 @@ export function TemplatesView({
                   <td style={tdStyle}>
                     <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                       <button type="button" style={buttonStyle} onClick={() => setSelected(template)} data-testid={`template-view-${template.id}`}>View</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Edit"} onClick={() => openEdit(template)} data-testid={`template-edit-${template.id}`}>Edit</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Clone"} onClick={() => void cloneTemplate(template)} data-testid={`template-clone-${template.id}`}>Clone</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Deploy"} onClick={() => openDeploy(template)} data-testid={`template-deploy-${template.id}`}>Deploy</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Edit"} onClick={() => openEdit(template)} data-testid={`template-edit-${template.id}`}>Edit</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Clone"} onClick={() => void cloneTemplate(template)} data-testid={`template-clone-${template.id}`}>Clone</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Deploy"} onClick={() => openDeploy(template)} data-testid={`template-deploy-${template.id}`}>Deploy</button>
                       <button type="button" style={buttonStyle} onClick={() => exportTemplate(template)} data-testid={`template-export-${template.id}`}>Export</button>
-                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Delete"} onClick={() => void removeTemplate(template)} data-testid={`template-delete-${template.id}`}>Delete</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Delete"} onClick={() => void removeTemplate(template)} data-testid={`template-delete-${template.id}`}>Delete</button>
                     </div>
                   </td>
                 </tr>

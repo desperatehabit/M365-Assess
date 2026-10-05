@@ -1,6 +1,6 @@
 // T-0504 — teams create route gating, template expansion, EPIC-006 gated
 // enqueue, and TeamOperation audit.
-// Route-level tests: POST /v1/tenants/:tenantId/teams validates teams.write +
+// Route-level tests: POST /v1/tenants/:tenantId/teams validates Teams.Team.ReadWrite +
 // Remediation.Apply + tenant scope, expands a supplied local TeamTemplate's
 // owners/members/settings, returns a plan preview without writing, and on apply
 // enqueues the gated job and records a TeamOperation plus an audit event.
@@ -175,12 +175,12 @@ describe("Team template expansion (T-0504)", () => {
 });
 
 describe("POST /v1/tenants/:tenantId/teams (T-0504)", () => {
-  it("exposes the create route and publishes teams.write", () => {
+  it("exposes the create route and publishes Teams.Team.ReadWrite", () => {
     const h = harness();
     expect(h.route.method).toBe("POST");
     expect(h.route.path).toBe(TEAMS_CREATE_PATH);
     const entry = TEAMS_CREATE_OPENAPI.paths["/tenants/{tenantId}/teams"].post;
-    expect(entry.permission).toBe("teams.write");
+    expect(entry.permission).toBe("Teams.Team.ReadWrite");
     expect(entry.operationId).toBe("createTeam");
   });
 
@@ -191,7 +191,7 @@ describe("POST /v1/tenants/:tenantId/teams (T-0504)", () => {
     expect(h.queue.enqueued).toHaveLength(0);
   });
 
-  it("refuses callers without teams.write", async () => {
+  it("refuses callers without Teams.Team.ReadWrite", async () => {
     const h = harness();
     h.setCaller(caller([REMEDIATION_APPLY_PERMISSION]));
     await expect(h.route.handler(ctx({ name: "Team" }))).rejects.toMatchObject({ status: 403 });

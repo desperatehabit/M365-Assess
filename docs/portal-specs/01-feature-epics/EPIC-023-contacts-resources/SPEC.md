@@ -83,7 +83,7 @@ Contacts and resources are read live from EXO; templates persist.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `contacts.read`, `contacts.write`, `resources.write`; writes require
+- **RBAC:** `Exchange.Contact.Read`, `Exchange.Contact.ReadWrite`, `Exchange.Resource.ReadWrite`; writes require
   `Remediation.Apply` semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** EXO app-only certificate.
 

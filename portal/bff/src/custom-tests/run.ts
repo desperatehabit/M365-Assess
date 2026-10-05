@@ -10,7 +10,7 @@
 // 4. Live runs record a TestRun result.
 // 5. Writes obey the EPIC-006 remediation gate: live writes require explicit confirmation.
 // 6. Unsandboxed writes or execution attempts are refused.
-// 7. Gated by tests.run permission and tenant scope (EPIC-038).
+// 7. Gated by CIPP.Tests.Execute permission and tenant scope (EPIC-038).
 
 import { randomUUID } from "node:crypto";
 import type { JobEnvelope } from "@m365-assess/contracts";
@@ -25,7 +25,7 @@ import {
 } from "./parameters.js";
 
 export const CUSTOM_TEST_RUN_PATH = "/v1/custom-tests/:id/run";
-export const CUSTOM_TEST_RUN_PERMISSION = "tests.run";
+export const CUSTOM_TEST_RUN_PERMISSION = "CIPP.Tests.Execute";
 
 export const CUSTOM_TEST_NOT_FOUND = "custom_test.not_found";
 export const CUSTOM_TEST_NO_VERSION = "custom_test.no_version";

@@ -311,7 +311,7 @@ describe("portal user scope editing", () => {
   it("publishes the scope edit path under the admin permission", () => {
     expect(PORTAL_USER_SCOPE_PATH).toBe("/v1/users/:id/scope");
     const operation = PORTAL_USERS_OPENAPI.paths["/users/{id}/scope"].put;
-    expect(operation.permission).toBe("CIPP.Admin.*");
+    expect(operation.permission).toBe("CIPP.Admin.Users");
     expect(operation.operationId).toBe("updatePortalUserScope");
   });
 });

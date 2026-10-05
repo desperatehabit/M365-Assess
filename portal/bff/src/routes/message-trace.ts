@@ -7,7 +7,7 @@
 // window by the get-message-trace worker; a range beyond the window surfaces
 // here as a structured error naming the limit and pointing at historical
 // search (§9). Trace reads are sensitive because they expose message
-// metadata: every query requires `mailtools.read` or `mailtools.search`
+// metadata: every query requires `Exchange.MailTools.Read` or `Exchange.MailSearch.Execute`
 // (§7) intersected with the caller tenant scope, and every executed query is
 // reported through the optional recordAudit seam (§8). Message data stays
 // live in EXO (§5); the injected provider is backed by the worker queue
@@ -19,8 +19,8 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const MESSAGE_TRACE_PATH = "/v1/tenants/:tenantId/mail/message-trace";
-export const MESSAGE_TRACE_READ_PERMISSION = "mailtools.read";
-export const MESSAGE_TRACE_SEARCH_PERMISSION = "mailtools.search";
+export const MESSAGE_TRACE_READ_PERMISSION = "Exchange.MailTools.Read";
+export const MESSAGE_TRACE_SEARCH_PERMISSION = "Exchange.MailSearch.Execute";
 export const MESSAGE_TRACE_UNAUTHENTICATED = "request.unauthenticated";
 export const MESSAGE_TRACE_WINDOW_EXCEEDED = "message-trace.window_exceeded";
 
@@ -156,7 +156,7 @@ async function requireMessageTraceAccess(
   if (!hasAccess) {
     throw new AppError(
       ErrorCodes.forbidden,
-      "forbidden: missing mailtools.read or mailtools.search",
+      "forbidden: missing Exchange.MailTools.Read or Exchange.MailSearch.Execute",
       403,
     );
   }
@@ -290,7 +290,7 @@ export const MESSAGE_TRACE_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks mailtools.read or mailtools.search, or the tenant is out of scope.",
+              "The caller lacks Exchange.MailTools.Read or Exchange.MailSearch.Execute, or the tenant is out of scope.",
           },
         },
       },

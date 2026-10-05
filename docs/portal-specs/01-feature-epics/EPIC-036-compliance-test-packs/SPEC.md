@@ -102,7 +102,7 @@ A failing custom test fires an alert (EPIC-029) with the test's output.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `tests.read`, `tests.run`, `tests.write`; custom-test authoring/execution is high
+- **RBAC:** `CIPP.Tests.Read`, `CIPP.Tests.Execute`, `CIPP.Tests.ReadWrite`; custom-test authoring/execution is high
   privilege (arbitrary script) and gated like EPIC-007. Tenant-scoped (EPIC-038).
 
 ## 8. Remediation behavior

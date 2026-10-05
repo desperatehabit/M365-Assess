@@ -1,5 +1,5 @@
 // T-0706 — custom-test authoring routes. Asserts the CRUD, version, and
-// enable/disable endpoints, the tests.read/tests.write seam (stubbed here), the
+// enable/disable endpoints, the CIPP.Tests.Read/CIPP.Tests.ReadWrite seam (stubbed here), the
 // T-0705 parameter gate on version append, and that every mutation writes an
 // AuditEvent (exercised against the real repository from T-0704).
 
@@ -208,7 +208,7 @@ describe("custom-test routes", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("requires tests.read to list and tests.write to mutate", async () => {
+  it("requires CIPP.Tests.Read to list and CIPP.Tests.ReadWrite to mutate", async () => {
     const readDenied = buildRoutes({
       authorize: (_caller, permission) => {
         if (permission === CUSTOM_TESTS_READ_PERMISSION) throw new Error("forbidden");

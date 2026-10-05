@@ -10,7 +10,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const RESOURCES_CRUD_BASE_PATH = "/v1/tenants/:tenantId/resources/:kind";
 export const RESOURCES_CRUD_ITEM_PATH = "/v1/tenants/:tenantId/resources/:kind/:resourceId";
 
-export const RESOURCES_WRITE_PERMISSION = "resources.write";
+export const RESOURCES_WRITE_PERMISSION = "Exchange.Resource.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const RESOURCES_CRUD_UNAUTHENTICATED = "request.unauthenticated";
 
@@ -168,7 +168,7 @@ async function authorizeWrite(
                    permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
                    permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing resources.write permission", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.Resource.ReadWrite permission", 403);
   }
 }
 
@@ -354,7 +354,7 @@ export const RESOURCES_CRUD_OPENAPI = {
           "201": { description: "The resource was created." },
           "400": { description: "A required field is missing or invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks resources.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Resource.ReadWrite or the tenant is out of scope." },
         },
       },
     },
@@ -397,7 +397,7 @@ export const RESOURCES_CRUD_OPENAPI = {
           "200": { description: "The resource was updated, membership changed, or a plan preview when preview is set." },
           "400": { description: "A required field is missing or invalid." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks resources.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Resource.ReadWrite or the tenant is out of scope." },
         },
       },
       delete: {
@@ -434,7 +434,7 @@ export const RESOURCES_CRUD_OPENAPI = {
           "200": { description: "The resource was deleted, or a plan preview when preview is set." },
           "400": { description: "The confirm flag is required for deletion." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks resources.write or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.Resource.ReadWrite or the tenant is out of scope." },
         },
       },
     },

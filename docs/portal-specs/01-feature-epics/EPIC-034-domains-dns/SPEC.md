@@ -101,7 +101,7 @@ The analyser runs on schedule; results are stored and diffed to detect changes.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `domains.read`, `domains.write`; writes require `Remediation.Apply` semantics.
+- **RBAC:** `Tenant.Domains.Read`, `Tenant.Domains.ReadWrite`; writes require `Remediation.Apply` semantics.
   Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph `Domain.ReadWrite.All` for domain ops; DNS resolution needs no tenant auth.
 

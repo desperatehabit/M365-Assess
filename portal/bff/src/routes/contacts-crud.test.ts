@@ -185,10 +185,10 @@ describe("Contacts CRUD routes (T-0443)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing contacts.write with 403", async () => {
+  it("rejects callers missing Exchange.Contact.ReadWrite with 403", async () => {
     const caller: ContactsCrudCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: ["contacts.read"],
+      permissions: ["Exchange.Contact.Read"],
     };
     const routes = getRoutes(new FakeContactsCrudProvider(), caller);
     const postRoute = routes.find((r) => r.method === "POST")!;

@@ -560,7 +560,7 @@ export function ConnectorsView({
           type="button"
           style={{ ...primaryButtonStyle, ...(writeDisabled ? disabledStyle : {}) }}
           disabled={writeDisabled}
-          title={writeDisabled ? "Requires transport.write permission" : "New connector"}
+          title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "New connector"}
           onClick={openCreate}
           data-testid="connector-new"
         >
@@ -611,10 +611,10 @@ export function ConnectorsView({
                     <td style={tdStyle}>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         <button type="button" style={buttonStyle} onClick={() => setSelected(connector)} data-testid={`connector-view-${connector.id}`}>View</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Edit"} onClick={() => openEdit(connector)} data-testid={`connector-edit-${connector.id}`}>Edit</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : enabled ? "Disable" : "Enable"} onClick={() => toggle(connector)} data-testid={`connector-toggle-${connector.id}`}>{enabled ? "Disable" : "Enable"}</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Clone to template"} onClick={() => { setTemplateFor(connector); setTemplateName(`${connector.name} template`); resetPlan(); }} data-testid={`connector-clone-template-${connector.id}`}>Clone to template</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Delete"} onClick={() => removeConnector(connector)} data-testid={`connector-delete-${connector.id}`}>Delete</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Edit"} onClick={() => openEdit(connector)} data-testid={`connector-edit-${connector.id}`}>Edit</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : enabled ? "Disable" : "Enable"} onClick={() => toggle(connector)} data-testid={`connector-toggle-${connector.id}`}>{enabled ? "Disable" : "Enable"}</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Clone to template"} onClick={() => { setTemplateFor(connector); setTemplateName(`${connector.name} template`); resetPlan(); }} data-testid={`connector-clone-template-${connector.id}`}>Clone to template</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Delete"} onClick={() => removeConnector(connector)} data-testid={`connector-delete-${connector.id}`}>Delete</button>
                       </div>
                     </td>
                   </tr>

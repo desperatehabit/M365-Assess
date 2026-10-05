@@ -96,7 +96,7 @@ describe("License optimization route (T-0643)", () => {
     await expect(route.handler(request())).rejects.toThrow(AppError);
   });
 
-  it("rejects missing licenses.read permission with 403", async () => {
+  it("rejects missing Tenant.Licenses.Read permission with 403", async () => {
     const route = createLicenseOptimizationRoute({
       provider: new FakeOptimizationProvider(),
       resolveCaller: () => ({

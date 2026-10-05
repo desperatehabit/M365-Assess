@@ -10,15 +10,15 @@
 // worker plan with no tenant write, otherwise the worker applies with
 // before/after capture and returns one AuditEvent, recorded through the
 // recordAudit seam (§8: encryption-template changes are audited). Reads
-// require `mailtools.read`; the PUT requires `mailtools.write` or
+// require `Exchange.MailTools.Read`; the PUT requires `Exchange.MailTools.ReadWrite` or
 // `Remediation.Apply`, both intersected with the caller tenant scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const ENCRYPTION_PATH = "/v1/tenants/:tenantId/mail/encryption";
-export const ENCRYPTION_READ_PERMISSION = "mailtools.read";
-export const ENCRYPTION_WRITE_PERMISSION = "mailtools.write";
+export const ENCRYPTION_READ_PERMISSION = "Exchange.MailTools.Read";
+export const ENCRYPTION_WRITE_PERMISSION = "Exchange.MailTools.ReadWrite";
 export const ENCRYPTION_APPLY_PERMISSION = "Remediation.Apply";
 export const ENCRYPTION_UNAUTHENTICATED = "request.unauthenticated";
 export const ENCRYPTION_CONFIRM_REQUIRED = "encryption.confirm_required";
@@ -150,7 +150,7 @@ async function requireEncryptionRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(ENCRYPTION_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing mailtools.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Exchange.MailTools.Read", 403);
   }
 }
 
@@ -170,7 +170,7 @@ async function requireEncryptionWrite(
   if (!hasWrite) {
     throw new AppError(
       ErrorCodes.forbidden,
-      "forbidden: missing mailtools.write or Remediation.Apply permission",
+      "forbidden: missing Exchange.MailTools.ReadWrite or Remediation.Apply permission",
       403,
     );
   }
@@ -344,7 +344,7 @@ export const ENCRYPTION_OPENAPI = {
           "200": { description: "The IRM/OME configuration and OME template settings." },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks mailtools.read or the tenant is out of scope.",
+            description: "The caller lacks Exchange.MailTools.Read or the tenant is out of scope.",
           },
           "404": { description: "The message encryption configuration was not found." },
         },
@@ -386,7 +386,7 @@ export const ENCRYPTION_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks mailtools.write or Remediation.Apply, or the tenant is out of scope.",
+              "The caller lacks Exchange.MailTools.ReadWrite or Remediation.Apply, or the tenant is out of scope.",
           },
           "404": { description: "The OME template was not found." },
         },

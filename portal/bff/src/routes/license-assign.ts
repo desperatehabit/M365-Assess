@@ -4,7 +4,7 @@
 //   POST /v1/tenants/:tenantId/licenses/remove
 //
 // Every write executes through the EPIC-006 apply contract (T-0108): the caller
-// needs `licenses.write` and the tenant in scope (gates), an Idempotency-Key is
+// needs `Tenant.Licenses.ReadWrite` and the tenant in scope (gates), an Idempotency-Key is
 // required and a repeated key replays the prior outcome instead of re-running
 // the worker, a non-dry-run write needs explicit `{ "confirm": true }`, and
 // every applied/failed row records a LicenseChange and an AuditEvent. A removal
@@ -40,7 +40,7 @@ import {
 
 export const LICENSE_ASSIGN_PATH = "/v1/tenants/:tenantId/licenses/assign";
 export const LICENSE_REMOVE_PATH = "/v1/tenants/:tenantId/licenses/remove";
-export const LICENSES_WRITE_PERMISSION = "licenses.write";
+export const LICENSES_WRITE_PERMISSION = "Tenant.Licenses.ReadWrite";
 
 export const LICENSE_ASSIGN_UNAUTHENTICATED = "request.unauthenticated";
 export const LICENSE_IDEMPOTENCY_REQUIRED = "licenses.idempotency_key_required";

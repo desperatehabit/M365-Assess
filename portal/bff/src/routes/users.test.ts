@@ -521,7 +521,7 @@ describe("portal users route", () => {
     const users = createInMemoryPortalUserStore([seedUser()]);
     const granted = createPortalUsersRoute({
       store: users,
-      resolveCaller: () => ({ roles: [], permissions: ["CIPP.Admin.*"], tenantScope: { all: true, tenantIds: [] } }),
+      resolveCaller: () => ({ roles: [], permissions: [USERS_ADMIN_SCOPE], tenantScope: { all: true, tenantIds: [] } }),
     });
     const grantedBaseUrl = await startServer(granted);
     expect((await fetch(`${grantedBaseUrl}/v1/users`)).status).toBe(200);
@@ -534,14 +534,14 @@ describe("portal users route", () => {
     expect((await fetch(`${deniedBaseUrl}/v1/users`)).status).toBe(403);
   });
 
-  it("publishes the CIPP.Admin.* permission through the route module", () => {
-    expect(USERS_ADMIN_SCOPE).toBe("CIPP.Admin.*");
+  it("publishes the CIPP.Admin.Users permission through the route module", () => {
+    expect(USERS_ADMIN_SCOPE).toBe("CIPP.Admin.Users");
     expect(PORTAL_USERS_PATH).toBe("/v1/users");
     expect(PORTAL_USER_PATH).toBe("/v1/users/:id");
     const paths = PORTAL_USERS_OPENAPI.paths;
-    expect(paths["/users"].get.permission).toBe("CIPP.Admin.*");
-    expect(paths["/users"].post.permission).toBe("CIPP.Admin.*");
-    expect(paths["/users/{id}"].patch.permission).toBe("CIPP.Admin.*");
-    expect(paths["/users/{id}"].delete.permission).toBe("CIPP.Admin.*");
+    expect(paths["/users"].get.permission).toBe(USERS_ADMIN_SCOPE);
+    expect(paths["/users"].post.permission).toBe(USERS_ADMIN_SCOPE);
+    expect(paths["/users/{id}"].patch.permission).toBe(USERS_ADMIN_SCOPE);
+    expect(paths["/users/{id}"].delete.permission).toBe(USERS_ADMIN_SCOPE);
   });
 });

@@ -8,7 +8,7 @@
 // link, and the module CheckID it maps to (null for families with no module
 // check, e.g. MTA-STS/TLS-RPT, which carry a portal instruction instead).
 // Recommend-only (SPEC §11.2): the route exposes no write action and never
-// changes a DNS record. Requires RBAC `domains.read` and the tenant in the
+// changes a DNS record. Requires RBAC `Tenant.Domains.Read` and the tenant in the
 // caller scope. The OpenAPI fragment is published here so `portal.v1.yaml`
 // stays untouched (EPIC-001 SPEC §1).
 
@@ -21,7 +21,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 export const DOMAIN_RECOMMENDATIONS_PATH =
   "/v1/tenants/:tenantId/domains/:domain/recommendations";
 
-export const DOMAINS_RECOMMENDATIONS_READ_PERMISSION = "domains.read";
+export const DOMAINS_RECOMMENDATIONS_READ_PERMISSION = "Tenant.Domains.Read";
 export const DOMAINS_RECOMMENDATIONS_UNAUTHENTICATED = "request.unauthenticated";
 
 // ─── Result and dependency seams ─────────────────────────────────────────────
@@ -114,7 +114,7 @@ async function authorizeRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(DOMAINS_RECOMMENDATIONS_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing domains.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Tenant.Domains.Read", 403);
   }
 }
 
@@ -173,7 +173,7 @@ const DOMAIN_PARAMETER = {
 
 const ERROR_RESPONSES = {
   "401": { description: "Authentication required." },
-  "403": { description: "The caller lacks domains.read or the tenant is out of scope." },
+  "403": { description: "The caller lacks Tenant.Domains.Read or the tenant is out of scope." },
 } as const;
 
 export const DOMAINS_RECOMMENDATIONS_OPENAPI = {

@@ -104,7 +104,7 @@ Incidents/alerts are read live from Graph/Defender; portal notes and state chang
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `incidents.read`, `incidents.triage`; triage writes require `Remediation.Apply`
+- **RBAC:** `Security.Incident.Read`, `Security.Incident.ReadWrite`; triage writes require `Remediation.Apply`
   semantics. Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph `SecurityEvents.ReadWrite.All`, `SecurityAlert.ReadWrite.All`.
 

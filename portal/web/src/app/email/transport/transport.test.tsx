@@ -128,7 +128,7 @@ describe("TransportRulesView", () => {
     await waitFor(() => expect(screen.getByTestId("transport-rule-row-rule-1")).toBeTruthy());
     const edit = screen.getByTestId("transport-rule-edit-rule-1") as HTMLButtonElement;
     expect(edit.disabled).toBe(true);
-    expect(edit.title).toContain("transport.write");
+    expect(edit.title).toContain("Exchange.Transport.ReadWrite");
     const view = screen.getByTestId("transport-rule-view-rule-1") as HTMLButtonElement;
     expect(view.disabled).toBe(false);
   });

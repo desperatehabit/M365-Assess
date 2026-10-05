@@ -8,13 +8,13 @@
 // (check/standardKey null); the action-to-check mapping is T-0603's job. The
 // BFF-facing field is `check`, matching the remediation routes' rename of the
 // registry check reference.
-// Requires RBAC `secure-score.read` and the tenant in caller scope.
+// Requires RBAC `Security.SecureScore.Read` and the tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const SECURE_SCORE_PATH = "/v1/tenants/:tenantId/secure-score";
-export const SECURE_SCORE_READ_PERMISSION = "secure-score.read";
+export const SECURE_SCORE_READ_PERMISSION = "Security.SecureScore.Read";
 export const SECURE_SCORE_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface SecureScoreCategory {
@@ -118,7 +118,7 @@ async function ensureRead(
   ) {
     throw new AppError(
       ErrorCodes.forbidden,
-      "forbidden: missing secure-score.read",
+      "forbidden: missing Security.SecureScore.Read",
       403,
       [{ field: "permission", reason: SECURE_SCORE_READ_PERMISSION }],
     );
@@ -191,7 +191,7 @@ export const SECURE_SCORE_OPENAPI = {
           "401": { description: "Authentication is required." },
           "403": {
             description:
-              "The caller lacks the secure-score.read permission or the tenant is out of scope.",
+              "The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.",
           },
         },
       },

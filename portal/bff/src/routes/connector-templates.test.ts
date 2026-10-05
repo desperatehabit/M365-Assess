@@ -476,7 +476,7 @@ describe("connector template routes", () => {
     expect((badBody.body as Record<string, unknown>)["code"]).toBe(ErrorCodes.validationFailed);
   });
 
-  it("gates writes behind transport.write and reads behind transport.read", async () => {
+  it("gates writes behind Exchange.Transport.ReadWrite and reads behind Exchange.Transport.Read", async () => {
     const store = new InMemoryConnectorTemplateStore();
     const routes = createConnectorTemplateRoutes({
       store,
@@ -494,7 +494,7 @@ describe("connector template routes", () => {
     expect(list.status).toBe(200);
   });
 
-  it("default authorizer accepts transport.write or an admin scope", async () => {
+  it("default authorizer accepts Exchange.Transport.ReadWrite or an admin scope", async () => {
     const store = new InMemoryConnectorTemplateStore();
     const routes = createConnectorTemplateRoutes({ store });
     const post = handlerFor(routes, "POST", "/v1/connector-templates");

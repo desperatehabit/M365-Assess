@@ -19,8 +19,8 @@ export const TEAMS_VOICE_NUMBERS_PATH = "/v1/tenants/:tenantId/teams/voice/numbe
 export const TEAMS_VOICE_NUMBER_ITEM_PATH = "/v1/tenants/:tenantId/teams/voice/numbers/:numberId";
 export const TEAMS_VOICE_POLICY_PATH = "/v1/tenants/:tenantId/teams/voice/policy";
 
-export const TEAMS_VOICE_READ_PERMISSION = "teams.read";
-export const TEAMS_VOICE_WRITE_PERMISSION = "teams.voice";
+export const TEAMS_VOICE_READ_PERMISSION = "Teams.Team.Read";
+export const TEAMS_VOICE_WRITE_PERMISSION = "Teams.Voice.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const TEAMS_VOICE_UNAUTHENTICATED = "request.unauthenticated";
 export const TEAMS_VOICE_LICENSE_REQUIRED = "voice.license_required";
@@ -192,7 +192,7 @@ async function requireTeamsVoiceRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(TEAMS_VOICE_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing teams.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Teams.Team.Read", 403);
   }
 }
 
@@ -210,7 +210,7 @@ async function requireTeamsVoiceWrite(
     permissions.includes(REMEDIATION_APPLY_PERMISSION) ||
     permissions.includes("*");
   if (!hasWrite) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing teams.voice", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Teams.Voice.ReadWrite", 403);
   }
 }
 
@@ -376,7 +376,7 @@ export const TEAMS_VOICE_OPENAPI = {
         responses: {
           "200": { description: "The voice-number inventory with the license state." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Teams.Team.Read or the tenant is out of scope." },
         },
       },
       post: {
@@ -392,7 +392,7 @@ export const TEAMS_VOICE_OPENAPI = {
           "201": { description: "The assignment with before/after, TeamOperation, and audit event." },
           "400": { description: "phoneNumber or targetId failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.voice, the tenant is out of scope, or voice is not licensed." },
+          "403": { description: "The caller lacks Teams.Voice.ReadWrite, the tenant is out of scope, or voice is not licensed." },
         },
       },
     },
@@ -411,7 +411,7 @@ export const TEAMS_VOICE_OPENAPI = {
           "200": { description: "The release with before/after, TeamOperation, and audit event." },
           "400": { description: "confirm is required to release a phone number." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.voice, the tenant is out of scope, or voice is not licensed." },
+          "403": { description: "The caller lacks Teams.Voice.ReadWrite, the tenant is out of scope, or voice is not licensed." },
         },
       },
     },
@@ -429,7 +429,7 @@ export const TEAMS_VOICE_OPENAPI = {
           "201": { description: "The policy assignment with before/after, TeamOperation, and audit event." },
           "400": { description: "policyId or targetId failed validation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks teams.voice, the tenant is out of scope, or voice is not licensed." },
+          "403": { description: "The caller lacks Teams.Voice.ReadWrite, the tenant is out of scope, or voice is not licensed." },
         },
       },
     },

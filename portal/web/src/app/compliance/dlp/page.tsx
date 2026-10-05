@@ -517,7 +517,7 @@ export function DlpView({ tenantId, canWrite = true, fetcher = fetch }: DlpViewP
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires purview.write permission" : "";
+  const writeTitle = writeDisabled ? "Requires Purview.Compliance.ReadWrite permission" : "";
 
   return (
     <div style={pageStyle} data-testid="compliance-dlp-page">

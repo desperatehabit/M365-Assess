@@ -488,7 +488,7 @@ export function SafeLinksView({ tenantId, canWrite = true, fetcher = fetch }: Sa
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires purview.write permission" : "";
+  const writeTitle = writeDisabled ? "Requires Purview.Compliance.ReadWrite permission" : "";
   const activePlan = plan;
 
   return (

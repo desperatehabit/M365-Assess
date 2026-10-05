@@ -23,7 +23,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const ALERT_RULE_TEST_PATH = "/v1/alert-rules/:ruleId/test";
 
-export const ALERT_RULES_TEST_PERMISSION = "alerts.write";
+export const ALERT_RULES_TEST_PERMISSION = "CIPP.Alert.ReadWrite";
 export const ALERT_RULES_TEST_UNAUTHENTICATED = "request.unauthenticated";
 export const ALERT_RULE_TEST_NOT_FOUND = "alert.rule_not_found";
 
@@ -128,7 +128,7 @@ export const ALERT_RULES_TEST_OPENAPI = {
               "The dry-run result (matched, matchCount, evaluated); no AlertEvent is recorded and nothing is delivered.",
           },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks alerts.write." },
+          "403": { description: "The caller lacks CIPP.Alert.ReadWrite." },
           "404": { description: "No such rule." },
         },
       },

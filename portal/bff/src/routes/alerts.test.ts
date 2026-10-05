@@ -250,13 +250,13 @@ function actionContext(
 }
 
 describe("alert list route (T-0548)", () => {
-  it("exposes GET /v1/tenants/:tenantId/alerts and publishes incidents.read", () => {
+  it("exposes GET /v1/tenants/:tenantId/alerts and publishes Security.Incident.Read", () => {
     const routes = listRoutes(new FakeAlertsProvider({}), callerFor([TENANT], [ALERTS_READ_PERMISSION]));
     expect(routes).toHaveLength(1);
     expect(listHandler(routes)).toBeDefined();
-    expect(ALERTS_READ_PERMISSION).toBe("incidents.read");
+    expect(ALERTS_READ_PERMISSION).toBe("Security.Incident.Read");
     expect(ALERTS_OPENAPI.paths["/tenants/{tenantId}/alerts"].get.permission).toBe(
-      "incidents.read",
+      "Security.Incident.Read",
     );
     expect(ALERTS_OPENAPI.paths["/tenants/{tenantId}/alerts"].get.operationId).toBe("listAlerts");
   });
@@ -273,7 +273,7 @@ describe("alert list route (T-0548)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects a caller missing incidents.read with 403 and calls no provider", async () => {
+  it("rejects a caller missing Security.Incident.Read with 403 and calls no provider", async () => {
     const provider = new FakeAlertsProvider({});
     const routes = listRoutes(provider, callerFor([TENANT], ["Identity.User.Read"]));
     await expect(listHandler(routes)(listContext(TENANT))).rejects.toMatchObject({ status: 403 });
@@ -338,7 +338,7 @@ describe("alert list route (T-0548)", () => {
 });
 
 describe("alert triage actions (T-0548)", () => {
-  it("registers the action route with the incidents.triage permission", () => {
+  it("registers the action route with the Security.Incident.ReadWrite permission", () => {
     const { routes } = actionOptionsFor(callerFor([TENANT], TRIAGE_PERMISSIONS));
     const post = routes.find(
       (route) => route.method === "POST" && route.path === ALERT_ACTIONS_PATH,
@@ -346,8 +346,8 @@ describe("alert triage actions (T-0548)", () => {
     expect(post?.path).toBe("/v1/tenants/:tenantId/alerts/:alertId/:action");
     expect(
       ALERTS_OPENAPI.paths["/tenants/{tenantId}/alerts/{alertId}/{action}"].post.permission,
-    ).toBe("incidents.triage");
-    expect(ALERT_ACTIONS_TRIAGE_PERMISSION).toBe("incidents.triage");
+    ).toBe("Security.Incident.ReadWrite");
+    expect(ALERT_ACTIONS_TRIAGE_PERMISSION).toBe("Security.Incident.ReadWrite");
   });
 
   it("applies a supported status change, records an AlertStateChange, and audits it", async () => {
@@ -477,7 +477,7 @@ describe("alert triage actions (T-0548)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("requires both incidents.triage and Remediation.Apply", async () => {
+  it("requires both Security.Incident.ReadWrite and Remediation.Apply", async () => {
     const onlyTriage = actionOptionsFor(callerFor([TENANT], [ALERT_ACTIONS_TRIAGE_PERMISSION]));
     await expect(
       actionHandler(onlyTriage.routes)(

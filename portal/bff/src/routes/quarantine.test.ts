@@ -2,7 +2,7 @@
 // Route-level tests: the list route serves the §3.3 columns for the Email,
 // Files, and Teams tabs through the injected provider with the §3.3 filters;
 // the preview route returns the message metadata and the exo/graph source; the
-// action route requires quarantine.act + Remediation.Apply, requires explicit
+// action route requires Exchange.Quarantine.ReadWrite + Remediation.Apply, requires explicit
 // confirmation for release/release-to-all/delete, supports plan preview with
 // no tenant write, and on apply enqueues the EPIC-006 gated job and writes a
 // QuarantineAction plus an AuditEvent.
@@ -174,7 +174,7 @@ describe("Quarantine routes (T-0424)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects reads without quarantine.read with 403", async () => {
+  it("rejects reads without Exchange.Quarantine.Read with 403", async () => {
     const routes = createQuarantineRoutes({
       provider: new FakeQuarantineProvider(),
       resolveCaller: () => ({
@@ -189,7 +189,7 @@ describe("Quarantine routes (T-0424)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects actions without quarantine.act with 403", async () => {
+  it("rejects actions without Exchange.Quarantine.ReadWrite with 403", async () => {
     const routes = createQuarantineRoutes({
       provider: new FakeQuarantineProvider(),
       queue: new FakeQueue(),

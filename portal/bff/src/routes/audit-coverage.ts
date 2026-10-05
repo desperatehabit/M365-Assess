@@ -5,7 +5,7 @@
 // tenant audit configuration, and caches the result through the T-0621
 // AuditCoverage repository. Gaps reference the COMPLIANCE-AUDIT-001 finding
 // from the run results and link to the EPIC-006 audit-enablement remediation
-// (prose). Coverage view is read-only: it requires audit.read intersected
+// (prose). Coverage view is read-only: it requires Security.Audit.Read intersected
 // with the caller tenant scope and writes no tenant configuration.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
@@ -19,7 +19,7 @@ import type {
 } from "@m365-assess/db";
 
 export const AUDIT_COVERAGE_PATH = "/v1/tenants/:tenantId/audit/coverage";
-export const AUDIT_COVERAGE_PERMISSION = "audit.read";
+export const AUDIT_COVERAGE_PERMISSION = "Security.Audit.Read";
 export const AUDIT_COVERAGE_UNAUTHENTICATED = "request.unauthenticated";
 export const AUDIT_COVERAGE_CHECK_ID = "COMPLIANCE-AUDIT-001";
 
@@ -237,7 +237,7 @@ export const AUDIT_COVERAGE_OPENAPI = {
           },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks audit.read or the tenant is out of scope.",
+            description: "The caller lacks Security.Audit.Read or the tenant is out of scope.",
           },
         },
       },

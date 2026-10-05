@@ -235,7 +235,7 @@ describe("Transport rule templates page", () => {
 
     const edit = screen.getByTestId("transport-rule-template-edit-tpl-rule-1") as HTMLButtonElement;
     expect(edit.disabled).toBe(true);
-    expect(edit.title).toContain("transport.write");
+    expect(edit.title).toContain("Exchange.Transport.ReadWrite");
     const view = screen.getByTestId("transport-rule-template-view-tpl-rule-1") as HTMLButtonElement;
     expect(view.disabled).toBe(false);
     const exportButton = screen.getByTestId("transport-rule-template-export-tpl-rule-1") as HTMLButtonElement;

@@ -416,12 +416,12 @@ export const MAILBOX_PERMISSIONS_OPENAPI = {
 // sharing/permissions context. The report is read-only: the injected provider
 // is backed by the worker queue running the Get-MailboxPermissions child job
 // (live EXO reads, no tenant write), so this module holds no M365 SDK call.
-// Reads require `sharing.read` (SPEC §7) intersected with the caller tenant
+// Reads require `Sharing.Permissions.Read` (SPEC §7) intersected with the caller tenant
 // scope. The underlying mailbox-permission collection is owned by EPIC-020;
 // this route only declares the shared read contract and the provider seam
 // the EPIC-020-backed adapter implements.
 export const MAILBOX_PERMISSIONS_REPORT_PATH = "/v1/tenants/:tenantId/mailbox-permissions";
-export const SHARING_READ_PERMISSION = "sharing.read";
+export const SHARING_READ_PERMISSION = "Sharing.Permissions.Read";
 
 export type MailboxPermissionReportScope = "mailbox" | "calendar";
 
@@ -484,7 +484,7 @@ async function requireSharingRead(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(SHARING_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharing.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Sharing.Permissions.Read", 403);
   }
 }
 
@@ -637,7 +637,7 @@ export const MAILBOX_PERMISSIONS_REPORT_OPENAPI = {
           "200": { description: "Cursor-paginated mailbox and calendar permission rows." },
           "400": { description: "An unsupported scope value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharing.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Sharing.Permissions.Read or the tenant is out of scope." },
         },
       },
     },

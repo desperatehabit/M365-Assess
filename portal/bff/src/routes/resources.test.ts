@@ -114,7 +114,7 @@ describe("Resource routes (T-0448)", () => {
     await expect(routes[0]!.handler(makeCtx(TENANT, "rooms"))).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing resources.read and contacts.read with 403", async () => {
+  it("rejects callers missing Exchange.Resource.Read and Exchange.Contact.Read with 403", async () => {
     const routes = createResourcesRoutes({
       provider: new FakeResourcesProvider(),
       resolveCaller: () => ({
@@ -126,7 +126,7 @@ describe("Resource routes (T-0448)", () => {
     await expect(routes[0]!.handler(makeCtx(TENANT, "rooms"))).rejects.toMatchObject({ status: 403 });
   });
 
-  it("accepts contacts.read as an alternate read permission", async () => {
+  it("accepts Exchange.Contact.Read as an alternate read permission", async () => {
     const provider = new FakeResourcesProvider();
     const routes = createResourcesRoutes({
       provider,

@@ -100,7 +100,7 @@ describe("Teams activity routes (T-0507)", () => {
     await expect(callRoute(route)).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects missing teams.read permission with 403", async () => {
+  it("rejects missing Teams.Team.Read permission with 403", async () => {
     const provider = new FakeTeamsActivityProvider(makeData(1, 1));
     const caller: TeamsActivityCaller = {
       tenantScope: tenantScope([TENANT]),
@@ -112,11 +112,11 @@ describe("Teams activity routes (T-0507)", () => {
     await expect(callRoute(route)).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses a caller holding teams.write but not teams.read with 403", async () => {
+  it("refuses a caller holding Teams.Team.ReadWrite but not Teams.Team.Read with 403", async () => {
     const provider = new FakeTeamsActivityProvider(makeData(1, 1));
     const caller: TeamsActivityCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: ["teams.write"],
+      permissions: ["Teams.Team.ReadWrite"],
     };
     const routes = getRoutes(provider, caller);
     const route = routes.find((r) => r.path === TEAMS_ACTIVITY_PATH)!;

@@ -147,7 +147,7 @@ describe("Historical search routes (T-0465)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses callers lacking mailtools.search with a structured 403", async () => {
+  it("refuses callers lacking Exchange.MailSearch.Execute with a structured 403", async () => {
     const provider = new FakeHistoricalSearchProvider();
     const routes = createHistoricalSearchRoutes({
       provider,
@@ -170,7 +170,7 @@ describe("Historical search routes (T-0465)", () => {
     expect(provider.startCalls).toHaveLength(0);
   });
 
-  it("refuses progress and cancel callers lacking mailtools.search with 403", async () => {
+  it("refuses progress and cancel callers lacking Exchange.MailSearch.Execute with 403", async () => {
     const provider = new FakeHistoricalSearchProvider();
     const routes = createHistoricalSearchRoutes({
       provider,

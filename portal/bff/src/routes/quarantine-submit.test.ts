@@ -1,6 +1,6 @@
 // T-0426 — Quarantine submit-for-review with tracked status.
 // Route-level tests: POST /v1/tenants/:tenantId/quarantine/:messageId/submit
-// requires quarantine.act, routes the submission through the EPIC-006 gated
+// requires Exchange.Quarantine.ReadWrite, routes the submission through the EPIC-006 gated
 // queue, records a QuarantineAction with action `submit` plus an AuditEvent,
 // and returns the tracked submission status. A later request with refresh:true
 // reads the live review state back (not the value captured at submit time) and
@@ -254,7 +254,7 @@ describe("Quarantine submit-for-review (T-0426)", () => {
     expect(queue.enqueued).toHaveLength(1);
   });
 
-  it("rejects a submit without quarantine.act with 403", async () => {
+  it("rejects a submit without Exchange.Quarantine.ReadWrite with 403", async () => {
     const routes = createQuarantineRoutes({
       provider: new FakeQuarantineProvider(),
       queue: new FakeQueue(),

@@ -9,7 +9,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const SHAREPOINT_SITES_BASE_PATH = "/v1/tenants/:tenantId/sharepoint/sites";
 
-export const SHAREPOINT_WRITE_PERMISSION = "sharepoint.write";
+export const SHAREPOINT_WRITE_PERMISSION = "SharePoint.Site.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const SHAREPOINT_SITES_UNAUTHENTICATED = "request.unauthenticated";
 
@@ -165,7 +165,7 @@ async function authorizeRoute(
   } else {
     const permissions = caller.permissions ?? [];
     if (!permissions.includes(SHAREPOINT_WRITE_PERMISSION) && !permissions.includes("*")) {
-      throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharepoint.write", 403);
+      throw new AppError(ErrorCodes.forbidden, "forbidden: missing SharePoint.Site.ReadWrite", 403);
     }
   }
 }

@@ -1,5 +1,5 @@
 // T-0582 — Purview DLP policy read API.
-// Route-level tests: the read routes validate purview.read + tenant scope and
+// Route-level tests: the read routes validate Purview.Compliance.Read + tenant scope and
 // return the provider's live cursor page / single policy; callers missing the
 // permission get a structured 403 and unknown policies a 404.
 
@@ -136,7 +136,7 @@ describe("Purview DLP read routes (T-0582)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing purview.read with a structured 403", async () => {
+  it("rejects callers missing Purview.Compliance.Read with a structured 403", async () => {
     const routes = makeRoutes({
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),

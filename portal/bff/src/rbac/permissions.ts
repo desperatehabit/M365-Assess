@@ -196,10 +196,38 @@ import {
   REGISTRATION_CAMPAIGN_READ_PERMISSION,
   REGISTRATION_CAMPAIGN_WRITE_PERMISSION,
 } from "../routes/registration-campaign.js";
+import { MAILBOXES_OPENAPI, MAILBOXES_SETTINGS_OPENAPI, MAILBOXES_WRITE_OPENAPI } from "../routes/mailboxes.js";
+import { MAILBOX_PERMISSIONS_OPENAPI, MAILBOX_PERMISSIONS_REPORT_OPENAPI } from "../routes/mailbox-permissions.js";
+import { MAILBOX_REPORTS_OPENAPI } from "../routes/mailbox-reports.js";
+import { MAILBOX_RULES_OPENAPI } from "../routes/mailbox-rules.js";
+import { RETENTION_OPENAPI } from "../routes/retention.js";
+import { VACATION_SCHEDULES_OPENAPI } from "../routes/vacation-schedules.js";
+import { DELETED_MAILBOXES_OPENAPI } from "../routes/deleted-mailboxes.js";
+import { DEVICE_DESTRUCTIVE_ACTIONS_OPENAPI } from "../routes/device-actions-destructive.js";
+import { PURVIEW_DLP_OPENAPI } from "../routes/purview-dlp.js";
+import { PURVIEW_DLP_WRITE_OPENAPI } from "../routes/purview-dlp-write.js";
+import { PURVIEW_LABELS_OPENAPI } from "../routes/purview-labels.js";
+import { PURVIEW_RETENTION_OPENAPI } from "../routes/purview-retention.js";
+import { SAFELINKS_OPENAPI } from "../routes/safelinks.js";
+import {
+  COMPLIANCE_TEMPLATE_DEPLOY_PATH,
+  COMPLIANCE_TEMPLATE_ITEM_PATH,
+  COMPLIANCE_TEMPLATES_PATH,
+  PURVIEW_READ_PERMISSION as COMPLIANCE_READ_PERMISSION,
+  PURVIEW_TEMPLATES_PERMISSION,
+  PURVIEW_WRITE_PERMISSION as COMPLIANCE_DEPLOY_PERMISSION,
+} from "../routes/compliance-templates.js";
+import { PORTAL_USERS_OPENAPI } from "../routes/users.js";
+import { ROLES_OPENAPI } from "../routes/roles.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
 export const PUBLIC_PERMISSION = "Public" as const;
+
+// The generated contract document is served at both paths (routes/openapi.ts re-exports
+// them). They live here because openapi.ts reads this registry while it loads.
+export const OPENAPI_JSON_PATH = "/openapi.json";
+export const OPENAPI_VERSIONED_JSON_PATH = "/v1/openapi.json";
 
 // Reserved caller defaults (SPEC §4.1 item 4). These describe how the caller
 // authenticated, never what an endpoint requires, so no registry entry may
@@ -632,6 +660,40 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(SHAREPOINT_BROWSE_OPENAPI),
   ...registryEntriesFromOpenApi(SHAREPOINT_STORAGE_OPENAPI),
   ...registryEntriesFromOpenApi(ONEDRIVE_OPENAPI),
+  // EPIC-038 portal users and roles (T-0868), mounted with their own OpenAPI fragments, and
+  // the contract documents served at /openapi.json and /v1/openapi.json (T-0893). The
+  // fragments carry each operation's permission, so the registry references them.
+  ...registryEntriesFromOpenApi(PORTAL_USERS_OPENAPI),
+  ...registryEntriesFromOpenApi(ROLES_OPENAPI),
+  { method: "GET", path: OPENAPI_JSON_PATH, permission: PUBLIC_PERMISSION },
+  { method: "GET", path: OPENAPI_VERSIONED_JSON_PATH, permission: PUBLIC_PERMISSION },
+  // EPIC-020 mailboxes (T-0850), EPIC-018 destructive device actions, and EPIC-030 Purview and
+  // Safe Links (T-0860) were mounted without registry entries (T-0893). Every operation's
+  // permission comes from the route module's own OpenAPI fragment.
+  ...registryEntriesFromOpenApi(MAILBOXES_OPENAPI),
+  ...registryEntriesFromOpenApi(MAILBOXES_WRITE_OPENAPI),
+  ...registryEntriesFromOpenApi(MAILBOXES_SETTINGS_OPENAPI),
+  ...registryEntriesFromOpenApi(MAILBOX_PERMISSIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(MAILBOX_PERMISSIONS_REPORT_OPENAPI),
+  ...registryEntriesFromOpenApi(MAILBOX_REPORTS_OPENAPI),
+  ...registryEntriesFromOpenApi(MAILBOX_RULES_OPENAPI),
+  ...registryEntriesFromOpenApi(RETENTION_OPENAPI),
+  ...registryEntriesFromOpenApi(VACATION_SCHEDULES_OPENAPI),
+  ...registryEntriesFromOpenApi(DELETED_MAILBOXES_OPENAPI),
+  ...registryEntriesFromOpenApi(DEVICE_DESTRUCTIVE_ACTIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(PURVIEW_DLP_OPENAPI),
+  ...registryEntriesFromOpenApi(PURVIEW_DLP_WRITE_OPENAPI),
+  ...registryEntriesFromOpenApi(PURVIEW_LABELS_OPENAPI),
+  ...registryEntriesFromOpenApi(PURVIEW_RETENTION_OPENAPI),
+  ...registryEntriesFromOpenApi(SAFELINKS_OPENAPI),
+  // Compliance templates publish no OpenAPI fragment. Reads need Purview read, template
+  // changes need the template permission, and deploy is a Purview write.
+  { method: "GET", path: COMPLIANCE_TEMPLATES_PATH, permission: COMPLIANCE_READ_PERMISSION },
+  { method: "POST", path: COMPLIANCE_TEMPLATES_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
+  { method: "GET", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: COMPLIANCE_READ_PERMISSION },
+  { method: "PATCH", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
+  { method: "DELETE", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
+  { method: "POST", path: COMPLIANCE_TEMPLATE_DEPLOY_PATH, permission: COMPLIANCE_DEPLOY_PERMISSION },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

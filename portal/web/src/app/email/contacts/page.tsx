@@ -478,7 +478,7 @@ export function ContactsView({ tenantId, canWrite = true, fetcher = fetch }: Con
                 type="button"
                 style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle}
                 disabled={writeDisabled}
-                title={writeDisabled ? "Requires contacts.write permission" : undefined}
+                title={writeDisabled ? "Requires Exchange.Contact.ReadWrite permission" : undefined}
                 onClick={() => {
                   const target = selected;
                   setSelected(null);

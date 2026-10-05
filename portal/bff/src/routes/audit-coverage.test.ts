@@ -211,7 +211,7 @@ describe("GET /v1/tenants/:tenantId/audit/coverage (T-0624)", () => {
     await expect(invoke(harness)).rejects.toMatchObject({ status: 401 });
   });
 
-  it("rejects a caller lacking audit.read", async () => {
+  it("rejects a caller lacking Security.Audit.Read", async () => {
     const harness = createHarness({ resolveCaller: () => readCaller([]) });
     await expect(invoke(harness)).rejects.toMatchObject({ status: 403, code: "auth.forbidden" });
   });

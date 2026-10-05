@@ -2,7 +2,7 @@
 // Exposes:
 //   GET  /v1/tenants/:tenantId/sharepoint/sites/:siteId/storage — storage composition
 //   POST /v1/tenants/:tenantId/sharepoint/sites/:siteId/versions/cleanup — version cleanup
-// The GET requires RBAC sharepoint.read. The POST requires sharepoint.cleanup;
+// The GET requires RBAC SharePoint.Site.Read. The POST requires SharePoint.Cleanup.ReadWrite;
 // apply (non-preview) additionally requires Remediation.Apply and a confirmation
 // count. The route makes no Graph call itself: it hands the work to a provider
 // that enqueues the workers.
@@ -14,8 +14,8 @@ export const SHAREPOINT_STORAGE_SITE_BASE_PATH = "/v1/tenants/:tenantId/sharepoi
 export const SHAREPOINT_STORAGE_PATH = `${SHAREPOINT_STORAGE_SITE_BASE_PATH}/storage`;
 export const SHAREPOINT_VERSION_CLEANUP_PATH = `${SHAREPOINT_STORAGE_SITE_BASE_PATH}/versions/cleanup`;
 
-export const SHAREPOINT_READ_PERMISSION = "sharepoint.read";
-export const SHAREPOINT_CLEANUP_PERMISSION = "sharepoint.cleanup";
+export const SHAREPOINT_READ_PERMISSION = "SharePoint.Site.Read";
+export const SHAREPOINT_CLEANUP_PERMISSION = "SharePoint.Cleanup.ReadWrite";
 export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const SHAREPOINT_STORAGE_UNAUTHENTICATED = "request.unauthenticated";
 
@@ -295,7 +295,7 @@ export const SHAREPOINT_STORAGE_OPENAPI = {
         responses: {
           "200": { description: "Storage composition for the site." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Site.Read or the tenant is out of scope." },
         },
       },
     },
@@ -331,7 +331,7 @@ export const SHAREPOINT_STORAGE_OPENAPI = {
           "200": { description: "The cleanup plan or apply result." },
           "400": { description: "Invalid input or missing confirmation." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharepoint.cleanup or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks SharePoint.Cleanup.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
         },
       },
     },

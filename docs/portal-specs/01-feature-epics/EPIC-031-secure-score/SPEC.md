@@ -105,7 +105,7 @@ a portal link.
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `secure-score.read`; fleet view filtered by `UserScope`. Tenant-scoped (EPIC-038).
+- **RBAC:** `Security.SecureScore.Read`; fleet view filtered by `UserScope`. Tenant-scoped (EPIC-038).
 - **Tenant auth:** Graph `SecurityEvents.Read.All` (already used by the module).
 
 ## 8. Remediation behavior

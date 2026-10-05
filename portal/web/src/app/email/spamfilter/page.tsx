@@ -883,7 +883,7 @@ export function SpamfilterView({
             type="button"
             style={{ ...primaryButtonStyle, ...(writeDisabled ? disabledStyle : {}) }}
             disabled={writeDisabled}
-            title={writeDisabled ? "Requires spam.write permission" : "New filter policy"}
+            title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "New filter policy"}
             onClick={openFilterCreate}
             data-testid="filter-new"
           >
@@ -897,7 +897,7 @@ export function SpamfilterView({
             type="button"
             style={{ ...primaryButtonStyle, ...(writeDisabled ? disabledStyle : {}) }}
             disabled={writeDisabled}
-            title={writeDisabled ? "Requires quarantine.act permission" : "New quarantine policy"}
+            title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "New quarantine policy"}
             onClick={openPolicyCreate}
             data-testid="quarantine-policy-new"
           >
@@ -937,11 +937,11 @@ export function SpamfilterView({
                       <td style={tdStyle}>
                         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                           <button type="button" style={buttonStyle} onClick={() => setSelectedFilter(filter)} data-testid={`filter-view-${filter.name}`}>View</button>
-                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Edit"} onClick={() => openFilterEdit(filter)} data-testid={`filter-edit-${filter.name}`}>Edit</button>
-                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : enabled ? "Disable" : "Enable"} onClick={() => toggleFilter(filter)} data-testid={`filter-toggle-${filter.name}`}>{enabled ? "Disable" : "Enable"}</button>
-                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Clone"} onClick={() => cloneFilter(filter)} data-testid={`filter-clone-${filter.name}`}>Clone</button>
-                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Clone to template"} onClick={() => { setTemplateFor(filter); setTemplateName(`${filter.name} template`); resetPlan(); }} data-testid={`filter-clone-template-${filter.name}`}>Clone to template</button>
-                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires spam.write permission" : "Delete"} onClick={() => removeFilter(filter)} data-testid={`filter-delete-${filter.name}`}>Delete</button>
+                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Edit"} onClick={() => openFilterEdit(filter)} data-testid={`filter-edit-${filter.name}`}>Edit</button>
+                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : enabled ? "Disable" : "Enable"} onClick={() => toggleFilter(filter)} data-testid={`filter-toggle-${filter.name}`}>{enabled ? "Disable" : "Enable"}</button>
+                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Clone"} onClick={() => cloneFilter(filter)} data-testid={`filter-clone-${filter.name}`}>Clone</button>
+                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Clone to template"} onClick={() => { setTemplateFor(filter); setTemplateName(`${filter.name} template`); resetPlan(); }} data-testid={`filter-clone-template-${filter.name}`}>Clone to template</button>
+                          <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.SpamFilter.ReadWrite permission" : "Delete"} onClick={() => removeFilter(filter)} data-testid={`filter-delete-${filter.name}`}>Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -980,8 +980,8 @@ export function SpamfilterView({
                     <td style={tdStyle}>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         <button type="button" style={buttonStyle} onClick={() => setSelectedPolicy(policy)} data-testid={`quarantine-policy-view-${policy.name}`}>View</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires quarantine.act permission" : "Edit"} onClick={() => openPolicyEdit(policy)} data-testid={`quarantine-policy-edit-${policy.name}`}>Edit</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires quarantine.act permission" : "Delete"} onClick={() => removePolicy(policy)} data-testid={`quarantine-policy-delete-${policy.name}`}>Delete</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Edit"} onClick={() => openPolicyEdit(policy)} data-testid={`quarantine-policy-edit-${policy.name}`}>Edit</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Delete"} onClick={() => removePolicy(policy)} data-testid={`quarantine-policy-delete-${policy.name}`}>Delete</button>
                       </div>
                     </td>
                   </tr>

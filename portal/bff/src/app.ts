@@ -1132,10 +1132,10 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       (r) => guardRoute(r, DEVICE_LAPS_PERMISSION),
     ),
 
-    // EPIC-030 Purview and Safe Links (T-0860). Reads validate purview.read + tenant
-    // scope and serve the workers' live pages; changes validate purview.write (or
+    // EPIC-030 Purview and Safe Links (T-0860). Reads validate Purview.Compliance.Read + tenant
+    // scope and serve the workers' live pages; changes validate Purview.Compliance.ReadWrite (or
     // Remediation.Apply) and enqueue EPIC-006 gated remediation apply jobs. Template
-    // CRUD is gated on purview.templates; deploy applies per target with partial
+    // CRUD is gated on Purview.Template.ReadWrite; deploy applies per target with partial
     // failures reported.
     ...createPurviewDlpRoutes({ provider: purview.dlp, resolveCaller, authorize: authorizeCaller }),
     ...createPurviewDlpWriteRoutes({

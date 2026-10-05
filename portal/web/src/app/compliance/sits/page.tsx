@@ -484,7 +484,7 @@ export function SitsView({ tenantId, canWrite = true, fetcher = fetch }: SitsVie
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires purview.write permission" : "";
+  const writeTitle = writeDisabled ? "Requires Purview.Compliance.ReadWrite permission" : "";
   const builtinTitle = "Built-in sensitive information types are read-only";
 
   return (

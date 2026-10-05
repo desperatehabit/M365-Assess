@@ -101,7 +101,7 @@ describe("route surface (T-0666)", () => {
     expect(routes.every((r) => r.method === "GET")).toBe(true);
   });
 
-  it("publishes the operation with domains.read", () => {
+  it("publishes the operation with Tenant.Domains.Read", () => {
     const operation =
       DOMAINS_RECOMMENDATIONS_OPENAPI.paths[
         "/tenants/{tenantId}/domains/{domain}/recommendations"
@@ -167,7 +167,7 @@ describe("GET recommendations (T-0666)", () => {
     });
   });
 
-  it("rejects a caller without domains.read with 403", async () => {
+  it("rejects a caller without Tenant.Domains.Read with 403", async () => {
     const provider = new FakeDnsRecommendationsProvider();
     const routes = createDomainsRecommendationsRoutes({
       provider,

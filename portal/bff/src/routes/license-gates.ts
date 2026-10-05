@@ -8,7 +8,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const LICENSE_GATES_PATH = "/v1/tenants/:tenantId/licenses/gates";
-export const LICENSE_GATES_READ_PERMISSION = "licenses.read";
+export const LICENSE_GATES_READ_PERMISSION = "Tenant.Licenses.Read";
 export const LICENSE_GATES_UNAUTHENTICATED = "request.unauthenticated";
 
 export type LicenseGateStatus = "available" | "gated";

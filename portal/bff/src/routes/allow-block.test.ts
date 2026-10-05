@@ -1,6 +1,6 @@
 // T-0427 — Tenant allow/block route gating and expiry.
 // Route-level tests: the read route serves the §3.4 columns live from EXO
-// through the injected provider; the write routes validate spam.write + tenant
+// through the injected provider; the write routes validate Exchange.SpamFilter.ReadWrite + tenant
 // scope, build a before/after plan with the affected entry shown before apply,
 // flag allowing an entry or removing a block as security-impacting, require
 // confirmation for them, support plan preview (preview:true) with no tenant
@@ -164,7 +164,7 @@ describe("Allow/block routes (T-0427)", () => {
     });
   });
 
-  it("rejects reads without spam.read with 403", async () => {
+  it("rejects reads without Exchange.SpamFilter.Read with 403", async () => {
     const routes = createAllowBlockRoutes({
       provider: new FakeAllowBlockProvider(),
       resolveCaller: () => ({
@@ -177,7 +177,7 @@ describe("Allow/block routes (T-0427)", () => {
     });
   });
 
-  it("rejects writes without spam.write with 403", async () => {
+  it("rejects writes without Exchange.SpamFilter.ReadWrite with 403", async () => {
     const routes = createAllowBlockRoutes({
       provider: new FakeAllowBlockProvider(),
       queue: new FakeQueue(),

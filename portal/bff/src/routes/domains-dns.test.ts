@@ -1,5 +1,5 @@
 // T-0665 — DNS check API: TTL cache on repeat check-dns, DomainCheck
-// persistence on a miss, ordered tenant-scoped history, and the domains.read
+// persistence on a miss, ordered tenant-scoped history, and the Tenant.Domains.Read
 // gate. The T-0664 analyser and T-0661 repository are injected seams here.
 
 import { describe, expect, it } from "vitest";
@@ -132,7 +132,7 @@ describe("route surface (T-0665)", () => {
     );
   });
 
-  it("publishes both operations with domains.read", () => {
+  it("publishes both operations with Tenant.Domains.Read", () => {
     expect(DOMAINS_DNS_OPENAPI.paths["/tenants/{tenantId}/domains/{domain}/check-dns"].post.permission).toBe(
       DOMAINS_DNS_READ_PERMISSION,
     );
@@ -241,7 +241,7 @@ describe("POST check-dns (T-0665)", () => {
     });
   });
 
-  it("rejects a caller without domains.read with 403", async () => {
+  it("rejects a caller without Tenant.Domains.Read with 403", async () => {
     const { analyser } = fixture();
     const routes = createDomainsDnsRoutes({
       analyser,

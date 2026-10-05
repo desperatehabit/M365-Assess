@@ -2,7 +2,7 @@
 // Exposes GET /v1/tenants/:tenantId/domains with §3.1 columns:
 // Domain, Type (initial/verified/managed), Verification, DNS health (badge),
 // Services (MX target), Last checked.
-// Requires RBAC `domains.read` and tenant in caller scope.
+// Requires RBAC `Tenant.Domains.Read` and tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
@@ -10,7 +10,7 @@ import type Database from "better-sqlite3";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const DOMAINS_PATH = "/v1/tenants/:tenantId/domains";
-export const DOMAINS_READ_PERMISSION = "domains.read";
+export const DOMAINS_READ_PERMISSION = "Tenant.Domains.Read";
 export const DOMAINS_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface DomainItem {
@@ -123,7 +123,7 @@ export function createDomainsRoute(options: DomainsRouteOptions): Route {
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(DOMAINS_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing domains.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Tenant.Domains.Read", 403);
         }
       }
 
@@ -158,7 +158,7 @@ export const DOMAINS_OPENAPI = {
         responses: {
           "200": { description: "Cursor-paginated domain inventory with DNS health and last-checked." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks domains.read or the tenant is out of scope." },
+          "403": { description: "The caller lacks Tenant.Domains.Read or the tenant is out of scope." },
         },
       },
     },

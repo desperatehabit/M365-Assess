@@ -5,7 +5,7 @@
 // /v1/tenants/:tenantId/mail/restores/:jobId for progress.
 //
 // Restore is destructive-adjacent (SPEC §9): the plan preview runs before any
-// write and a preview restores nothing; every apply requires mailtools.restore
+// write and a preview restores nothing; every apply requires Exchange.MailRestore.Execute
 // plus Remediation.Apply, requires explicit `confirm: true`, is audited with
 // before/after item counts, and is tracked as a RestoreJob. The provider seam
 // enqueues the start-mailbox-restore worker and persists/reads the RestoreJob
@@ -17,7 +17,7 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const MAIL_RESTORES_PATH = "/v1/tenants/:tenantId/mail/restores";
 export const MAIL_RESTORE_JOB_PATH = "/v1/tenants/:tenantId/mail/restores/:jobId";
-export const MAIL_RESTORE_PERMISSION = "mailtools.restore";
+export const MAIL_RESTORE_PERMISSION = "Exchange.MailRestore.Execute";
 export const MAIL_RESTORE_APPLY_PERMISSION = "Remediation.Apply";
 export const MAIL_RESTORES_UNAUTHENTICATED = "request.unauthenticated";
 export const MAIL_RESTORE_CONFIRM_REQUIRED = "mail-restores.confirm_required";
@@ -356,7 +356,7 @@ export const MAIL_RESTORES_OPENAPI = {
           "202": { description: "The started restore with the persisted RestoreJob and audit event." },
           "400": { description: "The restore input is invalid or confirmation is missing." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailtools.restore or Remediation.Apply, or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.MailRestore.Execute or Remediation.Apply, or the tenant is out of scope." },
         },
       },
     },
@@ -373,7 +373,7 @@ export const MAIL_RESTORES_OPENAPI = {
         responses: {
           "200": { description: "The persisted RestoreJob with progress and before/after counts." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks mailtools.restore or the tenant is out of scope." },
+          "403": { description: "The caller lacks Exchange.MailRestore.Execute or the tenant is out of scope." },
           "404": { description: "The restore job was not found." },
         },
       },

@@ -669,7 +669,7 @@ export function TransportRulesView({
           type="button"
           style={{ ...primaryButtonStyle, ...(writeDisabled ? disabledStyle : {}) }}
           disabled={writeDisabled}
-          title={writeDisabled ? "Requires transport.write permission" : "New rule"}
+          title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "New rule"}
           onClick={openCreate}
           data-testid="transport-rule-new"
         >
@@ -722,12 +722,12 @@ export function TransportRulesView({
                     <td style={tdStyle}>
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         <button type="button" style={buttonStyle} onClick={() => setSelected(rule)} data-testid={`transport-rule-view-${rule.id}`}>View</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Edit"} onClick={() => openEdit(rule)} data-testid={`transport-rule-edit-${rule.id}`}>Edit</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : enabled ? "Disable" : "Enable"} onClick={() => toggle(rule)} data-testid={`transport-rule-toggle-${rule.id}`}>{enabled ? "Disable" : "Enable"}</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Set priority"} onClick={() => openPriority(rule)} data-testid={`transport-rule-priority-${rule.id}`}>Set priority</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Clone"} onClick={() => cloneRule(rule)} data-testid={`transport-rule-clone-${rule.id}`}>Clone</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Clone to template"} onClick={() => { setTemplateFor(rule); setTemplateName(`${rule.name} template`); resetPlan(); }} data-testid={`transport-rule-clone-template-${rule.id}`}>Clone to template</button>
-                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires transport.write permission" : "Delete"} onClick={() => removeRule(rule)} data-testid={`transport-rule-delete-${rule.id}`}>Delete</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Edit"} onClick={() => openEdit(rule)} data-testid={`transport-rule-edit-${rule.id}`}>Edit</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : enabled ? "Disable" : "Enable"} onClick={() => toggle(rule)} data-testid={`transport-rule-toggle-${rule.id}`}>{enabled ? "Disable" : "Enable"}</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Set priority"} onClick={() => openPriority(rule)} data-testid={`transport-rule-priority-${rule.id}`}>Set priority</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Clone"} onClick={() => cloneRule(rule)} data-testid={`transport-rule-clone-${rule.id}`}>Clone</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Clone to template"} onClick={() => { setTemplateFor(rule); setTemplateName(`${rule.name} template`); resetPlan(); }} data-testid={`transport-rule-clone-template-${rule.id}`}>Clone to template</button>
+                        <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Transport.ReadWrite permission" : "Delete"} onClick={() => removeRule(rule)} data-testid={`transport-rule-delete-${rule.id}`}>Delete</button>
                       </div>
                     </td>
                   </tr>

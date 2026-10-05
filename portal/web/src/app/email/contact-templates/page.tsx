@@ -210,7 +210,7 @@ export function ContactTemplatesView({
   }
 
   const writeDisabled = !canWrite;
-  const writeTitle = writeDisabled ? "Requires contacts.write permission" : undefined;
+  const writeTitle = writeDisabled ? "Requires Exchange.Contact.ReadWrite permission" : undefined;
 
   return (
     <div style={pageStyle} data-testid="contact-templates-page">

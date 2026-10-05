@@ -237,7 +237,7 @@ describe("Audit saved-search routes (T-0623)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("refuses callers lacking audit.manage on create with a structured 403", async () => {
+  it("refuses callers lacking Security.Audit.ReadWrite on create with a structured 403", async () => {
     const store = new FakeAuditSearchStore();
     const routes = createAuditSearchRoutes(
       buildOptions({ store, resolveCaller: () => readCaller([AUDIT_SEARCH_PERMISSIONS.read]) }),
@@ -379,7 +379,7 @@ describe("Audit saved-search routes (T-0623)", () => {
     expect(store.updateCalls.at(-1)!.update.lastRunAt).toBe("2026-09-29T00:00:00.000Z");
   });
 
-  it("run requires audit.search and refuses callers lacking it with 403", async () => {
+  it("run requires Security.AuditSearch.ReadWrite and refuses callers lacking it with 403", async () => {
     const store = new FakeAuditSearchStore();
     store.searches.set("search-1", searchFixture());
     const search = new FakeAuditSearchProvider();

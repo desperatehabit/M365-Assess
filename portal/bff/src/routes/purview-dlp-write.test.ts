@@ -1,5 +1,5 @@
 // T-0583 — Purview DLP policy change API.
-// Route-level tests: the write routes validate purview.write (or
+// Route-level tests: the write routes validate Purview.Compliance.ReadWrite (or
 // Remediation.Apply) + tenant scope, require an Idempotency-Key, refuse
 // disable/delete without confirmation, enqueue the EPIC-006 gated apply job, and
 // record the before/after CompliancePolicyChange row plus an audit event. A
@@ -226,7 +226,7 @@ describe("Purview DLP change routes (T-0583)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing purview.write with a structured 403", async () => {
+  it("rejects callers missing Purview.Compliance.ReadWrite with a structured 403", async () => {
     const routes = makeRoutes({
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),

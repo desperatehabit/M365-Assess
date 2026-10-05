@@ -7,9 +7,9 @@
 // category/date filters. Results are ephemeral (§4.1): the route persists
 // nothing except the AuditEvent every search and export writes (SPEC §8) —
 // the search path fails when that write fails. Search and export are
-// sensitive: both require the elevated `audit.search` permission (SPEC §7)
+// sensitive: both require the elevated `Security.AuditSearch.ReadWrite` permission (SPEC §7)
 // intersected with the caller tenant scope; directory view requires
-// `audit.read`.
+// `Security.Audit.Read`.
 import { randomUUID } from "node:crypto";
 import type { SqliteRepository } from "@m365-assess/db";
 import { AppError, ErrorCodes } from "../errors.js";
@@ -18,8 +18,8 @@ import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const AUDIT_SEARCH_PATH = "/v1/tenants/:tenantId/audit/search";
 export const AUDIT_DIRECTORY_PATH = "/v1/tenants/:tenantId/audit/directory";
-export const AUDIT_SEARCH_PERMISSION = "audit.search";
-export const AUDIT_READ_PERMISSION = "audit.read";
+export const AUDIT_SEARCH_PERMISSION = "Security.AuditSearch.ReadWrite";
+export const AUDIT_READ_PERMISSION = "Security.Audit.Read";
 export const AUDIT_SEARCH_UNAUTHENTICATED = "request.unauthenticated";
 export const AUDIT_SEARCH_INVALID_WORKLOAD = "audit-search.invalid_workload";
 
@@ -172,7 +172,7 @@ async function requireAuditSearchPermission(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(AUDIT_SEARCH_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing audit.search", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Security.AuditSearch.ReadWrite", 403);
   }
 }
 
@@ -186,7 +186,7 @@ async function requireAuditReadPermission(
   }
   const permissions = caller.permissions ?? [];
   if (!permissions.includes(AUDIT_READ_PERMISSION) && !permissions.includes("*")) {
-    throw new AppError(ErrorCodes.forbidden, "forbidden: missing audit.read", 403);
+    throw new AppError(ErrorCodes.forbidden, "forbidden: missing Security.Audit.Read", 403);
   }
 }
 
@@ -466,7 +466,7 @@ export const AUDIT_SEARCH_OPENAPI = {
           "400": { description: "The scoped search filters are invalid." },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks audit.search or the tenant is out of scope.",
+            description: "The caller lacks Security.AuditSearch.ReadWrite or the tenant is out of scope.",
           },
         },
       },
@@ -491,7 +491,7 @@ export const AUDIT_SEARCH_OPENAPI = {
           "400": { description: "A filter is invalid." },
           "401": { description: "Authentication required." },
           "403": {
-            description: "The caller lacks audit.read or the tenant is out of scope.",
+            description: "The caller lacks Security.Audit.Read or the tenant is out of scope.",
           },
         },
       },

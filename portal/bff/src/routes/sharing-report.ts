@@ -3,7 +3,7 @@
 // Site/OneDrive, Item, Link type (anonymous/organization/people), Permissions
 // (view/edit), Created by, Created, Expires — and filters (linkType,
 // permissions, site, createdAfter, anonymousOnly) over cursor pagination.
-// Requires RBAC `sharing.read` and tenant in caller scope. The route makes no
+// Requires RBAC `Sharing.Permissions.Read` and tenant in caller scope. The route makes no
 // Graph/SPO call itself: it hands the filter to a provider that enqueues the
 // get-sharing-report worker, so large tenants are filtered in the worker.
 import { AppError, ErrorCodes } from "../errors.js";
@@ -12,7 +12,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const SHARING_REPORT_PATH = "/v1/tenants/:tenantId/sharing/report";
-export const SHARING_REPORT_READ_PERMISSION = "sharing.read";
+export const SHARING_REPORT_READ_PERMISSION = "Sharing.Permissions.Read";
 export const SHARING_REPORT_UNAUTHENTICATED = "request.unauthenticated";
 
 export type SharingLinkType = "anonymous" | "organization" | "people";
@@ -102,7 +102,7 @@ export const SHARING_REPORT_OPENAPI = {
           "200": { description: "Cursor-paginated sharing links for the tenant." },
           "400": { description: "An unsupported filter value was supplied." },
           "401": { description: "Authentication required." },
-          "403": { description: "The caller lacks sharing.read or the tenant is outside the caller scope." },
+          "403": { description: "The caller lacks Sharing.Permissions.Read or the tenant is outside the caller scope." },
         },
       },
     },
@@ -223,7 +223,7 @@ export function createSharingReportRoute(options: SharingReportRouteOptions): Ro
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(SHARING_REPORT_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing sharing.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Sharing.Permissions.Read", 403);
         }
       }
 

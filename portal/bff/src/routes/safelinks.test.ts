@@ -208,7 +208,7 @@ describe("Safe Links policy read + gated change routes (T-0585)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects reads without purview.read with 403", async () => {
+  it("rejects reads without Purview.Compliance.Read with 403", async () => {
     const routes = createSafeLinksRoutes({
       provider: new FakeSafeLinksProvider(),
       resolveCaller: () => ({
@@ -227,7 +227,7 @@ describe("Safe Links policy read + gated change routes (T-0585)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects writes without purview.write with 403", async () => {
+  it("rejects writes without Purview.Compliance.ReadWrite with 403", async () => {
     const routes = createSafeLinksRoutes({
       provider: new FakeSafeLinksProvider(),
       resolveCaller: readerCaller,

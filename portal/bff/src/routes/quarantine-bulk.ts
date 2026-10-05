@@ -413,7 +413,7 @@ export const QUARANTINE_BULK_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": {
             description:
-              "The caller lacks quarantine.act or Remediation.Apply, or the tenant is out of scope.",
+              "The caller lacks Exchange.Quarantine.ReadWrite or Remediation.Apply, or the tenant is out of scope.",
           },
           "404": { description: "A selected quarantined message was not found." },
         },

@@ -139,7 +139,7 @@ describe("SharePoint site browser route (T-0488)", () => {
     expect(provider.calls).toHaveLength(0);
   });
 
-  it("rejects a caller without sharepoint.read with 403", async () => {
+  it("rejects a caller without SharePoint.Site.Read with 403", async () => {
     const provider = new FakeSharePointBrowseProvider();
     const caller: SharePointBrowseCaller = {
       tenantScope: tenantScope([TENANT]),

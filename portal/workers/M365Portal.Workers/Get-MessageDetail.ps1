@@ -3,7 +3,7 @@
 # Live EXO reads only: given a trace/search result id, returns the full delivery
 # timeline (events, connectors, filters hit) and headers, read-only. The message
 # body is privacy-sensitive (§9), so it is fetched only when the caller passes
-# -IncludeBody (the BFF sets that only for callers holding mailtools.content);
+# -IncludeBody (the BFF sets that only for callers holding Exchange.MailContent.Reveal);
 # otherwise the response omits the body and reports it as gated. Only Get-
 # cmdlets are issued; nothing is written to the tenant and message data is never
 # mirrored to disk. The caller (child entrypoint) runs with the EXO session the
@@ -184,7 +184,7 @@ function ConvertTo-MessageHeaders {
 function Read-MessageBodyContent {
     <#
     .SYNOPSIS
-        Fetches the privileged message body for callers holding mailtools.content.
+        Fetches the privileged message body for callers holding Exchange.MailContent.Reveal.
     .DESCRIPTION
         Elevated-content seam: invoked only when the worker runs with
         -IncludeBody. A failed body read yields null so the viewer still
@@ -236,7 +236,7 @@ function Get-MessageDetail {
         Message identity (InternetMessageId or MessageTraceId).
     .PARAMETER IncludeBody
         Fetch the privileged message body. The BFF passes this only for
-        callers holding mailtools.content.
+        callers holding Exchange.MailContent.Reveal.
     .EXAMPLE
     .    Get-MessageDetail -TenantId 'tenant-a' -MessageId '<id>'
     #>
@@ -285,7 +285,7 @@ function Get-MessageDetail {
 
     $body = $null
     $bodyGated = $true
-    $bodyGateReason = 'The message body requires the mailtools.content permission.'
+    $bodyGateReason = 'The message body requires the Exchange.MailContent.Reveal permission.'
     if ($IncludeBody) {
         $fetched = Read-MessageBodyContent -MessageId $MessageId
         if ($null -ne $fetched -and ([string]$fetched).Trim().Length -gt 0) {

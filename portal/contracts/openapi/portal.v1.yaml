@@ -398,6 +398,63 @@ paths:
       x-permission: Tenant.ConditionalAccess.Read
       security:
         - bearerAuth: []
+  /compliance-templates:
+    get:
+      operationId: getComplianceTemplates
+      summary: GET /compliance-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postComplianceTemplates
+      summary: POST /compliance-templates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Template.ReadWrite
+      security:
+        - bearerAuth: []
+  /compliance-templates/{id}:
+    get:
+      operationId: getComplianceTemplatesId
+      summary: GET /compliance-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchComplianceTemplatesId
+      summary: PATCH /compliance-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Template.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteComplianceTemplatesId
+      summary: DELETE /compliance-templates/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Template.ReadWrite
+      security:
+        - bearerAuth: []
+  /compliance-templates/{id}/deploy:
+    post:
+      operationId: postComplianceTemplatesIdDeploy
+      summary: POST /compliance-templates/{id}/deploy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
   /dashboard:
     get:
       operationId: getDashboard
@@ -908,6 +965,14 @@ paths:
       x-permission: Identity.User.ReadWrite
       security:
         - bearerAuth: []
+  /openapi.json:
+    get:
+      operationId: getOpenapiJson
+      summary: GET /openapi.json
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Public
   /openapi.yaml:
     get:
       operationId: getOpenapiYaml
@@ -2247,6 +2312,26 @@ paths:
       x-permission: Security.Defender.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/deleted-mailboxes:
+    get:
+      operationId: getTenantsTenantIdDeletedMailboxes
+      summary: GET /tenants/{tenantId}/deleted-mailboxes
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/deleted-mailboxes/{mailboxId}/restore:
+    post:
+      operationId: postTenantsTenantIdDeletedMailboxesMailboxIdRestore
+      summary: POST /tenants/{tenantId}/deleted-mailboxes/{mailboxId}/restore
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/devices:
     get:
       operationId: getTenantsTenantIdDevices
@@ -2295,6 +2380,16 @@ paths:
         "200":
           description: Successful response.
       x-permission: Endpoint.DeviceKeys.Reveal
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/devices/{deviceId}/device-actions/{action}:
+    post:
+      operationId: postTenantsTenantIdDevicesDeviceIdDeviceActionsAction
+      summary: POST /tenants/{tenantId}/devices/{deviceId}/device-actions/{action}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Endpoint.Device.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/devices/{deviceId}/laps:
@@ -2586,6 +2681,140 @@ paths:
       x-permission: Identity.Role.Read
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/mailbox-permissions:
+    get:
+      operationId: getTenantsTenantIdMailboxPermissions
+      summary: GET /tenants/{tenantId}/mailbox-permissions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Sharing.Permissions.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailbox-reports:
+    get:
+      operationId: getTenantsTenantIdMailboxReports
+      summary: GET /tenants/{tenantId}/mailbox-reports
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailboxes:
+    get:
+      operationId: getTenantsTenantIdMailboxes
+      summary: GET /tenants/{tenantId}/mailboxes
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdMailboxes
+      summary: POST /tenants/{tenantId}/mailboxes
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailboxes/{mailboxId}:
+    get:
+      operationId: getTenantsTenantIdMailboxesMailboxId
+      summary: GET /tenants/{tenantId}/mailboxes/{mailboxId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdMailboxesMailboxId
+      summary: PATCH /tenants/{tenantId}/mailboxes/{mailboxId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailboxes/{mailboxId}/convert:
+    post:
+      operationId: postTenantsTenantIdMailboxesMailboxIdConvert
+      summary: POST /tenants/{tenantId}/mailboxes/{mailboxId}/convert
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailboxes/{mailboxId}/permissions:
+    get:
+      operationId: getTenantsTenantIdMailboxesMailboxIdPermissions
+      summary: GET /tenants/{tenantId}/mailboxes/{mailboxId}/permissions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdMailboxesMailboxIdPermissions
+      summary: POST /tenants/{tenantId}/mailboxes/{mailboxId}/permissions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Permission.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdMailboxesMailboxIdPermissions
+      summary: DELETE /tenants/{tenantId}/mailboxes/{mailboxId}/permissions
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Permission.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailboxes/{mailboxId}/rules:
+    get:
+      operationId: getTenantsTenantIdMailboxesMailboxIdRules
+      summary: GET /tenants/{tenantId}/mailboxes/{mailboxId}/rules
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdMailboxesMailboxIdRules
+      summary: POST /tenants/{tenantId}/mailboxes/{mailboxId}/rules
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/mailboxes/{mailboxId}/rules/{ruleId}:
+    patch:
+      operationId: patchTenantsTenantIdMailboxesMailboxIdRulesRuleId
+      summary: PATCH /tenants/{tenantId}/mailboxes/{mailboxId}/rules/{ruleId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdMailboxesMailboxIdRulesRuleId
+      summary: DELETE /tenants/{tenantId}/mailboxes/{mailboxId}/rules/{ruleId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/mfa-report:
     get:
       operationId: getTenantsTenantIdMfaReport
@@ -2623,7 +2852,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.read
+      x-permission: SharePoint.Site.Read
       security:
         - bearerAuth: []
   /tenants/{tenantId}/pim:
@@ -2675,6 +2904,195 @@ paths:
       x-permission: Identity.Role.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/purview/dlp:
+    get:
+      operationId: getTenantsTenantIdPurviewDlp
+      summary: GET /tenants/{tenantId}/purview/dlp
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdPurviewDlp
+      summary: POST /tenants/{tenantId}/purview/dlp
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/dlp/{policyId}:
+    get:
+      operationId: getTenantsTenantIdPurviewDlpPolicyId
+      summary: GET /tenants/{tenantId}/purview/dlp/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdPurviewDlpPolicyId
+      summary: PATCH /tenants/{tenantId}/purview/dlp/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdPurviewDlpPolicyId
+      summary: DELETE /tenants/{tenantId}/purview/dlp/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/labels:
+    get:
+      operationId: getTenantsTenantIdPurviewLabels
+      summary: GET /tenants/{tenantId}/purview/labels
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdPurviewLabels
+      summary: POST /tenants/{tenantId}/purview/labels
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/labels/{labelId}:
+    get:
+      operationId: getTenantsTenantIdPurviewLabelsLabelId
+      summary: GET /tenants/{tenantId}/purview/labels/{labelId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdPurviewLabelsLabelId
+      summary: PATCH /tenants/{tenantId}/purview/labels/{labelId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdPurviewLabelsLabelId
+      summary: DELETE /tenants/{tenantId}/purview/labels/{labelId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/labels/{labelId}/publish:
+    post:
+      operationId: postTenantsTenantIdPurviewLabelsLabelIdPublish
+      summary: POST /tenants/{tenantId}/purview/labels/{labelId}/publish
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/retention:
+    get:
+      operationId: getTenantsTenantIdPurviewRetention
+      summary: GET /tenants/{tenantId}/purview/retention
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdPurviewRetention
+      summary: POST /tenants/{tenantId}/purview/retention
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/retention/{policyId}:
+    patch:
+      operationId: patchTenantsTenantIdPurviewRetentionPolicyId
+      summary: PATCH /tenants/{tenantId}/purview/retention/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdPurviewRetentionPolicyId
+      summary: DELETE /tenants/{tenantId}/purview/retention/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/sits:
+    get:
+      operationId: getTenantsTenantIdPurviewSits
+      summary: GET /tenants/{tenantId}/purview/sits
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdPurviewSits
+      summary: POST /tenants/{tenantId}/purview/sits
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/purview/sits/{sitId}:
+    get:
+      operationId: getTenantsTenantIdPurviewSitsSitId
+      summary: GET /tenants/{tenantId}/purview/sits/{sitId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    patch:
+      operationId: patchTenantsTenantIdPurviewSitsSitId
+      summary: PATCH /tenants/{tenantId}/purview/sits/{sitId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdPurviewSitsSitId
+      summary: DELETE /tenants/{tenantId}/purview/sits/{sitId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/registration-campaign:
     get:
       operationId: getTenantsTenantIdRegistrationCampaign
@@ -2694,6 +3112,65 @@ paths:
       x-permission: Identity.AuthMethodsPolicy.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/retention/assign:
+    post:
+      operationId: postTenantsTenantIdRetentionAssign
+      summary: POST /tenants/{tenantId}/retention/assign
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/retention/assign/bulk:
+    post:
+      operationId: postTenantsTenantIdRetentionAssignBulk
+      summary: POST /tenants/{tenantId}/retention/assign/bulk
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/retention/policies:
+    get:
+      operationId: getTenantsTenantIdRetentionPolicies
+      summary: GET /tenants/{tenantId}/retention/policies
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/retention/tags:
+    get:
+      operationId: getTenantsTenantIdRetentionTags
+      summary: GET /tenants/{tenantId}/retention/tags
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdRetentionTags
+      summary: POST /tenants/{tenantId}/retention/tags
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/retention/tags/{tagId}:
+    patch:
+      operationId: patchTenantsTenantIdRetentionTagsTagId
+      summary: PATCH /tenants/{tenantId}/retention/tags/{tagId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.ReadWrite
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/role-assignments:
     get:
       operationId: getTenantsTenantIdRoleAssignments
@@ -2704,6 +3181,44 @@ paths:
       x-permission: Identity.Role.Read
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/safelinks:
+    get:
+      operationId: getTenantsTenantIdSafelinks
+      summary: GET /tenants/{tenantId}/safelinks
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdSafelinks
+      summary: POST /tenants/{tenantId}/safelinks
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/safelinks/{policyId}:
+    patch:
+      operationId: patchTenantsTenantIdSafelinksPolicyId
+      summary: PATCH /tenants/{tenantId}/safelinks/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdSafelinksPolicyId
+      summary: DELETE /tenants/{tenantId}/safelinks/{policyId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Purview.Compliance.ReadWrite
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/sharepoint/recyclebin:
     get:
       operationId: getTenantsTenantIdSharepointRecyclebin
@@ -2711,7 +3226,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.read
+      x-permission: SharePoint.Site.Read
       security:
         - bearerAuth: []
     post:
@@ -2720,7 +3235,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.write
+      x-permission: SharePoint.Site.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites:
@@ -2730,7 +3245,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.read
+      x-permission: SharePoint.Site.Read
       security:
         - bearerAuth: []
     post:
@@ -2739,7 +3254,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.write
+      x-permission: SharePoint.Site.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites/{siteId}:
@@ -2749,7 +3264,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.write
+      x-permission: SharePoint.Site.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites/{siteId}/browse:
@@ -2759,7 +3274,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.read
+      x-permission: SharePoint.Site.Read
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites/{siteId}/restore:
@@ -2769,7 +3284,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.write
+      x-permission: SharePoint.Site.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites/{siteId}/storage:
@@ -2779,7 +3294,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.read
+      x-permission: SharePoint.Site.Read
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites/{siteId}/versions/cleanup:
@@ -2789,7 +3304,7 @@ paths:
       responses:
         "200":
           description: Successful response.
-      x-permission: sharepoint.cleanup
+      x-permission: SharePoint.Cleanup.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/users:
@@ -2911,6 +3426,35 @@ paths:
       x-permission: Identity.Mfa.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/vacation-schedules:
+    get:
+      operationId: getTenantsTenantIdVacationSchedules
+      summary: GET /tenants/{tenantId}/vacation-schedules
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Mailbox.Read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdVacationSchedules
+      summary: POST /tenants/{tenantId}/vacation-schedules
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Vacation.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/vacation-schedules/{scheduleId}:
+    delete:
+      operationId: deleteTenantsTenantIdVacationSchedulesScheduleId
+      summary: DELETE /tenants/{tenantId}/vacation-schedules/{scheduleId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Mailboxes.Vacation.ReadWrite
+      security:
+        - bearerAuth: []
   /user-templates:
     get:
       operationId: getUserTemplates
@@ -2961,7 +3505,7 @@ paths:
   /users:
     get:
       operationId: listPortalUsers
-      summary: List portal users (CIPP.Admin.* surface).
+      summary: List portal users (CIPP.Admin.Users surface).
       security:
         - bearerAuth: []
       parameters:
@@ -2981,8 +3525,8 @@ paths:
         "401":
           description: Authentication required.
         "403":
-          description: The caller lacks the CIPP.Admin.* scope.
-      x-permission: CIPP.Admin.*
+          description: The caller lacks CIPP.Admin.Users.
+      x-permission: CIPP.Admin.Users
     post:
       operationId: createPortalUser
       summary: Create a portal user (federated identity, no password) and assign one base role.
@@ -2996,8 +3540,8 @@ paths:
         "401":
           description: Authentication required.
         "403":
-          description: The caller lacks the CIPP.Admin.* scope.
-      x-permission: CIPP.Admin.*
+          description: The caller lacks CIPP.Admin.Users.
+      x-permission: CIPP.Admin.Users
   /users/{id}:
     patch:
       operationId: updatePortalUser
@@ -3012,10 +3556,10 @@ paths:
         "401":
           description: Authentication required.
         "403":
-          description: The caller lacks the CIPP.Admin.* scope.
+          description: The caller lacks CIPP.Admin.Users.
         "404":
           description: No portal user has that id.
-      x-permission: CIPP.Admin.*
+      x-permission: CIPP.Admin.Users
     delete:
       operationId: deletePortalUser
       summary: Remove a portal user.
@@ -3027,10 +3571,10 @@ paths:
         "401":
           description: Authentication required.
         "403":
-          description: The caller lacks the CIPP.Admin.* scope.
+          description: The caller lacks CIPP.Admin.Users.
         "404":
           description: No portal user has that id.
-      x-permission: CIPP.Admin.*
+      x-permission: CIPP.Admin.Users
   /users/{id}/scope:
     put:
       operationId: updatePortalUserScope
@@ -3045,10 +3589,10 @@ paths:
         "401":
           description: Authentication required.
         "403":
-          description: The caller lacks the CIPP.Admin.* scope.
+          description: The caller lacks CIPP.Admin.Users.
         "404":
           description: No portal user has that id.
-      x-permission: CIPP.Admin.*
+      x-permission: CIPP.Admin.Users
 components:
   securitySchemes:
     bearerAuth:

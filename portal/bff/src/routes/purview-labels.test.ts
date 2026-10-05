@@ -1,6 +1,6 @@
 // T-0587 — Purview sensitivity-label and SIT read + change gating.
-// Route-level tests: the read routes validate purview.read + tenant scope and
-// return the live page; the change routes validate purview.write, enforce the
+// Route-level tests: the read routes validate Purview.Compliance.Read + tenant scope and
+// return the live page; the change routes validate Purview.Compliance.ReadWrite, enforce the
 // second-reviewer encryption gate, keep label creation and publishing-policy
 // assignment separate, enqueue the EPIC-006 gated job, and record the
 // CompliancePolicyChange row plus an audit event.
@@ -296,7 +296,7 @@ describe("Purview labels + SITs read + change routes (T-0587)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects callers missing purview.read with 403", async () => {
+  it("rejects callers missing Purview.Compliance.Read with 403", async () => {
     const routes = makeRoutes({
       resolveCaller: () => ({
         tenantScope: tenantScope([TENANT]),
@@ -377,7 +377,7 @@ describe("Purview labels + SITs read + change routes (T-0587)", () => {
     expect(body.items[1]).toMatchObject({ type: "custom", basedOn: "Credit Card Number" });
   });
 
-  it("rejects callers missing purview.write with 403", async () => {
+  it("rejects callers missing Purview.Compliance.ReadWrite with 403", async () => {
     const routes = makeRoutes({ resolveCaller: readerCaller });
     await expect(
       routeByPath(routes, "POST", PURVIEW_LABELS_PATH).handler(

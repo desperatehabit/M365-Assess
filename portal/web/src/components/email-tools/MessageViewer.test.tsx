@@ -25,7 +25,7 @@ const DETAIL: MessageViewerDetail = {
   headers: [{ name: "Authentication-Results", value: "dkim=pass" }],
   body: null,
   bodyGated: true,
-  bodyGateReason: "The message body requires the mailtools.content permission.",
+  bodyGateReason: "The message body requires the Exchange.MailContent.Reveal permission.",
 };
 
 describe("MessageViewer (T-0464)", () => {
@@ -43,7 +43,7 @@ describe("MessageViewer (T-0464)", () => {
   it("reports the body as gated when the caller lacks content access", () => {
     render(<MessageViewer detail={DETAIL} />);
 
-    expect(screen.getByTestId("message-body-gated").textContent).toContain("mailtools.content");
+    expect(screen.getByTestId("message-body-gated").textContent).toContain("Exchange.MailContent.Reveal");
     expect(screen.queryByTestId("message-body")).toBeNull();
   });
 

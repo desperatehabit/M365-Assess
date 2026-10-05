@@ -215,7 +215,7 @@ describe("GET /v1/alert-events (T-0567)", () => {
     expect(second.nextCursor).toBeNull();
   });
 
-  it("requires alerts.read and rejects an invalid enum", async () => {
+  it("requires CIPP.Alert.Read and rejects an invalid enum", async () => {
     const seen: string[] = [];
     const route = routeFor(
       makeOptions(new FakeStore(), {
@@ -329,7 +329,7 @@ describe("POST /v1/alert-rules/{ruleId}/snooze (T-0567)", () => {
     });
   });
 
-  it("requires alerts.write", async () => {
+  it("requires CIPP.Alert.ReadWrite", async () => {
     const seen: string[] = [];
     const route = routeFor(
       makeOptions(new FakeStore(), {

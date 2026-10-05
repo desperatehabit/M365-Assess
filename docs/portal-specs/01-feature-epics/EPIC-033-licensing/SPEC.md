@@ -102,7 +102,7 @@ Assign/remove with plan preview; bulk operations report per-row results; audited
 
 ## 7. Permissions & scopes
 
-- **RBAC:** `licenses.read`, `licenses.write`; pricing edits require `CIPP.Admin.*`. Tenant-scoped
+- **RBAC:** `Tenant.Licenses.Read`, `Tenant.Licenses.ReadWrite`; pricing edits require `CIPP.Admin.*`. Tenant-scoped
   (EPIC-038).
 - **Tenant auth:** Graph `Organization.Read.All`, `User.ReadWrite.All` (assignment).
 

@@ -351,7 +351,7 @@ export function ContactsTable({
                         type="button"
                         style={writeDisabled ? disabledActionBtnStyle : actionBtnStyle}
                         disabled={writeDisabled}
-                        title={writeDisabled ? "Requires contacts.write permission" : undefined}
+                        title={writeDisabled ? "Requires Exchange.Contact.ReadWrite permission" : undefined}
                         onClick={() => onAction?.("edit", contact)}
                         aria-label={`Edit ${contact.displayName ?? contact.externalAddress ?? contact.id}`}
                         data-testid={`contact-edit-${contact.id}`}
@@ -362,7 +362,7 @@ export function ContactsTable({
                         type="button"
                         style={writeDisabled ? disabledActionBtnStyle : actionBtnStyle}
                         disabled={writeDisabled}
-                        title={writeDisabled ? "Requires contacts.write permission" : undefined}
+                        title={writeDisabled ? "Requires Exchange.Contact.ReadWrite permission" : undefined}
                         onClick={() => onAction?.("hideFromGal", contact)}
                         aria-label={`${contact.hiddenFromGal ? "Show in GAL" : "Hide from GAL"} ${contact.displayName ?? contact.externalAddress ?? contact.id}`}
                         data-testid={`contact-hide-${contact.id}`}
@@ -382,7 +382,7 @@ export function ContactsTable({
                         type="button"
                         style={writeDisabled ? disabledActionBtnStyle : actionBtnStyle}
                         disabled={writeDisabled}
-                        title={writeDisabled ? "Requires contacts.write permission" : undefined}
+                        title={writeDisabled ? "Requires Exchange.Contact.ReadWrite permission" : undefined}
                         onClick={() => onAction?.("delete", contact)}
                         aria-label={`Delete ${contact.displayName ?? contact.externalAddress ?? contact.id}`}
                         data-testid={`contact-delete-${contact.id}`}

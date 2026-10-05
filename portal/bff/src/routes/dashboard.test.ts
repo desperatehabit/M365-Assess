@@ -269,7 +269,7 @@ describe("Dashboard routes (T-0062)", () => {
         getFleetDashboard: vi.fn(),
       };
 
-      // Custom caller with explicit permissions lacking alerts.read and licensing.read
+      // Custom caller with explicit permissions lacking CIPP.Alert.Read and licensing.read
       const customCaller: Caller = {
         roles: ["operator"],
         tenantScope: ALL_TENANTS,
@@ -300,7 +300,7 @@ describe("Dashboard routes (T-0062)", () => {
       expect(returnedIds).toContain("MFACard");
 
       // Acceptance criterion: Widgets the caller cannot read are absent from /v1/dashboard/widgets
-      expect(returnedIds).not.toContain("AlertsOverviewCard"); // requires alerts.read
+      expect(returnedIds).not.toContain("AlertsOverviewCard"); // requires CIPP.Alert.Read
       expect(returnedIds).not.toContain("LicenseCard"); // requires licensing.read
     });
   });

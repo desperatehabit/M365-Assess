@@ -2,7 +2,7 @@
 // Exposes GET /v1/tenants/:tenantId/licenses returning per-SKU enabled/assigned/
 // available/utilization with monthly cost from pricing (global seed + per-tenant
 // override). An unpriced SKU reports "no pricing" rather than zero (SPEC §9).
-// Requires RBAC `licenses.read` and tenant in caller scope.
+// Requires RBAC `Tenant.Licenses.Read` and tenant in caller scope.
 import { AppError, ErrorCodes } from "../errors.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
@@ -10,7 +10,7 @@ import { createTenantWorker, raiseWorkerError, type WorkerRunner } from "../adap
 import type { CredentialStoreRow } from "./credentials.js";
 
 export const LICENSES_PATH = "/v1/tenants/:tenantId/licenses";
-export const LICENSES_READ_PERMISSION = "licenses.read";
+export const LICENSES_READ_PERMISSION = "Tenant.Licenses.Read";
 export const LICENSES_UNAUTHENTICATED = "request.unauthenticated";
 
 export interface LicenseItem {
@@ -101,7 +101,7 @@ export function createLicensesRoute(options: LicensesRouteOptions): Route {
       } else {
         const permissions = caller.permissions ?? [];
         if (!permissions.includes(LICENSES_READ_PERMISSION) && !permissions.includes("*")) {
-          throw new AppError(ErrorCodes.forbidden, "forbidden: missing licenses.read", 403);
+          throw new AppError(ErrorCodes.forbidden, "forbidden: missing Tenant.Licenses.Read", 403);
         }
       }
 
@@ -140,7 +140,7 @@ export const LICENSES_OPENAPI = {
       get: {
         operationId: "getLicenses",
         summary: "License consumption per SKU with utilization and cost",
-        permission: "licenses.read",
+        permission: "Tenant.Licenses.Read",
         security: [{ bearerAuth: [] }],
         parameters: [
           {
@@ -154,7 +154,7 @@ export const LICENSES_OPENAPI = {
           "200": { description: "Per-SKU license consumption with utilization and monthly cost." },
           "400": { description: "A path parameter is invalid." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks the licenses.read permission or tenant is out of scope." },
+          "403": { description: "The caller lacks the Tenant.Licenses.Read permission or tenant is out of scope." },
         },
       },
     },

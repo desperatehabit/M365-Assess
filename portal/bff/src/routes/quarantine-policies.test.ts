@@ -1,6 +1,6 @@
 // T-0428 — Quarantine notification and permission policy route gating.
 // Route-level tests: the read route serves the §3.5 columns live from EXO
-// through the injected provider; the write routes validate quarantine.act +
+// through the injected provider; the write routes validate Exchange.Quarantine.ReadWrite +
 // tenant scope, build a before/after plan with the affected entries shown
 // before apply, flag deleting/weakening changes as security-impacting,
 // require confirmation for them, support plan preview (preview:true) with
@@ -176,7 +176,7 @@ describe("Quarantine policy routes (T-0428)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects reads without quarantine.read with 403", async () => {
+  it("rejects reads without Exchange.Quarantine.Read with 403", async () => {
     const routes = createQuarantinePoliciesRoutes({
       provider: new FakeQuarantinePoliciesProvider(),
       resolveCaller: () => ({
@@ -193,7 +193,7 @@ describe("Quarantine policy routes (T-0428)", () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
-  it("rejects writes without quarantine.act with 403", async () => {
+  it("rejects writes without Exchange.Quarantine.ReadWrite with 403", async () => {
     const routes = createQuarantinePoliciesRoutes({
       provider: new FakeQuarantinePoliciesProvider(),
       queue: new FakeQueue(),

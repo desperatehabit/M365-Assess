@@ -255,9 +255,10 @@ describe("permission taxonomy", () => {
     const publicEntries = PermissionRegistry.filter((entry) =>
       isPublicPermission(entry.permission),
     );
-    // The OpenAPI contract and the liveness probe (no tenant data) are the only open endpoints.
+    // The OpenAPI contract (served as yaml and as json) and the liveness probe (no tenant
+    // data) are the only open endpoints.
     expect(publicEntries.map((e) => `${e.method} ${e.path}`).sort()).toEqual(
-      ["GET /v1/health", `GET ${OPENAPI_ROUTE}`].sort(),
+      ["GET /v1/health", `GET ${OPENAPI_ROUTE}`, "GET /openapi.json", "GET /v1/openapi.json"].sort(),
     );
   });
 
@@ -280,7 +281,18 @@ const ADMIN_ONLY_PERMISSIONS: readonly string[] = [
   "Endpoint.DeviceKeys.Reveal", // BitLocker recovery keys and LAPS passwords
   "CIPP.Scripts.Execute", // running custom scripts against tenants
   "CIPP.Admin.TenantCredentials", // tenant app credentials
+  "CIPP.Admin.Users", // portal user administration (EPIC-038 SPEC §7: admin surface requires CIPP.Admin.*)
+  "CIPP.Admin.BackupRestore", // restoring a tenant backup (EPIC-035 SPEC §7: restore requires CIPP.Admin.*)
+  "CIPP.Tests.Execute", // running custom compliance tests (arbitrary script; gated like CIPP.Scripts.Execute)
+  "Exchange.MailSearch.Execute", // historical mail search and export (EPIC-024 SPEC §7: high privilege)
+  "Exchange.MailRestore.Execute", // restoring mail from search results (EPIC-024 SPEC §7: high privilege)
+  "Exchange.MailContent.Reveal", // reading message bodies (EPIC-024 SPEC §4: behind a higher permission)
 ];
+
+/** Excluded from readonly and editor by the base roles (EPIC-038 SPEC §4.1 table). */
+const BASE_ROLE_EXCLUDED_PREFIXES: readonly string[] = ["CIPP.Admin.", "CIPP.SuperAdmin.", "CIPP.AppSettings."];
+const excludedFromBaseRoles = (permission: string): boolean =>
+  BASE_ROLE_EXCLUDED_PREFIXES.some((prefix) => permission.startsWith(prefix));
 
 /**
  * EPIC-001 run permissions checked through rbac/roles.ts (admin/operator), not the
@@ -333,13 +345,16 @@ describe("route permissions follow the EPIC-038 taxonomy (T-0816)", () => {
   it("lets readonly hold every Read permission and nothing more", () => {
     for (const permission of taxonomy) {
       const allowed = testPortalAccess({ permission, roles: ["readonly"] }).allowed;
-      expect(allowed, permission).toBe(permission.endsWith(".Read") && !permission.startsWith("CIPP.Admin."));
+      expect(allowed, permission).toBe(permission.endsWith(".Read") && !excludedFromBaseRoles(permission));
     }
   });
 
   it("lets editor hold every Read and ReadWrite permission but no admin-only one", () => {
     for (const permission of taxonomy) {
-      const expected = /\.(Read|ReadWrite)$/.test(permission) && !ADMIN_ONLY_PERMISSIONS.includes(permission);
+      const expected =
+        /\.(Read|ReadWrite)$/.test(permission) &&
+        !ADMIN_ONLY_PERMISSIONS.includes(permission) &&
+        !excludedFromBaseRoles(permission);
       expect(testPortalAccess({ permission, roles: ["editor"] }).allowed, permission).toBe(expected);
     }
   });

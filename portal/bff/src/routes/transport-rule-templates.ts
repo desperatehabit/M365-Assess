@@ -1,7 +1,7 @@
 // Transport rule template CRUD and clone (EPIC-021 SPEC.md §3.3, §5, §6, §7; T-0403).
 //
-//   GET    /v1/transport-rule-templates              list            (transport.read)
-//   POST   /v1/transport-rule-templates              create          (transport.write)
+//   GET    /v1/transport-rule-templates              list            (Exchange.Transport.Read)
+//   POST   /v1/transport-rule-templates              create          (Exchange.Transport.ReadWrite)
 //   GET    /v1/transport-rule-templates/:id          read
 //   PATCH  /v1/transport-rule-templates/:id          update
 //   DELETE /v1/transport-rule-templates/:id          delete
@@ -9,7 +9,7 @@
 //
 // Templates persist; a rule cloned to a template is stored as ruleJson with
 // declared variables and never as a live tenant write. Deploy is T-0406.
-// Writes are gated on `transport.write`, reads on `transport.read` (SPEC §7);
+// Writes are gated on `Exchange.Transport.ReadWrite`, reads on `Exchange.Transport.Read` (SPEC §7);
 // the gate is an injected `authorize` seam so EPIC-038's resolver can supply
 // the real permission set without touching route code.
 import { randomUUID } from "node:crypto";
@@ -30,8 +30,8 @@ export const TRANSPORT_RULE_TEMPLATE_CLONE_PATH = "/v1/transport-rule-templates/
 export const TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH = "/v1/transport-rule-templates/:id/deploy";
 
 export const TRANSPORT_RULE_TEMPLATE_PERMISSIONS = {
-  read: "transport.read",
-  write: "transport.write",
+  read: "Exchange.Transport.Read",
+  write: "Exchange.Transport.ReadWrite",
 } as const;
 
 export const TRANSPORT_RULE_TEMPLATE_NOT_FOUND = "transport_rule_template.not_found";
@@ -155,7 +155,7 @@ function requirePermission(
   }
 }
 
-// Deploy is a tenant write: it needs transport.write or the EPIC-006
+// Deploy is a tenant write: it needs Exchange.Transport.ReadWrite or the EPIC-006
 // Remediation.Apply semantics (SPEC §7), and never a direct write.
 function requireDeployPermission(
   ctx: TransportRuleTemplateRequestContext,
@@ -567,7 +567,7 @@ export const TRANSPORT_RULE_TEMPLATES_OPENAPI = {
         ],
         responses: {
           "200": { description: "Cursor-paginated transport rule templates." },
-          "403": { description: "The caller lacks transport.read." },
+          "403": { description: "The caller lacks Exchange.Transport.Read." },
         },
       },
       post: {
@@ -578,7 +578,7 @@ export const TRANSPORT_RULE_TEMPLATES_OPENAPI = {
         responses: {
           "201": { description: "The stored template." },
           "400": { description: "The template failed validation." },
-          "403": { description: "The caller lacks transport.write." },
+          "403": { description: "The caller lacks Exchange.Transport.ReadWrite." },
         },
       },
     },
@@ -656,7 +656,7 @@ export const TRANSPORT_RULE_TEMPLATES_OPENAPI = {
           },
           "400": { description: "A required variable is missing or the payload is invalid." },
           "403": {
-            description: "The caller lacks transport.write or a target is out of scope.",
+            description: "The caller lacks Exchange.Transport.ReadWrite or a target is out of scope.",
           },
           "404": { description: "No live template has that id." },
           "422": { description: "Every target failed; per-target results are returned." },
