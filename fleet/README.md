@@ -238,3 +238,17 @@ module's existing mechanism (connection profiles / certificate auth).
 [`config.toml`](config.toml) holds paths, models, limits, and the test commands.
 `repo` and `docs` are the same directory here; `worktrees` is outside the repo on
 purpose. `[tests].qa_command` must produce JUnit XML at `{xml}` — see *Tests*.
+
+## Opt-in only
+
+The fleet is not used by default. Claude Code sessions do not load fleet
+skills or agents, and no project instruction tells an agent to dispatch work
+through it. To use it, run `fleet.py` by hand, or ask for it explicitly.
+
+The Claude Code slash commands and the QA agent that drive it live in
+`fleet/claude/`. To enable them for a session, copy them back:
+
+```bash
+cp fleet/claude/commands/fleet-*.md .claude/commands/
+cp fleet/claude/agents/fleet-qa.md .claude/agents/
+```
