@@ -29,6 +29,7 @@ import {
   SqliteRepository,
   SqliteRoleRequestsRepository,
   SqliteScheduleRepository,
+  SqliteSspRepository,
   SqliteStandardsRepository,
   SqliteTapRecordRepository,
   SqliteUserTemplateRepository,
@@ -255,6 +256,9 @@ import { createRunsEventsRoute } from "./routes/runs-events.js";
 import { createRunsListRoute } from "./routes/runs-list.js";
 import { CUSTOM_SCRIPT_COMMAND, createScheduleRoutes } from "./routes/schedules.js";
 import { createScriptRoutes, type ScriptAuditPort } from "./routes/scripts.js";
+import { createSspRoutes } from "./routes/ssp.js";
+import { loadPracticeCheckMap } from "./domain/ssp/practice-map.js";
+import type { SspImplementationStatus, SspResponsibility } from "@m365-assess/contracts/ssp";
 import { createStandardsAlignmentRoutes } from "./routes/standards-alignment.js";
 import { createStandardsCatalogRoutes } from "./routes/standards-catalog.js";
 import { createStandardsRunRoutes } from "./routes/standards-run.js";
@@ -573,6 +577,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     db,
   );
   const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
+  const sspRepo = new SqliteSspRepository(db, schemaVersion);
   const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
@@ -843,6 +848,35 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       store: scheduleStore,
       history: createScheduleHistoryStore(db),
       queue: scheduleQueue,
+      ...caller,
+    }),
+    // CMMC Level 2 SSP questionnaire and generated SSP (Word / HTML). Automated
+    // evidence is the tenant's latest run's findings; answers persist per tenant.
+    ...createSspRoutes({
+      store: {
+        getProfile: (tenantId) => sspRepo.getProfile(tenantId),
+        upsertProfile: (profile) => sspRepo.upsertProfile(profile),
+        listPracticeResponses: async (tenantId) =>
+          (await sspRepo.listPracticeResponses(tenantId)).map((row) => ({
+            ...row,
+            implementationStatus: row.implementationStatus as SspImplementationStatus,
+            responsibility: row.responsibility as SspResponsibility,
+          })),
+        upsertPracticeResponse: async (response) => {
+          const row = await sspRepo.upsertPracticeResponse({ ...response, evidence: [...response.evidence] });
+          return {
+            ...row,
+            implementationStatus: row.implementationStatus as SspImplementationStatus,
+            responsibility: row.responsibility as SspResponsibility,
+          };
+        },
+        deletePracticeResponse: (tenantId, practiceId, actor) => sspRepo.deletePracticeResponse(tenantId, practiceId, actor),
+      },
+      findings: {
+        latestRunId: (tenantId) => reportRuns.latestRunId(tenantId),
+        listFindings: (tenantId, runId) => repo.listFindings(tenantId, runId),
+      },
+      practiceChecks: () => loadPracticeCheckMap(),
       ...caller,
     }),
     ...createScriptRoutes({

@@ -126,6 +126,7 @@ import { REPORTS_PERMISSIONS } from "../routes/reports.js";
 import { REMEDIATION_OPENAPI } from "../routes/remediation.js";
 import { SCHEDULE_PERMISSIONS, SCHEDULE_SYSTEM_PATH, SCHEDULES_OPENAPI } from "../routes/schedules.js";
 import { SCRIPTS_OPENAPI } from "../routes/scripts.js";
+import { SSP_OPENAPI } from "../routes/ssp.js";
 import { BASELINE_ADVANCE_PATH, BASELINE_ADVANCE_PERMISSION } from "../routes/baselines-advance.js";
 import { BASELINE_ALIGNMENT_PATH, BASELINE_ALIGNMENT_PERMISSION } from "../routes/baselines-alignment.js";
 import { BASELINES_FLEET_OPENAPI } from "../routes/baselines-fleet.js";
@@ -557,6 +558,8 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "PATCH", path: SCHEDULE_SYSTEM_PATH, permission: SCHEDULE_PERMISSIONS.write },
   { method: "DELETE", path: SCHEDULE_SYSTEM_PATH, permission: SCHEDULE_PERMISSIONS.write },
   ...registryEntriesFromOpenApi({ paths: SCRIPTS_OPENAPI }),
+  // CMMC Level 2 SSP questionnaire and document.
+  ...registryEntriesFromOpenApi({ paths: SSP_OPENAPI }),
   // EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825).
   ...registryEntriesFromOpenApi({ paths: STANDARDS_CATALOG_OPENAPI }),
   ...registryEntriesFromOpenApi({ paths: STANDARDS_TEMPLATES_OPENAPI }),

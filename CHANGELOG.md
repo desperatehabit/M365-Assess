@@ -5,6 +5,12 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
 ## [Unreleased]
 
 ### Added
+- **Portal: CMMC Level 2 questionnaire and System Security Plan** (`/ssp`, see `docs/user/CMMC-SSP.md`):
+  - All 110 NIST SP 800-171 Rev. 2 practices. Each gets its status from the tenant's latest run (through the registry's CMMC mappings), from the consultant's recorded answer, or from Microsoft inheritance hints for practices Microsoft covers.
+  - The 24 practices no check covers (physical, personnel, training, maintenance, paperwork) carry a specific question and an evidence hint.
+  - Answers record status, responsibility (customer / shared / inherited), narrative, evidence references, owner, and planned completion. They are stored per tenant (migration `0127_ssp.sql`) and audited.
+  - The SSP downloads as an editable Word document or opens as printable HTML: system description and boundary, every practice with its evidence, a plan of action and milestones, and an approval block. The Word file is generated without new dependencies.
+  - New permissions `Compliance.Ssp.Read` and `Compliance.Ssp.ReadWrite`.
 - **Every CIS Microsoft 365 v6.0.1 recommendation now has a check** (six had a registry mapping but no collector emitting it):
   - `ENTRA-ADMIN-003` (1.1.2, two emergency access accounts) is reported from the `ENTRA-BREAKGLASS-001` detection; CIS requires two, so one account fails.
   - `ENTRA-BREAKGLASS-002` (2.2.1, emergency account sign-ins monitored) passes when an enabled Defender XDR custom detection names a detected break-glass account; otherwise it is Review, because Azure Monitor and Sentinel alerts are not readable. Needs the new `CustomDetection.Read.All` Graph permission.

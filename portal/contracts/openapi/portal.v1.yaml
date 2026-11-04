@@ -3307,6 +3307,55 @@ paths:
       x-permission: SharePoint.Cleanup.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/ssp:
+    get:
+      operationId: getTenantsTenantIdSsp
+      summary: GET /tenants/{tenantId}/ssp
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Compliance.Ssp.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ssp/document:
+    get:
+      operationId: getTenantsTenantIdSspDocument
+      summary: GET /tenants/{tenantId}/ssp/document
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Compliance.Ssp.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ssp/practices/{practiceId}:
+    put:
+      operationId: putTenantsTenantIdSspPracticesPracticeId
+      summary: PUT /tenants/{tenantId}/ssp/practices/{practiceId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Compliance.Ssp.ReadWrite
+      security:
+        - bearerAuth: []
+    delete:
+      operationId: deleteTenantsTenantIdSspPracticesPracticeId
+      summary: DELETE /tenants/{tenantId}/ssp/practices/{practiceId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Compliance.Ssp.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/ssp/profile:
+    put:
+      operationId: putTenantsTenantIdSspProfile
+      summary: PUT /tenants/{tenantId}/ssp/profile
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Compliance.Ssp.ReadWrite
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/users:
     get:
       operationId: getTenantsTenantIdUsers
