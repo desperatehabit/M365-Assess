@@ -1,7 +1,8 @@
 # Per-check remediation scripts
 
 One standalone PowerShell script per registry check, at
-`Remediate/Scripts/<Collector>/<CheckId>.ps1`. Every registry check either has a
+`Remediate/Scripts/<Collector>/<CheckId>.ps1`. [`INDEX.md`](INDEX.md) lists every script with
+the service it connects to and its required parameters. Every registry check either has a
 script here or is listed in [`coverage.json`](coverage.json) with the reason it
 has none (already covered by a typed binding, or not remediable by script).
 `tests/Remediate/Scripts/RemediationScripts.Tests.ps1` enforces this.
@@ -46,7 +47,8 @@ then pass `GetState` / `TestState` / `SetState` script blocks to
 `Invoke-RemediationStep -Cmdlet $PSCmdlet`. The script blocks run inside the helper
 function, so don't name script parameters or variables after the helper's own
 locals (`Cmdlet`, `CheckId`, `Target`, `Desired`, `GetState`, `TestState`,
-`SetState`, `SkipVerify`, `result`, `before`, `after`).
+`SetState`, `SkipVerify`, `result`, `before`, `after`). Inside those blocks `$PSCmdlet` is
+the helper's, not the script's; capture `$PSCmdlet.ParameterSetName` in a script variable first.
 
 File names are the check id rather than `Verb-Noun` so each script maps one-to-one
 to a registry entry.
