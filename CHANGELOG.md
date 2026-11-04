@@ -12,7 +12,12 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
   - `ENTRA-SESSION-001` (5.1.2.5) reads `loginPageTextVisibilitySettings.hideKeepMeSignedIn` from company branding; a tenant with no branding shows the prompt and fails.
   - `POWERBI-SERVICEPRINCIPAL-001` (9.1.12) reads the `ServicePrincipalAccessGlobalAPIs` tenant setting; a tenant that does not return it is Review.
   - `SPO-SWAY-001` (1.3.8) is a Review row with the admin center steps: Sway sharing has no API.
-- The Security section now requests `Organization.Read.All` and `CustomDetection.Read.All`, and Identity requests `Organization.Read.All`. Re-run `Grant-M365AssessConsent` to add them.
+- **CMMC L2 automated coverage rises from 77 to 86 of 110 practices.** Six registry checks mapped to CMMC had no collector, and a new local extension covers the host firewall:
+  - `ENTRA-SESSIONAUTH-001` (3.13.15) and `ENTRA-CA-SESSIONFREQ-001` (3.13.9) require Conditional Access policies that target All users.
+  - New `Intune/Get-IntuneEndpointHardeningConfig.ps1`: `INTUNE-ENCRYPTION-001` (3.8.6, 3.13.16; BitLocker through compliance or Endpoint security disk encryption), `INTUNE-MOBILECODE-001` (3.13.13; PowerShell execution policy AllSigned or RemoteSigned), and the new local extension `INTUNE-FIREWALL-001` (SC.L1-B.1.XI, 3.13.1, 3.13.5, 3.13.6; Windows Firewall on with inbound blocked by default on every profile).
+  - `DEFENDER-SECURESCORE-001` (3.11.1, 3.12.1): Secure Score posture, Pass at 70% or more of the achievable score and Warning from 40%.
+  - New `Backup/Get-M365BackupConfig.ps1`: `BACKUP-ENABLED-001` (3.8.9), Microsoft 365 Backup enabled with active protection policies.
+- The Security section now requests `Organization.Read.All`, `CustomDetection.Read.All`, and `BackupRestore-Configuration.Read.All`, and Identity requests `Organization.Read.All`. Re-run `Grant-M365AssessConsent` to add them.
 - **Bridge JSON findings carry their descriptive fields**: each finding in `_Assessment*.json` now also has `category`, `setting`, `recommendedValue`, `section`, and `collector`. The fields are additive; existing readers ignore them.
 
 ### Fixed

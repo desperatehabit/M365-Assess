@@ -26,7 +26,7 @@ $sectionScopeMap = @{
     'Identity'      = @('User.Read.All', 'AuditLog.Read.All', 'UserAuthenticationMethod.Read.All', 'RoleManagement.Read.Directory', 'Policy.Read.All', 'Application.Read.All', 'Domain.Read.All', 'Directory.Read.All', 'Agreement.Read.All', 'Organization.Read.All')
     'Licensing'     = @('Organization.Read.All', 'User.Read.All')
     'Intune'        = @('DeviceManagementManagedDevices.Read.All', 'DeviceManagementConfiguration.Read.All')
-    'Security'      = @('SecurityEvents.Read.All', 'Organization.Read.All', 'CustomDetection.Read.All')
+    'Security'      = @('SecurityEvents.Read.All', 'Organization.Read.All', 'CustomDetection.Read.All', 'BackupRestore-Configuration.Read.All')
     'Collaboration' = @('SharePointTenantSettings.Read.All', 'TeamSettings.Read.All', 'TeamworkAppSettings.Read.All', 'OrgSettings-Forms.Read.All')
     'PowerBI'       = @()
     'Hybrid'           = @('Organization.Read.All', 'Domain.Read.All')
@@ -104,6 +104,7 @@ $collectorMap = [ordered]@{
         @{ Name = '15j-Intune-AlwaysOnVpn';   Script = 'Intune\Get-IntuneAlwaysOnVpnConfig.ps1';    Label = 'Always-On VPN'; RequiredServices = @('Graph') }
         @{ Name = '15k-Intune-VpnSplitTunnel'; Script = 'Intune\Get-IntuneVpnSplitTunnelConfig.ps1'; Label = 'VPN Split Tunnel'; RequiredServices = @('Graph') }
         @{ Name = '15l-Intune-WifiEap';        Script = 'Intune\Get-IntuneWifiEapConfig.ps1';         Label = 'Wi-Fi EAP'; RequiredServices = @('Graph') }
+        @{ Name = '15m-Intune-EndpointHardening'; Script = 'Intune\Get-IntuneEndpointHardeningConfig.ps1'; Label = 'Endpoint Hardening'; RequiredServices = @('Graph') }
     )
     'Security' = @(
         @{ Name = '16-Secure-Score';       Script = 'Security\Get-SecureScoreReport.ps1';   Label = 'Secure Score'; HasSecondary = $true; SecondaryName = '17-Improvement-Actions'; RequiredServices = @('Graph') }
@@ -117,6 +118,7 @@ $collectorMap = [ordered]@{
         @{ Name = '26-Defender-RealTimeScan';     Script = 'Security\Get-DefenderScanConfig.ps1';        Label = 'Real-time Scanning'; RequiredServices = @('Graph') }
         @{ Name = '27-Defender-SecureMon';        Script = 'Security\Get-DefenderSecureMonConfig.ps1';   Label = 'Security Monitoring'; RequiredServices = @('Graph') }
         @{ Name = '28-Defender-CfgDetect';        Script = 'Security\Get-DefenderCfgDetectConfig.ps1';   Label = 'Config Detection'; RequiredServices = @('Graph') }
+        @{ Name = '29-M365-Backup';               Script = 'Backup\Get-M365BackupConfig.ps1';            Label = 'Microsoft 365 Backup'; RequiredServices = @('Graph') }
     )
     'Collaboration' = @(
         @{ Name = '20-SharePoint-OneDrive'; Script = 'Collaboration\Get-SharePointOneDriveReport.ps1'; Label = 'SharePoint & OneDrive' }
