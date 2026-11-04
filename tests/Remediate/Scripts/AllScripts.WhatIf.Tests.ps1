@@ -31,7 +31,9 @@ BeforeAll {
             $type = $p.StaticType
             $validateSet = $p.Attributes | Where-Object { $_.TypeName.Name -eq 'ValidateSet' }
             $validateRange = $p.Attributes | Where-Object { $_.TypeName.Name -eq 'ValidateRange' }
-            $value = if ($validateSet) { $validateSet.PositionalArguments[0].Value }
+            $validateScript = $p.Attributes | Where-Object { $_.TypeName.Name -eq 'ValidateScript' }
+            $value = if ($validateScript) { $f = Join-Path ([System.IO.Path]::GetTempPath()) 'remediation-test.pdf'; Set-Content -LiteralPath $f -Value 'x'; $f }
+            elseif ($validateSet) { $validateSet.PositionalArguments[0].Value }
             elseif ($validateRange) { [int]$validateRange.PositionalArguments[0].Value }
             elseif ($type -eq [switch]) { $true }
             elseif ($type -eq [guid] -or $type -eq [guid[]]) { [guid]'11111111-2222-3333-4444-555555555555' }
@@ -56,7 +58,14 @@ Describe 'Script <CheckId> under -WhatIf with faked tenant commands' -ForEach $s
             } | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Sort-Object -Unique |
                 Where-Object { $helperFunctions -notcontains $_ -and -not (Get-Command -Name $_ -CommandType Cmdlet -ErrorAction SilentlyContinue) })
         foreach ($c in $commands) {
-            if ($c -eq 'Invoke-MgGraphRequest') {
+            if ($c -eq 'Invoke-AzRestMethod') {
+                Set-Item -Path "function:script:$c" -Value {
+                    param($Method, $Path, $Payload)
+                    if ($Method -ne 'GET') { $FakeWrites.Add("$Method $Path") }
+                    [PSCustomObject]@{ StatusCode = 404; Content = '{}' }
+                }
+            }
+            elseif ($c -eq 'Invoke-MgGraphRequest') {
                 Set-Item -Path "function:script:$c" -Value {
                     param($Method, $Uri, $Body, $ContentType, $OutputType)
                     if ($Method -ne 'GET') { $FakeWrites.Add("$Method $Uri") }
@@ -88,10 +97,13 @@ Describe 'Script <CheckId> under -WhatIf with faked tenant commands' -ForEach $s
         $results = @(& $Path @splat -WhatIf -WarningAction SilentlyContinue)
         $results | Should -Not -BeNullOrEmpty
         foreach ($r in $results) {
-            # Power BI scripts fail the read when the fake tenant has no such
-            # setting; that is the expected, reported (not thrown) outcome.
+            # A read can legitimately fail against empty fake data (no such
+            # Power BI setting, no PIM policy, preset not turned on). That is
+            # a reported outcome; a script bug (unknown command, bad
+            # parameter) is not.
             if ($r.Status -eq 'Failed') {
-                $r.Message | Should -Match "was not returned by admin/tenantSettings|has not been turned on yet" -Because "$($r.Target): $($r.Message)"
+                $r.Message | Should -Match '^Could not read current state' -Because "$($r.Target): $($r.Message)"
+                $r.Message | Should -Not -Match 'is not recognized|parameter cannot be found|positional parameter|Cannot bind|Cannot convert' -Because "$($r.Target): $($r.Message)"
             }
             else {
                 $r.Status | Should -BeIn @('WhatIf', 'AlreadyCompliant') -Because "$($r.Target): $($r.Message)"

@@ -38,7 +38,7 @@ function Assert-RemediationConnection {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [ValidateSet('Graph', 'ExchangeOnline', 'SecurityCompliance', 'SharePoint', 'Teams', 'PowerBI')]
+        [ValidateSet('Graph', 'ExchangeOnline', 'SecurityCompliance', 'SharePoint', 'Teams', 'PowerBI', 'Azure')]
         [string[]]$Service,
 
         [Parameter()]
@@ -96,6 +96,15 @@ function Assert-RemediationConnection {
                 }
                 try { $null = Get-CsTenant -ErrorAction Stop }
                 catch { throw "Not connected to Microsoft Teams: $($_.Exception.Message). Run Connect-MicrosoftTeams first." }
+            }
+            'Azure' {
+                $context = $null
+                if (Get-Command -Name Get-AzContext -ErrorAction SilentlyContinue) {
+                    $context = Get-AzContext
+                }
+                if ($null -eq $context) {
+                    throw 'Not connected to Azure. Run Connect-AzAccount (Az.Accounts) first.'
+                }
             }
             'PowerBI' {
                 if (-not (Get-Command -Name Get-PowerBIAccessToken -ErrorAction SilentlyContinue)) {
@@ -190,7 +199,13 @@ function Invoke-RemediationStep {
         return $result
     }
 
-    if ([bool](& $TestState $before)) {
+    # A comparison that throws (for example a nested property missing from
+    # the tenant's response) means the state is not in the desired shape.
+    $compliant = $false
+    try { $compliant = [bool](& $TestState $before) }
+    catch { Write-Verbose "State comparison failed, treating as not compliant: $($_.Exception.Message)" }
+
+    if ($compliant) {
         $result.Status = 'AlreadyCompliant'
         $result.Message = 'No change needed.'
         return $result
@@ -221,7 +236,11 @@ function Invoke-RemediationStep {
         return $result
     }
 
-    if ($SkipVerify.IsPresent -or [bool](& $TestState $after)) {
+    $verified = $false
+    try { $verified = [bool](& $TestState $after) }
+    catch { Write-Verbose "Post-apply comparison failed: $($_.Exception.Message)" }
+
+    if ($SkipVerify.IsPresent -or $verified) {
         $result.Status = 'Applied'
         $result.Message = if ($SkipVerify.IsPresent) { 'Applied; verification skipped (change may take time to show).' } else { 'Applied and verified.' }
     }
@@ -496,4 +515,132 @@ function Test-RemediationCaPolicy {
         }
     }
     Test-RemediationProperty -State $State -Expected $expected
+}
+
+function Get-RemediationPimRule {
+    <#
+    .SYNOPSIS
+        Returns one PIM role management policy rule for a directory role.
+    .PARAMETER RoleDefinitionId
+        Entra role template / definition ID.
+    .PARAMETER RuleId
+        Rule ID, e.g. 'Expiration_EndUser_Assignment' or 'Approval_EndUser_Assignment'.
+    .EXAMPLE
+        Get-RemediationPimRule -RoleDefinitionId '62e90394-69f5-4237-9190-012177145e10' -RuleId 'Enablement_EndUser_Assignment'
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RoleDefinitionId,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RuleId
+    )
+
+    $filter = "scopeId eq '/' and scopeType eq 'DirectoryRole' and roleDefinitionId eq '$RoleDefinitionId'"
+    $assignment = @((Invoke-MgGraphRequest -Method GET -Uri "/v1.0/policies/roleManagementPolicyAssignments?`$filter=$filter" -OutputType HashTable -ErrorAction Stop)['value']) | Select-Object -First 1
+    if ($null -eq $assignment) {
+        throw "No PIM policy assignment found for role $RoleDefinitionId. PIM requires Entra ID P2."
+    }
+    $rule = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/policies/roleManagementPolicies/$($assignment['policyId'])/rules/$RuleId" -OutputType HashTable -ErrorAction Stop
+    $rule['policyId'] = $assignment['policyId']
+    $rule
+}
+
+function Set-RemediationPimRule {
+    <#
+    .SYNOPSIS
+        Replaces one PIM role management policy rule.
+    .PARAMETER Current
+        The rule as returned by Get-RemediationPimRule (supplies policyId, id, and @odata.type).
+    .PARAMETER Changes
+        Properties to set on the rule (merged over the current rule).
+    .EXAMPLE
+        Set-RemediationPimRule -Current $rule -Changes @{ maximumDuration = 'PT4H' }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Current,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Changes
+    )
+
+    $body = @{}
+    foreach ($key in $Current.Keys) {
+        if ($key -notin @('policyId', '@odata.context')) { $body[$key] = $Current[$key] }
+    }
+    foreach ($key in $Changes.Keys) { $body[$key] = $Changes[$key] }
+    Invoke-MgGraphRequest -Method PATCH -Uri "/v1.0/policies/roleManagementPolicies/$($Current['policyId'])/rules/$($Current['id'])" -Body ($body | ConvertTo-Json -Depth 20) -ContentType 'application/json' -ErrorAction Stop | Out-Null
+}
+
+function Get-RemediationDirectorySetting {
+    <#
+    .SYNOPSIS
+        Returns the tenant directory setting created from a template as a name/value hashtable, or $null.
+    .PARAMETER TemplateId
+        Directory setting template ID (e.g. Password Rule Settings 5cf42378-d67d-4f36-ba46-e8b86229381d).
+    .EXAMPLE
+        Get-RemediationDirectorySetting -TemplateId '5cf42378-d67d-4f36-ba46-e8b86229381d'
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TemplateId
+    )
+
+    $setting = @((Invoke-MgGraphRequest -Method GET -Uri '/v1.0/settings' -OutputType HashTable -ErrorAction Stop)['value']) |
+        Where-Object { $null -ne $_ -and $_['templateId'] -eq $TemplateId } | Select-Object -First 1
+    if ($null -eq $setting) { return $null }
+    $values = @{ '_id' = $setting['id'] }
+    foreach ($pair in @($setting['values'])) { $values[$pair['name']] = $pair['value'] }
+    $values
+}
+
+function Set-RemediationDirectorySetting {
+    <#
+    .SYNOPSIS
+        Updates values on a tenant directory setting, creating it from its template if needed.
+    .DESCRIPTION
+        When the setting does not exist yet it is created with the template's
+        default values, overridden by -Values.
+    .PARAMETER TemplateId
+        Directory setting template ID.
+    .PARAMETER Values
+        Setting name to string value.
+    .EXAMPLE
+        Set-RemediationDirectorySetting -TemplateId '5cf42378-d67d-4f36-ba46-e8b86229381d' -Values @{ LockoutThreshold = '10' }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TemplateId,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Values
+    )
+
+    $current = Get-RemediationDirectorySetting -TemplateId $TemplateId
+    if ($null -eq $current) {
+        $template = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/directorySettingTemplates/$TemplateId" -OutputType HashTable -ErrorAction Stop
+        $merged = @{}
+        foreach ($v in @($template['values'])) { $merged[$v['name']] = "$($v['defaultValue'])" }
+        foreach ($k in $Values.Keys) { $merged[$k] = "$($Values[$k])" }
+        $body = @{ templateId = $TemplateId; values = @($merged.Keys | ForEach-Object { @{ name = $_; value = $merged[$_] } }) }
+        Invoke-MgGraphRequest -Method POST -Uri '/v1.0/settings' -Body ($body | ConvertTo-Json -Depth 5) -ContentType 'application/json' -ErrorAction Stop | Out-Null
+    }
+    else {
+        $merged = @{}
+        foreach ($k in $current.Keys) { if ($k -ne '_id') { $merged[$k] = "$($current[$k])" } }
+        foreach ($k in $Values.Keys) { $merged[$k] = "$($Values[$k])" }
+        $body = @{ values = @($merged.Keys | ForEach-Object { @{ name = $_; value = $merged[$_] } }) }
+        Invoke-MgGraphRequest -Method PATCH -Uri "/v1.0/settings/$($current['_id'])" -Body ($body | ConvertTo-Json -Depth 5) -ContentType 'application/json' -ErrorAction Stop | Out-Null
+    }
 }
