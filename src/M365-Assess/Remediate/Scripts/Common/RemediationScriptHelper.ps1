@@ -403,3 +403,97 @@ function Test-RemediationProperty {
     }
     $true
 }
+
+function Get-RemediationCaPolicy {
+    <#
+    .SYNOPSIS
+        Returns the Conditional Access policy with the given display name, or $null.
+    .PARAMETER DisplayName
+        Exact display name of the policy.
+    .EXAMPLE
+        Get-RemediationCaPolicy -DisplayName 'M365-Assess - Require MFA for admins'
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$DisplayName
+    )
+
+    $escaped = $DisplayName.Replace("'", "''")
+    $uri = "/v1.0/identity/conditionalAccess/policies?`$filter=displayName eq '$escaped'"
+    $response = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType HashTable -ErrorAction Stop
+    @($response['value']) | Where-Object { $null -ne $_ -and $_['displayName'] -eq $DisplayName } | Select-Object -First 1
+}
+
+function Set-RemediationCaPolicy {
+    <#
+    .SYNOPSIS
+        Creates a Conditional Access policy, or updates the existing one with the same display name.
+    .PARAMETER Existing
+        The current policy (from Get-RemediationCaPolicy), or $null to create.
+    .PARAMETER Policy
+        Full policy body (displayName, state, conditions, grantControls / sessionControls).
+    .EXAMPLE
+        Set-RemediationCaPolicy -Existing $current -Policy $policy
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [object]$Existing,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Policy
+    )
+
+    $json = $Policy | ConvertTo-Json -Depth 20
+    if ($null -eq $Existing) {
+        Invoke-MgGraphRequest -Method POST -Uri '/v1.0/identity/conditionalAccess/policies' -Body $json -ContentType 'application/json' -ErrorAction Stop | Out-Null
+    }
+    else {
+        Invoke-MgGraphRequest -Method PATCH -Uri "/v1.0/identity/conditionalAccess/policies/$($Existing['id'])" -Body $json -ContentType 'application/json' -ErrorAction Stop | Out-Null
+    }
+}
+
+function Test-RemediationCaPolicy {
+    <#
+    .SYNOPSIS
+        Returns $true when a Conditional Access policy exists with the wanted state and settings.
+    .DESCRIPTION
+        Compares the state, then every leaf value of the desired policy's
+        conditions, grantControls, and sessionControls (arrays as sets).
+    .PARAMETER State
+        Current policy (hashtable) or $null.
+    .PARAMETER Policy
+        Desired policy body.
+    .EXAMPLE
+        Test-RemediationCaPolicy -State $current -Policy $policy
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [object]$State,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Policy
+    )
+
+    if ($null -eq $State) { return $false }
+    $expected = @{ state = $Policy['state'] }
+    $stack = [System.Collections.Generic.Stack[object]]::new()
+    foreach ($root in @('conditions', 'grantControls', 'sessionControls')) {
+        if ($Policy[$root] -is [System.Collections.IDictionary]) { $stack.Push(@($root, $Policy[$root])) }
+    }
+    while ($stack.Count -gt 0) {
+        $item = $stack.Pop()
+        foreach ($key in $item[1].Keys) {
+            $value = $item[1][$key]
+            $path = "$($item[0]).$key"
+            if ($value -is [System.Collections.IDictionary]) { $stack.Push(@($path, $value)) }
+            else { $expected[$path] = $value }
+        }
+    }
+    Test-RemediationProperty -State $State -Expected $expected
+}

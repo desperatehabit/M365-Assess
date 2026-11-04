@@ -46,7 +46,8 @@ then pass `GetState` / `TestState` / `SetState` script blocks to
 `Invoke-RemediationStep -Cmdlet $PSCmdlet`. The script blocks run inside the helper
 function, so don't name script parameters or variables after the helper's own
 locals (`Cmdlet`, `CheckId`, `Target`, `Desired`, `GetState`, `TestState`,
-`SetState`, `SkipVerify`, `result`, `before`, `after`).
+`SetState`, `SkipVerify`, `result`, `before`, `after`). Inside those blocks `$PSCmdlet` is
+the helper's, not the script's; capture `$PSCmdlet.ParameterSetName` in a script variable first.
 
 File names are the check id rather than `Verb-Noun` so each script maps one-to-one
 to a registry entry.
