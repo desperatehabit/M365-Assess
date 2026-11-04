@@ -4,8 +4,8 @@ BeforeDiscovery {
     # mandatory parameters can be exercised generically against an in-memory
     # store keyed by noun.
     $moduleRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../src/M365-Assess')).Path
-    $helperCommands = @('Assert-RemediationConnection', 'Invoke-RemediationStep', 'Test-RemediationProperty',
-        'Get-RemediationGraphObject', 'Set-RemediationGraphObject', 'Get-PowerBITenantSettingState', 'Set-PowerBITenantSettingState')
+    $helperAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $moduleRoot 'Remediate/Scripts/Common/RemediationScriptHelper.ps1'), [ref]$null, [ref]$null)
+    $helperCommands = @($helperAst.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object { $_.Name })
     $builtIn = @('Join-Path', 'Write-Warning', 'ForEach-Object', 'Where-Object', 'Sort-Object', 'Select-Object')
     $script:cmdletCases = @(Get-ChildItem -Path (Join-Path $moduleRoot 'Remediate/Scripts') -Filter '*.ps1' -Recurse |
             Where-Object { $_.Directory.Name -ne 'Common' } |
