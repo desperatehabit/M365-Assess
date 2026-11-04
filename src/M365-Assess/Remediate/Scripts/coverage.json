@@ -1,0 +1,149 @@
+{
+  "$comment": "Registry checks that intentionally have no script under Remediate/Scripts. Every other registry check must have Remediate/Scripts/<Collector>/<CheckId>.ps1. See Remediate/Scripts/README.md.",
+  "excluded": {
+    "BACKUP-ENABLED-001": {
+      "reason": "manual",
+      "note": "Licensing / billing"
+    },
+    "DEFENDER-CFGDETECT-001": {
+      "reason": "manual",
+      "note": "No write API"
+    },
+    "DEFENDER-CLOUDAPPS-001": {
+      "reason": "manual",
+      "note": "No write API"
+    },
+    "DEFENDER-SECUREMON-001": {
+      "reason": "manual",
+      "note": "Process / review"
+    },
+    "DEFENDER-SECURESCORE-001": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "DEFENDER-VULNSCAN-001": {
+      "reason": "manual",
+      "note": "Process / review"
+    },
+    "DNS-DMARC-001": {
+      "reason": "manual",
+      "note": "External DNS"
+    },
+    "DNS-MX-001": {
+      "reason": "manual",
+      "note": "External DNS"
+    },
+    "DNS-SPF-001": {
+      "reason": "manual",
+      "note": "External DNS"
+    },
+    "ENTRA-ADMIN-002": {
+      "reason": "manual",
+      "note": "No write API"
+    },
+    "ENTRA-ADMIN-003": {
+      "reason": "manual",
+      "note": "Account provisioning"
+    },
+    "ENTRA-ADMINROLE-SEPARATION-001": {
+      "reason": "manual",
+      "note": "Account provisioning"
+    },
+    "ENTRA-BREAKGLASS-001": {
+      "reason": "manual",
+      "note": "Account provisioning"
+    },
+    "ENTRA-CA-002": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "ENTRA-CA-003": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "ENTRA-CLOUDADMIN-001": {
+      "reason": "manual",
+      "note": "Account provisioning"
+    },
+    "ENTRA-ENTAPP-020": {
+      "reason": "manual",
+      "note": "Investigate"
+    },
+    "ENTRA-GROUP-006": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "ENTRA-GUEST-001": {
+      "reason": "typed-binding",
+      "note": "Already remediated by the typed binding in Remediate/Get-RemediationCommand.ps1."
+    },
+    "ENTRA-GUEST-002": {
+      "reason": "typed-binding",
+      "note": "Already remediated by the typed binding in Remediate/Get-RemediationCommand.ps1."
+    },
+    "ENTRA-GUEST-003": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "ENTRA-HYBRID-001": {
+      "reason": "manual",
+      "note": "On-premises"
+    },
+    "ENTRA-LINKEDIN-001": {
+      "reason": "manual",
+      "note": "No write API"
+    },
+    "ENTRA-ORGSETTING-003": {
+      "reason": "manual",
+      "note": "No write API"
+    },
+    "ENTRA-PASSWORD-005": {
+      "reason": "manual",
+      "note": "On-premises"
+    },
+    "ENTRA-SECDEFAULT-001": {
+      "reason": "typed-binding",
+      "note": "Already remediated by the typed binding in Remediate/Get-RemediationCommand.ps1."
+    },
+    "ENTRA-SECDEFAULT-002": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "ENTRA-SOD-001": {
+      "reason": "manual",
+      "note": "Process / review"
+    },
+    "EXO-HIDDEN-001": {
+      "reason": "manual",
+      "note": "Investigate"
+    },
+    "INTUNE-WIPEAUDIT-001": {
+      "reason": "manual",
+      "note": "Investigate"
+    },
+    "SPO-SHARING-001": {
+      "reason": "typed-binding",
+      "note": "Already remediated by the typed binding in Remediate/Get-RemediationCommand.ps1."
+    },
+    "SPO-SHARING-004": {
+      "reason": "typed-binding",
+      "note": "Already remediated by the typed binding in Remediate/Get-RemediationCommand.ps1."
+    },
+    "SPO-SHARING-007": {
+      "reason": "typed-binding",
+      "note": "Already remediated by the typed binding in Remediate/Get-RemediationCommand.ps1."
+    },
+    "SPO-SITE-003": {
+      "reason": "manual",
+      "note": "Informational"
+    },
+    "SPO-SWAY-001": {
+      "reason": "manual",
+      "note": "No write API"
+    },
+    "TEAMS-INFO-001": {
+      "reason": "manual",
+      "note": "Informational"
+    }
+  }
+}
