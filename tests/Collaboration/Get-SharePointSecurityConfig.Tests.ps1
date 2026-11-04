@@ -186,6 +186,13 @@ Describe 'Get-SharePointSecurityConfig' {
         $check.Status | Should -Be 'Pass'
     }
 
+    It 'Sway external sharing asks for manual verification (no API, CIS 1.3.8)' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Sways Cannot Be Shared Externally' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.CheckId | Should -Match '^SPO-SWAY-001\.\d+$'
+        $check.Status | Should -Be 'Review'
+    }
+
     It 'Mac sync app passes when disabled' {
         $macCheck = $settings | Where-Object { $_.CheckId -like 'SPO-SYNC-002*' }
         $macCheck | Should -Not -BeNullOrEmpty
