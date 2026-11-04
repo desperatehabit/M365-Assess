@@ -34,6 +34,7 @@ Describe 'Get-PowerBISecurityConfig' {
                     @{ settingName = 'BlockResourceKeyAuthentication'; isEnabled = $true; title = 'Block ResourceKey Auth' }
                     @{ settingName = 'ServicePrincipalAccess'; isEnabled = $false; title = 'Service Principal API access' }
                     @{ settingName = 'CreateServicePrincipalProfile'; isEnabled = $false; title = 'Service Principal profiles' }
+                    @{ settingName = 'ServicePrincipalAccessGlobalAPIs'; isEnabled = $false; title = 'Service principals can create workspaces, connections, and deployment pipelines' }
                 )
             } | ConvertTo-Json -Depth 5)
         }
@@ -75,9 +76,9 @@ Describe 'Get-PowerBISecurityConfig' {
         }
     }
 
-    It 'Produces exactly 11 CIS 9.x checks' {
+    It 'Produces all 12 CIS 9.1.x checks' {
         $cisChecks = $settings | Where-Object { $_.CheckId -match '^POWERBI-' }
-        $cisChecks.Count | Should -BeGreaterOrEqual 11
+        $cisChecks.Count | Should -BeGreaterOrEqual 12
     }
 
     It 'Guest access restriction check produces correct status' {
@@ -102,6 +103,15 @@ Describe 'Get-PowerBISecurityConfig' {
         }
         $spCheck | Should -Not -BeNullOrEmpty
         $spCheck.Status | Should -Be 'Pass'
+    }
+
+    It 'Service principal workspace/connection/pipeline creation check passes when disabled (CIS 9.1.12)' {
+        $check = $settings | Where-Object {
+            $_.Setting -eq 'Service Principals Restricted from Creating Workspaces, Connections, and Pipelines'
+        }
+        $check | Should -Not -BeNullOrEmpty
+        $check.CheckId | Should -Match '^POWERBI-SERVICEPRINCIPAL-001\.\d+$'
+        $check.Status | Should -Be 'Pass'
     }
 
     It 'Block ResourceKey authentication check produces correct status' {
@@ -184,6 +194,7 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
                         @{ settingName = 'BlockResourceKeyAuthentication'; isEnabled = $false; title = 'Block ResourceKey Auth' }
                         @{ settingName = 'ServicePrincipalAccess'; isEnabled = $true; title = 'Service Principal API access' }
                         @{ settingName = 'CreateServicePrincipalProfile'; isEnabled = $true; title = 'Service Principal profiles' }
+                        @{ settingName = 'ServicePrincipalAccessGlobalAPIs'; isEnabled = $true; title = 'Service principals can create workspaces, connections, and deployment pipelines' }
                     )
                 } | ConvertTo-Json -Depth 5)
             }

@@ -5,6 +5,14 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
 ## [Unreleased]
 
 ### Added
+- **Every CIS Microsoft 365 v6.0.1 recommendation now has a check** (six had a registry mapping but no collector emitting it):
+  - `ENTRA-ADMIN-003` (1.1.2, two emergency access accounts) is reported from the `ENTRA-BREAKGLASS-001` detection; CIS requires two, so one account fails.
+  - `ENTRA-BREAKGLASS-002` (2.2.1, emergency account sign-ins monitored) passes when an enabled Defender XDR custom detection names a detected break-glass account; otherwise it is Review, because Azure Monitor and Sentinel alerts are not readable. Needs the new `CustomDetection.Read.All` Graph permission.
+  - `DEFENDER-CLOUDAPPS-001` (2.4.3) reads the Defender for Cloud Apps service plan; licensed and enabled is Review (the app connector is not readable through Graph), Office 365 Cloud App Security only is Warning, and no or disabled plan is Fail.
+  - `ENTRA-SESSION-001` (5.1.2.5) reads `loginPageTextVisibilitySettings.hideKeepMeSignedIn` from company branding; a tenant with no branding shows the prompt and fails.
+  - `POWERBI-SERVICEPRINCIPAL-001` (9.1.12) reads the `ServicePrincipalAccessGlobalAPIs` tenant setting; a tenant that does not return it is Review.
+  - `SPO-SWAY-001` (1.3.8) is a Review row with the admin center steps: Sway sharing has no API.
+- The Security section now requests `Organization.Read.All` and `CustomDetection.Read.All`, and Identity requests `Organization.Read.All`. Re-run `Grant-M365AssessConsent` to add them.
 - **Bridge JSON findings carry their descriptive fields**: each finding in `_Assessment*.json` now also has `category`, `setting`, `recommendedValue`, `section`, and `collector`. The fields are additive; existing readers ignore them.
 
 ### Fixed

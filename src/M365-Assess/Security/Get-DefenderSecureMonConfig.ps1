@@ -104,6 +104,86 @@ catch {
 }
 
 # ------------------------------------------------------------------
+# 2. DEFENDER-CLOUDAPPS-001: Defender for Cloud Apps enabled (CIS 2.4.3)
+# ------------------------------------------------------------------
+# Graph exposes Defender for Cloud Apps licensing but not its app-connector
+# configuration, so a licensed and enabled plan reports Review with the steps
+# to confirm the Microsoft 365 connector; no plan, or a disabled one, is Fail.
+try {
+    Write-Verbose 'Checking Microsoft Defender for Cloud Apps licensing...'
+    $graphParams = @{
+        Method      = 'GET'
+        Uri         = '/v1.0/subscribedSkus'
+        ErrorAction = 'Stop'
+    }
+    $skus = Invoke-MgGraphRequest @graphParams
+    $mdcaPlans = @{
+        'ADALLOM_S_STANDALONE' = 'Microsoft Defender for Cloud Apps'
+        'ADALLOM_S_O365'       = 'Office 365 Cloud App Security'
+    }
+    $found = @()
+    foreach ($sku in @($skus['value'])) {
+        if ($null -eq $sku) { continue }
+        foreach ($plan in @($sku['servicePlans'])) {
+            if ($null -ne $plan -and $mdcaPlans.ContainsKey([string]$plan['servicePlanName'])) {
+                $found += [PSCustomObject]@{
+                    Plan    = [string]$plan['servicePlanName']
+                    Status  = [string]$plan['provisioningStatus']
+                    Applies = [string]$plan['appliesTo']
+                }
+            }
+        }
+    }
+    $enabledFull = @($found | Where-Object { $_.Plan -eq 'ADALLOM_S_STANDALONE' -and $_.Status -eq 'Success' })
+    $enabledO365 = @($found | Where-Object { $_.Plan -eq 'ADALLOM_S_O365' -and $_.Status -eq 'Success' })
+    $connectorSteps = 'Microsoft Defender portal > Settings > Cloud Apps > Connected apps > App Connectors: confirm Microsoft 365 is connected; under Microsoft Defender for Endpoint integration, confirm it is enabled.'
+
+    if ($enabledFull.Count -gt 0) {
+        $currentValue = 'Microsoft Defender for Cloud Apps licensed and enabled; app-connector status is not readable through Graph'
+        $status = 'Review'
+        $remediation = $connectorSteps
+    }
+    elseif ($enabledO365.Count -gt 0) {
+        $currentValue = 'Only Office 365 Cloud App Security is enabled (a subset of Defender for Cloud Apps)'
+        $status = 'Warning'
+        $remediation = "License Microsoft Defender for Cloud Apps (Microsoft 365 E5 or E5 Security) for full coverage, then: $connectorSteps"
+    }
+    elseif ($found.Count -gt 0) {
+        $currentValue = "Defender for Cloud Apps licensed but not enabled ($((($found | ForEach-Object { "$($_.Plan)=$($_.Status)" }) | Select-Object -Unique) -join ', '))"
+        $status = 'Fail'
+        $remediation = "Enable the Defender for Cloud Apps service plan on the license, then: $connectorSteps"
+    }
+    else {
+        $currentValue = 'No Defender for Cloud Apps service plan found'
+        $status = 'Fail'
+        $remediation = "License Microsoft Defender for Cloud Apps (Microsoft 365 E5 or E5 Security), then: $connectorSteps"
+    }
+
+    $settingParams = @{
+        Category         = 'Security Monitoring'
+        Setting          = 'Microsoft Defender for Cloud Apps Enabled'
+        CurrentValue     = $currentValue
+        RecommendedValue = 'Defender for Cloud Apps enabled with the Microsoft 365 app connector connected'
+        Status           = $status
+        CheckId          = 'DEFENDER-CLOUDAPPS-001'
+        Remediation      = $remediation
+    }
+    Add-Setting @settingParams
+}
+catch {
+    $settingParams = @{
+        Category         = 'Security Monitoring'
+        Setting          = 'Microsoft Defender for Cloud Apps Enabled'
+        CurrentValue     = if ($_.Exception.Message -match '403|Forbidden|Authorization') { 'Insufficient permissions' } else { "Error: $($_.Exception.Message)" }
+        RecommendedValue = 'Defender for Cloud Apps enabled with the Microsoft 365 app connector connected'
+        Status           = 'Review'
+        CheckId          = 'DEFENDER-CLOUDAPPS-001'
+        Remediation      = 'Requires Organization.Read.All permission to read subscribed SKUs.'
+    }
+    Add-Setting @settingParams
+}
+
+# ------------------------------------------------------------------
 # Output results
 # ------------------------------------------------------------------
 Export-SecurityConfigReport -Settings $settings -OutputPath $OutputPath -ServiceLabel 'Defender Secure Mon'

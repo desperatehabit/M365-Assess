@@ -645,3 +645,53 @@ try {
 catch {
     Write-Warning "Could not check password hash sync: $_"
 }
+
+# ------------------------------------------------------------------
+# ENTRA-SESSION-001: "Stay signed in?" prompt hidden (CIS 5.1.2.5)
+# ------------------------------------------------------------------
+# The prompt is controlled by company branding: loginPageTextVisibilitySettings
+# .hideKeepMeSignedIn on the default (locale 0) branding. A tenant with no
+# branding configured shows the prompt, which Graph reports as 404.
+try {
+    Write-Verbose "Checking 'Stay signed in' prompt visibility..."
+    $kmsiHidden = $false
+    $brandingConfigured = $true
+    try {
+        $graphParams = @{
+            Method      = 'GET'
+            Uri         = "/v1.0/organization/$($context.TenantId)/branding"
+            ErrorAction = 'Stop'
+        }
+        $branding = Invoke-MgGraphRequest @graphParams
+        $visibility = if ($branding) { $branding['loginPageTextVisibilitySettings'] } else { $null }
+        $kmsiHidden = ($null -ne $visibility -and $visibility['hideKeepMeSignedIn'] -eq $true)
+    }
+    catch {
+        if ($_.Exception.Message -notmatch '404|NotFound|ResourceNotFound') { throw }
+        $brandingConfigured = $false
+    }
+
+    $settingParams = @{
+        Category         = 'Session Management'
+        Setting          = "Option to Remain Signed In Hidden"
+        CurrentValue     = if ($kmsiHidden) { 'Hidden' } elseif ($brandingConfigured) { 'Shown' } else { 'Shown (no company branding configured)' }
+        RecommendedValue = 'Hidden'
+        Status           = if ($kmsiHidden) { 'Pass' } else { 'Fail' }
+        CheckId          = 'ENTRA-SESSION-001'
+        Remediation      = "Entra admin center > Company branding > Default sign-in > Sign-in form > Show 'Stay signed in?' > No. Requires company branding to be configured."
+    }
+    Add-Setting @settingParams
+}
+catch {
+    Write-Warning "Could not check 'Stay signed in' prompt visibility: $_"
+    $settingParams = @{
+        Category         = 'Session Management'
+        Setting          = "Option to Remain Signed In Hidden"
+        CurrentValue     = "Error: $($_.Exception.Message)"
+        RecommendedValue = 'Hidden'
+        Status           = 'Skipped'
+        CheckId          = 'ENTRA-SESSION-001'
+        Remediation      = 'Requires Organization.Read.All (or OrganizationalBranding.Read.All). Check Graph API permissions and retry.'
+    }
+    Add-Setting @settingParams
+}

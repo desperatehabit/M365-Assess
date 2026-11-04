@@ -269,3 +269,93 @@ Describe 'ENTRA-BREAKGLASS-001 threshold (2+ medium-confidence CA-exclusion fall
 
     AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
 }
+
+# CIS 1.1.2 (ENTRA-ADMIN-003) and 2.2.1 (ENTRA-BREAKGLASS-002) reuse the
+# ENTRA-BREAKGLASS-001 detection; these scenarios check both against it.
+Describe 'ENTRA-ADMIN-003 and ENTRA-BREAKGLASS-002 (2 break-glass, monitored by an XDR detection)' {
+    BeforeAll {
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        function Get-MgContext { return @{ TenantId = 'test-tenant-id'; AuthType = 'Delegated' } }
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+        function Get-MgDirectoryRole { param($Filter) }
+        function Get-MgDirectoryRoleMemberAsUser { param($DirectoryRoleId, [switch]$All) }
+        function Get-MgIdentityConditionalAccessPolicy { param([switch]$All) }
+        function Get-MgServicePrincipal { param($Filter, [switch]$All) }
+        function Invoke-MgGraphRequest { param($Method, $Uri, $Body, $ErrorAction) }
+        Mock Import-Module { }
+        Mock Get-MgDirectoryRole {
+            @([PSCustomObject]@{ Id = 'ga-role-id'; DisplayName = 'Global Administrator'; RoleTemplateId = '62e90394-69f5-4237-9190-012177145e10' })
+        }
+        Mock Get-MgDirectoryRoleMemberAsUser {
+            @(
+                [PSCustomObject]@{ Id = 'user-1'; DisplayName = 'Break Glass Admin 1'; UserPrincipalName = 'bgadmin1@contoso.onmicrosoft.com'; SignInActivity = @{ LastSignInDateTime = $null; LastNonInteractiveSignInDateTime = $null }; OnPremisesSyncEnabled = $false }
+                [PSCustomObject]@{ Id = 'user-2'; DisplayName = 'Emergency Access 02';  UserPrincipalName = 'bgadmin2@contoso.onmicrosoft.com'; SignInActivity = @{ LastSignInDateTime = $null; LastNonInteractiveSignInDateTime = $null }; OnPremisesSyncEnabled = $false }
+            )
+        }
+        Mock Get-MgIdentityConditionalAccessPolicy { @() }
+        Mock Get-MgServicePrincipal { @() }
+        Mock Invoke-MgGraphRequest { @{ value = @() } }
+        Mock Invoke-MgGraphRequest -ParameterFilter { $Uri -like '*detectionRules*' } {
+            @{ value = @(
+                @{ displayName = 'Break-glass sign-in'; isEnabled = $true; queryCondition = @{ queryText = 'AADSignInEventsBeta | where AccountUpn =~ "bgadmin1@contoso.onmicrosoft.com"' } }
+            ) }
+        }
+        . "$PSScriptRoot/../../src/M365-Assess/Security/Get-StrykerIncidentReadiness.ps1"
+    }
+
+    It 'ENTRA-ADMIN-003 passes with two name-matched emergency access accounts' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Two emergency access accounts defined' } | Select-Object -First 1
+        $check | Should -Not -BeNullOrEmpty
+        $check.CheckId | Should -Match '^ENTRA-ADMIN-003\.\d+$'
+        $check.Status | Should -Be 'Pass'
+    }
+
+    It 'ENTRA-BREAKGLASS-002 passes when an enabled XDR detection names a break-glass account' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Emergency access account sign-ins monitored' } | Select-Object -First 1
+        $check | Should -Not -BeNullOrEmpty
+        $check.CheckId | Should -Match '^ENTRA-BREAKGLASS-002\.\d+$'
+        $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Match 'Break-glass sign-in'
+    }
+
+    AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
+}
+
+Describe 'ENTRA-ADMIN-003 and ENTRA-BREAKGLASS-002 (1 break-glass, no detection rule)' {
+    BeforeAll {
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        function Get-MgContext { return @{ TenantId = 'test-tenant-id'; AuthType = 'Delegated' } }
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+        function Get-MgDirectoryRole { param($Filter) }
+        function Get-MgDirectoryRoleMemberAsUser { param($DirectoryRoleId, [switch]$All) }
+        function Get-MgIdentityConditionalAccessPolicy { param([switch]$All) }
+        function Get-MgServicePrincipal { param($Filter, [switch]$All) }
+        function Invoke-MgGraphRequest { param($Method, $Uri, $Body, $ErrorAction) }
+        Mock Import-Module { }
+        Mock Get-MgDirectoryRole {
+            @([PSCustomObject]@{ Id = 'ga-role-id'; DisplayName = 'Global Administrator'; RoleTemplateId = '62e90394-69f5-4237-9190-012177145e10' })
+        }
+        Mock Get-MgDirectoryRoleMemberAsUser {
+            @(
+                [PSCustomObject]@{ Id = 'user-1'; DisplayName = 'Break Glass Admin 1'; UserPrincipalName = 'bgadmin1@contoso.onmicrosoft.com'; SignInActivity = @{ LastSignInDateTime = $null; LastNonInteractiveSignInDateTime = $null }; OnPremisesSyncEnabled = $false }
+            )
+        }
+        Mock Get-MgIdentityConditionalAccessPolicy { @() }
+        Mock Get-MgServicePrincipal { @() }
+        Mock Invoke-MgGraphRequest { @{ value = @() } }
+        . "$PSScriptRoot/../../src/M365-Assess/Security/Get-StrykerIncidentReadiness.ps1"
+    }
+
+    It 'ENTRA-ADMIN-003 fails with a single emergency access account (CIS requires two)' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Two emergency access accounts defined' } | Select-Object -First 1
+        $check.Status | Should -Be 'Fail'
+    }
+
+    It 'ENTRA-BREAKGLASS-002 is Review when no XDR detection references the account' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Emergency access account sign-ins monitored' } | Select-Object -First 1
+        $check.Status | Should -Be 'Review'
+        $check.CurrentValue | Should -Match 'Azure Monitor and Sentinel'
+    }
+
+    AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
+}
