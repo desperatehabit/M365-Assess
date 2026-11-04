@@ -22,7 +22,7 @@
 | Inventory | Graph, ExchangeOnline | 7 | 7 | 1 | 0 |
 | Licensing | Graph | 2 | 2 | 0 | 0 |
 | PowerBI | — | 0 | 0 | 0 | 0 |
-| Security | Graph, ExchangeOnline, Purview | 3 | 7 | 2 | 3 |
+| Security | Graph, ExchangeOnline, Purview | 4 | 8 | 2 | 3 |
 | SOC2 | Graph, Purview | 8 | 0 | 0 | 0 |
 | Tenant | Graph | 5 | 5 | 0 | 0 |
 | ValueOpportunity | Graph | 1 | 0 | 0 | 0 |
@@ -202,6 +202,7 @@
 
 **Delegated Microsoft Graph scopes**
 
+- `BackupRestore-Configuration.Read.All`
 - `CustomDetection.Read.All`
 - `Organization.Read.All`
 - `SecurityEvents.Read.All`
@@ -210,6 +211,7 @@
 
 | Permission | Reason |
 |---|---|
+| `BackupRestore-Configuration.Read.All` | Microsoft 365 Backup service status and protection policies |
 | `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
 | `CustomDetection.Read.All` | Defender XDR custom detection rules (emergency access account monitoring) |
 | `DeviceManagementApps.Read.All` | Intune audit events including device wipe/retire/delete actions |

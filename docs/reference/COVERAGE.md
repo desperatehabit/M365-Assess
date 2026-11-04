@@ -4,11 +4,11 @@
 
 ## Registry summary
 
-- **Checks:** 292 (290 automated)
+- **Checks:** 293 (291 automated)
 - **Collector families:** 16 (see `controls/sync-scope.json`)
-- **Local extension checks:** 5 (pending upstream CheckID adoption)
-- **Severity-rated:** 292 of 292 (0 unrated checks display the default Medium severity)
-- **Learn-more links:** 31 of 292
+- **Local extension checks:** 6 (pending upstream CheckID adoption)
+- **Severity-rated:** 293 of 293 (0 unrated checks display the default Medium severity)
+- **Learn-more links:** 31 of 293
 
 ## Per-framework mapping coverage
 
@@ -16,18 +16,18 @@
 
 | Framework key | Report view | Checks mapped | Distinct controls mapped | Avg checks / control |
 |---|---|---|---|---|
+| `nist-800-53` | yes | 292 | 229 | 1.3 |
 | `fedramp` | yes | 291 | 153 | 1.9 |
-| `nist-800-53` | yes | 291 | 228 | 1.3 |
 | `soc2` | yes | 291 | 199 | 1.5 |
-| `cmmc` | yes | 284 | 152 | 1.9 |
-| `nist-800-171` | — | 284 | 91 | 3.1 |
+| `cmmc` | yes | 285 | 155 | 1.8 |
+| `nist-800-171` | — | 285 | 93 | 3.1 |
 | `pci-dss` | yes | 277 | 198 | 1.4 |
 | `mitre-attack` | yes | 274 | 476 | 0.6 |
-| `iso-27001` | yes | 271 | 70 | 3.9 |
+| `iso-27001` | yes | 272 | 71 | 3.8 |
 | `iso-27002` | yes | 271 | 70 | 3.9 |
 | `iso-27017` | — | 263 | 57 | 4.6 |
+| `cis-controls-v8` | yes | 257 | 108 | 2.4 |
 | `nist-csf` | yes | 257 | 71 | 3.6 |
-| `cis-controls-v8` | yes | 256 | 108 | 2.4 |
 | `hipaa` | yes | 167 | 188 | 0.9 |
 | `cis-m365-v6` | yes | 166 | 139 | 1.2 |
 | `essential-eight` | yes | 140 | 24 | 5.8 |
@@ -65,7 +65,7 @@ Distinct SCuBA policy IDs mapped, by product prefix (`MS.<PRODUCT>.*`). Products
 | Entra | 79 | 79 | 10 |
 | ExchangeOnline | 23 | 23 | 2 |
 | Forms | 6 | 6 | 0 |
-| Intune | 17 | 17 | 0 |
+| Intune | 18 | 18 | 0 |
 | PowerBI | 26 | 26 | 3 |
 | PurviewRetention | 4 | 4 | 0 |
 | SharePoint | 27 | 27 | 1 |

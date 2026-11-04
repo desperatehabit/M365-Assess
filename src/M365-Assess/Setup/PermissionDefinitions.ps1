@@ -30,6 +30,7 @@ $script:RequiredGraphPermissions = @(
     # -- Security --------------------------------------------------------------
     @{ Name = 'SecurityEvents.Read.All';                 Sections = 'Security'                               ; Reason = 'Secure Score, improvement actions, security alerts' }
     @{ Name = 'CustomDetection.Read.All';                Sections = 'Security'                               ; Reason = 'Defender XDR custom detection rules (emergency access account monitoring)' }
+    @{ Name = 'BackupRestore-Configuration.Read.All';   Sections = 'Security'                               ; Reason = 'Microsoft 365 Backup service status and protection policies' }
     # -- Collaboration ---------------------------------------------------------
     @{ Name = 'SharePointTenantSettings.Read.All';       Sections = 'Collaboration'                          ; Reason = 'SharePoint and OneDrive tenant-level settings' }
     @{ Name = 'TeamSettings.Read.All';                   Sections = 'Collaboration'                          ; Reason = 'Teams tenant-level settings and policies' }

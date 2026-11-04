@@ -44,6 +44,9 @@ $settings = $ctx.Settings
 # ------------------------------------------------------------------
 # 1. Check Secure Score for active monitoring
 # ------------------------------------------------------------------
+$secureScores = $null
+$scoreExists = $false
+$maxScore = 0
 try {
     Write-Verbose 'Checking Microsoft Secure Score for active monitoring...'
     $graphParams = @{
@@ -101,6 +104,35 @@ catch {
     else {
         Write-Warning "Could not check Secure Score monitoring: $_"
     }
+}
+
+# ------------------------------------------------------------------
+# 1b. DEFENDER-SECURESCORE-001: Secure Score posture (CMMC 3.11.1, 3.12.1)
+# ------------------------------------------------------------------
+# DEFENDER-SECUREMON-001 asks whether the score is tracked; this asks how good
+# the posture is. The registry defines no pass mark, so the thresholds are
+# stated here and in RecommendedValue: >= 70% Pass, >= 40% Warning, else Fail.
+$postureParams = @{
+    Category         = 'Security Monitoring'
+    Setting          = 'Microsoft Secure Score Posture'
+    RecommendedValue = 'At least 70% of the achievable Secure Score'
+    CheckId          = 'DEFENDER-SECURESCORE-001'
+}
+if ($scoreExists -and $maxScore -gt 0) {
+    $postureParams.CurrentValue = "$percentage% ($currentScore of $maxScore)"
+    $postureParams.Status = if ($percentage -ge 70) { 'Pass' } elseif ($percentage -ge 40) { 'Warning' } else { 'Fail' }
+    $postureParams.Remediation = if ($postureParams.Status -eq 'Pass') {
+        'No action needed. Keep reviewing improvement actions as part of periodic risk assessment.'
+    } else {
+        'Microsoft Defender portal > Exposure management > Secure Score > Recommended actions: sort by score impact, assign owners, and track the plan in the POA&M.'
+    }
+    Add-Setting @postureParams
+}
+else {
+    $postureParams.CurrentValue = if ($null -eq $secureScores) { 'Secure Score could not be read (see DEFENDER-SECUREMON-001)' } else { 'No Secure Score data available' }
+    $postureParams.Status = 'Review'
+    $postureParams.Remediation = if ($null -eq $secureScores) { 'Requires SecurityEvents.Read.All permission.' } else { 'Open Microsoft Secure Score once in the Defender portal so the tenant starts recording scores.' }
+    Add-Setting @postureParams
 }
 
 # ------------------------------------------------------------------

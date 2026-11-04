@@ -97,9 +97,8 @@ Describe 'Metadata Consistency' {
             # collector families ship in this module. The sync workflow partitions
             # the upstream CheckID registry (which also carries WIN-*/AZ-* scopes)
             # to this list, so any collector outside it appearing here means the
-            # partition was bypassed. 'Backup' is a known-but-unimplemented
-            # collector (BACKUP-ENABLED-001, Microsoft 365 Backup) kept in scope
-            # pending a src/M365-Assess/Backup/ collector.
+            # partition was bypassed. 'Backup' is implemented by
+            # src/M365-Assess/Backup/Get-M365BackupConfig.ps1 (BACKUP-ENABLED-001).
             $scopeJson = Get-Content -Path "$moduleRoot/controls/sync-scope.json" -Raw | ConvertFrom-Json
             $validCollectors = @($scopeJson.collectors)
             $validCollectors.Count | Should -BeGreaterThan 0 -Because 'sync-scope.json must define the collector allowlist'

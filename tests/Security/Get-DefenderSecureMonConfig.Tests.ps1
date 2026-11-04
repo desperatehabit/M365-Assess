@@ -32,6 +32,14 @@ Describe 'Get-DefenderSecureMonConfig - Recent Score' {
         $check.CheckId | Should -Match '^DEFENDER-SECUREMON-001\.\d+$'
     }
 
+    It 'Secure Score posture is Warning at 60% (CMMC 3.11.1, DEFENDER-SECURESCORE-001)' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Microsoft Secure Score Posture' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.CheckId | Should -Match '^DEFENDER-SECURESCORE-001\.\d+$'
+        $check.Status | Should -Be 'Warning'
+        $check.CurrentValue | Should -Match '^60%'
+    }
+
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
     }
