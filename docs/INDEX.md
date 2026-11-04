@@ -49,6 +49,7 @@ Authoritative references for specific topics. Read these when you need to know t
 | [`reference/CHECK-STATUS-MODEL.md`](reference/CHECK-STATUS-MODEL.md) | The 9-status taxonomy (Pass / Fail / Warning / Review / Info / Skipped / Unknown / NotApplicable / NotLicensed) and what each means |
 | [`reference/LEVELS.md`](reference/LEVELS.md) | CIS / framework profile + level semantics |
 | [`reference/PERMISSIONS.md`](reference/PERMISSIONS.md) | Per-section Graph scopes / EXO RBAC roles / Purview permissions |
+| [`reference/SESSION-HANDOFF.md`](reference/SESSION-HANDOFF.md) | Current work-in-progress handoff: open PRs, unverified items, next steps |
 | [`reference/COMPATIBILITY.md`](reference/COMPATIBILITY.md) | Module version pins and known-incompatible combinations |
 | [`reference/SOVEREIGN-CLOUDS.md`](reference/SOVEREIGN-CLOUDS.md) | Government / China / national cloud support matrix |
 | [`reference/DATA-HANDLING.md`](reference/DATA-HANDLING.md) | What's collected, retention recommendations, GDPR/HIPAA/CMMC alignment |
