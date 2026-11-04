@@ -30,6 +30,7 @@ const LEGACY_NAV_HREFS = [
   "/reports/builder",
   "/remediation",
   "/remediation/history",
+  "/ssp",
   "/standards",
   "/standards/alignment",
   "/drift",
