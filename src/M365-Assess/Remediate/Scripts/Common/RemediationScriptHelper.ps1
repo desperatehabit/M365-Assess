@@ -644,3 +644,82 @@ function Set-RemediationDirectorySetting {
         Invoke-MgGraphRequest -Method PATCH -Uri "/v1.0/settings/$($current['_id'])" -Body ($body | ConvertTo-Json -Depth 5) -ContentType 'application/json' -ErrorAction Stop | Out-Null
     }
 }
+
+function Get-RemediationApplication {
+    <#
+    .SYNOPSIS
+        Returns app registrations (all, or the listed object IDs) as hashtables.
+    .PARAMETER ObjectId
+        Application object IDs. Omit to page through every app registration.
+    .EXAMPLE
+        Get-RemediationApplication -ObjectId '00000000-0000-0000-0000-000000000001'
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter()]
+        [string[]]$ObjectId
+    )
+
+    $select = 'id,appId,displayName,signInAudience,web,spa,publicClient,passwordCredentials,keyCredentials'
+    $ids = @($ObjectId | Where-Object { $_ })
+    if ($ids.Count -gt 0) {
+        foreach ($id in $ids) {
+            Invoke-MgGraphRequest -Method GET -Uri "/v1.0/applications/$id`?`$select=$select" -OutputType HashTable -ErrorAction Stop
+        }
+        return
+    }
+    $uri = "/v1.0/applications?`$select=$select&`$top=999"
+    while ($uri) {
+        $page = Invoke-MgGraphRequest -Method GET -Uri $uri -OutputType HashTable -ErrorAction Stop
+        @($page['value']) | Where-Object { $null -ne $_ }
+        $uri = $page['@odata.nextLink']
+    }
+}
+
+function Remove-RemediationAppCredential {
+    <#
+    .SYNOPSIS
+        Removes client secrets and/or certificates from an app registration or service principal.
+    .DESCRIPTION
+        Secrets are removed with removePassword (one call per key). Certificates
+        are removed by writing back keyCredentials without them, which needs no
+        proof-of-possession token.
+    .PARAMETER ObjectId
+        Object ID of the application (or service principal with -ServicePrincipal).
+    .PARAMETER SecretKeyId
+        keyIds of client secrets to remove.
+    .PARAMETER CertificateKeyId
+        keyIds of certificates to remove.
+    .PARAMETER ServicePrincipal
+        Target a service principal instead of an application.
+    .EXAMPLE
+        Remove-RemediationAppCredential -ObjectId $app['id'] -SecretKeyId $keyId
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ObjectId,
+
+        [Parameter()]
+        [string[]]$SecretKeyId = @(),
+
+        [Parameter()]
+        [string[]]$CertificateKeyId = @(),
+
+        [Parameter()]
+        [switch]$ServicePrincipal
+    )
+
+    $collection = if ($ServicePrincipal.IsPresent) { 'servicePrincipals' } else { 'applications' }
+    foreach ($keyId in @($SecretKeyId | Where-Object { $_ })) {
+        Invoke-MgGraphRequest -Method POST -Uri "/v1.0/$collection/$ObjectId/removePassword" -Body (@{ keyId = $keyId } | ConvertTo-Json) -ContentType 'application/json' -ErrorAction Stop | Out-Null
+    }
+    $certs = @($CertificateKeyId | Where-Object { $_ })
+    if ($certs.Count -gt 0) {
+        $current = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/$collection/$ObjectId`?`$select=keyCredentials" -OutputType HashTable -ErrorAction Stop
+        $keep = @($current['keyCredentials'] | Where-Object { $null -ne $_ -and $certs -notcontains "$($_['keyId'])" })
+        Invoke-MgGraphRequest -Method PATCH -Uri "/v1.0/$collection/$ObjectId" -Body (@{ keyCredentials = $keep } | ConvertTo-Json -Depth 10) -ContentType 'application/json' -ErrorAction Stop | Out-Null
+    }
+}
