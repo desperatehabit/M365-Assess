@@ -52,6 +52,17 @@ function documentView(): SspDocumentView {
       unanswered: 1,
       level1Implemented: 1,
       level1Total: 2,
+      sprs: {
+        score: 105,
+        maxScore: 110,
+        minScore: -203,
+        deductions: [{ practiceId: "3.10.1", cmmcId: "PE.L2-3.10.1", points: 5, status: "not-assessed", poamEligible: false }],
+        unassessedPoints: 5,
+        conditionalThreshold: 88,
+        meetsConditionalThreshold: true,
+        poamIneligible: ["3.10.1"],
+        sspMissing: true,
+      },
     },
   };
 }
@@ -86,6 +97,8 @@ describe("SspQuestionnaire", () => {
     render(<SspQuestionnaire tenantId={TENANT} fetcher={fetcher} />);
     await screen.findByText("CMMC Level 2 System Security Plan");
     expect(screen.getByText(/1 need an answer/)).toBeTruthy();
+    expect(screen.getByTestId("sprs-score").textContent).toContain("105");
+    expect(screen.getByTestId("sprs-score").textContent).toContain("meets the CMMC threshold of 88");
     expect(screen.getByText("Download SSP (Word)").getAttribute("href")).toBe(`/v1/tenants/${TENANT}/ssp/document?format=docx`);
 
     fireEvent.click(screen.getByText(/Limit physical access to organizational systems/));

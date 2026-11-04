@@ -135,6 +135,32 @@ export interface SspPracticeView {
   readonly statusSource: SspStatusSource;
 }
 
+export interface SspSprsDeduction {
+  readonly practiceId: string;
+  readonly cmmcId: string;
+  readonly points: number;
+  readonly status: SspImplementationStatus | "not-assessed";
+  /** Whether CMMC allows this unmet practice on a POA&M for Conditional Level 2 status. */
+  readonly poamEligible: boolean;
+}
+
+export interface SspSprsScore {
+  /** DoD Assessment Methodology score: 110 minus every deduction (range -203 to 110). */
+  readonly score: number;
+  readonly maxScore: 110;
+  readonly minScore: -203;
+  readonly deductions: readonly SspSprsDeduction[];
+  /** Points deducted only because a practice is not yet assessed; the score could rise by this much. */
+  readonly unassessedPoints: number;
+  /** CMMC Level 2 Conditional status needs at least this score (80% of 110). */
+  readonly conditionalThreshold: 88;
+  readonly meetsConditionalThreshold: boolean;
+  /** Unmet practices that CMMC does not allow on a POA&M; any of these blocks Conditional status. */
+  readonly poamIneligible: readonly string[];
+  /** 3.12.4 (the SSP itself) is not implemented: an assessment cannot be completed. */
+  readonly sspMissing: boolean;
+}
+
 export interface SspSummary {
   readonly total: number;
   readonly byStatus: Readonly<Record<SspImplementationStatus | "not-assessed", number>>;
@@ -142,6 +168,7 @@ export interface SspSummary {
   readonly unanswered: number;
   readonly level1Implemented: number;
   readonly level1Total: number;
+  readonly sprs: SspSprsScore;
 }
 
 export interface SspDocumentView {
@@ -431,4 +458,84 @@ export function isSspImplementationStatus(value: unknown): value is SspImplement
 
 export function isSspResponsibility(value: unknown): value is SspResponsibility {
   return typeof value === "string" && (SSP_RESPONSIBILITIES as readonly string[]).includes(value);
+}
+
+/**
+ * Point value of each practice in the NIST SP 800-171 DoD Assessment Methodology
+ * (v1.2.1, Annex A), used by SPRS and by the CMMC scoring methodology. 3.12.4 has
+ * no value: without a System Security Plan an assessment cannot be completed.
+ * The values sum to 313, so a tenant meeting nothing scores 110 - 313 = -203.
+ * Verify against the published Annex A before relying on a submitted score.
+ */
+export const SSP_SPRS_WEIGHTS: Readonly<Record<string, 0 | 1 | 3 | 5>> = Object.freeze({
+  "3.1.1": 5, "3.1.2": 5, "3.1.3": 1, "3.1.4": 1, "3.1.5": 3, "3.1.6": 1, "3.1.7": 1, "3.1.8": 1,
+  "3.1.9": 1, "3.1.10": 1, "3.1.11": 1, "3.1.12": 5, "3.1.13": 5, "3.1.14": 1, "3.1.15": 1, "3.1.16": 5,
+  "3.1.17": 5, "3.1.18": 5, "3.1.19": 3, "3.1.20": 1, "3.1.21": 1, "3.1.22": 1,
+  "3.2.1": 5, "3.2.2": 5, "3.2.3": 1,
+  "3.3.1": 5, "3.3.2": 3, "3.3.3": 1, "3.3.4": 1, "3.3.5": 5, "3.3.6": 1, "3.3.7": 1, "3.3.8": 1, "3.3.9": 1,
+  "3.4.1": 5, "3.4.2": 5, "3.4.3": 1, "3.4.4": 1, "3.4.5": 5, "3.4.6": 5, "3.4.7": 5, "3.4.8": 5, "3.4.9": 1,
+  "3.5.1": 5, "3.5.2": 5, "3.5.3": 5, "3.5.4": 1, "3.5.5": 1, "3.5.6": 1, "3.5.7": 1, "3.5.8": 1,
+  "3.5.9": 1, "3.5.10": 5, "3.5.11": 1,
+  "3.6.1": 5, "3.6.2": 5, "3.6.3": 1,
+  "3.7.1": 3, "3.7.2": 5, "3.7.3": 1, "3.7.4": 3, "3.7.5": 5, "3.7.6": 1,
+  "3.8.1": 3, "3.8.2": 3, "3.8.3": 5, "3.8.4": 1, "3.8.5": 1, "3.8.6": 1, "3.8.7": 5, "3.8.8": 3, "3.8.9": 1,
+  "3.9.1": 3, "3.9.2": 5,
+  "3.10.1": 5, "3.10.2": 5, "3.10.3": 1, "3.10.4": 1, "3.10.5": 1, "3.10.6": 1,
+  "3.11.1": 3, "3.11.2": 5, "3.11.3": 1,
+  "3.12.1": 5, "3.12.2": 3, "3.12.3": 5, "3.12.4": 0,
+  "3.13.1": 5, "3.13.2": 5, "3.13.3": 1, "3.13.4": 1, "3.13.5": 5, "3.13.6": 5, "3.13.7": 1, "3.13.8": 3,
+  "3.13.9": 1, "3.13.10": 1, "3.13.11": 5, "3.13.12": 1, "3.13.13": 1, "3.13.14": 1, "3.13.15": 5, "3.13.16": 1,
+  "3.14.1": 5, "3.14.2": 5, "3.14.3": 5, "3.14.4": 5, "3.14.5": 3, "3.14.6": 5, "3.14.7": 3,
+});
+
+/**
+ * Practices that earn partial credit when partially implemented (3 points deducted instead of 5):
+ * 3.5.3 when MFA covers privileged and remote access but not all network access to
+ * non-privileged accounts; 3.13.11 when encryption is used but is not FIPS-validated.
+ */
+export const SSP_SPRS_PARTIAL_CREDIT: Readonly<Record<string, number>> = Object.freeze({ "3.5.3": 3, "3.13.11": 3 });
+
+const SPRS_MET_STATUSES: ReadonlySet<string> = new Set(["implemented", "not-applicable"]);
+
+/**
+ * Scores practices with the DoD Assessment Methodology: start at 110 and deduct each
+ * unmet practice's value (no credit for partial or planned, except the two partial-credit
+ * practices). A practice not yet assessed is deducted too, so the score is never
+ * overstated; `unassessedPoints` says how much those account for.
+ *
+ * POA&M eligibility follows the CMMC Level 2 Conditional rules: only 1-point
+ * practices that are not also Level 1 practices, plus 3.13.11 at partial credit.
+ */
+export function computeSprsScore(
+  practices: readonly { readonly practice: SspPractice; readonly effectiveStatus: SspImplementationStatus | "not-assessed" }[],
+): SspSprsScore {
+  const deductions: SspSprsDeduction[] = [];
+  let unassessedPoints = 0;
+  let sspMissing = false;
+  for (const { practice, effectiveStatus } of practices) {
+    if (SPRS_MET_STATUSES.has(effectiveStatus)) continue;
+    if (practice.id === "3.12.4") {
+      sspMissing = true;
+      continue;
+    }
+    const weight = SSP_SPRS_WEIGHTS[practice.id] ?? 0;
+    const partial = effectiveStatus === "partially-implemented" ? SSP_SPRS_PARTIAL_CREDIT[practice.id] : undefined;
+    const points = partial ?? weight;
+    if (points === 0) continue;
+    if (effectiveStatus === "not-assessed") unassessedPoints += points;
+    const poamEligible = !practice.level1Id && (points === 1 || (practice.id === "3.13.11" && partial !== undefined));
+    deductions.push({ practiceId: practice.id, cmmcId: practice.cmmcId, points, status: effectiveStatus, poamEligible });
+  }
+  const score = 110 - deductions.reduce((sum, deduction) => sum + deduction.points, 0);
+  return {
+    score,
+    maxScore: 110,
+    minScore: -203,
+    deductions,
+    unassessedPoints,
+    conditionalThreshold: 88,
+    meetsConditionalThreshold: score >= 88,
+    poamIneligible: deductions.filter((deduction) => !deduction.poamEligible).map((deduction) => deduction.practiceId),
+    sspMissing,
+  };
 }

@@ -22,6 +22,28 @@ Automated evidence is read live from the tenant's latest run each time the page 
 SSP is opened, so re-running the assessment updates it. Answers are stored per tenant,
 and every change is written to the audit log.
 
+## SPRS score
+
+The questionnaire header and section 3.1 of the SSP show the score from the NIST SP 800-171
+DoD Assessment Methodology, the number submitted to SPRS and used by CMMC Level 2:
+
+- Start at 110 and subtract each unmet practice's value (1, 3, or 5). The range is -203 to 110.
+- Partially implemented and planned practices earn no credit, except 3.5.3 (MFA) and 3.13.11
+  (FIPS-validated cryptography), which deduct 3 instead of 5 when partially implemented.
+- Not-applicable practices deduct nothing.
+- Practices not yet assessed are deducted, so the score is never overstated. The SSP says how
+  many points those account for.
+- 3.12.4 (the SSP itself) has no value, but an assessment cannot be completed until it is
+  implemented. The SSP flags it until you record it as implemented.
+
+For CMMC Level 2 Conditional status the score must be at least 88, and only 1-point practices
+that are not also Level 1 practices (plus 3.13.11 at partial credit) may be on the POA&M. The
+POA&M table marks each gap as eligible or not, and the SSP lists the practices that must be
+implemented first.
+
+The point values are transcribed from the methodology's Annex A and checked to total 313
+(110 - 313 = -203). Confirm the score with your assessor before submitting it.
+
 ## Responsibility
 
 Each answer records who carries the practice:
@@ -53,7 +75,7 @@ printable page (use the browser's Print to PDF). Both contain:
 
 1. System identification (organization, system, owner, contacts, CUI categories)
 2. System description, authorization boundary, operating environment, and interconnections
-3. Implementation summary, including Level 1 practices implemented
+3. Implementation summary, including Level 1 practices implemented and the SPRS score
 4. Every practice by family: status, responsibility, source, owner, narrative, inheritance
    note, automated evidence, and evidence references
 5. Plan of action and milestones: every practice not fully implemented or not yet

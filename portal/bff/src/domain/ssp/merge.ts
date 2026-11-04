@@ -9,6 +9,7 @@
 // which the questionnaire surfaces as needing an answer.
 import {
   SSP_IMPLEMENTATION_STATUSES,
+  computeSprsScore,
   SSP_PRACTICES,
   type SspAutomatedEvidence,
   type SspAutomatedFinding,
@@ -132,5 +133,5 @@ export function summarize(views: readonly SspPracticeView[]): SspSummary {
       if (view.effectiveStatus === "implemented" || view.effectiveStatus === "not-applicable") level1Implemented += 1;
     }
   }
-  return { total: views.length, byStatus, unanswered, level1Implemented, level1Total };
+  return { total: views.length, byStatus, unanswered, level1Implemented, level1Total, sprs: computeSprsScore(views) };
 }
