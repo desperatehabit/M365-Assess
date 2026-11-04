@@ -57,6 +57,8 @@ import {
   createScheduleJobStateStore,
   createScheduleRunQueue,
   createScriptSandbox,
+  createCustomScriptCommand,
+  createCustomScriptRunner,
   createTickScheduleStore,
   withRemediationPlanIngestion,
   withRemediationVerifyIngestion,
@@ -251,8 +253,8 @@ import { createRunsCreateRoute } from "./routes/runs-create.js";
 import { createRunsDetailRoutes } from "./routes/runs-detail.js";
 import { createRunsEventsRoute } from "./routes/runs-events.js";
 import { createRunsListRoute } from "./routes/runs-list.js";
-import { createScheduleRoutes } from "./routes/schedules.js";
-import { createScriptRoutes } from "./routes/scripts.js";
+import { CUSTOM_SCRIPT_COMMAND, createScheduleRoutes } from "./routes/schedules.js";
+import { createScriptRoutes, type ScriptAuditPort } from "./routes/scripts.js";
 import { createStandardsAlignmentRoutes } from "./routes/standards-alignment.js";
 import { createStandardsCatalogRoutes } from "./routes/standards-catalog.js";
 import { createStandardsRunRoutes } from "./routes/standards-run.js";
@@ -576,6 +578,20 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
   const reportRuns = createReportRunReader(repo, config.artifactPath);
 
+  // EPIC-007 scheduled custom scripts (T-0876): the script repository and sandbox are shared
+  // by the script routes and the custom-script job runner.
+  const customScripts = new SqliteCustomScriptRepository(db, schemaVersion);
+  const scriptSandbox = createScriptSandbox({ run });
+  const recordScriptAudit = (event: Parameters<NonNullable<ScriptAuditPort["record"]>>[0]) =>
+    recordAudit({
+      action: event.action,
+      tenantId: event.tenantId ?? null,
+      actorUserId: event.actorUserId,
+      targetType: "script",
+      targetId: event.resourceId,
+      correlationId: event.correlationId,
+    });
+
   const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
     assessment: createSupervisorRunner({
       workerScriptPath: path.join(config.workersDir, RUN_WORKER),
@@ -609,6 +625,19 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     report: createReportWorkerRunner({
       workersDir: config.workersDir,
       storageRoot: config.artifactPath,
+    }),
+    "custom-script": createCustomScriptRunner({
+      schedules: scheduleRepo,
+      storageRoot: config.artifactPath,
+      handlers: {
+        [CUSTOM_SCRIPT_COMMAND]: createCustomScriptCommand({
+          scripts: customScripts,
+          sandbox: scriptSandbox,
+          tenants: tenantStore,
+          storageRoot: config.artifactPath,
+          audit: { record: recordScriptAudit },
+        }),
+      },
     }),
   };
   const runJobs = new JobQueue({
@@ -662,7 +691,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     credentials: credentialRows,
     runnableTypes: runnableJobTypes,
   });
-  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes);
+  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes, customScripts);
   const scheduleJobState = createScheduleJobStateStore(db);
   const scheduler = createScheduler({
     queue: scheduleQueue,
@@ -817,19 +846,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
     ...createScriptRoutes({
-      store: new SqliteCustomScriptRepository(db, schemaVersion),
-      sandbox: createScriptSandbox({ run }),
-      audit: {
-        record: (event) =>
-          recordAudit({
-            action: event.action,
-            tenantId: event.tenantId ?? null,
-            actorUserId: event.actorUserId,
-            targetType: "script",
-            targetId: event.resourceId,
-            correlationId: event.correlationId,
-          }),
-      },
+      store: customScripts,
+      sandbox: scriptSandbox,
+      audit: { record: recordScriptAudit },
       ...caller,
     }),
 

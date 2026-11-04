@@ -3,6 +3,7 @@ import type { JobEnvelope, JobType } from "@m365-assess/contracts";
 import { nextFireTime } from "./cron.js";
 import {
   SYSTEM_TIMERS,
+  isSystemTimerAvailable,
   type SystemTimer,
   type SystemTimerScheduleType,
 } from "./system-timers.js";
@@ -106,7 +107,7 @@ export function toSystemSchedule(
     cron: timer.cron,
     timezone: timer.timezone,
     targetScope: { type: "all" },
-    enabled: true,
+    enabled: isSystemTimerAvailable(timer),
     lastRunAt: state?.lastRunAt ?? null,
     nextRunAt: state?.nextRunAt ?? null,
   };
@@ -168,8 +169,12 @@ export async function tickSchedules(options: TickOptions): Promise<TickResult> {
   const stored = await options.schedules.listSchedules();
   const storedIds = new Set(stored.map((schedule) => schedule.id));
   const timers = options.systemTimers ?? SYSTEM_TIMERS;
+  // A stored state row for an unavailable timer must not bring it back to life.
+  const unavailableIds = new Set(
+    timers.filter((timer) => !isSystemTimerAvailable(timer)).map((timer) => `system-${timer.name}`),
+  );
   const candidates = [
-    ...stored,
+    ...stored.filter((schedule) => !unavailableIds.has(schedule.id)),
     ...timers
       .map((timer) => toSystemSchedule(timer))
       .filter((schedule) => !storedIds.has(schedule.id)),

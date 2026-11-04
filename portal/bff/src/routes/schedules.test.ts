@@ -311,9 +311,18 @@ describe("schedule routes", () => {
     ).rejects.toMatchObject({ code: SCHEDULE_UNKNOWN_COMMAND, status: 422 });
   });
 
-  it("accepts every system-timer command as a known command", async () => {
+  it("rejects commands of system timers that have no worker yet (T-0876)", async () => {
     const value = harness();
-    for (const command of ["Invoke-StandardsRun", "Invoke-DriftRun", "Invoke-WebhookRenewal"]) {
+    for (const command of ["Invoke-WebhookRenewal", "Invoke-PortalCleanup", "Invoke-TokenRefresh"]) {
+      await expect(
+        invoke(value.routes, "POST", SCHEDULES_PATH, { body: createBody({ command }) }),
+      ).rejects.toMatchObject({ code: SCHEDULE_UNKNOWN_COMMAND, status: 422 });
+    }
+  });
+
+  it("accepts every available system-timer command and Invoke-CustomScript as known commands", async () => {
+    const value = harness();
+    for (const command of ["Invoke-StandardsRun", "Invoke-DriftRun", "Invoke-CustomScript"]) {
       const response = (await invoke(value.routes, "POST", SCHEDULES_PATH, {
         body: createBody({ command }),
       })) as { status: number; body: ScheduleRecord };
