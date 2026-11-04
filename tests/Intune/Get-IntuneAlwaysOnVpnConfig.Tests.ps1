@@ -4,7 +4,7 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Always-On Full Tunnel Assigned' {
         Mock Invoke-MgGraphRequest {
             return @{ value = @(
                 @{ '@odata.type' = '#microsoft.graph.windows10VpnConfiguration'
-                   displayName = 'CMMC Always-On VPN'; alwaysOn = $true
+                   displayName = 'CMMC Always-On VPN'; enableAlwaysOn = $true
                    enableSplitTunneling = $false
                    assignments = @(@{ id = 'assign-001'; target = @{ groupId = 'grp-001' } }) }
             )}
@@ -30,7 +30,7 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Always-On but Split Tunnel Enabled' {
         Mock Invoke-MgGraphRequest {
             return @{ value = @(
                 @{ '@odata.type' = '#microsoft.graph.windows10VpnConfiguration'
-                   displayName = 'Always-On Split Tunnel'; alwaysOn = $true
+                   displayName = 'Always-On Split Tunnel'; enableAlwaysOn = $true
                    enableSplitTunneling = $true
                    assignments = @(@{ id = 'assign-001' }) }
             )}
@@ -38,7 +38,7 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Always-On but Split Tunnel Enabled' {
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
         . "$PSScriptRoot/../../src/M365-Assess/Intune/Get-IntuneAlwaysOnVpnConfig.ps1"
     }
-    It 'Status is Fail when alwaysOn but split tunneling is enabled' {
+    It 'Status is Fail when enableAlwaysOn but split tunneling is enabled' {
         ($settings | Where-Object { $_.CheckId -like 'INTUNE-REMOTEVPN-001*' }).Status | Should -Be 'Fail'
     }
     AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
@@ -50,7 +50,7 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Always-On Disabled' {
         Mock Invoke-MgGraphRequest {
             return @{ value = @(
                 @{ '@odata.type' = '#microsoft.graph.windows10VpnConfiguration'
-                   displayName = 'Manual VPN'; alwaysOn = $false
+                   displayName = 'Manual VPN'; enableAlwaysOn = $false
                    enableSplitTunneling = $false
                    assignments = @(@{ id = 'assign-001' }) }
             )}
@@ -58,7 +58,7 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Always-On Disabled' {
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
         . "$PSScriptRoot/../../src/M365-Assess/Intune/Get-IntuneAlwaysOnVpnConfig.ps1"
     }
-    It 'Status is Fail when alwaysOn is false' {
+    It 'Status is Fail when enableAlwaysOn is false' {
         ($settings | Where-Object { $_.CheckId -like 'INTUNE-REMOTEVPN-001*' }).Status | Should -Be 'Fail'
     }
     AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
@@ -70,7 +70,7 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Profile Unassigned' {
         Mock Invoke-MgGraphRequest {
             return @{ value = @(
                 @{ '@odata.type' = '#microsoft.graph.windows10VpnConfiguration'
-                   displayName = 'Unassigned Always-On VPN'; alwaysOn = $true
+                   displayName = 'Unassigned Always-On VPN'; enableAlwaysOn = $true
                    enableSplitTunneling = $false; assignments = @() }
             )}
         }
@@ -96,6 +96,26 @@ Describe 'Get-IntuneAlwaysOnVpnConfig - Forbidden' {
     }
     It 'Status is Review when Graph returns 403' {
         ($settings | Where-Object { $_.CheckId -like 'INTUNE-REMOTEVPN-001*' }).Status | Should -Be 'Review'
+    }
+    AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
+}
+
+Describe 'Get-IntuneAlwaysOnVpnConfig - Legacy alwaysOn key' {
+    BeforeAll {
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+        Mock Invoke-MgGraphRequest {
+            return @{ value = @(
+                @{ '@odata.type' = '#microsoft.graph.windows10VpnConfiguration'
+                   displayName = 'Legacy Always-On VPN'; alwaysOn = $true
+                   enableSplitTunneling = $false
+                   assignments = @(@{ id = 'assign-001'; target = @{ groupId = 'grp-001' } }) }
+            )}
+        }
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Intune/Get-IntuneAlwaysOnVpnConfig.ps1"
+    }
+    It 'Status is Pass when only the legacy alwaysOn key is present' {
+        ($settings | Where-Object { $_.CheckId -like 'INTUNE-REMOTEVPN-001*' }).Status | Should -Be 'Pass'
     }
     AfterAll { Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue }
 }

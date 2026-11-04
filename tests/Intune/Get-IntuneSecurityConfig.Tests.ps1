@@ -14,7 +14,7 @@ Describe 'Get-IntuneSecurityConfig' {
             param($Method, $Uri)
             switch -Wildcard ($Uri) {
                 '*/deviceManagement/settings' {
-                    return @{ deviceComplianceCheckinThresholdDays = 14 }
+                    return @{ deviceComplianceCheckinThresholdDays = 14; secureByDefault = $true }
                 }
                 '*/deviceManagement/deviceEnrollmentConfigurations' {
                     return @{ value = @(
@@ -112,7 +112,7 @@ Describe 'Get-IntuneSecurityConfig - Personal Devices Allowed' {
             param($Method, $Uri)
             switch -Wildcard ($Uri) {
                 '*/deviceManagement/settings' {
-                    return @{ deviceComplianceCheckinThresholdDays = 90 }
+                    return @{ deviceComplianceCheckinThresholdDays = 90; secureByDefault = $true }
                 }
                 '*/deviceManagement/deviceEnrollmentConfigurations' {
                     return @{ value = @(
@@ -148,6 +148,40 @@ Describe 'Get-IntuneSecurityConfig - Personal Devices Allowed' {
         }
         $enrollCheck | Should -Not -BeNullOrEmpty
         $enrollCheck.Status | Should -Be 'Fail'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-IntuneSecurityConfig - Devices without policy treated as compliant' {
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/deviceManagement/settings' {
+                    # A short check-in threshold alone must not pass the check
+                    return @{ deviceComplianceCheckinThresholdDays = 14; secureByDefault = $false }
+                }
+                default {
+                    return @{ value = @() }
+                }
+            }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Intune/Get-IntuneSecurityConfig.ps1"
+    }
+
+    It 'Non-compliant default fails when secureByDefault is false' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Non-Compliant Default Threshold' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Fail'
     }
 
     AfterAll {

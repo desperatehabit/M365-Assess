@@ -156,7 +156,8 @@ Describe 'Get-CASecurityConfig' {
                     }
                     grantControls = @{}
                     sessionControls = @{
-                        signInFrequency = @{ isEnabled = $true; type = 'everyTime' }
+                        # Graph shape for 'Every time': frequencyInterval set, type null
+                        signInFrequency = @{ isEnabled = $true; frequencyInterval = 'everyTime'; type = $null; value = $null }
                     }
                 }
                 # Policy 10: Device code flow blocked (check 12)
@@ -246,6 +247,12 @@ Describe 'Get-CASecurityConfig' {
         # 15 checks exist (inc. FALLBACK-001, NAMEDLOC-002, STALEREF-001) but
         # NAMEDLOC-002 is skipped when named locations mock returns empty
         $settings.Count | Should -BeGreaterOrEqual 9
+    }
+
+    It 'Sign-in frequency for Intune enrollment passes when frequencyInterval is everyTime' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Sign-in Frequency for Intune Enrollment' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
     }
 
     It 'CA-FALLBACK-001 passes when all enabled policies have include targets' {
