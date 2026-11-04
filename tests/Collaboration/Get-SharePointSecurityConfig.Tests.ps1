@@ -21,7 +21,7 @@ Describe 'Get-SharePointSecurityConfig' {
                         sharingCapability              = 'existingExternalUserSharingOnly'
                         isResharingByExternalUsersEnabled = $false
                         sharingDomainRestrictionMode    = 'allowList'
-                        isUnmanagedSyncClientRestricted = $true
+                        isUnmanagedSyncAppForTenantRestricted = $true
                         isMacSyncAppEnabled             = $false
                         isLoopEnabled                   = $false
                         oneDriveLoopSharingCapability   = 'disabled'
@@ -178,6 +178,12 @@ Describe 'Get-SharePointSecurityConfig' {
         }
         $malwareCheck | Should -Not -BeNullOrEmpty
         $malwareCheck.Status | Should -Be 'Pass'
+    }
+
+    It 'Unmanaged sync restriction passes with the Graph v1.0 property name' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Block Sync from Unmanaged Devices' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
     }
 
     It 'Mac sync app passes when disabled' {

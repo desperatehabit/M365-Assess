@@ -693,12 +693,17 @@ try {
     Write-Verbose "Checking CA: Sign-in frequency for Intune enrollment..."
     $intuneAppId = 'd4ebce55-015a-49b5-a083-c84d1797ae8c'
     $intuneFreqPolicies = @($enabledPolicies | Where-Object {
-        $includeApps = $_['conditions']['applications']['includeApplications']
+        # Policies without an applications condition (e.g. auth-flow policies) must not throw
+        $appConditions = $_['conditions']['applications']
+        $includeApps = if ($null -ne $appConditions) { $appConditions['includeApplications'] } else { @() }
         ($includeApps -contains $intuneAppId -or $includeApps -contains 'All') -and
         $null -ne $_['sessionControls'] -and
         $null -ne $_['sessionControls']['signInFrequency'] -and
         $_['sessionControls']['signInFrequency']['isEnabled'] -eq $true -and
-        $_['sessionControls']['signInFrequency']['type'] -eq 'everyTime'
+        # Graph stores 'Every time' as frequencyInterval = 'everyTime' (type is null);
+        # 'type' is kept as a fallback for older payloads.
+        ($_['sessionControls']['signInFrequency']['frequencyInterval'] -eq 'everyTime' -or
+         $_['sessionControls']['signInFrequency']['type'] -eq 'everyTime')
     })
 
     if ($intuneFreqPolicies.Count -gt 0) {

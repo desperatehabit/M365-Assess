@@ -9,6 +9,14 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
 
 ### Fixed
 - **Bridge JSON `frameworks` is always an array**: a finding mapped to exactly one framework was written as a bare string. Framework ids are now sorted and the domain summary counts keep a fixed key order, so the file no longer changes between identical runs.
+- **Collector checks that could not pass after a correct remediation**:
+  - `EXO-ADDINS-001` no longer treats the baseline `MyBaseOptions` role as an add-in role. It now flags only the Marketplace, Custom, and ReadWriteMailbox add-in roles.
+  - `ENTRA-CONSENT-003` matches the prefixed policy ids Graph returns (`ManagePermissionGrantsForSelf.microsoft-user-default-low`), so the verified-publisher setting can pass.
+  - `CA-INTUNE-001` reads `signInFrequency.frequencyInterval = 'everyTime'` (Graph leaves `type` null). It also no longer throws, and drops the row, when an enabled policy has no applications condition.
+  - `INTUNE-REMOTEVPN-001` reads `enableAlwaysOn` on `windows10VpnConfiguration` and keeps `alwaysOn` as a fallback.
+  - `INTUNE-MOBILEENCRYPT-001` evaluates iOS policies on `passcodeRequired`. iOS compliance policies have no `storageRequireEncryption`, because iOS encrypts storage whenever a passcode is set.
+  - `INTUNE-COMPLIANCE-001` now evaluates `secureByDefault` ("mark devices with no compliance policy as not compliant"). Before, it passed on the check-in threshold alone. A threshold over 30 days still lowers the result to Warning.
+  - `SPO-SYNC-001` and `SPO-ACCESS-002` read the Graph v1.0 property `isUnmanagedSyncAppForTenantRestricted` and keep the old key as a fallback.
 
 ## [2.13.0] - 2026-06-13
 

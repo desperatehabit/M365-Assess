@@ -202,7 +202,10 @@ catch {
 # 4. Unmanaged Sync Client Restriction
 # ------------------------------------------------------------------
 try {
-    $unmanagedSync = $spoSettings['isUnmanagedSyncClientRestricted']
+    # Graph v1.0 sharepointSettings names this isUnmanagedSyncAppForTenantRestricted;
+    # the older key is kept as a fallback.
+    $unmanagedSync = $spoSettings['isUnmanagedSyncAppForTenantRestricted']
+    if ($null -eq $unmanagedSync) { $unmanagedSync = $spoSettings['isUnmanagedSyncClientRestricted'] }
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Block Sync from Unmanaged Devices'
@@ -947,7 +950,10 @@ catch {
 # SPO-ACCESS-002: Unmanaged sync client restriction (enforcement angle)
 # ------------------------------------------------------------------
 try {
-    $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncClientRestricted']
+    # Graph v1.0 sharepointSettings names this isUnmanagedSyncAppForTenantRestricted;
+    # the older key is kept as a fallback.
+    $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncAppForTenantRestricted']
+    if ($null -eq $unmanagedSyncRestricted) { $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncClientRestricted'] }
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Unmanaged Device Sync Restriction'
