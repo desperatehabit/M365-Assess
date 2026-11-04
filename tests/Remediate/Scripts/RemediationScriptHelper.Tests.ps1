@@ -5,6 +5,7 @@ BeforeAll {
     # A minimal SupportsShouldProcess wrapper so Invoke-RemediationStep gets a
     # real $PSCmdlet whose -WhatIf / -Confirm behave like a script's.
     function Invoke-TestStep {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'ShouldProcess is called by Invoke-RemediationStep on this $PSCmdlet.')]
         [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
         param(
             [hashtable]$Step
