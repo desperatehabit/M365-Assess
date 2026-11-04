@@ -53,7 +53,10 @@ $step = @{
         param($State)
         foreach ($p in $State) {
             $section = $p.Conditions
-            $patch = @{ conditions = @{ locations = @{} } }
+            # Send the whole section so no other user/location condition is dropped.
+            $copy = @{}
+            foreach ($k in $section.Keys) { $copy[$k] = $section[$k] }
+            $patch = @{ conditions = @{ locations = $copy } }
             $skip = $false
             foreach ($field in @('includeLocations', 'excludeLocations')) {
                 $kept = @($section[$field] | Where-Object { $_ -and @($p.Stale) -notcontains $_ })
