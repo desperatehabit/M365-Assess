@@ -444,6 +444,14 @@ export function SspQuestionnaire({ tenantId, fetcher }: SspQuestionnaireProps): 
             {summary.unanswered} need an answer · Level 1: {summary.level1Implemented} of {summary.level1Total}
           </p>
         </div>
+        <div data-testid="sprs-score" style={{ ...cardStyle, padding: "10px 16px", display: "flex", gap: "14px", alignItems: "baseline" }}>
+          <span style={{ fontSize: "26px", fontWeight: 700 }}>{summary.sprs.score}</span>
+          <span style={mutedStyle}>
+            SPRS score of 110 ·{" "}
+            {summary.sprs.meetsConditionalThreshold ? "meets" : "below"} the CMMC threshold of {summary.sprs.conditionalThreshold}
+            {summary.sprs.unassessedPoints > 0 ? ` · ${summary.sprs.unassessedPoints} pts from unassessed practices` : ""}
+          </span>
+        </div>
         <div style={{ display: "flex", gap: "8px" }}>
           <a style={primaryButtonStyle as CSSProperties} href={sspDocumentHref(tenantId, "docx")} download>
             Download SSP (Word)

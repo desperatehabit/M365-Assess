@@ -1,5 +1,12 @@
 import { inflateRawSync } from "node:zlib";
-import { SSP_PRACTICES, type SspPracticeResponse, type SspSystemProfile } from "@m365-assess/contracts/ssp";
+import {
+  SSP_PRACTICES,
+  SSP_SPRS_WEIGHTS,
+  computeSprsScore,
+  type SspImplementationStatus,
+  type SspPracticeResponse,
+  type SspSystemProfile,
+} from "@m365-assess/contracts/ssp";
 import { describe, expect, it } from "vitest";
 import { buildSspBlocks } from "./document-content.js";
 import { renderSspDocumentXml, renderSspDocx } from "./document-docx.js";
@@ -128,7 +135,7 @@ describe("SSP view", () => {
     const poam = blocks.find((block) => block.kind === "table" && block.header[0] === "Practice");
     expect(poam && poam.kind === "table" ? poam.rows.map((row) => row[0]) : []).toContain("IA.L2-3.5.3");
     const planned = poam && poam.kind === "table" ? poam.rows.find((row) => row[0] === "IA.L2-3.5.3") : undefined;
-    expect(planned).toEqual(["IA.L2-3.5.3", "Planned", "IT", "2027-02-01", "Recorded by the consultant."]);
+    expect(planned).toEqual(["IA.L2-3.5.3", "Planned", "-5", "No", "IT", "2027-02-01", "Recorded by the consultant."]);
   });
 
   it("renders escaped, self-contained HTML", () => {
@@ -178,3 +185,43 @@ function readZip(buffer: Buffer): Record<string, string> {
   expect(buffer.readUInt32LE(offset)).toBe(0x02014b50);
   return entries;
 }
+
+describe("SPRS score", () => {
+  type Status = SspImplementationStatus | "not-assessed";
+  const allAs = (status: Status, overrides: Record<string, Status> = {}) =>
+    SSP_PRACTICES.map((practice) => ({ practice, effectiveStatus: overrides[practice.id] ?? status }));
+
+  it("weights all 110 practices with values that span 110 to -203", () => {
+    expect(Object.keys(SSP_SPRS_WEIGHTS).sort()).toEqual(SSP_PRACTICES.map((practice) => practice.id).sort());
+    expect(Object.values(SSP_SPRS_WEIGHTS).reduce((sum, value) => sum + value, 0)).toBe(313);
+    expect(computeSprsScore(allAs("implemented")).score).toBe(110);
+    expect(computeSprsScore(allAs("not-implemented")).score).toBe(-203);
+  });
+
+  it("gives no credit for partial or planned, except partial credit for 3.5.3 and 3.13.11", () => {
+    const score = (overrides: Record<string, Status>) => computeSprsScore(allAs("implemented", overrides)).score;
+    expect(score({ "3.1.1": "partially-implemented" })).toBe(105);
+    expect(score({ "3.1.5": "planned" })).toBe(107);
+    expect(score({ "3.5.3": "partially-implemented" })).toBe(107);
+    expect(score({ "3.5.3": "not-implemented" })).toBe(105);
+    expect(score({ "3.13.11": "partially-implemented" })).toBe(107);
+    expect(score({ "3.1.1": "not-applicable" })).toBe(110);
+  });
+
+  it("counts unassessed practices, flags a missing SSP, and applies the CMMC POA&M rules", () => {
+    const result = computeSprsScore(
+      allAs("implemented", {
+        "3.1.3": "not-implemented", // 1 point, Level 2 only: POA&M eligible
+        "3.1.20": "not-implemented", // 1 point, but a Level 1 practice
+        "3.13.11": "partially-implemented", // 3 points at partial credit: eligible
+        "3.4.1": "not-assessed", // 5 points
+        "3.12.4": "not-assessed",
+      }),
+    );
+    expect(result.score).toBe(110 - 1 - 1 - 3 - 5);
+    expect(result.unassessedPoints).toBe(5);
+    expect(result.sspMissing).toBe(true);
+    expect(result.meetsConditionalThreshold).toBe(true);
+    expect(result.poamIneligible).toEqual(["3.1.20", "3.4.1"]);
+  });
+});

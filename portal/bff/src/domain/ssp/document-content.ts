@@ -96,6 +96,37 @@ function practiceBlocks(view: SspPracticeView): SspBlock[] {
   return blocks;
 }
 
+function sprsBlocks(view: SspDocumentView): SspBlock[] {
+  const sprs = view.summary.sprs;
+  const notes: string[] = [];
+  if (sprs.unassessedPoints > 0) {
+    notes.push(`${sprs.unassessedPoints} of the deducted points are for practices not yet assessed; the score rises as they are answered.`);
+  }
+  if (sprs.sspMissing) {
+    notes.push("Practice 3.12.4 (system security plan) is not marked implemented. An assessment cannot be completed until the SSP is approved and 3.12.4 is recorded as implemented.");
+  }
+  if (sprs.poamIneligible.length > 0) {
+    notes.push(`CMMC Conditional Level 2 status allows only 1-point practices (and 3.13.11 at partial credit) on a POA&M. These unmet practices must be implemented first: ${sprs.poamIneligible.join(", ")}.`);
+  }
+  return [
+    { kind: "heading", level: 2, text: "3.1 SPRS score (DoD Assessment Methodology)" },
+    {
+      kind: "fields",
+      rows: [
+        ["Score", `${sprs.score} of ${sprs.maxScore}`],
+        ["Practices deducted", String(sprs.deductions.length)],
+        ["CMMC Conditional threshold", `${sprs.conditionalThreshold} (${sprs.meetsConditionalThreshold ? "met" : "not met"})`],
+      ],
+    },
+    ...notes.map((text): SspBlock => ({ kind: "paragraph", text, tone: "notice" })),
+    {
+      kind: "paragraph",
+      tone: "muted",
+      text: "Score = 110 minus the value (1, 3, or 5) of every practice not implemented. Partial and planned practices earn no credit, except 3.5.3 and 3.13.11, which deduct 3 when partially implemented. Not-applicable practices deduct nothing. Practices not yet assessed are deducted so the score is never overstated. Confirm the score with the assessor before submitting it to SPRS.",
+    },
+  ];
+}
+
 export function buildSspBlocks(view: SspDocumentView): SspBlock[] {
   const profile = view.profile;
   const generated = view.generatedAt.slice(0, 10);
@@ -148,6 +179,7 @@ export function buildSspBlocks(view: SspDocumentView): SspBlock[] {
       kind: "paragraph",
       text: `Level 1 practices implemented: ${view.summary.level1Implemented} of ${view.summary.level1Total}. Practices with no automated result or recorded answer: ${view.summary.unanswered} of ${view.summary.total}.`,
     },
+    ...sprsBlocks(view),
     { kind: "pageBreak" },
     { kind: "heading", level: 1, text: "4. Security requirements" },
   ];
@@ -166,6 +198,7 @@ export function buildSspBlocks(view: SspDocumentView): SspBlock[] {
   }
 
   const poam = view.practices.filter((practiceView) => POAM_STATUSES.has(practiceView.effectiveStatus));
+  const deductionsById = new Map(view.summary.sprs.deductions.map((deduction) => [deduction.practiceId, deduction]));
   blocks.push(
     { kind: "pageBreak" },
     { kind: "heading", level: 1, text: "5. Plan of action and milestones" },
@@ -179,7 +212,7 @@ export function buildSspBlocks(view: SspDocumentView): SspBlock[] {
   if (poam.length > 0) {
     blocks.push({
       kind: "table",
-      header: ["Practice", "Status", "Owner", "Planned completion", "Gap"],
+      header: ["Practice", "Status", "SPRS points", "POA&M eligible", "Owner", "Planned completion", "Gap"],
       rows: poam.map((practiceView) => {
         const failing = practiceView.automated.findings
           .filter((finding) => !["pass", "info"].includes(finding.status.toLowerCase()))
@@ -189,9 +222,12 @@ export function buildSspBlocks(view: SspDocumentView): SspBlock[] {
           : failing.length > 0
             ? `Automated checks not passing: ${failing.join(", ")}`
             : "Not yet assessed";
+        const deduction = deductionsById.get(practiceView.practice.id);
         return [
           practiceView.practice.cmmcId,
           STATUS_LABELS[practiceView.effectiveStatus],
+          deduction ? `-${deduction.points}` : practiceView.practice.id === "3.12.4" ? "Required" : "0",
+          deduction ? (deduction.poamEligible ? "Yes" : "No") : "—",
           orDash(practiceView.response?.owner),
           orDash(practiceView.response?.plannedCompletion),
           gap,
