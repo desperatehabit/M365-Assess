@@ -20,7 +20,7 @@
 .PARAMETER PriorityUser
     Priority users (email addresses).
 .PARAMETER PriorityGroup
-    Groups whose members are priority accounts.
+    Groups whose members are priority accounts (for example a "Priority Accounts" group).
 .EXAMPLE
     PS> ./Remediate/Scripts/Defender/DEFENDER-PRIORITY-002.ps1 -PriorityGroup 'Priority Accounts' -WhatIf
     Shows what would change without changing anything.
@@ -36,7 +36,8 @@ param(
     [Parameter()]
     [string[]]$PriorityUser,
 
-    [Parameter()]
+    [Parameter(Mandatory)]
+    [ValidateNotNullOrEmpty()]
     [string[]]$PriorityGroup
 )
 
@@ -47,7 +48,6 @@ Assert-RemediationConnection -Service 'ExchangeOnline'
 $scope = @{}
 if (@($PriorityUser | Where-Object { $_ }).Count -gt 0) { $scope['SentTo'] = @($PriorityUser) }
 if (@($PriorityGroup | Where-Object { $_ }).Count -gt 0) { $scope['SentToMemberOf'] = @($PriorityGroup) }
-if ($scope.Count -eq 0) { throw 'Pass -PriorityUser and/or -PriorityGroup.' }
 
 $step1 = @{
     CheckId   = 'DEFENDER-PRIORITY-002'
