@@ -50,7 +50,7 @@ $step = @{
             $_['state'] -eq 'enabled' -and
             ((-not $u['includeUsers']) -or @($u['includeUsers']).Count -eq 0 -or @($u['includeUsers']) -contains 'None') -and
             @($u['includeGroups']).Count -eq 0 -and @($u['includeRoles']).Count -eq 0
-        } | ForEach-Object { [PSCustomObject]@{ Id = $_['id']; DisplayName = $_['displayName'] } })
+        } | ForEach-Object { [PSCustomObject]@{ Id = $_['id']; DisplayName = $_['displayName']; Users = $_['conditions']['users'] } })
     }
     TestState = {
         param($State)
@@ -60,7 +60,16 @@ $step = @{
         param($State)
         if ($Action -eq 'IncludeGroup' -and @($IncludeGroupId | Where-Object { $_ }).Count -eq 0) { throw 'Pass -IncludeGroupId with -Action IncludeGroup.' }
         foreach ($p in $State) {
-            $patch = if ($Action -eq 'Disable') { @{ state = 'disabled' } } else { @{ conditions = @{ users = @{ includeUsers = @(); includeGroups = @($IncludeGroupId) } } } }
+            if ($Action -eq 'Disable') {
+                $patch = @{ state = 'disabled' }
+            }
+            else {
+                $users = @{}
+                foreach ($k in $p.Users.Keys) { $users[$k] = $p.Users[$k] }
+                $users['includeUsers'] = @()
+                $users['includeGroups'] = @($IncludeGroupId)
+                $patch = @{ conditions = @{ users = $users } }
+            }
             Invoke-MgGraphRequest -Method PATCH -Uri "/v1.0/identity/conditionalAccess/policies/$($p.Id)" -ContentType 'application/json' -Body ($patch | ConvertTo-Json -Depth 20) | Out-Null
         }
     }

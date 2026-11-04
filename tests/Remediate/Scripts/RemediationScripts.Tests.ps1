@@ -17,14 +17,11 @@ BeforeAll {
 }
 
 Describe 'Remediation script coverage' {
-    It 'every registry check in a scripted collector has a script or a coverage.json exclusion' {
-        $files = @(Get-ChildItem -Path $script:scriptsRoot -Filter '*.ps1' -Recurse |
-                Where-Object { $_.Directory.Name -ne 'Common' })
-        $present = @($files | ForEach-Object { $_.BaseName })
-        # Collectors are scripted one at a time; a collector counts once its folder exists.
-        $collectors = @($files | ForEach-Object { $_.Directory.Name } | Sort-Object -Unique)
+    It 'every registry check has a script or a coverage.json exclusion' {
+        $present = @(Get-ChildItem -Path $script:scriptsRoot -Filter '*.ps1' -Recurse |
+                Where-Object { $_.Directory.Name -ne 'Common' } |
+                ForEach-Object { $_.BaseName })
         $missing = @($script:registry | Where-Object {
-                $collectors -contains $_.collector -and
                 $present -notcontains $_.checkId -and $script:excluded -notcontains $_.checkId
             } | ForEach-Object { "$($_.collector)/$($_.checkId)" })
         $missing | Should -HaveCount 0 -Because "these checks have neither a script nor an exclusion: $($missing -join ', ')"

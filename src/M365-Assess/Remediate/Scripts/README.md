@@ -1,7 +1,8 @@
 # Per-check remediation scripts
 
 One standalone PowerShell script per registry check, at
-`Remediate/Scripts/<Collector>/<CheckId>.ps1`. Every registry check either has a
+`Remediate/Scripts/<Collector>/<CheckId>.ps1`. [`INDEX.md`](INDEX.md) lists every script with
+the service it connects to and its required parameters. Every registry check either has a
 script here or is listed in [`coverage.json`](coverage.json) with the reason it
 has none (already covered by a typed binding, or not remediable by script).
 `tests/Remediate/Scripts/RemediationScripts.Tests.ps1` enforces this.

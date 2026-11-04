@@ -11,6 +11,13 @@ BeforeDiscovery {
 }
 
 BeforeAll {
+    # tests/Portal/Workers/Get-LicenseReport.Tests.ps1 defines a global
+    # Test-Path stub (with -PathType as a switch) that outlives its container
+    # and breaks the scripts' ValidateScript blocks when the whole suite runs.
+    # An alias outranks a function, so point Test-Path back at the real cmdlet
+    # for everything this file runs.
+    Set-Alias -Name Test-Path -Value 'Microsoft.PowerShell.Management\Test-Path' -Scope Script
+
     $script:helperPath = Join-Path (Resolve-Path (Join-Path $PSScriptRoot '../../../src/M365-Assess')).Path 'Remediate/Scripts/Common/RemediationScriptHelper.ps1'
     $FakeWrites = [System.Collections.Generic.List[string]]::new()
 
