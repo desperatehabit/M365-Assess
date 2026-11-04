@@ -29,8 +29,9 @@ function Assert-RemediationConnection {
     .PARAMETER Service
         One or more services the script needs.
     .PARAMETER GraphScope
-        Microsoft Graph scopes the change needs. Checked against the current
-        Graph context when the context exposes delegated scopes.
+        Microsoft Graph scopes the change needs. When the current delegated
+        context does not list them, a warning is written (a broader scope
+        may still grant the change).
     .EXAMPLE
         Assert-RemediationConnection -Service Graph -GraphScope 'Policy.ReadWrite.Authorization'
     #>
@@ -58,7 +59,9 @@ function Assert-RemediationConnection {
                 if ($GraphScope.Count -gt 0 -and $granted.Count -gt 0) {
                     $missing = @($GraphScope | Where-Object { $granted -notcontains $_ })
                     if ($missing.Count -gt 0) {
-                        throw "Microsoft Graph context is missing scope(s): $($missing -join ', '). Reconnect with Connect-MgGraph -Scopes $($GraphScope -join ',')."
+                        # A broader scope (e.g. Directory.ReadWrite.All) can also grant
+                        # the change, so warn rather than stop; Graph returns 403 if not.
+                        Write-Warning "Microsoft Graph context does not list scope(s): $($missing -join ', '). If the change fails with 403, reconnect with Connect-MgGraph -Scopes $($GraphScope -join ',')."
                     }
                 }
             }
@@ -294,4 +297,109 @@ function Set-PowerBITenantSettingState {
     }
     $url = "https://api.fabric.microsoft.com/v1/admin/tenantsettings/$SettingName/update"
     Invoke-PowerBIRestMethod -Url $url -Method Post -Body ($body | ConvertTo-Json -Depth 5) -ContentType 'application/json' -WarningAction SilentlyContinue | Out-Null
+}
+
+function Get-RemediationGraphObject {
+    <#
+    .SYNOPSIS
+        GETs a Microsoft Graph resource as a hashtable.
+    .PARAMETER Uri
+        Relative Graph URI including the version segment, e.g. '/v1.0/policies/authorizationPolicy'.
+    .EXAMPLE
+        Get-RemediationGraphObject -Uri '/beta/admin/forms/settings'
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Uri
+    )
+
+    Invoke-MgGraphRequest -Method GET -Uri $Uri -OutputType HashTable -ErrorAction Stop
+}
+
+function Set-RemediationGraphObject {
+    <#
+    .SYNOPSIS
+        Writes a JSON body to a Microsoft Graph resource (PATCH by default).
+    .PARAMETER Uri
+        Relative Graph URI including the version segment.
+    .PARAMETER Body
+        Properties to send. Nested hashtables are serialized as JSON objects.
+    .PARAMETER Method
+        PATCH (default), POST, or PUT.
+    .EXAMPLE
+        Set-RemediationGraphObject -Uri '/beta/admin/forms/settings' -Body @{ isPhishingScanEnabled = $true }
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Uri,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Body,
+
+        [Parameter()]
+        [ValidateSet('PATCH', 'POST', 'PUT')]
+        [string]$Method = 'PATCH'
+    )
+
+    Invoke-MgGraphRequest -Method $Method -Uri $Uri -Body ($Body | ConvertTo-Json -Depth 20) -ContentType 'application/json' -ErrorAction Stop
+}
+
+function Test-RemediationProperty {
+    <#
+    .SYNOPSIS
+        Returns $true when every expected property on an object has the expected value.
+    .DESCRIPTION
+        Keys may be dotted paths into nested hashtables / objects
+        ('defaultUserRolePermissions.allowedToCreateApps'). Array values are
+        compared as unordered sets. String comparison is case-insensitive.
+    .PARAMETER State
+        Object (hashtable or PSObject) to inspect.
+    .PARAMETER Expected
+        Map of property path to expected value.
+    .EXAMPLE
+        Test-RemediationProperty -State $s -Expected @{ isPhishingScanEnabled = $true }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [object]$State,
+
+        [Parameter(Mandatory)]
+        [hashtable]$Expected
+    )
+
+    if ($null -eq $State) { return $false }
+    foreach ($path in $Expected.Keys) {
+        $value = $State
+        foreach ($segment in $path.Split('.')) {
+            if ($null -eq $value) { break }
+            if ($value -is [System.Collections.IDictionary]) { $value = $value[$segment] }
+            else { $value = $value.$segment }
+        }
+        $want = $Expected[$path]
+        if ($want -is [array]) {
+            $have = @($value | ForEach-Object { "$_" } | Sort-Object)
+            $need = @($want | ForEach-Object { "$_" } | Sort-Object)
+            if (($have -join "`n") -ne ($need -join "`n")) { return $false }
+        }
+        elseif ($null -eq $want) {
+            if ($null -ne $value) { return $false }
+        }
+        elseif ($null -eq $value) {
+            return $false
+        }
+        elseif ($want -is [bool]) {
+            if ($value -isnot [bool] -or $value -ne $want) { return $false }
+        }
+        elseif ("$value" -ne "$want") {
+            return $false
+        }
+    }
+    $true
 }
