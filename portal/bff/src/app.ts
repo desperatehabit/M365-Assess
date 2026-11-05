@@ -29,6 +29,7 @@ import {
   SqliteRepository,
   SqliteRoleRequestsRepository,
   SqliteScheduleRepository,
+  SqliteSspRepository,
   SqliteStandardsRepository,
   SqliteTapRecordRepository,
   SqliteUserTemplateRepository,
@@ -57,6 +58,8 @@ import {
   createScheduleJobStateStore,
   createScheduleRunQueue,
   createScriptSandbox,
+  createCustomScriptCommand,
+  createCustomScriptRunner,
   createTickScheduleStore,
   withRemediationPlanIngestion,
   withRemediationVerifyIngestion,
@@ -251,8 +254,11 @@ import { createRunsCreateRoute } from "./routes/runs-create.js";
 import { createRunsDetailRoutes } from "./routes/runs-detail.js";
 import { createRunsEventsRoute } from "./routes/runs-events.js";
 import { createRunsListRoute } from "./routes/runs-list.js";
-import { createScheduleRoutes } from "./routes/schedules.js";
-import { createScriptRoutes } from "./routes/scripts.js";
+import { CUSTOM_SCRIPT_COMMAND, createScheduleRoutes } from "./routes/schedules.js";
+import { createScriptRoutes, type ScriptAuditPort } from "./routes/scripts.js";
+import { createSspRoutes } from "./routes/ssp.js";
+import { loadPracticeCheckMap } from "./domain/ssp/practice-map.js";
+import type { SspImplementationStatus, SspResponsibility } from "@m365-assess/contracts/ssp";
 import { createStandardsAlignmentRoutes } from "./routes/standards-alignment.js";
 import { createStandardsCatalogRoutes } from "./routes/standards-catalog.js";
 import { createStandardsRunRoutes } from "./routes/standards-run.js";
@@ -571,10 +577,25 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     db,
   );
   const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
+  const sspRepo = new SqliteSspRepository(db, schemaVersion);
   const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
   const reportRuns = createReportRunReader(repo, config.artifactPath);
+
+  // EPIC-007 scheduled custom scripts (T-0876): the script repository and sandbox are shared
+  // by the script routes and the custom-script job runner.
+  const customScripts = new SqliteCustomScriptRepository(db, schemaVersion);
+  const scriptSandbox = createScriptSandbox({ run });
+  const recordScriptAudit = (event: Parameters<NonNullable<ScriptAuditPort["record"]>>[0]) =>
+    recordAudit({
+      action: event.action,
+      tenantId: event.tenantId ?? null,
+      actorUserId: event.actorUserId,
+      targetType: "script",
+      targetId: event.resourceId,
+      correlationId: event.correlationId,
+    });
 
   const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
     assessment: createSupervisorRunner({
@@ -609,6 +630,19 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     report: createReportWorkerRunner({
       workersDir: config.workersDir,
       storageRoot: config.artifactPath,
+    }),
+    "custom-script": createCustomScriptRunner({
+      schedules: scheduleRepo,
+      storageRoot: config.artifactPath,
+      handlers: {
+        [CUSTOM_SCRIPT_COMMAND]: createCustomScriptCommand({
+          scripts: customScripts,
+          sandbox: scriptSandbox,
+          tenants: tenantStore,
+          storageRoot: config.artifactPath,
+          audit: { record: recordScriptAudit },
+        }),
+      },
     }),
   };
   const runJobs = new JobQueue({
@@ -662,7 +696,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     credentials: credentialRows,
     runnableTypes: runnableJobTypes,
   });
-  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes);
+  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes, customScripts);
   const scheduleJobState = createScheduleJobStateStore(db);
   const scheduler = createScheduler({
     queue: scheduleQueue,
@@ -816,20 +850,39 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       queue: scheduleQueue,
       ...caller,
     }),
-    ...createScriptRoutes({
-      store: new SqliteCustomScriptRepository(db, schemaVersion),
-      sandbox: createScriptSandbox({ run }),
-      audit: {
-        record: (event) =>
-          recordAudit({
-            action: event.action,
-            tenantId: event.tenantId ?? null,
-            actorUserId: event.actorUserId,
-            targetType: "script",
-            targetId: event.resourceId,
-            correlationId: event.correlationId,
-          }),
+    // CMMC Level 2 SSP questionnaire and generated SSP (Word / HTML). Automated
+    // evidence is the tenant's latest run's findings; answers persist per tenant.
+    ...createSspRoutes({
+      store: {
+        getProfile: (tenantId) => sspRepo.getProfile(tenantId),
+        upsertProfile: (profile) => sspRepo.upsertProfile(profile),
+        listPracticeResponses: async (tenantId) =>
+          (await sspRepo.listPracticeResponses(tenantId)).map((row) => ({
+            ...row,
+            implementationStatus: row.implementationStatus as SspImplementationStatus,
+            responsibility: row.responsibility as SspResponsibility,
+          })),
+        upsertPracticeResponse: async (response) => {
+          const row = await sspRepo.upsertPracticeResponse({ ...response, evidence: [...response.evidence] });
+          return {
+            ...row,
+            implementationStatus: row.implementationStatus as SspImplementationStatus,
+            responsibility: row.responsibility as SspResponsibility,
+          };
+        },
+        deletePracticeResponse: (tenantId, practiceId, actor) => sspRepo.deletePracticeResponse(tenantId, practiceId, actor),
       },
+      findings: {
+        latestRunId: (tenantId) => reportRuns.latestRunId(tenantId),
+        listFindings: (tenantId, runId) => repo.listFindings(tenantId, runId),
+      },
+      practiceChecks: () => loadPracticeCheckMap(),
+      ...caller,
+    }),
+    ...createScriptRoutes({
+      store: customScripts,
+      sandbox: scriptSandbox,
+      audit: { record: recordScriptAudit },
       ...caller,
     }),
 

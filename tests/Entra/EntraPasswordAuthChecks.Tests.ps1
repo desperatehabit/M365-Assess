@@ -122,6 +122,9 @@ Describe 'EntraPasswordAuthChecks' {
                 '*/beta/reports/authenticationMethods/userRegistrationDetails*' {
                     return @{ value = @() }
                 }
+                '*/organization/*/branding' {
+                    return @{ loginPageTextVisibilitySettings = @{ hideKeepMeSignedIn = $true } }
+                }
                 default {
                     return @{ value = @() }
                 }
@@ -148,6 +151,7 @@ Describe 'EntraPasswordAuthChecks' {
         $sspr       = $null
         $orgSettings = $null
         $pwSettings  = $null
+        $context     = @{ TenantId = 'test-tenant-id' }
 
         . "$PSScriptRoot/../../src/M365-Assess/Entra/EntraPasswordAuthChecks.ps1"
     }
@@ -236,6 +240,13 @@ Describe 'EntraPasswordAuthChecks' {
     It 'Security defaults gap analysis passes when all areas covered by CA' {
         $check = $settings | Where-Object { $_.Setting -eq 'Security Defaults Gap Analysis' }
         $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+    }
+
+    It "'Stay signed in' option passes when hidden in company branding (CIS 5.1.2.5)" {
+        $check = $settings | Where-Object { $_.Setting -eq 'Option to Remain Signed In Hidden' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.CheckId | Should -Match '^ENTRA-SESSION-001\.\d+$'
         $check.Status | Should -Be 'Pass'
     }
 
@@ -399,6 +410,9 @@ Describe 'EntraPasswordAuthChecks - Security Defaults ON' {
                         @{ onPremisesSyncEnabled = $false }
                     )}
                 }
+                '*/organization/*/branding' {
+                    throw 'Response status code does not indicate success: 404 (Not Found).'
+                }
                 default { return @{ value = @() } }
             }
         }
@@ -431,6 +445,13 @@ Describe 'EntraPasswordAuthChecks - Security Defaults ON' {
         $check = $settings | Where-Object { $_.Setting -eq 'Security Defaults Enabled' }
         $check | Should -Not -BeNullOrEmpty
         $check.Status | Should -Be 'Pass'
+    }
+
+    It "'Stay signed in' option fails when no company branding is configured" {
+        $check = $settings | Where-Object { $_.Setting -eq 'Option to Remain Signed In Hidden' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Fail'
+        $check.CurrentValue | Should -Match 'no company branding'
     }
 
     It 'Password expiration fails when not set to never expire' {

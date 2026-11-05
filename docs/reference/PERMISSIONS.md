@@ -17,12 +17,12 @@
 | Compliance | — | 0 | 0 | 0 | 1 |
 | Email | ExchangeOnline | 0 | 1 | 1 | 0 |
 | Hybrid | Graph | 2 | 2 | 0 | 0 |
-| Identity | Graph | 9 | 8 | 0 | 0 |
-| Intune | Graph | 2 | 2 | 0 | 0 |
+| Identity | Graph | 10 | 9 | 0 | 0 |
+| Intune | Graph | 2 | 4 | 0 | 0 |
 | Inventory | Graph, ExchangeOnline | 7 | 7 | 1 | 0 |
 | Licensing | Graph | 2 | 2 | 0 | 0 |
 | PowerBI | — | 0 | 0 | 0 | 0 |
-| Security | Graph, ExchangeOnline, Purview | 1 | 4 | 2 | 3 |
+| Security | Graph, ExchangeOnline, Purview | 4 | 8 | 2 | 3 |
 | SOC2 | Graph, Purview | 8 | 0 | 0 | 0 |
 | Tenant | Graph | 5 | 5 | 0 | 0 |
 | ValueOpportunity | Graph | 1 | 0 | 0 | 0 |
@@ -93,7 +93,7 @@
 | Permission | Reason |
 |---|---|
 | `Domain.Read.All` | All domains registered in the tenant |
-| `Organization.Read.All` | Tenant org details, verified domains, hybrid config |
+| `Organization.Read.All` | Tenant org details, verified domains, hybrid config, company branding, subscribed SKUs |
 
 ### Identity
 
@@ -106,6 +106,7 @@
 - `AuditLog.Read.All`
 - `Directory.Read.All`
 - `Domain.Read.All`
+- `Organization.Read.All`
 - `Policy.Read.All`
 - `RoleManagement.Read.Directory`
 - `User.Read.All`
@@ -119,6 +120,7 @@
 | `AuditLog.Read.All` | Sign-in logs and directory audit events |
 | `Directory.Read.All` | Devices, admin units, role templates |
 | `Domain.Read.All` | All domains registered in the tenant |
+| `Organization.Read.All` | Tenant org details, verified domains, hybrid config, company branding, subscribed SKUs |
 | `Policy.Read.All` | Conditional Access, auth methods, token lifetime, password policies |
 | `RoleManagement.Read.Directory` | Entra directory role assignments and PIM eligibility |
 | `User.Read.All` | User profiles, sign-in activity, license assignments |
@@ -137,8 +139,10 @@
 
 | Permission | Reason |
 |---|---|
+| `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
 | `DeviceManagementConfiguration.Read.All` | Configuration profiles, compliance policies, Multi-Admin Approval policies |
 | `DeviceManagementManagedDevices.Read.All` | Managed device inventory and compliance state |
+| `DeviceManagementServiceConfig.Read.All` | Autopilot deployment profiles and Apple/Android enrollment profiles |
 
 ### Inventory
 
@@ -185,7 +189,7 @@
 
 | Permission | Reason |
 |---|---|
-| `Organization.Read.All` | Tenant org details, verified domains, hybrid config |
+| `Organization.Read.All` | Tenant org details, verified domains, hybrid config, company branding, subscribed SKUs |
 | `User.Read.All` | User profiles, sign-in activity, license assignments |
 
 ### PowerBI
@@ -198,15 +202,22 @@
 
 **Delegated Microsoft Graph scopes**
 
+- `BackupRestore-Configuration.Read.All`
+- `CustomDetection.Read.All`
+- `Organization.Read.All`
 - `SecurityEvents.Read.All`
 
 **Microsoft Graph application permissions** (app-only auth)
 
 | Permission | Reason |
 |---|---|
+| `BackupRestore-Configuration.Read.All` | Microsoft 365 Backup service status and protection policies |
+| `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
+| `CustomDetection.Read.All` | Defender XDR custom detection rules (emergency access account monitoring) |
 | `DeviceManagementApps.Read.All` | Intune audit events including device wipe/retire/delete actions |
 | `DeviceManagementConfiguration.Read.All` | Configuration profiles, compliance policies, Multi-Admin Approval policies |
 | `DeviceManagementRBAC.Read.All` | Intune RBAC role definitions and assignments (scope tag audit) |
+| `Organization.Read.All` | Tenant org details, verified domains, hybrid config, company branding, subscribed SKUs |
 | `SecurityEvents.Read.All` | Secure Score, improvement actions, security alerts |
 
 **Exchange Online RBAC role groups**
@@ -257,7 +268,7 @@
 |---|---|
 | `Domain.Read.All` | All domains registered in the tenant |
 | `Group.Read.All` | All groups including Microsoft 365 and security groups |
-| `Organization.Read.All` | Tenant org details, verified domains, hybrid config |
+| `Organization.Read.All` | Tenant org details, verified domains, hybrid config, company branding, subscribed SKUs |
 | `Policy.Read.All` | Conditional Access, auth methods, token lifetime, password policies |
 | `User.Read.All` | User profiles, sign-in activity, license assignments |
 

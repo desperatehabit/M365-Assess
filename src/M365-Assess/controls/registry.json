@@ -67783,6 +67783,59 @@
         "rationale": "Failure to route email through Exchange Online mail flow exposes the tenant to: Security control bypass; mail not traversing Exchange Online skips ATP scanning, DLP policies, mail flow rules, and anti-phishing defenses.",
         "scfWeighting": 7
       }
+    },
+    {
+      "checkId": "INTUNE-FIREWALL-001",
+      "name": "Ensure Windows Firewall Is Enabled with Inbound Traffic Blocked by Default on Managed Devices",
+      "category": "FIREWALL",
+      "collector": "Intune",
+      "hasAutomatedCheck": true,
+      "licensing": {
+        "minimum": "E3"
+      },
+      "frameworks": {
+        "cmmc": {
+          "controlId": "SC.L1-B.1.XI;SC.L2-3.13.1;SC.L2-3.13.5;SC.L2-3.13.6",
+          "profiles": [
+            "L1",
+            "L2"
+          ]
+        },
+        "nist-800-171": {
+          "controlId": "3.13.1;3.13.5;3.13.6"
+        },
+        "nist-800-53": {
+          "controlId": "SC-07;SC-07(05)"
+        },
+        "cis-controls-v8": {
+          "controlId": "4.5"
+        },
+        "iso-27001": {
+          "controlId": "8.20"
+        }
+      },
+      "impactRating": {
+        "severity": "High",
+        "rationale": "Without a host firewall that denies inbound traffic by default, any listening service on a managed device is reachable from the local network, which lets an attacker who reaches one device move laterally to others holding CUI.",
+        "scfWeighting": 8
+      },
+      "rationale": "CMMC SC.L2-3.13.6 requires network communications to be denied by default and allowed by exception. On Intune-managed Windows devices this is enforced by an Endpoint security firewall policy with the firewall on and inbound traffic blocked by default on every profile. It is host-level evidence; boundary devices are documented in the SSP.",
+      "remediation": {
+        "portal": {
+          "path": "Intune admin center > Endpoint security > Firewall > Create policy > Windows > Windows Firewall > Domain, Private, Public: Enable Firewall = True, Default Inbound Action = Block > assign to all Windows devices",
+          "steps": [
+            "Intune admin center",
+            "Endpoint security",
+            "Firewall",
+            "Create policy",
+            "Windows",
+            "Windows Firewall",
+            "Domain, Private, Public: Enable Firewall = True, Default Inbound Action = Block",
+            "Assign to all Windows devices"
+          ]
+        },
+        "notes": "Local extension check (M365-Assess). Pending upstream CheckID adoption."
+      }
     }
   ]
 }

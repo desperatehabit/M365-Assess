@@ -194,7 +194,9 @@ try {
     $consentAllowed = $consentSettings['permissionGrantPoliciesAssigned']
 
     # CISA SCuBA MS.AAD.5.2v1: consent should require verified publisher
-    $requiresVerified = $consentAllowed -and ($consentAllowed -contains 'microsoft-user-default-low' -or $consentAllowed -contains 'microsoft-application-admin')
+    # Graph returns assigned policies prefixed with the permission name
+    # (e.g. 'ManagePermissionGrantsForSelf.microsoft-user-default-low'), so match on the suffix.
+    $requiresVerified = $consentAllowed -and (@($consentAllowed | Where-Object { $_ -like '*microsoft-user-default-low' -or $_ -like '*microsoft-application-admin' }).Count -gt 0)
 
     $settingParams = @{
         Category         = 'Application Consent'

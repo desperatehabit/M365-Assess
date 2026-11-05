@@ -12,18 +12,27 @@ BeforeAll {
         throw "No network in tests"
     }
 
+    # Hides the bundled SKU name CSV so the worker falls back to its built-in map.
+    # These stubs are global so the dot-sourced worker sees them; AfterAll removes
+    # them so they do not leak into later test files in the same run.
     function global:Test-Path {
-        param($Path, $LiteralPath, [switch]$PathType)
+        param($Path, $LiteralPath, [string]$PathType)
         $target = if ($LiteralPath) { $LiteralPath } else { $Path }
         if ($target -like '*sku-friendly-names.csv') { return $false }
         if ($PathType) {
-            return Microsoft.PowerShell.Management\Test-Path -LiteralPath $target -PathType
+            return Microsoft.PowerShell.Management\Test-Path -LiteralPath $target -PathType $PathType
         }
         return Microsoft.PowerShell.Management\Test-Path -LiteralPath $target
     }
 
     . $script:worker
     . (Join-Path $script:repoRoot 'portal/workers/M365Portal.Workers/Connect-WorkerTenant.ps1')
+}
+
+AfterAll {
+    foreach ($name in 'Test-Path', 'Invoke-MgGraphRequest', 'Invoke-WebRequest') {
+        Remove-Item -Path "Function:\$name" -ErrorAction SilentlyContinue
+    }
 }
 
 Describe 'Get-LicenseReport worker (T-0642)' {

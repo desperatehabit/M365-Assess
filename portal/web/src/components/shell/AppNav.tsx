@@ -43,6 +43,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/reports/builder", label: "Report builder" },
       { href: "/remediation", label: "Remediation" },
       { href: "/remediation/history", label: "Remediation history" },
+      { href: "/ssp", label: "CMMC SSP" },
     ],
   },
   {

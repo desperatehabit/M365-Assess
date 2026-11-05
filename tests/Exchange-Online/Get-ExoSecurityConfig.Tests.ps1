@@ -203,6 +203,13 @@ Describe 'Get-ExoSecurityConfig' {
         $check.Status | Should -Be 'Pass'
     }
 
+    It 'Outlook add-ins check passes when the default policy holds only baseline roles' {
+        # MyBaseOptions is a baseline role, not an add-in role
+        $check = $settings | Where-Object { $_.Setting -eq 'Outlook Add-ins Allowed (Default Role Assignment Policy)' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+    }
+
     It 'Produces settings across multiple categories' {
         $categories = $settings | Select-Object -ExpandProperty Category -Unique
         $categories.Count | Should -BeGreaterOrEqual 3

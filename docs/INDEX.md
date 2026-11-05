@@ -23,6 +23,7 @@ For consultants running assessments and consuming the report.
 | [`user/SCORING.md`](user/SCORING.md) | How the headline score is computed; the 6 scoring views; per-audience rationale |
 | [`user/COMPLIANCE.md`](user/COMPLIANCE.md) | 15 frameworks, XLSX export, CheckId system, control registry |
 | [`user/EVIDENCE-PACKAGE.md`](user/EVIDENCE-PACKAGE.md) | Sanitized evidence bundle for auditor handoff (`-EvidencePackage` switch) |
+| [`user/CMMC-SSP.md`](user/CMMC-SSP.md) | Portal CMMC Level 2 questionnaire and System Security Plan (Word / HTML) |
 | [`user/TROUBLESHOOTING.md`](user/TROUBLESHOOTING.md) | Common errors and resolutions |
 | [`user/GLOSSARY.md`](user/GLOSSARY.md) | Glossary — Lane / Sequence / Section / Collector / Check / Control / Framework / Profile / Level / Status |
 
@@ -48,6 +49,7 @@ Authoritative references for specific topics. Read these when you need to know t
 | [`reference/CHECK-STATUS-MODEL.md`](reference/CHECK-STATUS-MODEL.md) | The 9-status taxonomy (Pass / Fail / Warning / Review / Info / Skipped / Unknown / NotApplicable / NotLicensed) and what each means |
 | [`reference/LEVELS.md`](reference/LEVELS.md) | CIS / framework profile + level semantics |
 | [`reference/PERMISSIONS.md`](reference/PERMISSIONS.md) | Per-section Graph scopes / EXO RBAC roles / Purview permissions |
+| [`reference/SESSION-HANDOFF.md`](reference/SESSION-HANDOFF.md) | Current work-in-progress handoff: open PRs, unverified items, next steps |
 | [`reference/COMPATIBILITY.md`](reference/COMPATIBILITY.md) | Module version pins and known-incompatible combinations |
 | [`reference/SOVEREIGN-CLOUDS.md`](reference/SOVEREIGN-CLOUDS.md) | Government / China / national cloud support matrix |
 | [`reference/DATA-HANDLING.md`](reference/DATA-HANDLING.md) | What's collected, retention recommendations, GDPR/HIPAA/CMMC alignment |

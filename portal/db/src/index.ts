@@ -27,3 +27,4 @@ export * from "./drift-repository.js";
 export * from "./baselines-repository.js";
 export * from "./integration-repository.js";
 export * from "./graph-preset-repository.js";
+export * from "./ssp-repository.js";

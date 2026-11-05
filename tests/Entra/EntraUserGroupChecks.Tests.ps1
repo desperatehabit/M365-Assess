@@ -150,6 +150,13 @@ Describe 'EntraUserGroupChecks' {
         }
     }
 
+    It 'User consent requires verified publisher passes with the prefixed low-impact policy id' {
+        $check = $settings | Where-Object { $_.Setting -eq 'User Consent Requires Verified Publisher' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Be 'Restricted to verified publishers'
+    }
+
     It 'Users can register applications passes when disabled' {
         $check = $settings | Where-Object { $_.Setting -eq 'Users Can Register Applications' }
         $check | Should -Not -BeNullOrEmpty
@@ -297,6 +304,12 @@ Describe 'EntraUserGroupChecks - Insecure Settings' {
         $check = $settings | Where-Object { $_.Setting -eq 'User Consent for Applications' }
         $check | Should -Not -BeNullOrEmpty
         $check.Status | Should -Be 'Fail'
+    }
+
+    It 'User consent requires verified publisher warns with the legacy consent policy' {
+        $check = $settings | Where-Object { $_.Setting -eq 'User Consent Requires Verified Publisher' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Warning'
     }
 
     It 'Users can register applications fails when allowed' {

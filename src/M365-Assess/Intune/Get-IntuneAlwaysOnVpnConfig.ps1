@@ -4,7 +4,7 @@
     on managed Windows devices and that the policy is actively assigned.
 .DESCRIPTION
     Queries Intune device configuration profiles for Windows 10/11 VPN and checks
-    whether always-on VPN is enabled (alwaysOn: true) and split tunneling is disabled
+    whether always-on VPN is enabled (enableAlwaysOn: true) and split tunneling is disabled
     (enableSplitTunneling: false), ensuring all traffic routes through the VPN at
     all times. Verifies at least one active assignment. Satisfies CMMC AC.L2-3.1.14.
 
@@ -63,7 +63,8 @@ try {
 
     foreach ($config in $configList) {
         if ($config['@odata.type'] -notmatch 'windows10VpnConfiguration') { continue }
-        if ($config['alwaysOn'] -ne $true) { continue }
+        # windows10VpnConfiguration exposes always-on as enableAlwaysOn; alwaysOn is kept as a fallback.
+        if ($config['enableAlwaysOn'] -ne $true -and $config['alwaysOn'] -ne $true) { continue }
         if ($config['enableSplitTunneling'] -ne $false) { continue }
 
         $assignments = @()
@@ -84,13 +85,13 @@ try {
     else {
         $hasUnassigned = $configList | Where-Object {
             $_['@odata.type'] -match 'windows10VpnConfiguration' -and
-            $_['alwaysOn'] -eq $true -and
+            ($_['enableAlwaysOn'] -eq $true -or $_['alwaysOn'] -eq $true) -and
             $_['enableSplitTunneling'] -eq $false
         }
         $currentValue = if ($hasUnassigned) {
             'Always-on full-tunnel VPN profile exists but has no active assignments'
         } else {
-            'No windows10VpnConfiguration profile with alwaysOn: true and split tunneling disabled found'
+            'No windows10VpnConfiguration profile with enableAlwaysOn: true and split tunneling disabled found'
         }
         $status = 'Fail'
     }
@@ -99,7 +100,7 @@ try {
         Category         = 'Always-On VPN'
         Setting          = 'Always-On VPN with Full Tunnel (Assigned)'
         CurrentValue     = $currentValue
-        RecommendedValue = 'windows10VpnConfiguration with alwaysOn: true and enableSplitTunneling: false assigned to at least one group'
+        RecommendedValue = 'windows10VpnConfiguration with enableAlwaysOn: true and enableSplitTunneling: false assigned to at least one group'
         Status           = $status
         CheckId          = 'INTUNE-REMOTEVPN-001'
         Remediation      = 'Intune admin center > Devices > Configuration > Create profile > Windows 10 and later > VPN > set Always-on VPN to enable and split tunneling to disable. Assign the profile to device or user groups.'
@@ -112,7 +113,7 @@ catch {
             Category         = 'Always-On VPN'
             Setting          = 'Always-On VPN with Full Tunnel (Assigned)'
             CurrentValue     = 'Insufficient permissions or license (Intune required)'
-            RecommendedValue = 'windows10VpnConfiguration with alwaysOn: true and enableSplitTunneling: false assigned to at least one group'
+            RecommendedValue = 'windows10VpnConfiguration with enableAlwaysOn: true and enableSplitTunneling: false assigned to at least one group'
             Status           = 'Review'
             CheckId          = 'INTUNE-REMOTEVPN-001'
             Remediation      = 'Requires DeviceManagementConfiguration.Read.All permission and Intune license.'

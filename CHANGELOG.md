@@ -5,10 +5,38 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
 ## [Unreleased]
 
 ### Added
+- **Portal: CMMC Level 2 questionnaire and System Security Plan** (`/ssp`, see `docs/user/CMMC-SSP.md`):
+  - All 110 NIST SP 800-171 Rev. 2 practices. Each gets its status from the tenant's latest run (through the registry's CMMC mappings), from the consultant's recorded answer, or from Microsoft inheritance hints for practices Microsoft covers.
+  - The 24 practices no check covers (physical, personnel, training, maintenance, paperwork) carry a specific question and an evidence hint.
+  - Answers record status, responsibility (customer / shared / inherited), narrative, evidence references, owner, and planned completion. They are stored per tenant (migration `0127_ssp.sql`) and audited.
+  - The SSP downloads as an editable Word document or opens as printable HTML: system description and boundary, every practice with its evidence, a plan of action and milestones, and an approval block. The Word file is generated without new dependencies.
+  - New permissions `Compliance.Ssp.Read` and `Compliance.Ssp.ReadWrite`.
+  - SPRS score (NIST SP 800-171 DoD Assessment Methodology), shown in the questionnaire header and the SSP: 110 minus the 1/3/5 value of each unmet practice, with partial credit for 3.5.3 and 3.13.11. The SSP flags points from unassessed practices, a missing 3.12.4, and the CMMC Conditional rules (score of 88 or more; only 1-point non-Level 1 practices on the POA&M). The POA&M table shows each gap's points and eligibility.
+- **Every CIS Microsoft 365 v6.0.1 recommendation now has a check** (six had a registry mapping but no collector emitting it):
+  - `ENTRA-ADMIN-003` (1.1.2, two emergency access accounts) is reported from the `ENTRA-BREAKGLASS-001` detection; CIS requires two, so one account fails.
+  - `ENTRA-BREAKGLASS-002` (2.2.1, emergency account sign-ins monitored) passes when an enabled Defender XDR custom detection names a detected break-glass account; otherwise it is Review, because Azure Monitor and Sentinel alerts are not readable. Needs the new `CustomDetection.Read.All` Graph permission.
+  - `DEFENDER-CLOUDAPPS-001` (2.4.3) reads the Defender for Cloud Apps service plan; licensed and enabled is Review (the app connector is not readable through Graph), Office 365 Cloud App Security only is Warning, and no or disabled plan is Fail.
+  - `ENTRA-SESSION-001` (5.1.2.5) reads `loginPageTextVisibilitySettings.hideKeepMeSignedIn` from company branding; a tenant with no branding shows the prompt and fails.
+  - `POWERBI-SERVICEPRINCIPAL-001` (9.1.12) reads the `ServicePrincipalAccessGlobalAPIs` tenant setting; a tenant that does not return it is Review.
+  - `SPO-SWAY-001` (1.3.8) is a Review row with the admin center steps: Sway sharing has no API.
+- **CMMC L2 automated coverage rises from 77 to 86 of 110 practices.** Six registry checks mapped to CMMC had no collector, and a new local extension covers the host firewall:
+  - `ENTRA-SESSIONAUTH-001` (3.13.15) and `ENTRA-CA-SESSIONFREQ-001` (3.13.9) require Conditional Access policies that target All users.
+  - New `Intune/Get-IntuneEndpointHardeningConfig.ps1`: `INTUNE-ENCRYPTION-001` (3.8.6, 3.13.16; BitLocker through compliance or Endpoint security disk encryption), `INTUNE-MOBILECODE-001` (3.13.13; PowerShell execution policy AllSigned or RemoteSigned), and the new local extension `INTUNE-FIREWALL-001` (SC.L1-B.1.XI, 3.13.1, 3.13.5, 3.13.6; Windows Firewall on with inbound blocked by default on every profile).
+  - `DEFENDER-SECURESCORE-001` (3.11.1, 3.12.1): Secure Score posture, Pass at 70% or more of the achievable score and Warning from 40%.
+  - New `Backup/Get-M365BackupConfig.ps1`: `BACKUP-ENABLED-001` (3.8.9), Microsoft 365 Backup enabled with active protection policies.
+- The Security section now requests `Organization.Read.All`, `CustomDetection.Read.All`, and `BackupRestore-Configuration.Read.All`, and Identity requests `Organization.Read.All`. Re-run `Grant-M365AssessConsent` to add them.
 - **Bridge JSON findings carry their descriptive fields**: each finding in `_Assessment*.json` now also has `category`, `setting`, `recommendedValue`, `section`, and `collector`. The fields are additive; existing readers ignore them.
 
 ### Fixed
 - **Bridge JSON `frameworks` is always an array**: a finding mapped to exactly one framework was written as a bare string. Framework ids are now sorted and the domain summary counts keep a fixed key order, so the file no longer changes between identical runs.
+- **Collector checks that could not pass after a correct remediation**:
+  - `EXO-ADDINS-001` no longer treats the baseline `MyBaseOptions` role as an add-in role. It now flags only the Marketplace, Custom, and ReadWriteMailbox add-in roles.
+  - `ENTRA-CONSENT-003` matches the prefixed policy ids Graph returns (`ManagePermissionGrantsForSelf.microsoft-user-default-low`), so the verified-publisher setting can pass.
+  - `CA-INTUNE-001` reads `signInFrequency.frequencyInterval = 'everyTime'` (Graph leaves `type` null). It also no longer throws, and drops the row, when an enabled policy has no applications condition.
+  - `INTUNE-REMOTEVPN-001` reads `enableAlwaysOn` on `windows10VpnConfiguration` and keeps `alwaysOn` as a fallback.
+  - `INTUNE-MOBILEENCRYPT-001` evaluates iOS policies on `passcodeRequired`. iOS compliance policies have no `storageRequireEncryption`, because iOS encrypts storage whenever a passcode is set.
+  - `INTUNE-COMPLIANCE-001` now evaluates `secureByDefault` ("mark devices with no compliance policy as not compliant"). Before, it passed on the check-in threshold alone. A threshold over 30 days still lowers the result to Warning.
+  - `SPO-SYNC-001` and `SPO-ACCESS-002` read the Graph v1.0 property `isUnmanagedSyncAppForTenantRestricted` and keep the old key as a fallback.
 
 ## [2.13.0] - 2026-06-13
 

@@ -202,7 +202,10 @@ catch {
 # 4. Unmanaged Sync Client Restriction
 # ------------------------------------------------------------------
 try {
-    $unmanagedSync = $spoSettings['isUnmanagedSyncClientRestricted']
+    # Graph v1.0 sharepointSettings names this isUnmanagedSyncAppForTenantRestricted;
+    # the older key is kept as a fallback.
+    $unmanagedSync = $spoSettings['isUnmanagedSyncAppForTenantRestricted']
+    if ($null -eq $unmanagedSync) { $unmanagedSync = $spoSettings['isUnmanagedSyncClientRestricted'] }
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Block Sync from Unmanaged Devices'
@@ -947,7 +950,10 @@ catch {
 # SPO-ACCESS-002: Unmanaged sync client restriction (enforcement angle)
 # ------------------------------------------------------------------
 try {
-    $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncClientRestricted']
+    # Graph v1.0 sharepointSettings names this isUnmanagedSyncAppForTenantRestricted;
+    # the older key is kept as a fallback.
+    $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncAppForTenantRestricted']
+    if ($null -eq $unmanagedSyncRestricted) { $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncClientRestricted'] }
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Unmanaged Device Sync Restriction'
@@ -962,6 +968,23 @@ try {
 catch {
     Write-Warning "Could not check unmanaged device sync restriction: $_"
 }
+
+# ------------------------------------------------------------------
+# SPO-SWAY-001: Sways cannot be shared externally (CIS 1.3.8)
+# ------------------------------------------------------------------
+# Sway's sharing settings live in the Microsoft 365 admin center (Org settings >
+# Sway) and have no Graph or SharePoint API, so this check always asks for
+# manual verification rather than reporting a guessed result.
+$settingParams = @{
+    Category         = 'External Sharing'
+    Setting          = 'Sways Cannot Be Shared Externally'
+    CurrentValue     = 'Not readable through any Microsoft 365 API; verify manually'
+    RecommendedValue = "'Let people in your organization share their sways with people outside your organization' is off"
+    Status           = 'Review'
+    CheckId          = 'SPO-SWAY-001'
+    Remediation      = "Microsoft 365 admin center > Settings > Org settings > Services > Sway > Sharing: clear 'Let people in your organization share their sways with people outside your organization', then Save."
+}
+Add-Setting @settingParams
 
 # ------------------------------------------------------------------
 # SPO-VERSIONING-001: Version history configuration

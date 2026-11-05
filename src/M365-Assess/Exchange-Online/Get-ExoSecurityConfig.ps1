@@ -352,7 +352,9 @@ try {
         if (-not $policy.IsDefault) { continue }
 
         $assignedRoles = $policy.AssignedRoles -join '; '
-        $hasMyApps = $assignedRoles -match 'MyBaseOptions|My Marketplace Apps|My Custom Apps|My ReadWriteMailbox Apps'
+        # MyBaseOptions is a baseline role (Outlook options) and must stay assigned; only the
+        # add-in roles control whether users can install Outlook add-ins.
+        $hasMyApps = $assignedRoles -match 'My Marketplace Apps|My Custom Apps|My ReadWriteMailbox Apps'
 
         $settingParams = @{
             Category         = 'Applications'

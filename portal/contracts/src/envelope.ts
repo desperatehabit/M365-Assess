@@ -14,6 +14,8 @@ export const JOB_TYPES = [
   "backup",
   "remediation",
   "report",
+  // EPIC-007 scheduled custom scripts and other command-dispatched tasks (T-0876).
+  "custom-script",
   // EPIC-017 app upload queue (T-0323 runner, T-0842).
   "app-upload",
 ] as const;

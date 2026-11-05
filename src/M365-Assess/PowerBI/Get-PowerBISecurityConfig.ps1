@@ -249,5 +249,23 @@ $settingParams = @{
 }
 Add-Setting @settingParams
 
+# ─── CIS 9.1.12: Service principals can't create workspaces/connections/pipelines ─
+# Fabric splits the old developer setting in two; this one governs creating
+# workspaces, connections, and deployment pipelines. The tenantSettings name is
+# ServicePrincipalAccessGlobalAPIs; a tenant on an older settings schema does not
+# return it, which reports Review rather than a guess.
+$spCreate = Get-TenantSetting -SettingName 'ServicePrincipalAccessGlobalAPIs'
+$spCreateStatus = if ($spCreate -eq $false) { 'Pass' } elseif ($null -eq $spCreate) { 'Review' } else { 'Fail' }
+$settingParams = @{
+    Category         = 'Power BI - Authentication'
+    Setting          = 'Service Principals Restricted from Creating Workspaces, Connections, and Pipelines'
+    CurrentValue     = if ($null -eq $spCreate) { if ($script:settingsError) { $script:settingsError } else { 'Not found (verify in the Fabric admin portal)' } } else { "$(-not $spCreate)" }
+    RecommendedValue = 'True'
+    Status           = $spCreateStatus
+    CheckId          = 'POWERBI-SERVICEPRINCIPAL-001'
+    Remediation      = 'Fabric admin portal > Tenant settings > Developer settings > Service principals can create workspaces, connections, and deployment pipelines > Disabled, or enabled only for specific security groups'
+}
+Add-Setting @settingParams
+
 # ─── Output ──────────────────────────────────────────────────────
 Export-SecurityConfigReport -Settings $settings -OutputPath $OutputPath -ServiceLabel 'Power BI'

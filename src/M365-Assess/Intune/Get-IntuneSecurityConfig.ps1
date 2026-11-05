@@ -53,20 +53,28 @@ try {
     }
     $complianceSettings = Invoke-MgGraphRequest @graphParams
 
+    # secureByDefault is the "Mark devices with no compliance policy assigned as: Not compliant"
+    # toggle (CIS 4.1). The check-in threshold is reported alongside it as a secondary signal.
+    $secureByDefault  = $complianceSettings['secureByDefault']
     $markNonCompliant = $complianceSettings['deviceComplianceCheckinThresholdDays']
-    # A low threshold (or specific config) means devices are flagged quickly
-    if ($null -ne $markNonCompliant) {
+    $thresholdText    = if ($null -ne $markNonCompliant) { "$markNonCompliant days" } else { 'not reported' }
+
+    if ($null -ne $secureByDefault) {
+        $status = if ($secureByDefault -ne $true) { 'Fail' }
+                  elseif ($null -ne $markNonCompliant -and [int]$markNonCompliant -gt 30) { 'Warning' }
+                  else { 'Pass' }
+        $currentValue = if ($secureByDefault -eq $true) { 'Not compliant' } else { 'Compliant' }
         $settingParams = @{
             Category           = 'Device Compliance'
             Setting            = 'Non-Compliant Default Threshold'
-            CurrentValue       = "$markNonCompliant days"
+            CurrentValue       = "Devices with no policy marked: $currentValue (check-in threshold: $thresholdText)"
             RecommendedValue   = 'Devices without policy marked non-compliant'
-            Status             = if ([int]$markNonCompliant -le 30) { 'Pass' } else { 'Warning' }
+            Status             = $status
             CheckId            = 'INTUNE-COMPLIANCE-001'
-            Remediation        = 'Intune admin center > Devices > Compliance > Compliance policy settings > Mark devices with no compliance policy assigned as > Not compliant.'
+            Remediation        = 'Intune admin center > Devices > Compliance > Compliance policy settings > Mark devices with no compliance policy assigned as > Not compliant. Keep the compliance status validity period at 30 days or less.'
             # D1 #785 -- structured evidence
-            ObservedValue      = [string][int]$markNonCompliant
-            ExpectedValue      = '<=30'
+            ObservedValue      = "secureByDefault=$secureByDefault; deviceComplianceCheckinThresholdDays=$markNonCompliant"
+            ExpectedValue      = 'secureByDefault=True; deviceComplianceCheckinThresholdDays<=30'
             EvidenceSource     = '/deviceManagement/settings'
             CollectionMethod   = 'Direct'
             PermissionRequired = 'DeviceManagementConfiguration.Read.All'
@@ -78,7 +86,7 @@ try {
         $settingParams = @{
             Category         = 'Device Compliance'
             Setting          = 'Non-Compliant Default Threshold'
-            CurrentValue     = 'Setting not available'
+            CurrentValue     = "secureByDefault not reported (check-in threshold: $thresholdText)"
             RecommendedValue = 'Devices without policy marked non-compliant'
             Status           = 'Review'
             CheckId          = 'INTUNE-COMPLIANCE-001'
