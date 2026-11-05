@@ -112,11 +112,10 @@ Details: `CHANGELOG.md` `[Unreleased]` and `docs/user/CMMC-SSP.md`.
    it. If it lives elsewhere (CheckID, the fleet machine), bring it in; if not, scoping it is
    a design task (an endpoint-side collector or Intune/Defender for Endpoint reads). It
    would also close CMMC 3.3.7 and the network side of 3.13.5/3.13.6.
-  Build-vs-reuse research for the endpoint and network collector is in
-  `docs/research/endpoint-network-collector-options.md`. It recommends reading Defender
-  Vulnerability Management baselines and Intune Remediation output first, then a
-  HardeningKitty-based PowerShell collector, and Batfish for network config analysis. First
-  ask whether CheckID's `AzAssess` collector exists privately.
+  **Decided 2026-11-05:** endpoint data comes from NinjaOne (formerly NinjaRMM) for customers
+  who want it. Ingestion (NinjaOne API pull, or export/import into the portal) is deferred
+  and tracked in T-0905. Background and reuse notes:
+  `docs/research/endpoint-network-collector-options.md`.
 
 ## 5. Picking this up in a cloud session
 

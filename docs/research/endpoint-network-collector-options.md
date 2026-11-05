@@ -5,6 +5,21 @@ network agent. Licenses were checked against each project's repository metadata 
 documentation (sources at the end); anything marked *verify* still needs a look at the
 LICENSE file or legal review before shipping.
 
+## Decision (2026-11-05)
+
+**Endpoint collection will use NinjaOne (formerly NinjaRMM)** for customers who want it,
+rather than a new or open-source agent. NinjaOne is already the agent on those endpoints. The
+remaining work is ingestion, deferred and tracked in T-0905, by one of two routes:
+
+- **API:** pull device and script results from the NinjaOne API into the portal on a schedule
+  or on demand, and turn them into `WIN-*` findings for the report and SSP.
+- **Export/import:** export from NinjaOne and import the file into the portal (or into
+  `Invoke-M365Assessment`), then produce the same findings.
+
+The options below are kept for reference: the HardeningKitty finding lists can supply the
+check logic for a NinjaOne script, the Batfish note still applies to network evidence, and
+the licensing cautions still apply.
+
 ## What the agent has to read
 
 CheckID's upstream registry already defines the checks. Before #950 partitioned the
