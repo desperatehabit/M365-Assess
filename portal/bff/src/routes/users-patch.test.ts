@@ -3,6 +3,7 @@ import { AppError } from "../errors.js";
 import { tenantScope } from "../rbac/scope.js";
 import type { RequestContext } from "../server.js";
 import {
+  TENANT_USER_PATH,
   USERS_BULK_PATCH_PATH,
   USERS_OPENAPI,
   USERS_WRITE_PERMISSION,
@@ -102,6 +103,26 @@ function context(tenantId: string, body: unknown): RequestContext {
     query: new URLSearchParams(),
     headers: {},
     params: { tenantId },
+    body,
+  } as RequestContext;
+}
+
+function singlePatchHandler(routes: ReturnType<typeof createTenantUsersRoute>) {
+  const handler = routes.find(
+    (route) => route.method === "PATCH" && route.path === TENANT_USER_PATH,
+  )?.handler;
+  if (!handler) throw new Error("single-user PATCH handler is missing");
+  return handler;
+}
+
+function singleContext(tenantId: string, userId: string, body: unknown): RequestContext {
+  return {
+    correlationId: "correlation-1",
+    method: "PATCH",
+    path: `/v1/tenants/${tenantId}/users/${userId}`,
+    query: new URLSearchParams(),
+    headers: {},
+    params: { tenantId, userId },
     body,
   } as RequestContext;
 }
@@ -262,5 +283,114 @@ describe("tenant users bulk patch (T-0203)", () => {
       patchHandler(routes)(context(TENANT, { users: [{ userId: "user-1", properties: { department: "X" } }] })),
     ).rejects.toMatchObject({ status: 401 });
     expect(provider.calls).toHaveLength(0);
+  });
+});
+
+describe("tenant user single edit (T-0880)", () => {
+  it("registers PATCH /v1/tenants/:tenantId/users/:userId with the users.write permission", () => {
+    const { routes } = optionsFor(callerFor([TENANT]), true);
+    const patch = routes.find((route) => route.method === "PATCH" && route.path === TENANT_USER_PATH);
+
+    expect(patch?.path).toBe("/v1/tenants/:tenantId/users/:userId");
+    expect(USERS_OPENAPI.paths["/tenants/{tenantId}/users/{userId}"].patch.operationId).toBe(
+      "patchTenantUser",
+    );
+    expect(USERS_OPENAPI.paths["/tenants/{tenantId}/users/{userId}"].patch.permission).toBe(
+      "Identity.User.ReadWrite",
+    );
+  });
+
+  it("applies the edit, returns the diff, and audits the change", async () => {
+    const { provider, audits, routes } = optionsFor(callerFor([TENANT]), true);
+
+    const response = await singlePatchHandler(routes)(
+      singleContext(TENANT, "user-1", { properties: { displayName: "New Name", department: "Engineering" } }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({
+      userId: "user-1",
+      status: "patched",
+      diffs: [{ property: "displayName", before: "Old Name", after: "New Name" }],
+      error: null,
+    });
+    expect(provider.calls).toEqual([{ tenantId: TENANT, preview: false, count: 1 }]);
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ action: "users.patch", targetId: "user-1", result: "success" });
+  });
+
+  it("previews the diff without a tenant write or audit", async () => {
+    const { provider, audits, routes } = optionsFor(callerFor([TENANT]), true);
+
+    const response = await singlePatchHandler(routes)(
+      singleContext(TENANT, "user-2", { preview: true, properties: { jobTitle: "Analyst" } }),
+    );
+
+    expect(response.body).toMatchObject({ status: "previewed", error: null });
+    expect(provider.calls[0]?.preview).toBe(true);
+    expect(audits).toHaveLength(0);
+  });
+
+  it("rejects an unknown property with a 400 before calling the provider", async () => {
+    const { provider, routes } = optionsFor(callerFor([TENANT]), true);
+
+    await expect(
+      singlePatchHandler(routes)(singleContext(TENANT, "user-1", { properties: { employeeId: "1" } })),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it("requires the users.write permission", async () => {
+    const { provider, routes } = optionsFor(callerFor([TENANT]), false);
+
+    await expect(
+      singlePatchHandler(routes)(singleContext(TENANT, "user-1", { properties: { department: "X" } })),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it("rejects a tenant outside the caller scope", async () => {
+    const { provider, routes } = optionsFor(callerFor([OTHER_TENANT]), true);
+
+    await expect(
+      singlePatchHandler(routes)(singleContext(TENANT, "user-1", { properties: { department: "X" } })),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it("requires authentication", async () => {
+    const { provider, routes } = optionsFor(undefined, true);
+
+    await expect(
+      singlePatchHandler(routes)(singleContext(TENANT, "user-1", { properties: { department: "X" } })),
+    ).rejects.toMatchObject({ status: 401 });
+    expect(provider.calls).toHaveLength(0);
+  });
+
+  it("returns a failed row and audits when the worker rejects the edit", async () => {
+    const failing = new FakePatchProvider();
+    failing.failUsers.add("user-1");
+    const { audits, routes } = optionsFor(callerFor([TENANT]), true, { patch: failing });
+
+    const response = await singlePatchHandler(routes)(
+      singleContext(TENANT, "user-1", { properties: { department: "Finance" } }),
+    );
+
+    expect(response.body).toMatchObject({ status: "failed", error: "graph rejected the patch" });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ result: "failure" });
+  });
+
+  it("returns 501 when patch is not wired", async () => {
+    const routes = createTenantUsersRoute({
+      provider: NULL_LIST,
+      resolveCaller: () => callerFor([TENANT]),
+      authorize: async () => {},
+      readBody: (ctx) => (ctx as { body?: unknown }).body,
+    });
+
+    await expect(
+      singlePatchHandler(routes)(singleContext(TENANT, "user-1", { properties: { department: "X" } })),
+    ).rejects.toMatchObject({ status: 501 });
   });
 });

@@ -60,6 +60,32 @@ export interface UserCreateRowResult {
   readonly error: string | null;
 }
 
+export const PATCHABLE_USER_PROPERTIES = [
+  "displayName",
+  "givenName",
+  "surname",
+  "department",
+  "jobTitle",
+  "officeLocation",
+  "mobilePhone",
+  "usageLocation",
+] as const;
+
+export type PatchableUserProperty = (typeof PATCHABLE_USER_PROPERTIES)[number];
+
+export type UserPatchProperties = Partial<Record<PatchableUserProperty, string | null>>;
+
+export interface UserPatchRowResult {
+  readonly userId: string;
+  readonly status: "patched" | "previewed" | "failed";
+  readonly diffs: ReadonlyArray<{
+    property: PatchableUserProperty;
+    before: string | null;
+    after: string | null;
+  }>;
+  readonly error: string | null;
+}
+
 export type Fetcher = typeof fetch;
 
 function asFetcher(fetcher?: Fetcher): Fetcher {
@@ -127,6 +153,27 @@ export async function createTenantUsers(
     rows?: UserCreateRowResult[];
   };
   return { rows: body.rows ?? [] };
+}
+
+export async function updateTenantUser(
+  tenantId: string,
+  userId: string,
+  properties: UserPatchProperties,
+  options: { preview?: boolean } = {},
+  fetcher?: Fetcher,
+): Promise<UserPatchRowResult> {
+  const response = await asFetcher(fetcher)(
+    `/v1/tenants/${encodeURIComponent(tenantId)}/users/${encodeURIComponent(userId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        properties,
+        ...(options.preview === undefined ? {} : { preview: options.preview }),
+      }),
+    },
+  );
+  return (await expectOk(response, "Update user")) as UserPatchRowResult;
 }
 
 export async function executeUserAction(
