@@ -37,6 +37,86 @@ describe("AppNav", () => {
     const hrefs = NAV_GROUPS.flatMap((group) => group.items.map((item) => item.href));
     expect(new Set(hrefs).size).toBe(hrefs.length);
   });
+
+  it("covers the post-EPIC-018 feature areas (T-0887)", () => {
+    const byLabel = new Map(NAV_GROUPS.map((group) => [group.label, group.items]));
+    const hrefs = (label: string): readonly string[] =>
+      (byLabel.get(label) ?? []).map((item) => item.href);
+
+    expect(hrefs("Devices")).toEqual(
+      expect.arrayContaining([
+        "/security/defender",
+        "/security/defender/onboarding",
+        "/security/defender/vulnerabilities",
+        "/security/defender/cve",
+      ]),
+    );
+    expect(hrefs("Intune")).toContain("/intune/reusable-settings");
+    expect(hrefs("Email")).toEqual(
+      expect.arrayContaining([
+        "/email/mailboxes",
+        "/email/mailboxes/deleted",
+        "/email/transport/connectors",
+        "/email/spamfilter",
+        "/email/quarantine",
+        "/email/contacts",
+        "/email/resources",
+        "/tools/email/message-trace",
+      ]),
+    );
+    expect(hrefs("Collaboration")).toEqual(
+      expect.arrayContaining([
+        "/sharepoint/sites",
+        "/teams",
+        "/teams/voice",
+        "/sharing/permissions",
+      ]),
+    );
+    expect(hrefs("Security & compliance")).toEqual(
+      expect.arrayContaining([
+        "/compliance/dlp",
+        "/compliance/labels",
+        "/compliance/safelinks",
+        "/secure-score",
+        "/audit-logs/manual",
+        "/incidents",
+        "/test-packs",
+        "/custom-tests",
+        "/catalog",
+      ]),
+    );
+    expect(hrefs("Tenant administration")).toEqual(
+      expect.arrayContaining([
+        "/tenant-administration/alerts",
+        "/settings/notifications",
+        "/tenant/reports/license",
+        "/domains",
+        "/backup",
+      ]),
+    );
+    expect(hrefs("Platform admin")).toEqual(
+      expect.arrayContaining([
+        "/settings/branding",
+        "/settings/features",
+        "/logbook",
+        "/preferences",
+        "/portal-users",
+        "/api-clients",
+        "/api-docs",
+        "/templates",
+        "/tools/graph-explorer",
+      ]),
+    );
+  });
+
+  it("resolves active items in the new sections", () => {
+    expect(activeHref("/intune/reusable-settings")).toBe("/intune/reusable-settings");
+    expect(activeHref("/security/defender/onboarding")).toBe("/security/defender/onboarding");
+    expect(activeHref("/email/mailboxes/deleted")).toBe("/email/mailboxes/deleted");
+    expect(activeHref("/teams/voice")).toBe("/teams/voice");
+    expect(activeHref("/audit-logs/webhooks")).toBe("/audit-logs/webhooks");
+    expect(activeHref("/settings/branding")).toBe("/settings/branding");
+  });
 });
 
 describe("tenant selection", () => {
