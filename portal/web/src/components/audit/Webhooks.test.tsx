@@ -157,9 +157,11 @@ describe("WebhooksTable", () => {
 describe("deriveWebhookState", () => {
   it("derives active, expiring, and expired from the expiry time", () => {
     const now = "2026-10-01T00:00:00Z";
-    expect(deriveWebhookState({ expirationDateTime: daysFromNow(90) }, now)).toBe("active");
-    expect(deriveWebhookState({ expirationDateTime: daysFromNow(5) }, now)).toBe("expiring");
-    expect(deriveWebhookState({ expirationDateTime: daysFromNow(-1) }, now)).toBe("expired");
+    const daysAfterNow = (days: number) =>
+      new Date(Date.parse(now) + days * 24 * 60 * 60 * 1000).toISOString();
+    expect(deriveWebhookState({ expirationDateTime: daysAfterNow(90) }, now)).toBe("active");
+    expect(deriveWebhookState({ expirationDateTime: daysAfterNow(5) }, now)).toBe("expiring");
+    expect(deriveWebhookState({ expirationDateTime: daysAfterNow(-1) }, now)).toBe("expired");
   });
 });
 
