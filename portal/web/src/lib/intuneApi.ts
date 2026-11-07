@@ -571,3 +571,134 @@ export async function fetchAllIntuneTemplates(baseUrl = ""): Promise<IntuneTempl
   } while (cursor);
   return all;
 }
+
+// ---- Reusable settings (EPIC-016 SPEC.md §3.3; T-0885) ----
+
+export interface ReusableSettingTemplate {
+  readonly id: string;
+  readonly name: string;
+  readonly settingsJson: Record<string, unknown>;
+  readonly createdAt: string;
+  readonly updatedAt: string;
+  readonly deletedAt?: string | null;
+  /** v1 scope type key derived from the setting definition, or null when out of scope. */
+  readonly type?: string | null;
+}
+
+export interface ReusableSettingTemplateInput {
+  readonly name: string;
+  readonly settingsJson: Record<string, unknown>;
+}
+
+export interface LiveReusableSetting {
+  readonly id: string;
+  readonly displayName: string;
+  readonly settingDefinitionId: string;
+  readonly type: string | null;
+  readonly inScope: boolean;
+  readonly referencingPolicyCount: number;
+}
+
+export interface ReusableSettingChange {
+  readonly templateId: string;
+  readonly displayName: string;
+  readonly type: string;
+  readonly action: "create" | "update" | "none";
+  readonly settingId: string | null;
+  readonly diff: readonly string[];
+  readonly referencingPolicies: readonly { readonly id: string; readonly name: string }[];
+}
+
+export interface ReusableSettingWriteResult {
+  readonly templateId: string;
+  readonly displayName: string;
+  readonly status: "succeeded" | "failed" | "skipped";
+  readonly settingId: string | null;
+  readonly error: string | null;
+}
+
+export interface ReusableSettingsSyncResult {
+  readonly tenantId: string;
+  readonly preview: boolean;
+  readonly changes: readonly ReusableSettingChange[];
+  readonly results: readonly ReusableSettingWriteResult[];
+}
+
+export async function listReusableSettingTemplates(
+  baseUrl = "",
+): Promise<ReusableSettingTemplate[]> {
+  const res = await fetch(`${baseUrl}/v1/intune-reusable-setting-templates`);
+  if (!res.ok) await throwApiError(res, "Failed to list reusable setting templates");
+  const body = (await res.json()) as { items?: ReusableSettingTemplate[] };
+  return body.items ?? [];
+}
+
+export async function createReusableSettingTemplate(
+  input: ReusableSettingTemplateInput,
+  baseUrl = "",
+): Promise<ReusableSettingTemplate> {
+  const res = await fetch(`${baseUrl}/v1/intune-reusable-setting-templates`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!res.ok) await throwApiError(res, "Failed to create reusable setting template");
+  return res.json() as Promise<ReusableSettingTemplate>;
+}
+
+export async function updateReusableSettingTemplate(
+  id: string,
+  input: Partial<ReusableSettingTemplateInput>,
+  baseUrl = "",
+): Promise<ReusableSettingTemplate> {
+  const res = await fetch(
+    `${baseUrl}/v1/intune-reusable-setting-templates/${encodeURIComponent(id)}`,
+    {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) await throwApiError(res, "Failed to update reusable setting template");
+  return res.json() as Promise<ReusableSettingTemplate>;
+}
+
+export async function deleteReusableSettingTemplate(id: string, baseUrl = ""): Promise<void> {
+  const res = await fetch(
+    `${baseUrl}/v1/intune-reusable-setting-templates/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok) await throwApiError(res, "Failed to delete reusable setting template");
+}
+
+export async function listLiveReusableSettings(
+  tenantId: string,
+  baseUrl = "",
+): Promise<LiveReusableSetting[]> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/intune/reusable-settings`,
+  );
+  if (!res.ok) await throwApiError(res, "Failed to list reusable settings");
+  const body = (await res.json()) as { items?: LiveReusableSetting[] };
+  return body.items ?? [];
+}
+
+export async function syncReusableSettings(
+  tenantId: string,
+  templateIds: readonly string[],
+  preview = true,
+  baseUrl = "",
+): Promise<ReusableSettingsSyncResult> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/intune/reusable-settings/sync`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ templateIds, preview }),
+    },
+  );
+  if (!res.ok && res.status !== 207 && res.status !== 422) {
+    await throwApiError(res, "Failed to sync reusable settings");
+  }
+  return res.json() as Promise<ReusableSettingsSyncResult>;
+}
