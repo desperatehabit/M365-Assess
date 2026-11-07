@@ -32,6 +32,11 @@ import { INCIDENT_DETAIL_OPENAPI } from "./incidents-detail.js";
 import { INCIDENT_ACTIONS_OPENAPI } from "./incidents-actions.js";
 import { ALERTS_OPENAPI } from "./alerts.js";
 import { CHECK_ALERTS_OPENAPI } from "./check-alerts.js";
+// EPIC-029 Alerting & notifications (T-0859).
+import { ALERT_RULES_OPENAPI } from "./alert-rules.js";
+import { ALERT_RULES_TEST_OPENAPI } from "./alert-rules-test.js";
+import { ALERT_EVENTS_OPENAPI } from "./alert-events.js";
+import { NOTIFICATIONS_OPENAPI } from "./notifications.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -101,6 +106,11 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   INCIDENT_ACTIONS_OPENAPI as unknown as OpenApiFragment,
   ALERTS_OPENAPI as unknown as OpenApiFragment,
   CHECK_ALERTS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-029 Alerting & notifications (T-0859).
+  ALERT_RULES_OPENAPI as unknown as OpenApiFragment,
+  ALERT_RULES_TEST_OPENAPI as unknown as OpenApiFragment,
+  ALERT_EVENTS_OPENAPI as unknown as OpenApiFragment,
+  NOTIFICATIONS_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

@@ -37,6 +37,220 @@ paths:
         "401":
           description: Authentication required.
       x-permission: authenticated
+  /alert-events:
+    get:
+      tags:
+        - Alerting
+      operationId: listAlertEvents
+      summary: List the fired-alert queue/history (§3.5) with state, source, tenant, and time; cursor-paginated and filterable
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - open
+              - snoozed
+              - resolved
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - Critical
+              - High
+              - Medium
+              - Low
+              - Info
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The filtered event page; snoozed events carry snoozeUntil and are reached with state=snoozed.
+        "400":
+          description: A query parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks CIPP.Alert.Read.
+      x-permission: CIPP.Alert.Read
+  /alert-rules:
+    get:
+      tags:
+        - Alerting
+      operationId: listAlertRules
+      summary: List built-in and custom alert rules with the §3.1 columns.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Built-in and custom rules.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks CIPP.Alert.Read.
+      x-permission: CIPP.Alert.Read
+    post:
+      tags:
+        - Alerting
+      operationId: createAlertRule
+      summary: Create a custom alert rule with a scope and channels.
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: Rule created.
+        "400":
+          description: The rule body is invalid.
+        "403":
+          description: The caller lacks CIPP.Alert.ReadWrite.
+      x-permission: CIPP.Alert.ReadWrite
+  /alert-rules/{ruleId}:
+    patch:
+      tags:
+        - Alerting
+      operationId: updateAlertRule
+      summary: Edit an alert rule's name, source, severity, scope, or channels.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rule updated.
+        "400":
+          description: The patch body is invalid.
+        "404":
+          description: No such rule.
+      x-permission: CIPP.Alert.ReadWrite
+    delete:
+      tags:
+        - Alerting
+      operationId: deleteAlertRule
+      summary: Delete an alert rule.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rule deleted.
+        "404":
+          description: No such rule.
+      x-permission: CIPP.Alert.ReadWrite
+  /alert-rules/{ruleId}/snooze:
+    post:
+      tags:
+        - Alerting
+      operationId: snoozeAlertRule
+      summary: Snooze a rule's open events for a duration or until a time (§3.3); they auto-return to open once elapsed
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                durationMinutes:
+                  type: number
+                  description: Snooze length in minutes; mutually exclusive with until.
+                until:
+                  type: string
+                  description: Explicit ISO 8601 return instant; mutually exclusive with durationMinutes.
+      responses:
+        "200":
+          description: The rule's events moved to snoozed, with the return instant.
+        "400":
+          description: The snooze body is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks CIPP.Alert.ReadWrite.
+      x-permission: CIPP.Alert.ReadWrite
+  /alert-rules/{ruleId}/test:
+    post:
+      tags:
+        - Alerting
+      operationId: testAlertRule
+      summary: Dry-run an alert rule against current data and report matched/not-matched without delivering (§4.2).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The dry-run result (matched, matchCount, evaluated); no AlertEvent is recorded and nothing is delivered.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks CIPP.Alert.ReadWrite.
+        "404":
+          description: No such rule.
+      x-permission: CIPP.Alert.ReadWrite
+  /alert-rules/{ruleId}/toggle:
+    post:
+      tags:
+        - Alerting
+      operationId: toggleAlertRule
+      summary: Enable or disable an alert rule (audited).
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Rule enabled or disabled.
+        "400":
+          description: The toggle body is invalid.
+        "404":
+          description: No such rule.
+      x-permission: CIPP.Alert.ReadWrite
   /api-clients:
     get:
       operationId: listApiClients
@@ -1022,6 +1236,90 @@ paths:
         "401":
           description: Authentication required.
       x-permission: authenticated
+  /notifications:
+    get:
+      tags:
+        - Alerting
+      operationId: listNotificationChannels
+      summary: List configured notification channels with their enabled state.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The configured channels.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks CIPP.Alert.Read.
+      x-permission: CIPP.Alert.Read
+    put:
+      tags:
+        - Alerting
+      operationId: updateNotificationChannel
+      summary: Update a channel's target or enabled state (audited).
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - id
+              properties:
+                id:
+                  type: string
+                target:
+                  type: string
+                enabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated channel.
+        "400":
+          description: The update body is invalid.
+        "403":
+          description: The caller lacks CIPP.Alert.ReadWrite.
+        "404":
+          description: No such channel.
+      x-permission: CIPP.Alert.ReadWrite
+  /notifications/test:
+    post:
+      tags:
+        - Alerting
+      operationId: testNotificationChannel
+      summary: Send a test notification through a channel's delivery adapter.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - channel
+              properties:
+                channel:
+                  type: string
+                  enum:
+                    - email
+                    - webhook
+                    - psa
+                    - slack
+                target:
+                  type: string
+      responses:
+        "200":
+          description: The delivery outcome; no AlertEvent is recorded.
+        "400":
+          description: The test body is invalid.
+        "403":
+          description: The caller lacks CIPP.Alert.ReadWrite.
+        "501":
+          description: The channel has no delivery adapter yet (PSA is deferred to EPIC-041).
+      x-permission: CIPP.Alert.ReadWrite
   /offboarding/{jobId}/steps/{order}/rerun:
     post:
       operationId: postOffboardingJobIdStepsOrderRerun

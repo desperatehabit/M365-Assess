@@ -225,6 +225,11 @@ import { INCIDENT_DETAIL_OPENAPI } from "../routes/incidents-detail.js";
 import { INCIDENT_ACTIONS_OPENAPI } from "../routes/incidents-actions.js";
 import { ALERTS_OPENAPI } from "../routes/alerts.js";
 import { CHECK_ALERTS_PATH } from "../routes/check-alerts.js";
+// EPIC-029 Alerting & notifications (T-0859).
+import { ALERT_RULES_OPENAPI } from "../routes/alert-rules.js";
+import { ALERT_RULES_TEST_OPENAPI } from "../routes/alert-rules-test.js";
+import { ALERT_EVENTS_OPENAPI } from "../routes/alert-events.js";
+import { NOTIFICATIONS_OPENAPI } from "../routes/notifications.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -708,6 +713,11 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(INCIDENT_ACTIONS_OPENAPI),
   ...registryEntriesFromOpenApi(ALERTS_OPENAPI),
   { method: "GET", path: CHECK_ALERTS_PATH, permission: INCIDENTS_READ_PERMISSION },
+  // EPIC-029 Alerting & notifications (T-0859).
+  ...registryEntriesFromOpenApi(ALERT_RULES_OPENAPI),
+  ...registryEntriesFromOpenApi(ALERT_RULES_TEST_OPENAPI),
+  ...registryEntriesFromOpenApi(ALERT_EVENTS_OPENAPI),
+  ...registryEntriesFromOpenApi(NOTIFICATIONS_OPENAPI),
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

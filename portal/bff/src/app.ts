@@ -12,6 +12,7 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import {
   DEFAULT_STANDARDS_REGISTRY_PATH,
+  SqliteAlertingRepository,
   SqliteBaselinesRepository,
   SqliteBecFindingRepository,
   SqliteCustomScriptRepository,
@@ -186,6 +187,12 @@ import {
 } from "./scheduler/maintenance.js";
 // EPIC-028 Incidents & Alerts providers (T-0858).
 import { createCheckAlertsProvider, createIncidentProviders } from "./adapters/incidents.js";
+// EPIC-029 alerting stores (T-0859).
+import { createAlertingStores } from "./adapters/alerting.js";
+import { createAlertRulesRoutes } from "./routes/alert-rules.js";
+import { createAlertRulesTestRoutes } from "./routes/alert-rules-test.js";
+import { createAlertEventRoutes } from "./routes/alert-events.js";
+import { createNotificationRoutes } from "./routes/notifications.js";
 import { createIncidentsRoutes } from "./routes/incidents.js";
 import { createIncidentsDetailRoute } from "./routes/incidents-detail.js";
 import { createIncidentsActionsRoute } from "./routes/incidents-actions.js";
@@ -549,6 +556,10 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // findings read that backs /v1/check-alerts.
   const incidents = createIncidentProviders(run, credentialRows, repo);
   const checkAlerts = createCheckAlertsProvider({ tenants: tenantStore, findings: repo });
+  // EPIC-029 (T-0859): the alerting stores over migration 0037/0128. The built-in
+  // catalog and notification channels seed on the first read.
+  const alertingRepo = new SqliteAlertingRepository(db, schemaVersion);
+  const alerting = createAlertingStores({ repo: alertingRepo, findings: repo });
   const mfa = createMfaProviders(envelope);
   const roles = createRoleProviders(tenantWorker);
   // EPIC-020 mailboxes (T-0850): every read and write runs a feature worker for the
@@ -1269,6 +1280,31 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       resolveCaller,
       authorize: authorizeCaller,
       recordAudit: routeAudit,
+    }),
+
+    // EPIC-029 Alerting & notifications (T-0859). The route factories existed but were
+    // never mounted and the entities had no store. The rules/events/notification
+    // stores persist through SQLite (migrations 0037/0128); the dry-run evaluator
+    // reads the tenant's latest finished run findings.
+    ...createAlertRulesRoutes({
+      store: alerting.rules,
+      audit: { record: routeAudit },
+      ...caller,
+    }),
+    ...createAlertRulesTestRoutes({
+      store: alerting.ruleTests,
+      evaluator: alerting.evaluator,
+      ...caller,
+    }),
+    ...createAlertEventRoutes({
+      store: alerting.events,
+      audit: { record: routeAudit },
+      ...caller,
+    }),
+    ...createNotificationRoutes({
+      store: alerting.notifications,
+      audit: { record: routeAudit },
+      ...caller,
     }),
 
     // EPIC-028 Incidents & Alerts (T-0858). The factories existed but were never

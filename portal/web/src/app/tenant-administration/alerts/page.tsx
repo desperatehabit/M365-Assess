@@ -53,6 +53,8 @@ export interface AlertEventRow {
   readonly severity: string;
   readonly state: string;
   readonly snoozeUntil: string | null;
+  /** The owning rule's source, joined by the BFF for the queue view. */
+  readonly source?: string | null;
 }
 
 // The T-0564 POST /v1/alert-rules/{id}/test dry-run result. It reports whether
@@ -139,6 +141,17 @@ export async function testAlertRule(
 export async function listSnoozedAlerts(fetcher: Fetcher = fetch): Promise<readonly AlertEventRow[]> {
   const response = await fetcher("/v1/alert-events?state=snoozed");
   if (!response.ok) await throwApiError(response, "Failed to list snoozed alerts");
+  const body = (await response.json()) as { items?: readonly AlertEventRow[] };
+  return body.items ?? [];
+}
+
+/**
+ * T-0567 event queue/history: every open and resolved event, newest first, with its
+ * rule's source. The snoozed queue has its own tab.
+ */
+export async function listAlertEvents(fetcher: Fetcher = fetch): Promise<readonly AlertEventRow[]> {
+  const response = await fetcher("/v1/alert-events?limit=200");
+  if (!response.ok) await throwApiError(response, "Failed to list alert events");
   const body = (await response.json()) as { items?: readonly AlertEventRow[] };
   return body.items ?? [];
 }
@@ -282,7 +295,7 @@ const drawerStyle: CSSProperties = {
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
-export type AlertConfigurationTab = "config" | "snoozed";
+export type AlertConfigurationTab = "config" | "snoozed" | "events";
 
 export interface AlertConfigurationViewProps {
   readonly fetcher?: Fetcher;
@@ -292,6 +305,7 @@ export function AlertConfigurationView({ fetcher = fetch }: AlertConfigurationVi
   const [tab, setTab] = useState<AlertConfigurationTab>("config");
   const [rules, setRules] = useState<readonly AlertRuleView[]>([]);
   const [snoozed, setSnoozed] = useState<readonly AlertEventRow[]>([]);
+  const [events, setEvents] = useState<readonly AlertEventRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -320,6 +334,16 @@ export function AlertConfigurationView({ fetcher = fetch }: AlertConfigurationVi
     }
   }, [fetcher]);
 
+  const loadEvents = useCallback(async (): Promise<void> => {
+    try {
+      // The snoozed queue has its own tab; the queue/history view is open + resolved.
+      setEvents((await listAlertEvents(fetcher)).filter((event) => event.state !== "snoozed"));
+    } catch (err) {
+      setEvents([]);
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [fetcher]);
+
   useEffect(() => {
     void loadRules();
   }, [loadRules]);
@@ -327,6 +351,10 @@ export function AlertConfigurationView({ fetcher = fetch }: AlertConfigurationVi
   useEffect(() => {
     void loadSnoozed();
   }, [loadSnoozed]);
+
+  useEffect(() => {
+    void loadEvents();
+  }, [loadEvents]);
 
   const handleToggle = useCallback(
     async (rule: AlertRuleView): Promise<void> => {
@@ -414,6 +442,16 @@ export function AlertConfigurationView({ fetcher = fetch }: AlertConfigurationVi
             data-testid="alert-tab-snoozed"
           >
             Snoozed Alerts
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "events"}
+            style={tab === "events" ? activeTabStyle : tabStyle}
+            onClick={() => setTab("events")}
+            data-testid="alert-tab-events"
+          >
+            Alert queue
           </button>
         </div>
         {tab === "config" && (
@@ -518,7 +556,7 @@ export function AlertConfigurationView({ fetcher = fetch }: AlertConfigurationVi
             </tbody>
           </table>
         </div>
-      ) : (
+      ) : tab === "snoozed" ? (
         <div style={{ overflowX: "auto" }}>
           <table style={tableStyle} data-testid="alert-snoozed-table">
             <thead>
@@ -543,6 +581,39 @@ export function AlertConfigurationView({ fetcher = fetch }: AlertConfigurationVi
                     <td style={tdStyle}>{event.severity}</td>
                     <td style={tdStyle}>{formatAlertTimestamp(event.firedAt)}</td>
                     <td style={tdStyle} data-testid={`alert-snoozed-until-${event.id}`}>{formatAlertTimestamp(event.snoozeUntil)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={tableStyle} data-testid="alert-events-table">
+            <thead>
+              <tr>
+                <th style={thStyle}>State</th>
+                <th style={thStyle}>Rule</th>
+                <th style={thStyle}>Source</th>
+                <th style={thStyle}>Tenant</th>
+                <th style={thStyle}>Severity</th>
+                <th style={thStyle}>Fired</th>
+              </tr>
+            </thead>
+            <tbody>
+              {events.length === 0 ? (
+                <tr>
+                  <td style={tdStyle} colSpan={6} data-testid="alert-events-empty">No open or resolved alerts.</td>
+                </tr>
+              ) : (
+                events.map((event) => (
+                  <tr key={event.id} data-testid={`alert-event-row-${event.id}`}>
+                    <td style={tdStyle} data-testid={`alert-event-state-${event.id}`}>{event.state}</td>
+                    <td style={tdStyle}>{event.ruleId}</td>
+                    <td style={tdStyle}>{event.source ?? "—"}</td>
+                    <td style={tdStyle}>{event.tenantId}</td>
+                    <td style={tdStyle}>{event.severity}</td>
+                    <td style={tdStyle}>{formatAlertTimestamp(event.firedAt)}</td>
                   </tr>
                 ))
               )}
