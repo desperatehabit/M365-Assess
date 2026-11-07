@@ -1,4 +1,7 @@
+import type { JobEnvelope } from "@m365-assess/contracts";
+import type { Schedule } from "@m365-assess/db";
 import { describe, expect, it } from "vitest";
+import { createVacationScheduleCommand } from "../adapters/mailboxes.js";
 import { tenantScope } from "../rbac/scope.js";
 import {
   VACATION_SCHEDULES_PATH,
@@ -113,15 +116,21 @@ class FakeVacationStore {
 }
 
 class FakeApplyProvider implements VacationApplyProvider {
-  readonly calls: Array<{ tenantId: string; schedule: VacationSchedule; phase: VacationPhase }> = [];
+  readonly calls: Array<{
+    tenantId: string;
+    schedule: VacationSchedule;
+    phase: VacationPhase;
+    priorState?: Record<string, unknown> | null;
+  }> = [];
   outcome: VacationApplyResult = REVERT_RESULT;
 
   async applyVacationPhase(
     tenantId: string,
     schedule: VacationSchedule,
     phase: VacationPhase,
+    options?: { priorState?: Record<string, unknown> | null },
   ): Promise<VacationApplyResult> {
-    this.calls.push({ tenantId, schedule, phase });
+    this.calls.push({ tenantId, schedule, phase, priorState: options?.priorState });
     return this.outcome;
   }
 }
@@ -129,10 +138,27 @@ class FakeApplyProvider implements VacationApplyProvider {
 class FakeScheduler implements VacationJobScheduler {
   readonly created: VacationScheduledJob[] = [];
   readonly disabled: string[] = [];
+  readonly rows = new Map<string, { parameters: Record<string, unknown> }>();
 
   async createScheduledJob(job: VacationScheduledJob): Promise<unknown> {
     this.created.push(job);
+    this.rows.set(job.id, { parameters: { ...job.parameters } });
     return job;
+  }
+
+  async getScheduledJob(jobId: string): Promise<{ parameters: Record<string, unknown> } | undefined> {
+    return this.rows.get(jobId);
+  }
+
+  async updateScheduledJobParameters(
+    jobId: string,
+    parameters: Record<string, unknown>,
+  ): Promise<unknown> {
+    const existing = this.rows.get(jobId);
+    if (existing !== undefined) {
+      this.rows.set(jobId, { parameters: { ...existing.parameters, ...parameters } });
+    }
+    return undefined;
   }
 
   async disableScheduledJob(jobId: string): Promise<unknown> {
@@ -470,6 +496,66 @@ describe("Vacation schedule routes (T-0386)", () => {
     expect((await store.getVacationSchedule(TENANT, "vac-now"))?.state).toBe("failed");
   });
 
+  it("carries the enable snapshot onto the revert job when the window starts immediately", async () => {
+    const store = new FakeVacationStore();
+    const scheduler = new FakeScheduler();
+    const apply = new FakeApplyProvider();
+    const priorState = { autoReplyState: "Disabled", forwardingSmtpAddress: "", internalMessage: "" };
+    apply.outcome = { ...ENABLE_RESULT, beforeState: priorState };
+    const routes = createVacationScheduleRoutes({
+      store,
+      apply,
+      scheduler,
+      resolveCaller: writeCaller,
+      now: () => "2026-10-02T00:00:00.000Z",
+      newId: () => "vac-now",
+    });
+
+    await routes[1]!.handler({
+      method: "POST",
+      path: `/v1/tenants/${TENANT}/vacation-schedules`,
+      params: { tenantId: TENANT },
+      query: new URLSearchParams(),
+      headers: {},
+      body: {
+        mailboxId: "mbx-9",
+        startsAt: "2026-10-01T00:00:00.000Z",
+        endsAt: "2026-10-08T00:00:00.000Z",
+        oooMessage: "Out of office.",
+      },
+    });
+
+    expect(scheduler.created.map((job) => job.id)).toEqual(["vacation-vac-now-revert"]);
+    expect(scheduler.rows.get("vacation-vac-now-revert")?.parameters["priorState"]).toEqual(
+      priorState,
+    );
+  });
+
+  it("End now restores the snapshot stored on the revert job", async () => {
+    const store = new FakeVacationStore();
+    store.rows.set(ACTIVE.id, ACTIVE);
+    const apply = new FakeApplyProvider();
+    const scheduler = new FakeScheduler();
+    const priorState = { autoReplyState: "Enabled", internalMessage: "Before vacation" };
+    scheduler.rows.set("vacation-vac-1-revert", { parameters: { priorState } });
+    const routes = createVacationScheduleRoutes({
+      store,
+      apply,
+      scheduler,
+      resolveCaller: writeCaller,
+    });
+
+    await routes[2]!.handler({
+      method: "DELETE",
+      path: `/v1/tenants/${TENANT}/vacation-schedules/vac-1`,
+      params: { tenantId: TENANT, scheduleId: "vac-1" },
+      query: new URLSearchParams(),
+      headers: {},
+    });
+
+    expect(apply.calls[0]?.priorState).toEqual(priorState);
+  });
+
   it("rejects callers missing Mailboxes.Vacation.ReadWrite with 403", async () => {
     const routes = createVacationScheduleRoutes({
       store: new FakeVacationStore(),
@@ -486,5 +572,121 @@ describe("Vacation schedule routes (T-0386)", () => {
         headers: {},
       }),
     ).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("vacation schedule command (T-0894)", () => {
+  const signal = new AbortController().signal;
+
+  function jobSchedule(phase: VacationPhase, priorState?: Record<string, unknown>): Schedule {
+    return {
+      id: `vacation-vac-1-${phase}`,
+      name: `Vacation ${phase} for mbx-1`,
+      type: "custom-script",
+      cron: "0 0 0 1 10 *",
+      timezone: "UTC",
+      targetScope: { type: "tenant", id: TENANT },
+      command: VACATION_SCHEDULE_COMMAND,
+      parameters: {
+        vacationScheduleId: "vac-1",
+        tenantId: TENANT,
+        mailboxId: "mbx-1",
+        phase,
+        ...(priorState ? { priorState } : {}),
+      },
+      enabled: true,
+      isSystem: false,
+      lastRunAt: null,
+      nextRunAt: null,
+      createdAt: "2026-09-28T00:00:00.000Z",
+      updatedAt: "2026-09-28T00:00:00.000Z",
+      deletedAt: null,
+    };
+  }
+
+  function envelope(): JobEnvelope {
+    return {
+      schemaVersion: "v1",
+      jobId: "job-1",
+      jobType: "custom-script",
+      tenantId: TENANT,
+      runId: "run-1",
+      requestId: "req-1",
+      correlationId: "corr-1",
+      createdAt: "2026-10-01T00:00:00.000Z",
+      payload: {
+        contextRef: "schedules/vacation-vac-1-enable/context.json",
+        outputRef: "schedules/vacation-vac-1-enable/run-1",
+        credentialRef: `tenants/${TENANT}/credential`,
+        sectionRefs: [],
+        artifactRefs: [],
+      },
+    };
+  }
+
+  it("enables, audits, marks the schedule active, and moves the snapshot to the revert job", async () => {
+    const store = new FakeVacationStore();
+    const scheduler = new FakeScheduler();
+    const apply = new FakeApplyProvider();
+    const priorState = { autoReplyState: "Disabled", internalMessage: "" };
+    apply.outcome = { ...ENABLE_RESULT, beforeState: priorState };
+    scheduler.rows.set("vacation-vac-1-revert", { parameters: { phase: "revert" } });
+    const audits: object[] = [];
+    const command = createVacationScheduleCommand({
+      store,
+      apply,
+      scheduler,
+      audit: { record: (event) => void audits.push(event) },
+    });
+
+    const result = await command(envelope(), jobSchedule("enable"), signal);
+
+    expect(result).toEqual({ status: "succeeded", exitCode: 0 });
+    expect((await store.getVacationSchedule(TENANT, "vac-1"))?.state).toBe("active");
+    expect(scheduler.rows.get("vacation-vac-1-revert")?.parameters["priorState"]).toEqual(priorState);
+    expect(audits).toEqual([expect.objectContaining({ action: "vacation.enable" })]);
+  });
+
+  it("reverts with the stored snapshot, marks ended, and disables both jobs", async () => {
+    const store = new FakeVacationStore();
+    store.rows.set(ACTIVE.id, ACTIVE);
+    const scheduler = new FakeScheduler();
+    const apply = new FakeApplyProvider();
+    const priorState = { autoReplyState: "Enabled", internalMessage: "Before vacation" };
+    const command = createVacationScheduleCommand({ store, apply, scheduler });
+
+    const result = await command(envelope(), jobSchedule("revert", priorState), signal);
+
+    expect(result).toEqual({ status: "succeeded", exitCode: 0 });
+    expect(apply.calls[0]?.priorState).toEqual(priorState);
+    expect((await store.getVacationSchedule(TENANT, "vac-1"))?.state).toBe("ended");
+    expect(scheduler.disabled).toEqual(["vacation-vac-1-enable", "vacation-vac-1-revert"]);
+  });
+
+  it("marks the schedule failed and disables the jobs when the worker fails", async () => {
+    const store = new FakeVacationStore();
+    store.rows.set(ACTIVE.id, ACTIVE);
+    const scheduler = new FakeScheduler();
+    const apply = new FakeApplyProvider();
+    apply.outcome = {
+      success: false,
+      scheduleState: "failed",
+      alert: {
+        kind: "vacation.revert",
+        severity: "High",
+        tenantId: TENANT,
+        scheduleId: "vac-1",
+        mailboxId: "mbx-1",
+        reason: "EXO unavailable",
+        timestamp: "2026-10-08T00:00:00.000Z",
+      },
+    };
+    const command = createVacationScheduleCommand({ store, apply, scheduler });
+
+    const result = await command(envelope(), jobSchedule("revert"), signal);
+
+    expect(result).toEqual({ status: "failed", exitCode: 1, message: "EXO unavailable" });
+    expect((await store.getVacationSchedule(TENANT, "vac-1"))?.state).toBe("failed");
+    expect(scheduler.disabled).toEqual(["vacation-vac-1-enable", "vacation-vac-1-revert"]);
   });
 });

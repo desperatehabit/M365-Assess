@@ -121,7 +121,11 @@ import {
   withReportCompletion,
 } from "./adapters/reports.js";
 import { createActiveGrantsResolver, createRoleProviders } from "./adapters/roles.js";
-import { createMailboxProviders } from "./adapters/mailboxes.js";
+import {
+  createMailboxProviders,
+  createVacationJobScheduler,
+  createVacationScheduleCommand,
+} from "./adapters/mailboxes.js";
 import {
   createStandardsAlignmentStore,
   createStandardsCatalogStore,
@@ -285,7 +289,10 @@ import {
 import { createMailboxReportsRoute } from "./routes/mailbox-reports.js";
 import { createMailboxRuleRoutes } from "./routes/mailbox-rules.js";
 import { createRetentionRoutes } from "./routes/retention.js";
-import { createVacationScheduleRoutes } from "./routes/vacation-schedules.js";
+import {
+  VACATION_SCHEDULE_COMMAND,
+  createVacationScheduleRoutes,
+} from "./routes/vacation-schedules.js";
 import { createDeletedMailboxRoutes } from "./routes/deleted-mailboxes.js";
 import { createIntuneTemplateRoutes } from "./routes/intune-templates.js";
 import { createOneDriveUsageRoutes } from "./routes/onedrive.js";
@@ -573,6 +580,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     db,
   );
   const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
+  // EPIC-020 vacation enable/revert rows ride the EPIC-007 custom-script scheduler (T-0894).
+  const vacationScheduler = createVacationJobScheduler(scheduleRepo);
   const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
@@ -636,6 +645,12 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           tenants: tenantStore,
           storageRoot: config.artifactPath,
           audit: { record: recordScriptAudit },
+        }),
+        [VACATION_SCHEDULE_COMMAND]: createVacationScheduleCommand({
+          store: mailboxes.vacationStore,
+          apply: mailboxes.vacationApply,
+          scheduler: vacationScheduler,
+          audit: { record: (event) => routeAudit(event) },
         }),
       },
     }),
@@ -1116,6 +1131,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createVacationScheduleRoutes({
       store: mailboxes.vacationStore,
       apply: mailboxes.vacationApply,
+      scheduler: vacationScheduler,
       ...caller,
     }).map(audited),
     ...createDeletedMailboxRoutes({ provider: mailboxes.deletedMailboxes, recordAudit: routeAudit, ...caller }),

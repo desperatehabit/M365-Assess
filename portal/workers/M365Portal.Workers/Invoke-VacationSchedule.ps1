@@ -185,6 +185,11 @@ function Read-VacationScheduleJob {
         throw "job envelope '$Path' is missing mandatory 'phase'"
     }
 
+    $priorState = @{}
+    if ($null -ne $json.priorState) {
+        $priorState = $json.priorState | ConvertTo-Json -Depth 10 -Compress | ConvertFrom-Json -AsHashtable
+    }
+
     return @{
         TenantId   = [string]$json.tenantId
         ScheduleId = [string]$json.scheduleId
@@ -195,6 +200,7 @@ function Read-VacationScheduleJob {
         OooMessage = if ($json.oooMessage) { [string]$json.oooMessage } else { '' }
         ForwardTo  = if ($json.forwardTo) { [string]$json.forwardTo } else { '' }
         NotAfter   = if ($json.notAfter) { [string]$json.notAfter } else { '' }
+        PriorState = $priorState
         Confirmed  = [bool]($json.confirmed -eq $true)
         DryRun     = [bool]($json.dryRun -eq $true)
     }
@@ -232,6 +238,9 @@ function Invoke-VacationSchedule {
         Forwarding target for enable; empty for OoO-only.
     .PARAMETER NotAfter
         Apply bound from the scheduler envelope; enable past it is skipped.
+    .PARAMETER PriorState
+        OoO and forwarding snapshot captured by the enable phase. When present,
+        revert restores it instead of clearing the mailbox's settings.
     .PARAMETER DryRun
         Report the intended change without writing to the tenant.
     .PARAMETER Confirmed
@@ -274,6 +283,9 @@ function Invoke-VacationSchedule {
 
         [Parameter()]
         [string]$NotAfter = '',
+
+        [Parameter()]
+        [hashtable]$PriorState = @{},
 
         [Parameter()]
         [bool]$DryRun = $false,
@@ -464,12 +476,24 @@ function Invoke-VacationSchedule {
         }
     }
 
+    $hasPriorState = $null -ne $PriorState -and $PriorState.Count -gt 0
     $after = $before.Clone()
-    $after['autoReplyState'] = 'Disabled'
-    $after['forwardingAddress'] = ''
-    $after['forwardingSmtpAddress'] = ''
-    $after['deliverToMailboxAndForward'] = $false
-    $diff.Add("Revert OoO and forwarding for mailbox '$mailboxKey'")
+    if ($hasPriorState) {
+        $after['autoReplyState'] = if ([string]$PriorState['autoReplyState'] -eq 'Enabled') { 'Enabled' } else { 'Disabled' }
+        $after['internalMessage'] = [string]$PriorState['internalMessage']
+        $after['externalMessage'] = [string]$PriorState['externalMessage']
+        $after['forwardingAddress'] = [string]$PriorState['forwardingAddress']
+        $after['forwardingSmtpAddress'] = [string]$PriorState['forwardingSmtpAddress']
+        $after['deliverToMailboxAndForward'] = [bool]$PriorState['deliverToMailboxAndForward']
+        $diff.Add("Restore pre-vacation OoO and forwarding for mailbox '$mailboxKey'")
+    }
+    else {
+        $after['autoReplyState'] = 'Disabled'
+        $after['forwardingAddress'] = ''
+        $after['forwardingSmtpAddress'] = ''
+        $after['deliverToMailboxAndForward'] = $false
+        $diff.Add("Revert OoO and forwarding for mailbox '$mailboxKey'")
+    }
 
     $plan = [pscustomobject]@{
         action               = $Phase
@@ -490,7 +514,7 @@ function Invoke-VacationSchedule {
         throw "mailbox.confirm_required: action '$Phase' requires explicit confirmation"
     }
 
-    if (Test-VacationRevertedState -State $before) {
+    if (-not $hasPriorState -and (Test-VacationRevertedState -State $before)) {
         $diff.Add("Mailbox '$mailboxKey' is already reverted; no change applied")
         $plan = [pscustomobject]@{
             action               = $Phase
@@ -535,8 +559,27 @@ function Invoke-VacationSchedule {
     }
 
     try {
-        $null = Set-MailboxAutoReplyConfiguration -Identity $mailboxKey -AutoReplyState Disabled
-        $null = Set-Mailbox -Identity $mailboxKey -ForwardingAddress $null -ForwardingSmtpAddress $null -DeliverToMailboxAndForward $false
+        if ($hasPriorState) {
+            if ([string]$PriorState['autoReplyState'] -eq 'Enabled') {
+                $null = Set-MailboxAutoReplyConfiguration -Identity $mailboxKey -AutoReplyState Enabled -InternalMessage ([string]$PriorState['internalMessage']) -ExternalMessage ([string]$PriorState['externalMessage'])
+            }
+            else {
+                $null = Set-MailboxAutoReplyConfiguration -Identity $mailboxKey -AutoReplyState Disabled
+            }
+            $forwardingAddress = [string]$PriorState['forwardingAddress']
+            $forwardingSmtpAddress = [string]$PriorState['forwardingSmtpAddress']
+            $restoreParams = @{
+                Identity                   = $mailboxKey
+                ForwardingAddress          = if ([string]::IsNullOrWhiteSpace($forwardingAddress)) { $null } else { $forwardingAddress }
+                ForwardingSmtpAddress      = if ([string]::IsNullOrWhiteSpace($forwardingSmtpAddress)) { $null } else { $forwardingSmtpAddress }
+                DeliverToMailboxAndForward = [bool]$PriorState['deliverToMailboxAndForward']
+            }
+            $null = Set-Mailbox @restoreParams
+        }
+        else {
+            $null = Set-MailboxAutoReplyConfiguration -Identity $mailboxKey -AutoReplyState Disabled
+            $null = Set-Mailbox -Identity $mailboxKey -ForwardingAddress $null -ForwardingSmtpAddress $null -DeliverToMailboxAndForward $false
+        }
         $after = Get-VacationMailboxState -MailboxId $mailboxKey
     }
     catch {

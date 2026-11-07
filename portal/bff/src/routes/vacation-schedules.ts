@@ -102,6 +102,8 @@ export interface VacationApplyResult {
   readonly noop?: boolean;
   readonly expired?: boolean;
   readonly scheduleState: VacationScheduleState;
+  /** The mailbox's OoO/forwarding snapshot before this phase, for a later revert. */
+  readonly beforeState?: Record<string, unknown> | null;
   readonly auditEvent?: VacationAuditEvent;
   readonly mailboxOperation?: VacationMailboxOperation;
   readonly alert?: VacationAlert;
@@ -134,11 +136,17 @@ export interface VacationScheduleStore {
 // Invoke-VacationSchedule child job: enable applies OoO + forwarding at start,
 // revert disables them at end (or immediately for End now). Depending on the
 // seam keeps EXO and process code out of the BFF.
+export interface VacationApplyOptions {
+  /** The snapshot captured by the enable phase; revert restores it instead of clearing. */
+  readonly priorState?: Record<string, unknown> | null;
+}
+
 export interface VacationApplyProvider {
   applyVacationPhase(
     tenantId: string,
     schedule: VacationSchedule,
     phase: VacationPhase,
+    options?: VacationApplyOptions,
   ): Promise<VacationApplyResult>;
 }
 
@@ -147,6 +155,8 @@ export interface VacationApplyProvider {
 // create/disable are needed here.
 export interface VacationJobScheduler {
   createScheduledJob(job: VacationScheduledJob): Promise<unknown>;
+  getScheduledJob(jobId: string): Promise<{ readonly parameters: Record<string, unknown> } | undefined>;
+  updateScheduledJobParameters(jobId: string, parameters: Record<string, unknown>): Promise<unknown>;
   disableScheduledJob(jobId: string): Promise<unknown>;
 }
 
@@ -334,6 +344,7 @@ function vacationJobId(scheduleId: string, phase: VacationPhase): string {
 export function buildVacationSchedulerJob(
   schedule: VacationSchedule,
   phase: VacationPhase,
+  options: { readonly priorState?: Record<string, unknown> | null } = {},
 ): VacationScheduledJob {
   const at = phase === "enable" ? schedule.startsAt : schedule.endsAt;
   const revertNotAfter = new Date(Date.parse(schedule.endsAt) + 24 * 3600 * 1000).toISOString();
@@ -353,6 +364,7 @@ export function buildVacationSchedulerJob(
       oooMessage: schedule.oooMessage,
       forwardTo: schedule.forwardTo,
       notAfter: phase === "enable" ? schedule.endsAt : revertNotAfter,
+      ...(phase === "revert" && options.priorState ? { priorState: options.priorState } : {}),
     },
     enabled: true,
     nextRunAt: at,
@@ -363,12 +375,24 @@ export async function registerVacationSchedulerJobs(
   scheduler: VacationJobScheduler,
   schedule: VacationSchedule,
   phases: readonly VacationPhase[],
+  options: { readonly priorState?: Record<string, unknown> | null } = {},
 ): Promise<VacationScheduledJob[]> {
-  const jobs = phases.map((phase) => buildVacationSchedulerJob(schedule, phase));
+  const jobs = phases.map((phase) => buildVacationSchedulerJob(schedule, phase, options));
   for (const job of jobs) {
     await scheduler.createScheduledJob(job);
   }
   return jobs;
+}
+
+/** The enable snapshot stored on the revert job, if the enable phase captured one. */
+export async function priorStateFromScheduler(
+  scheduler: VacationJobScheduler | undefined,
+  scheduleId: string,
+): Promise<Record<string, unknown> | null> {
+  if (!scheduler) return null;
+  const revert = await scheduler.getScheduledJob(vacationJobId(scheduleId, "revert"));
+  const prior = revert?.parameters["priorState"];
+  return typeof prior === "object" && prior !== null ? (prior as Record<string, unknown>) : null;
 }
 
 async function disableVacationSchedulerJobs(
@@ -479,7 +503,7 @@ export function createVacationScheduleRoutes(options: VacationRouteOptions): Rou
           if (options.scheduler) {
             await registerVacationSchedulerJobs(options.scheduler, activated ?? created, [
               "revert",
-            ]);
+            ], { priorState: outcome.beforeState ?? null });
           }
           return {
             status: 201,
@@ -547,7 +571,10 @@ export function createVacationScheduleRoutes(options: VacationRouteOptions): Rou
           };
         }
 
-        const outcome = await options.apply.applyVacationPhase(tenantId, schedule, "revert");
+        const priorState = await priorStateFromScheduler(options.scheduler, schedule.id);
+        const outcome = await options.apply.applyVacationPhase(tenantId, schedule, "revert", {
+          priorState,
+        });
         const updated = await recordRevertOutcome(options, tenantId, schedule, outcome);
         if (!outcome.success) {
           throw new AppError(

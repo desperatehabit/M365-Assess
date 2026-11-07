@@ -235,6 +235,28 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             Assert-MockCalled Set-Mailbox -Times 1
         }
 
+        It 'revert restores the prior OoO and forwarding snapshot instead of clearing it' {
+            $prior = @{
+                autoReplyState             = 'Enabled'
+                internalMessage            = 'Back next week'
+                externalMessage            = 'Back next week'
+                forwardingAddress          = ''
+                forwardingSmtpAddress      = 'delegate@example.invalid'
+                deliverToMailboxAndForward = $true
+            }
+            $res = Invoke-VacationSchedule -TenantId 'tenant-test' -Phase 'revert' -ScheduleId 'vac-1' -MailboxId 'mbx-1' -StartsAt $script:start -EndsAt $script:end -PriorState $prior -DryRun $false -Confirmed $true
+            $res.success | Should -BeTrue
+            $res.plan.after['autoReplyState'] | Should -Be 'Enabled'
+            $res.plan.after['forwardingSmtpAddress'] | Should -Be 'delegate@example.invalid'
+            ($res.plan.diff -join '; ') | Should -Match 'Restore pre-vacation'
+            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 1 -ParameterFilter {
+                $AutoReplyState -eq 'Enabled' -and $InternalMessage -eq 'Back next week'
+            }
+            Assert-MockCalled Set-Mailbox -Times 1 -ParameterFilter {
+                $ForwardingSmtpAddress -eq 'delegate@example.invalid'
+            }
+        }
+
         It 'revert of an already-reverted mailbox is a structured no-op with no write' {
             $script:autoReplyState = 'Disabled'
             $script:forwarding = ''
@@ -280,14 +302,20 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
                     oooMessage = ''
                     forwardTo  = ''
                     notAfter   = $script:futureBound
+                    priorState = @{
+                        autoReplyState        = 'Disabled'
+                        forwardingSmtpAddress = 'delegate@example.invalid'
+                    }
                     confirmed  = $true
                     dryRun     = $true
-                } | ConvertTo-Json -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
+                } | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
                 $job = Read-VacationScheduleJob -Path $jobPath
                 $job['TenantId'] | Should -Be 'tenant-test'
                 $job['ScheduleId'] | Should -Be 'vac-1'
                 $job['Phase'] | Should -Be 'revert'
                 $job['MailboxId'] | Should -Be 'mbx-1'
+                $job['PriorState']['autoReplyState'] | Should -Be 'Disabled'
+                $job['PriorState']['forwardingSmtpAddress'] | Should -Be 'delegate@example.invalid'
                 $job['Confirmed'] | Should -BeTrue
                 $job['DryRun'] | Should -BeTrue
             }

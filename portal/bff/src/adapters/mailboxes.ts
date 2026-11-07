@@ -7,6 +7,8 @@
 // only persisted rows are the vacation schedule records (vacation_schedules, migration
 // 0025), which the EPIC-007 scheduler enables and reverts.
 import { randomUUID } from "node:crypto";
+import type { JobEnvelope } from "@m365-assess/contracts";
+import type { Schedule, ScheduleRepository } from "@m365-assess/db";
 import type Database from "better-sqlite3";
 import type { CredentialStoreRow } from "../routes/credentials.js";
 import type {
@@ -60,14 +62,18 @@ import type {
   RetentionTagPlan,
   RetentionTagResult,
 } from "../routes/retention.js";
-import type {
-  VacationApplyProvider,
-  VacationApplyResult,
-  VacationPhase,
-  VacationSchedule,
-  VacationScheduleInput,
-  VacationScheduleState,
-  VacationScheduleStore,
+import {
+  VACATION_SCHEDULE_COMMAND,
+  type VacationApplyOptions,
+  type VacationApplyProvider,
+  type VacationApplyResult,
+  type VacationJobScheduler,
+  type VacationPhase,
+  type VacationSchedule,
+  type VacationScheduleInput,
+  type VacationScheduleState,
+  type VacationScheduleStore,
+  type VacationScheduledJob,
 } from "../routes/vacation-schedules.js";
 import {
   notSoftDeletedError,
@@ -353,6 +359,160 @@ export function createSqliteVacationScheduleStore(db: Database.Database): Vacati
       })();
       return updated;
     },
+  };
+}
+
+/** Schedule repository seam for the vacation enable/revert rows (T-0894). */
+export type VacationScheduleRepository = Pick<
+  ScheduleRepository,
+  "createSchedule" | "getSchedule" | "updateSchedule"
+>;
+
+export function createVacationJobScheduler(
+  repo: VacationScheduleRepository,
+): VacationJobScheduler {
+  return {
+    async createScheduledJob(job: VacationScheduledJob) {
+      return repo.createSchedule({
+        id: job.id,
+        name: job.name,
+        type: job.type,
+        cron: job.cron,
+        timezone: job.timezone,
+        targetScope: job.targetScope,
+        command: job.command,
+        parameters: job.parameters,
+        enabled: job.enabled,
+        isSystem: false,
+        lastRunAt: null,
+        nextRunAt: job.nextRunAt,
+      });
+    },
+    async getScheduledJob(jobId) {
+      const row = await repo.getSchedule(jobId);
+      return row === undefined ? undefined : { parameters: row.parameters };
+    },
+    async updateScheduledJobParameters(jobId, parameters) {
+      const existing = await repo.getSchedule(jobId);
+      if (existing === undefined) return undefined;
+      return repo.updateSchedule(jobId, { parameters: { ...existing.parameters, ...parameters } });
+    },
+    async disableScheduledJob(jobId) {
+      return repo.updateSchedule(jobId, { enabled: false });
+    },
+  };
+}
+
+export interface VacationCommandAuditPort {
+  record(event: object): Promise<void> | void;
+}
+
+export interface VacationScheduleCommandOptions {
+  readonly store: Pick<VacationScheduleStore, "getVacationSchedule" | "updateVacationSchedule">;
+  readonly apply: VacationApplyProvider;
+  readonly scheduler: VacationJobScheduler;
+  readonly audit?: VacationCommandAuditPort;
+}
+
+export type VacationScheduleCommand = (
+  envelope: JobEnvelope,
+  schedule: Schedule,
+  signal: AbortSignal,
+) => Promise<{ readonly status: "succeeded" | "failed"; readonly exitCode: number; readonly message?: string }>;
+
+interface VacationWorkerResult extends VacationApplyResult {
+  readonly plan?: { readonly before?: unknown; readonly after?: unknown };
+  readonly alertEvent?: VacationApplyResult["alert"];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The `Invoke-VacationSchedule` custom-script handler (T-0894): the EPIC-007 tick
+ * enqueues one job per phase; this runs the mailbox worker, records its audit event,
+ * moves the vacation schedule's state, and carries the enable snapshot onto the revert
+ * job so the later revert restores the mailbox's prior OoO/forwarding instead of
+ * clearing it.
+ */
+export function createVacationScheduleCommand(
+  options: VacationScheduleCommandOptions,
+): VacationScheduleCommand {
+  const { store, apply, scheduler, audit } = options;
+  return async (envelope, jobSchedule, signal) => {
+    const parameters = jobSchedule.parameters;
+    const vacationScheduleId =
+      typeof parameters["vacationScheduleId"] === "string"
+        ? parameters["vacationScheduleId"]
+        : undefined;
+    if (vacationScheduleId === undefined) {
+      return { status: "failed", exitCode: 1, message: "the vacation job has no vacationScheduleId" };
+    }
+    const tenantId =
+      typeof parameters["tenantId"] === "string" ? parameters["tenantId"] : envelope.tenantId;
+    const phase: VacationPhase = parameters["phase"] === "revert" ? "revert" : "enable";
+    const vacation = await store.getVacationSchedule(tenantId, vacationScheduleId);
+    if (vacation === undefined) {
+      return {
+        status: "failed",
+        exitCode: 1,
+        message: `vacation schedule ${vacationScheduleId} was not found`,
+      };
+    }
+    const priorState: VacationApplyOptions["priorState"] =
+      phase === "revert" && isRecord(parameters["priorState"]) ? parameters["priorState"] : null;
+
+    let result: VacationApplyResult;
+    try {
+      result = await apply.applyVacationPhase(tenantId, vacation, phase, { priorState });
+    } catch (error) {
+      await store.updateVacationSchedule(tenantId, vacationScheduleId, { state: "failed" });
+      return {
+        status: "failed",
+        exitCode: 1,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    if (result.auditEvent !== undefined && audit !== undefined) {
+      await audit.record(result.auditEvent);
+    }
+    if (signal.aborted) {
+      return { status: "failed", exitCode: 1, message: "the job was cancelled" };
+    }
+
+    const state: VacationScheduleState = result.success
+      ? phase === "enable"
+        ? "active"
+        : "ended"
+      : "failed";
+    await store.updateVacationSchedule(tenantId, vacationScheduleId, { state });
+
+    if (phase === "enable" && result.success && result.beforeState) {
+      await scheduler.updateScheduledJobParameters(`vacation-${vacationScheduleId}-revert`, {
+        priorState: result.beforeState,
+      });
+    }
+    if (!result.success || phase === "revert") {
+      for (const jobPhase of ["enable", "revert"] as const) {
+        try {
+          await scheduler.disableScheduledJob(`vacation-${vacationScheduleId}-${jobPhase}`);
+        } catch {
+          // The other phase may never have been registered (immediate start).
+        }
+      }
+    }
+
+    if (result.success) {
+      return { status: "succeeded", exitCode: 0 };
+    }
+    return {
+      status: "failed",
+      exitCode: 1,
+      message:
+        result.alert?.reason ?? `vacation ${phase} failed for schedule ${vacationScheduleId}`,
+    };
   };
 }
 
@@ -765,9 +925,14 @@ export function createMailboxProviders(
   };
 
   const vacationApply: VacationApplyProvider = {
-    applyVacationPhase: (tenantId: string, schedule: VacationSchedule, phase: VacationPhase) => {
+    applyVacationPhase: (
+      tenantId: string,
+      schedule: VacationSchedule,
+      phase: VacationPhase,
+      options: VacationApplyOptions = {},
+    ) => {
       const revertNotAfter = new Date(Date.parse(schedule.endsAt) + 24 * 3600 * 1000).toISOString();
-      return call<VacationApplyResult & { alertEvent?: VacationApplyResult["alert"] }>("invoke-vacation-schedule.ps1", tenantId, {
+      return call<VacationWorkerResult>("invoke-vacation-schedule.ps1", tenantId, {
         scheduleId: schedule.id,
         phase,
         mailboxId: schedule.mailboxId,
@@ -776,11 +941,13 @@ export function createMailboxProviders(
         oooMessage: schedule.oooMessage,
         ...(schedule.forwardTo !== null ? { forwardTo: schedule.forwardTo } : {}),
         notAfter: phase === "enable" ? schedule.endsAt : revertNotAfter,
+        ...(options.priorState ? { priorState: options.priorState } : {}),
         confirmed: true,
-      }).then(({ alertEvent, ...result }) => {
+      }).then(({ alertEvent, plan, ...result }) => {
         // The worker names the failed-revert alert `alertEvent`; the route type calls it `alert`.
         raiseWorkerError(result);
-        return alertEvent === undefined || result.alert !== undefined ? result : { ...result, alert: alertEvent };
+        const withAlert = alertEvent === undefined || result.alert !== undefined ? result : { ...result, alert: alertEvent };
+        return isRecord(plan?.before) ? { ...withAlert, beforeState: plan.before } : withAlert;
       });
     },
   };
