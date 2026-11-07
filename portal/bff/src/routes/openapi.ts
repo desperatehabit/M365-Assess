@@ -53,6 +53,13 @@ import { HISTORICAL_SEARCH_OPENAPI } from "./historical-search.js";
 import { MESSAGES_OPENAPI } from "./messages.js";
 import { MAIL_RESTORES_OPENAPI } from "./mail-restores.js";
 import { ENCRYPTION_OPENAPI } from "./encryption.js";
+// EPIC-026 Teams & Voice (T-0856).
+import { TEAMS_OPENAPI } from "./teams.js";
+import { TEAMS_CREATE_OPENAPI } from "./teams-create.js";
+import { TEAMS_LIFECYCLE_OPENAPI } from "./teams-lifecycle.js";
+import { TEAMS_ACTIVITY_OPENAPI } from "./teams-activity.js";
+import { TEAMS_LIS_OPENAPI } from "./teams-lis.js";
+import { TEAMS_VOICE_OPENAPI } from "./teams-voice.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -143,6 +150,13 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   MESSAGES_OPENAPI as unknown as OpenApiFragment,
   MAIL_RESTORES_OPENAPI as unknown as OpenApiFragment,
   ENCRYPTION_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-026 Teams & Voice (T-0856).
+  TEAMS_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_CREATE_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_LIFECYCLE_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_ACTIVITY_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_LIS_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_VOICE_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

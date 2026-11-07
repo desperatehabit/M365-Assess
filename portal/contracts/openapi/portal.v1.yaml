@@ -4647,6 +4647,605 @@ paths:
       x-permission: SharePoint.Cleanup.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/teams:
+    get:
+      operationId: listTeams
+      summary: List teams with §3.1 columns, filters, and cursor pagination
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: visibility
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - public
+              - private
+        - name: archived
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The tenant's filtered team page.
+        "400":
+          description: A path or query parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Teams.Team.Read permission.
+      x-permission: Teams.Team.Read
+    post:
+      operationId: createTeam
+      summary: Create a team from the wizard fields, expanding a local TeamTemplate
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                owners:
+                  type: array
+                  items:
+                    type: string
+                members:
+                  type: array
+                  items:
+                    type: string
+                template:
+                  type: string
+                  description: Stored TeamTemplate id
+                visibility:
+                  type: string
+                  enum:
+                    - public
+                    - private
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Plan preview of the team create with the expanded template.
+        "202":
+          description: The create was queued through the EPIC-006 gated path with a TeamOperation.
+        "400":
+          description: name is missing or visibility is not public/private.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The referenced TeamTemplate does not exist.
+      x-permission: Teams.Team.ReadWrite
+  /tenants/{tenantId}/teams/activity:
+    get:
+      operationId: getTeamsActivity
+      summary: Teams activity report with per-team and per-user usage
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: period
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - D7
+              - D30
+              - D90
+              - D180
+            default: D7
+        - name: startDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+      responses:
+        "200":
+          description: Paginated per-team and per-user Teams activity.
+      x-permission: Teams.Team.Read
+  /tenants/{tenantId}/teams/lis:
+    get:
+      operationId: listLisLocations
+      summary: LIS locations (emergency calling) with civic address fields
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: LIS locations for the tenant, read live from the LIS worker.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.Read or the tenant is out of scope.
+      x-permission: Teams.Team.Read
+    post:
+      operationId: createLisLocation
+      summary: Create a LIS location (plan preview with preview:true; applies through the EPIC-006 gated path)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - displayName
+                - street
+                - city
+                - state
+                - country
+                - postalCode
+              properties:
+                displayName:
+                  type: string
+                street:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                country:
+                  type: string
+                  description: ISO 3166-1 alpha-2 code
+                postalCode:
+                  type: string
+                companyName:
+                  type: string
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Plan preview of the LIS location create.
+        "202":
+          description: The create was queued through the EPIC-006 gated path.
+        "400":
+          description: A required civic field is missing or the country code is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Voice.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+      x-permission: Teams.Voice.ReadWrite
+  /tenants/{tenantId}/teams/lis/{locationId}:
+    patch:
+      operationId: editLisLocation
+      summary: Edit a LIS location (plan preview with preview:true; applies through the EPIC-006 gated path)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                street:
+                  type: string
+                city:
+                  type: string
+                state:
+                  type: string
+                country:
+                  type: string
+                  description: ISO 3166-1 alpha-2 code
+                postalCode:
+                  type: string
+                companyName:
+                  type: string
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Edit plan preview.
+        "202":
+          description: The edit was queued through the EPIC-006 gated path.
+        "400":
+          description: A required civic field is missing or the country code is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Voice.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: LIS location not found.
+      x-permission: Teams.Voice.ReadWrite
+    delete:
+      operationId: deleteLisLocation
+      summary: Delete a LIS location (requires confirmName matching the display name)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: locationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete plan preview.
+        "202":
+          description: The delete was queued through the EPIC-006 gated path.
+        "400":
+          description: confirmName is required and must match the location display name.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Voice.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: LIS location not found.
+      x-permission: Teams.Voice.ReadWrite
+  /tenants/{tenantId}/teams/voice/numbers:
+    get:
+      operationId: listVoiceNumbers
+      summary: List the voice-number inventory and license state
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The voice-number inventory with the license state.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.Read or the tenant is out of scope.
+      x-permission: Teams.Team.Read
+    post:
+      operationId: assignVoiceNumber
+      summary: Assign a phone number to a user or resource account (plan preview with preview:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Assignment plan preview.
+        "201":
+          description: The assignment with before/after, TeamOperation, and audit event.
+        "400":
+          description: phoneNumber or targetId failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Voice.ReadWrite, the tenant is out of scope, or voice is not licensed.
+      x-permission: Teams.Voice.ReadWrite
+  /tenants/{tenantId}/teams/voice/numbers/{numberId}:
+    delete:
+      operationId: releaseVoiceNumber
+      summary: Release a phone number (requires confirm:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: numberId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: confirm
+          in: query
+          required: true
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: The release with before/after, TeamOperation, and audit event.
+        "400":
+          description: confirm is required to release a phone number.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Voice.ReadWrite, the tenant is out of scope, or voice is not licensed.
+      x-permission: Teams.Voice.ReadWrite
+  /tenants/{tenantId}/teams/voice/policy:
+    post:
+      operationId: assignVoicePolicy
+      summary: Assign a voice routing policy to a user (plan preview with preview:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Policy assignment plan preview.
+        "201":
+          description: The policy assignment with before/after, TeamOperation, and audit event.
+        "400":
+          description: policyId or targetId failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Voice.ReadWrite, the tenant is out of scope, or voice is not licensed.
+      x-permission: Teams.Voice.ReadWrite
+  /tenants/{tenantId}/teams/{teamId}:
+    patch:
+      operationId: editTeam
+      summary: Edit a team (preview with preview:true; apply needs Teams.Team.ReadWrite, Remediation.Apply)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - changes
+              properties:
+                changes:
+                  type: object
+                preview:
+                  type: boolean
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Edit plan preview, or the applied result with before/after and audit event.
+        "400":
+          description: changes is missing or not an object.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The team is not live.
+      x-permission: Teams.Team.ReadWrite
+    delete:
+      operationId: deleteTeam
+      summary: Delete a team (preview with preview:true; apply needs Teams.Team.ReadWrite, Remediation.Apply, confirm:true, and confirmName naming the team)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preview:
+                  type: boolean
+                confirm:
+                  type: boolean
+                confirmName:
+                  type: string
+                  description: Must match the team display name.
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Delete plan preview, or the applied result with before/after and audit event.
+        "400":
+          description: Confirmation naming the team is missing for the delete.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The team is not live.
+      x-permission: Teams.Team.ReadWrite
+  /tenants/{tenantId}/teams/{teamId}/archive:
+    post:
+      operationId: archiveTeam
+      summary: Archive a team (preview with preview:true; apply needs Teams.Team.ReadWrite and Remediation.Apply)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                preview:
+                  type: boolean
+                shouldSetSpoSiteReadOnlyForMembers:
+                  type: boolean
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Archive plan preview, or the applied result with before/after and audit event.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The team is not live.
+      x-permission: Teams.Team.ReadWrite
+  /tenants/{tenantId}/teams/{teamId}/clone:
+    post:
+      operationId: cloneTeam
+      summary: Clone a team (preview with preview:true; apply needs Teams.Team.ReadWrite and Remediation.Apply)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: teamId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - newName
+              properties:
+                newName:
+                  type: string
+                description:
+                  type: string
+                visibility:
+                  type: string
+                  enum:
+                    - public
+                    - private
+                partsToClone:
+                  type: string
+                preview:
+                  type: boolean
+                reason:
+                  type: string
+      responses:
+        "200":
+          description: Clone plan preview, or the applied result with before/after and audit event.
+        "400":
+          description: newName is missing.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Teams.Team.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The source team is not live.
+      x-permission: Teams.Team.ReadWrite
   /tenants/{tenantId}/transport-rules:
     get:
       operationId: listTransportRules

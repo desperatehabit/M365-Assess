@@ -213,6 +213,14 @@ import { createHistoricalSearchRoutes } from "./routes/historical-search.js";
 import { createMessageRoutes } from "./routes/messages.js";
 import { createMailRestoreRoutes } from "./routes/mail-restores.js";
 import { createEncryptionRoutes, ENCRYPTION_APPLY_PERMISSION, ENCRYPTION_WRITE_PERMISSION } from "./routes/encryption.js";
+// EPIC-026 Teams & Voice (T-0856).
+import { createTeamsProviders } from "./adapters/teams.js";
+import { createTeamsListRoute } from "./routes/teams.js";
+import { createTeamsCreateRoute } from "./routes/teams-create.js";
+import { createTeamsLifecycleRoutes } from "./routes/teams-lifecycle.js";
+import { createTeamsActivityRoutes } from "./routes/teams-activity.js";
+import { createLisLocationsRoutes } from "./routes/teams-lis.js";
+import { createTeamsVoiceRoutes } from "./routes/teams-voice.js";
 // EPIC-019 Defender & Vulnerabilities (T-0849).
 import { createDefenderProviders } from "./adapters/defender.js";
 import { CveExceptionRepository } from "./repository/cve-exceptions.js";
@@ -879,6 +887,12 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     }
   };
 
+  // EPIC-026 Teams & Voice (T-0856). Reads run the Graph workers live; lifecycle,
+  // LIS, and voice writes run their gated workers directly (the routes record the
+  // TeamOperation and audit event), and the create/LIS routes' queue seams map
+  // their envelopes onto new-team.ps1 / invoke-lis-location.ps1.
+  const teams = createTeamsProviders(run, credentialRows);
+
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
   // in-memory store.
@@ -1326,6 +1340,47 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           ? authorizeEncryptionWrite(ctxCaller, permission)
           : authorizeCaller(ctxCaller, permission),
       recordAudit: routeAudit,
+    }),
+
+    // EPIC-026 Teams & Voice (T-0856). The factories existed but were never mounted
+    // and no adapter bound them, so every §6 endpoint 404'd. /teams/activity and
+    // /teams/lis are mounted before /teams/:teamId so the id pattern cannot capture
+    // them. Lifecycle/LIS/voice writes run their gated workers and record the
+    // TeamOperation and audit event; the create and LIS queue seams map their
+    // envelopes onto the real workers.
+    ...createTeamsActivityRoutes({ provider: teams.activity, resolveCaller, authorize: authorizeCaller }),
+    ...createLisLocationsRoutes({
+      provider: teams.lis,
+      queue: { enqueue: teams.enqueueLis },
+      teamOperations: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    createTeamsListRoute({ provider: teams.teams, resolveCaller, authorize: authorizeCaller }),
+    createTeamsCreateRoute({
+      teamTemplates: repo,
+      queue: { enqueue: teams.enqueueCreate },
+      teamOperations: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createTeamsLifecycleRoutes({
+      provider: teams.lifecycle,
+      teamOperations: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createTeamsVoiceRoutes({
+      provider: teams.voice,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+      recordTeamOperation: async (operation) => {
+        await repo.createTeamOperation(operation);
+      },
     }),
 
     // EPIC-015 Conditional Access (T-0819).

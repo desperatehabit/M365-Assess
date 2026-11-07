@@ -94,6 +94,26 @@ import {
 } from "../routes/mail-restores.js";
 import { MESSAGE_TRACE_PATH, MESSAGE_TRACE_READ_PERMISSION } from "../routes/message-trace.js";
 import { MESSAGE_DETAIL_PATH, MESSAGES_READ_PERMISSION } from "../routes/messages.js";
+import { TEAMS_PATH, TEAMS_READ_PERMISSION } from "../routes/teams.js";
+import { TEAMS_CREATE_PATH, TEAMS_WRITE_PERMISSION } from "../routes/teams-create.js";
+import {
+  TEAMS_LIFECYCLE_ARCHIVE_PATH,
+  TEAMS_LIFECYCLE_CLONE_PATH,
+  TEAMS_LIFECYCLE_ITEM_PATH,
+} from "../routes/teams-lifecycle.js";
+import { TEAMS_ACTIVITY_PATH } from "../routes/teams-activity.js";
+import {
+  TEAMS_LIS_BASE_PATH,
+  TEAMS_LIS_ITEM_PATH,
+  TEAMS_VOICE_PERMISSION,
+} from "../routes/teams-lis.js";
+import {
+  TEAMS_VOICE_NUMBERS_PATH,
+  TEAMS_VOICE_NUMBER_ITEM_PATH,
+  TEAMS_VOICE_POLICY_PATH,
+  TEAMS_VOICE_READ_PERMISSION,
+  TEAMS_VOICE_WRITE_PERMISSION,
+} from "../routes/teams-voice.js";
 import {
   DEVICE_ACTIONS_HISTORY_OPENAPI,
   DEVICE_ACTIONS_HISTORY_PATH,
@@ -923,6 +943,23 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "GET", path: MAIL_RESTORE_JOB_PATH, permission: MAIL_RESTORE_PERMISSION },
   { method: "GET", path: ENCRYPTION_PATH, permission: ENCRYPTION_READ_PERMISSION },
   { method: "PUT", path: ENCRYPTION_PATH, permission: ENCRYPTION_WRITE_PERMISSION },
+  // EPIC-026 Teams & Voice (T-0856). /teams/activity and /teams/lis precede
+  // /teams/:teamId, matching the mount order.
+  { method: "GET", path: TEAMS_ACTIVITY_PATH, permission: TEAMS_READ_PERMISSION },
+  { method: "GET", path: TEAMS_LIS_BASE_PATH, permission: TEAMS_READ_PERMISSION },
+  { method: "POST", path: TEAMS_LIS_BASE_PATH, permission: TEAMS_VOICE_PERMISSION },
+  { method: "PATCH", path: TEAMS_LIS_ITEM_PATH, permission: TEAMS_VOICE_PERMISSION },
+  { method: "DELETE", path: TEAMS_LIS_ITEM_PATH, permission: TEAMS_VOICE_PERMISSION },
+  { method: "GET", path: TEAMS_PATH, permission: TEAMS_READ_PERMISSION },
+  { method: "POST", path: TEAMS_CREATE_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "PATCH", path: TEAMS_LIFECYCLE_ITEM_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "DELETE", path: TEAMS_LIFECYCLE_ITEM_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "POST", path: TEAMS_LIFECYCLE_ARCHIVE_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "POST", path: TEAMS_LIFECYCLE_CLONE_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "GET", path: TEAMS_VOICE_NUMBERS_PATH, permission: TEAMS_VOICE_READ_PERMISSION },
+  { method: "POST", path: TEAMS_VOICE_NUMBERS_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
+  { method: "DELETE", path: TEAMS_VOICE_NUMBER_ITEM_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
+  { method: "POST", path: TEAMS_VOICE_POLICY_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three
