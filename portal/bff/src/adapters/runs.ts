@@ -114,10 +114,15 @@ export function createRunStore(repo: SqliteRepository, db: Database.Database): R
 
 type RunUpdate = Parameters<SqliteRepository["updateRun"]>[2];
 
-/** The job queue's persistence seam over the repository's jobs table. */
+/**
+ * The job queue's persistence seam over the repository's jobs table. Operational
+ * system timers (standards, drift, webhooks, cleanup) target every tenant, so their
+ * envelope carries the `all` wildcard rather than a tenant id; the jobs row has a
+ * foreign key to `tenants`, so the wildcard is stored as NULL (T-0902/T-0903).
+ */
 export function createJobPersistence(repo: SqliteRepository): JobStatePersistence {
   return {
-    createJob: (input) => repo.createJob(input),
+    createJob: (input) => repo.createJob({ ...input, tenantId: input.tenantId === "all" ? null : input.tenantId }),
     getJob: (jobId) => repo.getJob(jobId),
     updateJobState: (jobId, state, update) => repo.updateJobState(jobId, state, update),
   };

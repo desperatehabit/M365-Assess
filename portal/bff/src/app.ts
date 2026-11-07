@@ -175,6 +175,15 @@ import { createJobDispatcher } from "./jobs/dispatch.js";
 import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
 import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
 import { createScheduler, type Scheduler } from "./scheduler/scheduler.js";
+import {
+  PORTAL_CLEANUP_COMMAND,
+  WEBHOOK_RENEWAL_COMMAND,
+  createCleanupCommand,
+  createCleanupPorts,
+  createMaintenanceRunner,
+  createSystemTimerStateStore,
+  createWebhookRenewalCommand,
+} from "./scheduler/maintenance.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
 import { PermissionRegistry, permissionForEndpoint } from "./rbac/permissions.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
@@ -654,6 +663,35 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
         }),
       },
     }),
+    // EPIC-007 system timers that are not a tenant run (T-0902/T-0903): the tick
+    // copies the timer's command into the job payload and this runner dispatches it.
+    maintenance: createMaintenanceRunner({
+      handlers: {
+        [WEBHOOK_RENEWAL_COMMAND]: createWebhookRenewalCommand({
+          tenants: tenantStore,
+          manage: tenantWorker,
+          onFailure: (failure) =>
+            recordAudit({
+              action: `webhook.${failure.action}_failed`,
+              tenantId: failure.tenantId,
+              targetType: "webhookSubscription",
+              targetId: failure.subscriptionId,
+              result: "failure",
+              error: failure.reason,
+              timestamp: new Date().toISOString(),
+            }),
+        }),
+        [PORTAL_CLEANUP_COMMAND]: createCleanupCommand({
+          retention: {
+            artifactDays: config.cleanupArtifactRetentionDays,
+            jobDays: config.cleanupJobRetentionDays,
+            softDeleteDays: config.cleanupSoftDeleteRetentionDays,
+          },
+          ports: createCleanupPorts(db, config.artifactPath),
+          storageRoot: config.artifactPath,
+        }),
+      },
+    }),
   };
   const runJobs = new JobQueue({
     persistence: createJobPersistence(repo),
@@ -708,11 +746,15 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   });
   const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes, customScripts);
   const scheduleJobState = createScheduleJobStateStore(db);
+  // Code-deployed system timers have no Schedule row; their nextRunAt lives here so
+  // each runs on its cron instead of on every tick (T-0902/T-0903).
+  const systemTimerState = createSystemTimerStateStore(db);
   const scheduler = createScheduler({
     queue: scheduleQueue,
-    schedules: createTickScheduleStore(scheduleRepo),
+    schedules: createTickScheduleStore(scheduleRepo, systemTimerState),
     isRunning: (scheduleId) => scheduleJobState.isRunning(scheduleId),
     lastFinishedJob: (scheduleId) => scheduleJobState.lastFinishedJob(scheduleId),
+    systemTimerState: (name) => systemTimerState.get(name),
     ...(options.schedulerIntervalMs !== undefined ? { intervalMs: options.schedulerIntervalMs } : {}),
   });
   scheduler.start();

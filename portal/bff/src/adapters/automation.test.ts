@@ -306,6 +306,25 @@ describe("schedule job state and tick store (T-0840)", () => {
     await tickStore.updateSchedule("sch-1", { lastRunAt: "2026-09-26T12:00:00.000Z" });
     expect(await tickStore.getSchedule("sch-1")).toMatchObject({ lastRunAt: "2026-09-26T12:00:00.000Z" });
   });
+
+  it("routes code-deployed timer state to the system timer store (T-0902/T-0903)", async () => {
+    const { db, version } = await setup();
+    const { SqliteScheduleRepository } = await import("@m365-assess/db");
+    const repo = new SqliteScheduleRepository(db, version);
+    const writes: Array<{ name: string; nextRunAt?: string | null }> = [];
+    const tickStore = createTickScheduleStore(repo, {
+      get: async () => undefined,
+      set: async (name, patch) => {
+        writes.push({ name, nextRunAt: patch.nextRunAt ?? null });
+      },
+    });
+
+    await tickStore.updateSchedule("system-webhooks", { nextRunAt: "2026-09-26T12:15:00.000Z" });
+
+    expect(writes).toEqual([{ name: "webhooks", nextRunAt: "2026-09-26T12:15:00.000Z" }]);
+    // It must not try to write a schedule row that does not exist.
+    expect(await repo.getSchedule("system-webhooks")).toBeUndefined();
+  });
 });
 
 describe("script sandbox (T-0837)", () => {

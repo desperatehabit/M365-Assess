@@ -42,10 +42,9 @@ class FakeSchedules implements TickScheduleStore {
     scheduleId: string,
     patch: { lastRunAt?: string | null; nextRunAt?: string | null },
   ): Promise<unknown> {
-    const existing = this.rows.get(scheduleId);
-    if (existing === undefined) {
-      throw new Error(`unknown schedule ${scheduleId}`);
-    }
+    // Code-deployed system timers have no seeded row; like the real store they get
+    // one from the first update.
+    const existing = this.rows.get(scheduleId) ?? ({ id: scheduleId } as TickSchedule);
     this.rows.set(scheduleId, { ...existing, ...patch });
     return undefined;
   }
@@ -188,23 +187,24 @@ describe("system timers", () => {
       "drift",
       "webhooks",
       "cleanup",
-      "token-refresh",
     ]);
     expect(getSystemTimer("standards")?.cron).toBe("0 0 */12 * * *");
     expect(getSystemTimer("drift")?.cron).toBe("0 15 */12 * * *");
     expect(getSystemTimer("webhooks")?.cron).toBe("0 */15 * * * *");
+    expect(getSystemTimer("cleanup")?.cron).toBe("0 0 3 * * *");
+    // Token refresh is retired (T-0904): credentials are certificate-based.
+    expect(getSystemTimer("token-refresh")).toBeUndefined();
     expect(Object.isFrozen(SYSTEM_TIMERS)).toBe(true);
     for (const timer of SYSTEM_TIMERS) {
       expect(Object.isFrozen(timer)).toBe(true);
+      expect(timer.unavailableReason).toBeUndefined();
     }
     expect(getSystemTimer("missing")).toBeUndefined();
   });
 
   it("evaluates system timers through the same single-flight enqueue path", async () => {
     const queue = new FakeQueue();
-    const schedules = new FakeSchedules(
-      SYSTEM_TIMERS.map((timer) => toSystemSchedule(timer)),
-    );
+    const schedules = new FakeSchedules();
     const result = await tickSchedules({
       queue,
       schedules,
@@ -213,11 +213,21 @@ describe("system timers", () => {
       newIds: counterIds(),
     });
 
-    // drift is in flight; webhooks, cleanup, and token-refresh have no worker and are
-    // skipped instead of being enqueued under an unrelated job type (T-0876).
-    expect(result.enqueued).toEqual(["system-standards"]);
+    // drift is in flight; standards and the two maintenance timers are due because
+    // they have no persisted nextRunAt yet.
+    expect(result.enqueued).toEqual(["system-standards", "system-webhooks", "system-cleanup"]);
     expect(result.skippedRunning).toEqual(["system-drift"]);
     expect(result.failed).toEqual([]);
+    expect(queue.envelopes.map((envelope) => envelope["jobType"])).toEqual([
+      "standards",
+      "maintenance",
+      "maintenance",
+    ]);
+    expect(queue.envelopes.map((envelope) => (envelope["payload"] as { command?: string }).command)).toEqual([
+      "Invoke-StandardsRun",
+      "Invoke-WebhookRenewal",
+      "Invoke-PortalCleanup",
+    ]);
     for (const envelope of queue.envelopes) {
       expect(envelope["trigger"]).toBe("schedule");
       expect(String(envelope["scheduleId"])).toMatch(/^system-/);
@@ -226,31 +236,40 @@ describe("system timers", () => {
       nextRunAt: "2026-01-02T00:00:00.000Z",
     });
   });
-});
 
-describe("unavailable system timers (T-0876)", () => {
-  const unavailable = SYSTEM_TIMERS.filter((timer) => timer.unavailableReason !== undefined);
-
-  it("marks the timers with no worker as unavailable", () => {
-    expect(unavailable.map((timer) => timer.name).sort()).toEqual(["cleanup", "token-refresh", "webhooks"]);
-    for (const timer of unavailable) {
-      expect(toSystemSchedule(timer).enabled).toBe(false);
-    }
-  });
-
-  it("never enqueues an unavailable timer, even from a stored state row", async () => {
+  it("keeps code-deployed timers on their cron through persisted state", async () => {
     const queue = new FakeQueue();
-    const stored = unavailable.map((timer) => ({ ...toSystemSchedule(timer), enabled: true }));
+    const state = new Map<
+      string,
+      { readonly lastRunAt?: string | null; readonly nextRunAt?: string | null }
+    >([
+      // standards is due; drift and the two maintenance timers already ran recently.
+      ["drift", { nextRunAt: "2026-01-01T12:15:00.000Z" }],
+      ["webhooks", { nextRunAt: "2026-01-01T12:15:00.000Z" }],
+      ["cleanup", { nextRunAt: "2026-01-02T03:00:00.000Z" }],
+    ]);
     const result = await tickSchedules({
       queue,
-      schedules: new FakeSchedules(stored),
+      schedules: new FakeSchedules(),
       isRunning: () => false,
       now: NOW,
       newIds: counterIds(),
-      systemTimers: unavailable,
+      systemTimerState: async (name) => state.get(name),
     });
-    expect(result).toEqual({ enqueued: [], skippedRunning: [], failed: [] });
-    expect(queue.envelopes).toHaveLength(0);
+
+    expect(result.enqueued).toEqual(["system-standards"]);
+    expect(queue.envelopes).toHaveLength(1);
+    expect(queue.envelopes[0]?.["scheduleId"]).toBe("system-standards");
+  });
+
+  it("carries each timer's command so the maintenance runner can dispatch it", () => {
+    expect(toSystemSchedule(getSystemTimer("webhooks")!)).toMatchObject({
+      id: "system-webhooks",
+      type: "report",
+      jobType: "maintenance",
+      command: "Invoke-WebhookRenewal",
+    });
+    expect(toSystemSchedule(getSystemTimer("cleanup")!).jobType).toBe("maintenance");
   });
 });
 

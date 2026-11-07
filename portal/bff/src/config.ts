@@ -36,10 +36,21 @@ export interface BffConfig {
   readonly appPackageMaxBytes: number;
   /** Origin workers reach the BFF on to fetch signed package URLs. */
   readonly workerBaseUrl: string;
+  /** EPIC-007 cleanup timer retention for artifact folders under the artifact root. */
+  readonly cleanupArtifactRetentionDays: number;
+  /** EPIC-007 cleanup timer retention for terminal job rows. */
+  readonly cleanupJobRetentionDays: number;
+  /** EPIC-007 cleanup timer retention for soft-deleted schedule rows. */
+  readonly cleanupSoftDeleteRetentionDays: number;
 }
 
 export const DEFAULT_APP_PACKAGE_MAX_BYTES = 8 * 1024 ** 3;
 export const MIN_APP_PACKAGE_SECRET_BYTES = 32;
+
+/** SPEC §4.1 defaults for `Invoke-PortalCleanup` (T-0903). */
+export const DEFAULT_CLEANUP_ARTIFACT_RETENTION_DAYS = 90;
+export const DEFAULT_CLEANUP_JOB_RETENTION_DAYS = 30;
+export const DEFAULT_CLEANUP_SOFT_DELETE_RETENTION_DAYS = 30;
 
 export type DevIdentityRole = "admin" | "operator";
 
@@ -62,6 +73,9 @@ const ENV = {
   appPackageSecret: "M365_BFF_APP_PACKAGE_SECRET",
   appPackageMaxBytes: "M365_BFF_APP_PACKAGE_MAX_BYTES",
   workerBaseUrl: "M365_BFF_WORKER_BASE_URL",
+  cleanupArtifactRetentionDays: "M365_BFF_CLEANUP_ARTIFACT_RETENTION_DAYS",
+  cleanupJobRetentionDays: "M365_BFF_CLEANUP_JOB_RETENTION_DAYS",
+  cleanupSoftDeleteRetentionDays: "M365_BFF_CLEANUP_SOFT_DELETE_RETENTION_DAYS",
 } as const;
 
 function readEnv(env: Environment, key: string): string | undefined {
@@ -135,8 +149,26 @@ export function parseAppPackageMaxBytes(env: Environment): number {
   return parsed;
 }
 
-export function parseWorkerBaseUrl(env: Environment, host: string, port: number): string {
-  const value = readEnv(env, ENV.workerBaseUrl) ?? `http://${host}:${port}`;
+/**
+ * A cleanup retention window in whole days. Unset takes the SPEC §4.1 default; a
+ * non-positive or fractional value is a startup error rather than a silent default,
+ * because an accidental `0` would delete everything on the next cleanup tick.
+ */
+export function parseRetentionDays(
+  env: Environment,
+  name: string,
+  fallback: number,
+): number {
+  const value = readEnv(env, name);
+  if (value === undefined) return fallback;
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
+    throw new ConfigError(`${name} must be a positive whole number of days, got "${value}"`);
+  }
+  return parsed;
+}
+
+export function parseWorkerBaseUrl(env: Environment, host: string, port: number): string {  const value = readEnv(env, ENV.workerBaseUrl) ?? `http://${host}:${port}`;
   let url: URL;
   try {
     url = new URL(value);
@@ -170,5 +202,20 @@ export function loadConfig(env: Environment = process.env): BffConfig {
     appPackageSecret: parseAppPackageSecret(env),
     appPackageMaxBytes: parseAppPackageMaxBytes(env),
     workerBaseUrl: parseWorkerBaseUrl(env, host, port),
+    cleanupArtifactRetentionDays: parseRetentionDays(
+      env,
+      ENV.cleanupArtifactRetentionDays,
+      DEFAULT_CLEANUP_ARTIFACT_RETENTION_DAYS,
+    ),
+    cleanupJobRetentionDays: parseRetentionDays(
+      env,
+      ENV.cleanupJobRetentionDays,
+      DEFAULT_CLEANUP_JOB_RETENTION_DAYS,
+    ),
+    cleanupSoftDeleteRetentionDays: parseRetentionDays(
+      env,
+      ENV.cleanupSoftDeleteRetentionDays,
+      DEFAULT_CLEANUP_SOFT_DELETE_RETENTION_DAYS,
+    ),
   };
 }

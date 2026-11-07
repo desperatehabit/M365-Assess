@@ -12,10 +12,19 @@ export type SystemTimerScheduleType =
   | "custom-script"
   | "report";
 
+/**
+ * The job type a timer enqueues. Operational timers (webhooks, cleanup) do not
+ * correspond to a tenant run, so they ride the `maintenance` job type and dispatch
+ * on their command; their `type` stays the user-visible schedule type.
+ */
+export type SystemTimerJobType = SystemTimerScheduleType | "maintenance";
+
 export interface SystemTimer {
   readonly name: string;
   readonly cron: string;
   readonly type: SystemTimerScheduleType;
+  /** Job type to enqueue; defaults to `type` when omitted. */
+  readonly jobType?: SystemTimerJobType;
   readonly timezone: string;
   readonly command: string;
   /**
@@ -26,11 +35,11 @@ export interface SystemTimer {
   readonly unavailableReason?: string;
 }
 
-// The operational timers (webhooks, cleanup, token-refresh) have no worker yet:
-// nothing implements their commands, and no runner dispatches on command. They
-// stay listed so operators can see them, but are marked unavailable so the tick
-// does not enqueue them under an unrelated job type. Each has a follow-up ticket.
-const NOT_IMPLEMENTED = "not implemented yet: no worker runs this command";
+// Operational timers that do not run an assessment or report: they ride the
+// `maintenance` job type and dispatch on the command carried in the job payload
+// (T-0902/T-0903). Token refresh was retired in T-0904: tenant credentials are
+// certificate-based, so there is no OAuth token to keep warm. Credential and
+// certificate expiry is covered by the scheduled credential-expiry scan (T-0874).
 export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
   (
     [
@@ -52,25 +61,17 @@ export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
         name: "webhooks",
         cron: "0 */15 * * * *",
         type: "report",
+        jobType: "maintenance",
         timezone: "UTC",
         command: "Invoke-WebhookRenewal",
-        unavailableReason: NOT_IMPLEMENTED,
       },
       {
         name: "cleanup",
         cron: "0 0 3 * * *",
         type: "backup",
+        jobType: "maintenance",
         timezone: "UTC",
         command: "Invoke-PortalCleanup",
-        unavailableReason: NOT_IMPLEMENTED,
-      },
-      {
-        name: "token-refresh",
-        cron: "0 0 * * * *",
-        type: "assessment",
-        timezone: "UTC",
-        command: "Invoke-TokenRefresh",
-        unavailableReason: NOT_IMPLEMENTED,
       },
     ] satisfies SystemTimer[]
   ).map((timer) => Object.freeze(timer)),

@@ -44,6 +44,7 @@ import type {
 import { CUSTOM_SCRIPT_COMMAND } from "../routes/schedules.js";
 import type { CustomTestDispatcher, CustomTestWorkerOutput } from "../custom-tests/run.js";
 import type { TickSchedule, TickScheduleStore } from "../scheduler/tick.js";
+import type { SystemTimerStateStore } from "../scheduler/maintenance.js";
 import type { TenantStore } from "../routes/tenants.js";
 import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock, type WorkerRunner } from "./workers.js";
 
@@ -617,8 +618,15 @@ function toTickSchedule(schedule: Schedule): TickSchedule {
   };
 }
 
-/** Adapts the schedule repository to the scheduler tick's store seam. */
-export function createTickScheduleStore(repo: ScheduleRepository): TickScheduleStore {
+/**
+ * Adapts the schedule repository to the scheduler tick's store seam. Code-deployed
+ * system timers have no Schedule row, so their run state goes to the
+ * system_timer_state table instead (T-0902/T-0903).
+ */
+export function createTickScheduleStore(
+  repo: ScheduleRepository,
+  systemTimers?: SystemTimerStateStore,
+): TickScheduleStore {
   return {
     async listSchedules() {
       const schedules = await repo.listSchedules();
@@ -629,6 +637,10 @@ export function createTickScheduleStore(repo: ScheduleRepository): TickScheduleS
       return schedule !== undefined && schedule.deletedAt === null ? toTickSchedule(schedule) : undefined;
     },
     async updateSchedule(scheduleId, patch) {
+      if (scheduleId.startsWith("system-") && systemTimers !== undefined) {
+        await systemTimers.set(scheduleId.slice("system-".length), { ...patch });
+        return;
+      }
       await repo.updateSchedule(scheduleId, { ...patch });
     },
   };

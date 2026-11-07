@@ -141,6 +141,21 @@ describe("job persistence (T-0821)", () => {
     expect(await queue.getState(env.jobId)).toBe("succeeded");
     expect((await repo.getJob(env.jobId))!.state).toBe("done");
   });
+
+  it("stores the all-tenants wildcard as a null tenant so system-timer jobs satisfy the tenant foreign key", async () => {
+    const { repo } = await setup();
+    const persistence = createJobPersistence(repo);
+    await persistence.createJob({
+      id: "job-system",
+      type: "maintenance",
+      tenantId: "all",
+      payload: { outputRef: "schedules/system-cleanup/run-1" },
+      state: "queued",
+      attempts: 0,
+      progress: null,
+    });
+    expect((await repo.getJob("job-system"))?.tenantId).toBeNull();
+  });
 });
 
 describe("run group resolver (T-0821)", () => {

@@ -24,6 +24,9 @@ export interface SchedulerOptions {
   readonly now?: () => Date;
   readonly newIds?: () => TickIds;
   readonly systemTimers?: readonly SystemTimer[];
+  readonly systemTimerState?: (
+    name: string,
+  ) => Promise<{ readonly lastRunAt?: string | null; readonly nextRunAt?: string | null } | undefined>;
 }
 
 export interface Scheduler {
@@ -55,6 +58,7 @@ export function createScheduler(options: SchedulerOptions): Scheduler {
       now: options.now?.(),
       newIds: options.newIds,
       systemTimers: options.systemTimers,
+      systemTimerState: options.systemTimerState,
     });
     await recordOutcomes();
     return result;

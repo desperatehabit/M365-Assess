@@ -375,6 +375,32 @@ describe("config", () => {
     const config = loadConfig({ M365_BFF_STORAGE_PATH: "/tmp/store" });
     expect(config.artifactPath).toBe("/tmp/store/artifacts");
   });
+
+  it("defaults cleanup retention to 90/30/30 days", () => {
+    const config = loadConfig({});
+    expect(config.cleanupArtifactRetentionDays).toBe(90);
+    expect(config.cleanupJobRetentionDays).toBe(30);
+    expect(config.cleanupSoftDeleteRetentionDays).toBe(30);
+  });
+
+  it("reads cleanup retention overrides from the environment", () => {
+    const config = loadConfig({
+      M365_BFF_CLEANUP_ARTIFACT_RETENTION_DAYS: "45",
+      M365_BFF_CLEANUP_JOB_RETENTION_DAYS: "14",
+      M365_BFF_CLEANUP_SOFT_DELETE_RETENTION_DAYS: "7",
+    });
+    expect(config.cleanupArtifactRetentionDays).toBe(45);
+    expect(config.cleanupJobRetentionDays).toBe(14);
+    expect(config.cleanupSoftDeleteRetentionDays).toBe(7);
+  });
+
+  it("refuses a non-positive or fractional cleanup retention instead of defaulting", () => {
+    for (const value of ["0", "-1", "1.5", "abc"]) {
+      expect(() => loadConfig({ M365_BFF_CLEANUP_JOB_RETENTION_DAYS: value })).toThrow(
+        /M365_BFF_CLEANUP_JOB_RETENTION_DAYS must be a positive whole number of days/,
+      );
+    }
+  });
 });
 
 describe("thin BFF guard", () => {

@@ -118,6 +118,14 @@ describe("envelope round-trip", () => {
     expect(() => parseJobEnvelope({ ...job, jobType: "app-uploads" })).toThrow(EnvelopeValidationError);
   });
 
+  it("accepts the maintenance job type used by operational system timers (T-0902/T-0903)", () => {
+    expect(parseJobEnvelope({ ...job, jobType: "maintenance" }).jobType).toBe("maintenance");
+    expect(
+      parseJobEnvelope({ ...job, jobType: "maintenance", payload: { ...job.payload, command: "Invoke-PortalCleanup" } })
+        .payload["command"],
+    ).toBe("Invoke-PortalCleanup");
+  });
+
   it("round-trips a ResultEnvelope", () => {
     expect(parseResultEnvelope(serializeEnvelope(result))).toEqual(result);
   });
