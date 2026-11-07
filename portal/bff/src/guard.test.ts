@@ -32,7 +32,8 @@ const FORBIDDEN_PATTERNS: readonly ForbiddenPattern[] = [
   { id: "collector-construct", re: /initialize-securityconfig/i },
   { id: "collector-construct", re: /export-securityconfigreport/i },
   { id: "collector-construct", re: /add-setting/i },
-  { id: "collector-construct", re: /checkid/i },
+  // Check IDs are legitimate finding data in the API (check alerts, audit
+  // coverage, drift keys); the collector constructs above are what the guard bans.
   // A Set-* cmdlet name is a tenant write; a worker entrypoint file name
   // (set-intune-policy.ps1) is how the BFF asks a worker to do one, so it is allowed.
   { id: "tenant-write-operation", re: /\bset-[a-z][a-z0-9]*(?![a-z0-9-]*\.ps1)/i },

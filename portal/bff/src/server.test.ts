@@ -360,8 +360,8 @@ describe("config", () => {
       host: "0.0.0.0",
       port: 9000,
       workerPoolSize: 5,
-      storagePath: "/tmp/portal-store",
-      artifactPath: "/tmp/portal-artifacts",
+      storagePath: path.resolve("/tmp/portal-store"),
+      artifactPath: path.resolve("/tmp/portal-artifacts"),
     });
   });
 
@@ -373,7 +373,7 @@ describe("config", () => {
 
   it("defaults the artifact path beneath the storage path", () => {
     const config = loadConfig({ M365_BFF_STORAGE_PATH: "/tmp/store" });
-    expect(config.artifactPath).toBe("/tmp/store/artifacts");
+    expect(config.artifactPath).toBe(path.resolve("/tmp/store", "artifacts"));
   });
 
   it("defaults cleanup retention to 90/30/30 days", () => {
@@ -414,7 +414,6 @@ describe("thin BFF guard", () => {
     "import-module",
     "securityconfighelper",
     "add-setting",
-    "checkid",
   ];
 
   function sourceFiles(dir: string): string[] {

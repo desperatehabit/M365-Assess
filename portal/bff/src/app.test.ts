@@ -976,7 +976,7 @@ describe("EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824)", () 
 describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", () => {
   const runner: WorkerRunner = async () => ({}) as never;
 
-  it("stores standards templates, serves the catalog, and refuses runs with 501", async () => {
+  it("stores standards templates, serves the catalog, and runs a template immediately", async () => {
     const admin = await adminWithTenant(runner);
     const created = await admin.post("/v1/standards/templates", { name: "Tier 1", settings: [{ key: "CA-1", value: true }] });
     expect(created.status).toBe(201);
@@ -990,14 +990,14 @@ describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", 
     expect((await admin.get("/v1/standards/compare/t-a")).status).toBe(200);
 
     const run = await admin.post(`/v1/standards/templates/${template.id}/run`, { tenantId: "t-a" });
-    expect(run.status).toBe(501);
-    expect(await run.json()).toMatchObject({ code: "jobs.dispatch_unavailable" });
+    expect(run.status).toBe(202);
+    expect(await run.json()).toMatchObject({ templateId: template.id, tenantId: "t-a", trigger: "manual" });
 
     const operator = await adminWithTenant(runner, "operator");
     expect((await operator.post("/v1/standards/templates", { name: "X" })).status).toBe(403);
   });
 
-  it("lists and triages drift deviations, and refuses refresh and deletion with 501", async () => {
+  it("lists and triages drift deviations, refreshes, and queues a gated delete", async () => {
     const db = new Database(":memory:");
     const admin = await adminWithTenant(runner, "admin", db);
     const drift = new SqliteDriftRepository(db, 0, DEFAULT_STANDARDS_REGISTRY_PATH);
@@ -1015,10 +1015,11 @@ describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", 
     expect(accepted.status).toBe(200);
     expect((await drift.getDeviationById(deviation!.id))?.state).toBe("accepted");
 
-    expect((await admin.post("/v1/drift/t-a/refresh", {})).status).toBe(501);
+    expect((await admin.post("/v1/drift/t-a/refresh", {})).status).toBe(202);
     const deny = await admin.post(`/v1/drift/deviations/${deviation!.id}/deny`, { reason: "remove", confirm: true });
-    expect(deny.status).toBe(501);
-    expect((await drift.getDeviationById(deviation!.id))?.state).toBe("accepted");
+    expect(deny.status).toBe(202);
+    expect(await deny.json()).toMatchObject({ deletionQueued: true });
+    expect((await drift.getDeviationById(deviation!.id))?.state).toBe("deletePending");
 
     const operator = await adminWithTenant(runner, "operator", db);
     expect((await operator.post(`/v1/drift/deviations/${deviation!.id}/deny`, { reason: "x", confirm: true })).status).toBe(403);

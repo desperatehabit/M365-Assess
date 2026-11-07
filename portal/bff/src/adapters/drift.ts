@@ -73,7 +73,9 @@ export function createDriftRefresh(options: DriftRefreshOptions): DriftRefresh {
         jobId,
         jobType: "drift",
         tenantId,
-        runId,
+        // The envelope contract requires a run id; a refresh with no finished run
+        // is still a job of its own, so it carries the job id.
+        runId: runId ?? jobId,
         requestId: jobId,
         correlationId: jobId,
         createdAt: new Date().toISOString(),

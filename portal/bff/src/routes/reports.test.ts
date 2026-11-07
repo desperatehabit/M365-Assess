@@ -1,6 +1,9 @@
 // T-0084 — Reports API: executive render, custom render, history, download, bundle
 // Tests assert route behaviour without any SQL dependency.
 
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import {
   createReportsRoutes,
@@ -110,6 +113,7 @@ function makeDeps(overrides: Partial<ReportsDependencies> = {}): ReportsDependen
     runs: makeRuns(),
     audit: makeAudit(),
     authorizer: makeAuthorizer(),
+    artifactRoot: path.join(tmpdir(), "reports-test-artifacts"),
     ...overrides,
   };
 }
@@ -224,19 +228,23 @@ describe("GET /v1/reports", () => {
 });
 
 describe("GET /v1/reports/:id/download", () => {
-  it("returns artifactRef and content type for a succeeded report", async () => {
+  it("streams the artifact and content type for a succeeded report", async () => {
+    const artifactRoot = mkdtempSync(path.join(tmpdir(), "reports-download-"));
+    writeFileSync(path.join(artifactRoot, "report.pdf"), "%PDF-1.4\n");
     const store = makeStore({
       findById: vi.fn().mockResolvedValue(
-        makeReport({ status: "succeeded", artifactRef: "/art/report.pdf" }),
+        makeReport({ status: "succeeded", artifactRef: "report.pdf" }),
       ),
     });
     const audit = makeAudit();
-    const deps = makeDeps({ store, audit });
+    const deps = makeDeps({ store, audit, artifactRoot });
     const route = findRoute(deps, "GET", "/v1/reports/:id/download");
     const ctx = makeCtx("GET", "/v1/reports/rpt-1/download", { params: { id: "rpt-1" } });
     const res = await route.handler(ctx);
     expect(res.status).toBe(200);
-    expect((res.body as Record<string, unknown>).artifactRef).toBe("/art/report.pdf");
+    expect(res.contentType).toBe("application/pdf");
+    expect(res.headers?.["Content-Disposition"]).toContain("report.pdf");
+    expect(res.stream).toBeDefined();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: "report.download" }),
     );

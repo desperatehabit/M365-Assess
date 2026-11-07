@@ -112,8 +112,11 @@ export async function seedAlertingDefaults(repo: SqliteAlertingRepository): Prom
 export function createAlertingStores(options: AlertingStoreOptions): AlertingStores {
   const { repo } = options;
   // Seed once per app instance. createApp is synchronous, so the stores await this
-  // promise on their first read instead of making app construction async.
+  // promise on their first read instead of making app construction async. The
+  // extra catch keeps a seeding failure from becoming an unhandled rejection when
+  // the app closes (and the database) before the first read.
   const ready = seedAlertingDefaults(repo);
+  void ready.catch(() => undefined);
 
   const rules: AlertRulesStore = {
     async listRules() {

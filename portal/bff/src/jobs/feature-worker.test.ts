@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   FeatureWorkerError,
@@ -97,10 +98,11 @@ describe("runFeatureWorker (T-0815)", () => {
     );
     expect(result).toEqual({ items: [1, 2] });
     expect(calls[0]!.command).toBe("pwsh");
+    const entrypointPath = path.join("/repo/portal/workers", "get-intune-policies.ps1");
     expect(calls[0]!.args).toEqual(
-      buildFeatureWorkerArgs("/repo/portal/workers/get-intune-policies.ps1", calls[0]!.args[5]!),
+      buildFeatureWorkerArgs(entrypointPath, calls[0]!.args[5]!),
     );
-    expect(calls[0]!.args.slice(0, 4)).toEqual(["-NoProfile", "-NonInteractive", "-File", "/repo/portal/workers/get-intune-policies.ps1"]);
+    expect(calls[0]!.args.slice(0, 4)).toEqual(["-NoProfile", "-NonInteractive", "-File", entrypointPath]);
     expect(calls[0]!.job).toEqual({ jobId: "job-7", tenantId: "t-1", kind: "compliance" });
     expect(noJobDirsLeft()).toEqual([]);
   });
@@ -111,7 +113,11 @@ describe("runFeatureWorker (T-0815)", () => {
       child.emit("exit", 0);
     });
     await runFeatureWorker("x.ps1", { tenantId: "t" }, options(spawnImpl));
-    expect(calls[0]!.jobFileMode).toBe(0o600);
+    // NTFS does not expose POSIX permission bits; the owner-only mode is
+    // asserted on platforms that implement it.
+    if (process.platform !== "win32") {
+      expect(calls[0]!.jobFileMode).toBe(0o600);
+    }
   });
 
   it("maps a non-zero exit to worker.failed with the stderr diagnostics", async () => {
@@ -219,7 +225,7 @@ describe.skipIf(!hasPwsh)("runFeatureWorker with real pwsh (T-0815)", () => {
 
 describe("worker entrypoint convention (T-0815)", () => {
   it("every job-file worker entrypoint takes -JobFile, not -JobPath", () => {
-    const workers = path.resolve(path.dirname(new URL(import.meta.url).pathname), "../../../workers");
+    const workers = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../workers");
     const offenders = readdirSync(workers)
       .filter((f) => f.endsWith(".ps1") && f !== "run-tenant.ps1")
       .filter((f) => /\$JobPath\b/.test(readFileSync(path.join(workers, f), "utf8")));

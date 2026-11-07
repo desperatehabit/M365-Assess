@@ -182,7 +182,7 @@ export function createBaselineEvaluationRunner(options: BaselineEvaluationRunner
         ...envelope,
         jobId,
         tenantId: id,
-        runId,
+        runId: runId ?? jobId,
         payload: {
           ...(envelope.payload as unknown as Record<string, unknown>),
           contextRef: `${subOutputRef}/job.json`,
@@ -230,7 +230,15 @@ export async function ingestBaselineEvaluation(
   const outputRef = typeof envelope.payload["outputRef"] === "string" ? envelope.payload["outputRef"] : "";
   if (!outputRef) return;
   const raw = await readFile(path.resolve(options.storageRoot, outputRef, BASELINE_EVALUATION_ARTIFACT), "utf8");
-  const evaluations = JSON.parse(raw) as ReadonlyArray<{
+  const parsed: unknown = JSON.parse(raw);
+  // The worker writes an array, but PowerShell's ConvertTo-Json unrolls a
+  // single-item result into a bare object. Normalize both shapes; anything else
+  // is treated as "no evaluation" rather than crashing completion ingestion.
+  const evaluations = (Array.isArray(parsed)
+    ? parsed
+    : typeof parsed === "object" && parsed !== null
+      ? [parsed]
+      : []) as ReadonlyArray<{
     BaselineId: string;
     StageResults: ReadonlyArray<{
       order: number;

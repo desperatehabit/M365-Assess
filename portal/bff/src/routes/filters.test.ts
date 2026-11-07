@@ -49,6 +49,9 @@ describe("Filter policy routes (T-0421)", () => {
     });
     expect(routes.map((route) => `${route.method} ${route.path}`)).toEqual([
       `GET ${FILTERS_PATH}`,
+      `POST ${FILTERS_PATH}`,
+      `PATCH ${FILTERS_PATH}/:policyName`,
+      `DELETE ${FILTERS_PATH}/:policyName`,
     ]);
   });
 

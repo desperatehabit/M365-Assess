@@ -1,4 +1,4 @@
-// Domain add/verify/remove/set-default writes (EPIC-034 SPEC.md §3.1, §4.1, §6, §7, §8; T-0663).
+// Domain add/verify/remove/default-domain writes (EPIC-034 SPEC.md §3.1, §4.1, §6, §7, §8; T-0663).
 //
 //   POST   /v1/tenants/:tenantId/domains                      add (returns the DNS verification records)
 //   POST   /v1/tenants/:tenantId/domains/:domain/verify       verify
@@ -505,7 +505,7 @@ export const DOMAINS_ACTIONS_OPENAPI = {
         },
         responses: {
           "200": {
-            description: "The set-default outcome.",
+            description: "The default-domain outcome.",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/DomainActionOutcome" },
