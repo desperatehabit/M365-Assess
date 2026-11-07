@@ -303,3 +303,113 @@ export async function deployCaTemplate(
   }
   return res.json();
 }
+
+// ─── Named locations (EPIC-015 SPEC.md §3.4; T-0884) ─────────────────────────
+
+export interface CaNamedLocationReferencingPolicy {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+export interface CaNamedLocationItem {
+  readonly id: string;
+  readonly displayName: string;
+  readonly locationType: "ip" | "country";
+  readonly isTrusted?: boolean;
+  readonly ipRanges?: readonly string[];
+  readonly countriesAndRegions?: readonly string[];
+  readonly includeUnknownCountriesAndRegions?: boolean;
+  readonly referencingPolicies: readonly CaNamedLocationReferencingPolicy[];
+  readonly inUse: boolean;
+}
+
+export interface CaNamedLocationsListResponse {
+  readonly tenantId: string;
+  readonly totalCount: number;
+  readonly items: readonly CaNamedLocationItem[];
+}
+
+export interface CaNamedLocationInput {
+  readonly displayName: string;
+  readonly locationType: "ip" | "country";
+  readonly isTrusted?: boolean;
+  readonly ipRanges?: readonly string[];
+  readonly countriesAndRegions?: readonly string[];
+  readonly includeUnknownCountriesAndRegions?: boolean;
+}
+
+export async function listCaNamedLocations(
+  tenantId: string,
+  baseUrl = "",
+): Promise<CaNamedLocationsListResponse> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/ca/named-locations`,
+  );
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.message || `Failed to list named locations: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function createCaNamedLocation(
+  tenantId: string,
+  input: CaNamedLocationInput,
+  baseUrl = "",
+): Promise<unknown> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/ca/named-locations`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.message || `Failed to create named location: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function editCaNamedLocation(
+  tenantId: string,
+  locationId: string,
+  input: Partial<CaNamedLocationInput>,
+  baseUrl = "",
+): Promise<unknown> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/ca/named-locations/${encodeURIComponent(locationId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.message || `Failed to update named location: HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function deleteCaNamedLocation(
+  tenantId: string,
+  locationId: string,
+  confirmName?: string,
+  baseUrl = "",
+): Promise<unknown> {
+  const res = await fetch(
+    `${baseUrl}/v1/tenants/${encodeURIComponent(tenantId)}/ca/named-locations/${encodeURIComponent(locationId)}`,
+    {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(confirmName ? { confirmName } : {}),
+    },
+  );
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    throw new Error(errorBody.message || `Failed to delete named location: HTTP ${res.status}`);
+  }
+  return res.json();
+}
