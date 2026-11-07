@@ -172,7 +172,7 @@ import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
 import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
 import { createScheduler, type Scheduler } from "./scheduler/scheduler.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
-import { PermissionRegistry } from "./rbac/permissions.js";
+import { PermissionRegistry, permissionForEndpoint } from "./rbac/permissions.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
 import { isTenantAllowed } from "./rbac/scope.js";
 import { testPortalAccess } from "./rbac/test-portal-access.js";
@@ -824,7 +824,13 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       authorize: authorizeCaller,
       recordAudit: routeAudit,
     }),
-    ...createApiClientRoutes(apiClientStore),
+    ...createApiClientRoutes(apiClientStore).map((route) => {
+      const permission = permissionForEndpoint(route);
+      if (permission === undefined) {
+        throw new Error(`no permission is registered for ${route.method} ${route.path}`);
+      }
+      return guardRoute(route, permission);
+    }),
     // GET /openapi.json and /v1/openapi.json serve the generated OpenAPI 3.1 document
     // (SPEC §3.5/§6); the server keeps serving /v1/openapi.yaml.
     ...createOpenApiRoutes(),
