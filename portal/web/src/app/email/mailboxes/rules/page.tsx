@@ -207,6 +207,23 @@ function ruleForwards(rule: InboxRule): boolean {
   });
 }
 
+/** Recipients may come back as one address or a list; the edit form takes one string. */
+export function formatForwardTo(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value.filter((entry): entry is string => typeof entry === "string").join("; ");
+  }
+  return "";
+}
+
+/** The worker takes recipient fields as lists, so split the form value into addresses. */
+export function parseForwardTo(value: string): string[] {
+  return value
+    .split(/[;,]/)
+    .map((address) => address.trim())
+    .filter((address) => address.length > 0);
+}
+
 export function RulesView({ tenantId, mailboxId, canWrite = true, fetcher = fetch }: RulesViewProps): ReactElement {
   const [rules, setRules] = useState<InboxRule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -251,16 +268,17 @@ export function RulesView({ tenantId, mailboxId, canWrite = true, fetcher = fetc
 
   function openEdit(rule: InboxRule): void {
     setName(rule.name);
-    setForwardTo(typeof rule.forwardTo === "string" ? rule.forwardTo : "");
+    setForwardTo(formatForwardTo(rule.forwardTo));
     setPlan(null);
     setPlanError(null);
     setDialog({ mode: "edit", rule });
   }
 
   function dialogPayload(): Record<string, unknown> {
+    const recipients = parseForwardTo(forwardTo);
     return {
       name: name.trim(),
-      forwardTo: forwardTo.trim() ? forwardTo.trim() : undefined,
+      forwardTo: recipients.length > 0 ? recipients : undefined,
     };
   }
 
