@@ -4,6 +4,13 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, waitFor, cleanup } from "@testing-library/react";
+
+const nav = vi.hoisted(() => ({ query: "" }));
+vi.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(nav.query),
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}));
+
 import FleetDashboardPage from "./page";
 import TenantDashboardPage from "./[tenantId]/page";
 import { FleetTable, type FleetPayload } from "../../components/dashboard/FleetTable";
@@ -149,6 +156,7 @@ const SAMPLE_TENANT_EMPTY = {
 beforeEach(() => {
   vi.restoreAllMocks();
   window.localStorage.clear();
+  nav.query = "";
 });
 
 afterEach(() => {
@@ -219,6 +227,33 @@ describe("Dashboard Pages & Fleet View (T-0066)", () => {
       const rows = screen.getAllByRole("row");
       expect(rows.length).toBeGreaterThanOrEqual(3); // header + 2 items
     });
+
+    it("keeps the live path live: no demo payload or banner without the explicit toggle", async () => {
+      const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValueOnce({
+        ok: true,
+        json: async () => SAMPLE_FLEET,
+      } as Response);
+
+      render(<FleetDashboardPage />);
+
+      await waitFor(() => expect(screen.getByTestId("fleet-table")).toBeDefined());
+      expect(fetchSpy).toHaveBeenCalledWith("/v1/dashboard");
+      expect(screen.queryByTestId("demo-data-banner")).toBeNull();
+      expect(screen.queryByText("Contoso Demo Corporation (Sample)")).toBeNull();
+    });
+
+    it("shows the demo fleet behind ?demo=1 without calling the BFF", async () => {
+      nav.query = "demo=1";
+      const fetchSpy = vi.spyOn(global, "fetch");
+
+      render(<FleetDashboardPage />);
+
+      await waitFor(() => expect(screen.getByTestId("fleet-table")).toBeDefined());
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(screen.getByTestId("demo-data-banner").textContent).toContain("Demo data");
+      expect(screen.getByText("Contoso Demo Corporation (Sample)")).toBeDefined();
+      expect(screen.queryByTestId("fleet-view-demo-button")).toBeNull();
+    });
   });
 
   describe("TenantDashboardPage (/dashboard/[tenantId])", () => {
@@ -264,6 +299,19 @@ describe("Dashboard Pages & Fleet View (T-0066)", () => {
 
       const runButton = screen.getByTestId("empty-state-run-button");
       expect(runButton).toBeDefined();
+      expect(screen.queryByTestId("demo-data-banner")).toBeNull();
+    });
+
+    it("renders the demo dashboard behind ?demo=1 without calling the BFF", async () => {
+      nav.query = "demo=1";
+      const fetchSpy = vi.spyOn(global, "fetch");
+
+      render(<TenantDashboardPage params={{ tenantId: "tenant-contoso" }} />);
+
+      expect(screen.getByTestId("demo-data-banner").textContent).toContain("Demo data");
+      expect(screen.getByTestId("demo-dashboard")).toBeDefined();
+      expect(screen.getByTestId("tenant-info-name").textContent).toBe("Contoso Demo Corporation (Sample)");
+      expect(fetchSpy).not.toHaveBeenCalled();
     });
   });
 

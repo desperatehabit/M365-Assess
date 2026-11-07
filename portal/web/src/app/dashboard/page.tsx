@@ -6,8 +6,11 @@
 // Strictly uses report theme tokens with zero colour literals.
 
 import React, { useEffect, useState, type CSSProperties, type ReactElement } from "react";
+import { useSearchParams } from "next/navigation";
 import { FleetTable, type FleetPayload } from "../../components/dashboard/FleetTable";
+import { DemoDataBanner } from "../../components/dashboard/DemoDataBanner";
 import { TenantSelector } from "../../components/TenantSelector";
+import { DEMO_FLEET_PAYLOAD } from "../../data/dashboard-demo";
 
 const pageStyle: CSSProperties = {
   padding: "32px",
@@ -21,6 +24,9 @@ const pageStyle: CSSProperties = {
 };
 
 export default function FleetDashboardPage(): ReactElement {
+  const searchParams = useSearchParams();
+  // Demo mode is opt-in only (?demo=1) and never selected implicitly.
+  const demo = searchParams.get("demo") === "1";
   const [fleet, setFleet] = useState<FleetPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,8 +49,14 @@ export default function FleetDashboardPage(): ReactElement {
   };
 
   useEffect(() => {
+    if (demo) {
+      setFleet(DEMO_FLEET_PAYLOAD);
+      setError(null);
+      setLoading(false);
+      return;
+    }
     void fetchFleet();
-  }, []);
+  }, [demo]);
 
   const handleSelectTenant = (tenantId: string | null) => {
     if (tenantId) {
@@ -117,6 +129,28 @@ export default function FleetDashboardPage(): ReactElement {
             />
           )}
 
+          {!demo && (
+            <a
+              href="/dashboard?demo=1"
+              data-testid="fleet-view-demo-button"
+              style={{
+                padding: "8px 16px",
+                fontSize: "13px",
+                fontWeight: 600,
+                background: "var(--surface)",
+                color: "var(--text)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius, 6px)",
+                textDecoration: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                cursor: "pointer",
+              }}
+            >
+              View demo
+            </a>
+          )}
+
           <a
             href="/runs/new"
             data-testid="fleet-new-run-button"
@@ -139,6 +173,8 @@ export default function FleetDashboardPage(): ReactElement {
           </a>
         </div>
       </div>
+
+      {demo && <DemoDataBanner />}
 
       {/* Loading State */}
       {loading && (
