@@ -221,6 +221,12 @@ import { createTeamsLifecycleRoutes } from "./routes/teams-lifecycle.js";
 import { createTeamsActivityRoutes } from "./routes/teams-activity.js";
 import { createLisLocationsRoutes } from "./routes/teams-lis.js";
 import { createTeamsVoiceRoutes } from "./routes/teams-voice.js";
+// EPIC-027 Sharing & Permissions (T-0857).
+import { createSharingProviders } from "./adapters/sharing.js";
+import { createSharingReportRoute } from "./routes/sharing-report.js";
+import { createSharingPermissionsRoute } from "./routes/sharing-permissions.js";
+import { createExternalUsersRoutes } from "./routes/sharing-external-users.js";
+import { createSharingLinksRemoveRoutes } from "./routes/sharing-links-remove.js";
 // EPIC-019 Defender & Vulnerabilities (T-0849).
 import { createDefenderProviders } from "./adapters/defender.js";
 import { CveExceptionRepository } from "./repository/cve-exceptions.js";
@@ -893,6 +899,11 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // their envelopes onto new-team.ps1 / invoke-lis-location.ps1.
   const teams = createTeamsProviders(run, credentialRows);
 
+  // EPIC-027 Sharing & Permissions (T-0857). Sharing reports read Graph live; bulk
+  // link removal runs the Remove-SharingLinks worker per link and persists its
+  // LinkRemovalJob through the shared repository (migration 0035).
+  const sharing = createSharingProviders(run, credentialRows);
+
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
   // in-memory store.
@@ -1381,6 +1392,29 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       recordTeamOperation: async (operation) => {
         await repo.createTeamOperation(operation);
       },
+    }),
+
+    // EPIC-027 Sharing & Permissions (T-0857). The factories existed but were never
+    // mounted and no adapter bound them, so every §6 endpoint 404'd. Reports run the
+    // Graph workers live; bulk link removal runs Remove-SharingLinks per link, records
+    // one audit event per attempt, and persists the LinkRemovalJob.
+    createSharingReportRoute({ provider: sharing.sharingReport, resolveCaller, authorize: authorizeCaller }),
+    createSharingPermissionsRoute({
+      provider: sharing.permissionsReport,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createExternalUsersRoutes({
+      provider: sharing.externalUsers,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createSharingLinksRemoveRoutes({
+      provider: sharing.linkRemoval,
+      jobs: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: (event) => recordAudit({ ...event }),
     }),
 
     // EPIC-015 Conditional Access (T-0819).

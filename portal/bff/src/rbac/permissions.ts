@@ -115,6 +115,22 @@ import {
   TEAMS_VOICE_WRITE_PERMISSION,
 } from "../routes/teams-voice.js";
 import {
+  SHARING_REPORT_PATH,
+  SHARING_REPORT_READ_PERMISSION,
+} from "../routes/sharing-report.js";
+import {
+  SHARING_PERMISSIONS_PATH,
+  SHARING_READ_PERMISSION as SHARING_PERMISSIONS_READ_PERMISSION,
+} from "../routes/sharing-permissions.js";
+import {
+  EXTERNAL_USER_ACCESS_PATH,
+  EXTERNAL_USERS_PATH,
+} from "../routes/sharing-external-users.js";
+import {
+  SHARING_LINKS_REMOVE_PATH,
+  SHARING_WRITE_PERMISSION,
+} from "../routes/sharing-links-remove.js";
+import {
   DEVICE_ACTIONS_HISTORY_OPENAPI,
   DEVICE_ACTIONS_HISTORY_PATH,
 } from "../routes/device-actions-history.js";
@@ -960,6 +976,12 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "POST", path: TEAMS_VOICE_NUMBERS_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
   { method: "DELETE", path: TEAMS_VOICE_NUMBER_ITEM_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
   { method: "POST", path: TEAMS_VOICE_POLICY_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
+  // EPIC-027 Sharing & Permissions (T-0857).
+  { method: "GET", path: SHARING_REPORT_PATH, permission: SHARING_REPORT_READ_PERMISSION },
+  { method: "GET", path: SHARING_PERMISSIONS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
+  { method: "GET", path: EXTERNAL_USERS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
+  { method: "GET", path: EXTERNAL_USER_ACCESS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
+  { method: "POST", path: SHARING_LINKS_REMOVE_PATH, permission: SHARING_WRITE_PERMISSION },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

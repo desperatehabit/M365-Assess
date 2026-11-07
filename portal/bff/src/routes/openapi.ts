@@ -60,6 +60,11 @@ import { TEAMS_LIFECYCLE_OPENAPI } from "./teams-lifecycle.js";
 import { TEAMS_ACTIVITY_OPENAPI } from "./teams-activity.js";
 import { TEAMS_LIS_OPENAPI } from "./teams-lis.js";
 import { TEAMS_VOICE_OPENAPI } from "./teams-voice.js";
+// EPIC-027 Sharing & Permissions (T-0857).
+import { SHARING_REPORT_OPENAPI } from "./sharing-report.js";
+import { SHARING_PERMISSIONS_OPENAPI } from "./sharing-permissions.js";
+import { SHARING_EXTERNAL_USERS_OPENAPI } from "./sharing-external-users.js";
+import { SHARING_LINKS_REMOVE_OPENAPI } from "./sharing-links-remove.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -157,6 +162,11 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   TEAMS_ACTIVITY_OPENAPI as unknown as OpenApiFragment,
   TEAMS_LIS_OPENAPI as unknown as OpenApiFragment,
   TEAMS_VOICE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-027 Sharing & Permissions (T-0857).
+  SHARING_REPORT_OPENAPI as unknown as OpenApiFragment,
+  SHARING_PERMISSIONS_OPENAPI as unknown as OpenApiFragment,
+  SHARING_EXTERNAL_USERS_OPENAPI as unknown as OpenApiFragment,
+  SHARING_LINKS_REMOVE_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an
