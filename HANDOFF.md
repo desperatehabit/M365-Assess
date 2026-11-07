@@ -1,18 +1,18 @@
 # Handoff — M365-Assess portal
 
-_Last updated: 2026-11-07, after commits `0f1715b8` and `b5263aec`._
+_Last updated: 2026-11-07, after commits `90923bca`, `b1fb719a`, and `97cb0a64`._
 
 ## State
 
 - Branch: `main`, working tree clean.
-- `0f1715b8` — mounted EPIC-019 Defender and EPIC-021 Transport routes (T-0849, T-0851).
-- `b5263aec` — restored a green BFF test suite (no ticket; fixes stale tests and two
-  real adapter bugs found while greening it).
-- Tickets **T-0849** and **T-0851** are `fixed-unverified`; `TICKETS.md` reflects the
-  new counts (open 20, fixed-unverified 18).
+- `90923bca` — mounted EPIC-024 Email Tools routes and delivered the Message Viewer (T-0854).
+- `b1fb719a` — mounted EPIC-026 Teams & Voice routes and the linked team pages (T-0856).
+- `97cb0a64` — mounted EPIC-027 Sharing & Permissions routes (T-0857).
+- Tickets **T-0854**, **T-0856**, and **T-0857** are `fixed-unverified`; `TICKETS.md`
+  reflects the new counts (open 17, fixed-unverified 21).
 - Full portal test suites are green:
-  - BFF: `353 files / 4104 tests`
-  - Web: `152 files / 1316 tests`
+  - BFF: `359 files / 4154 tests`
+  - Web: `154 files / 1322 tests`
   - DB: `44 files / 302 tests`
   - `npm run typecheck` at `portal/` is clean.
 
@@ -28,13 +28,10 @@ npm test --workspace @m365-assess/web
 
 ## Next issues up to bat
 
-Register order (severity, then id) after T-0851:
+Register order (severity, then id) after T-0857:
 
 | Ticket | Sev | Title |
 |---|---|---|
-| T-0854 | medium | Mount and deliver EPIC-024 Email Tools routes and Message Viewer |
-| T-0856 | medium | Mount and deliver EPIC-026 Teams & Voice routes and UI |
-| T-0857 | medium | Mount and wire EPIC-027 Sharing & Permissions routes |
 | T-0861 | medium | Mount and deliver EPIC-031 Secure Score routes |
 | T-0862 | medium | Mount and deliver EPIC-032 Audit Logs & Webhooks routes |
 | T-0863 | medium | Mount and deliver EPIC-033 Licensing routes and workers |
@@ -53,7 +50,7 @@ Register order (severity, then id) after T-0851:
 | T-0853 | low | Mount EPIC-023 Contacts & Resources routes |
 | T-0865 | low | Mount EPIC-035 Backup routes and invoke retention/replication |
 
-**Recommended next batch:** T-0854, T-0856, T-0857 (same “mount and deliver”
+**Recommended next batch:** T-0861, T-0862, T-0863 (same “mount and deliver”
 pattern, contiguous in the register). T-0874/T-0877/T-0878 are small targeted
 fixes and good fill-ins between larger mounts.
 
@@ -66,7 +63,9 @@ acceptance criteria.
    exist under `portal/bff/src/routes/` and which are only in tests.
 2. Add the worker-backed adapter under `portal/bff/src/adapters/` using
    `createTenantWorker` / `createEnvelopeWorker` from `adapters/workers.ts`.
-   Check the worker’s `Read-*Job` function for exact job field names.
+   Check the worker’s `Read-*Job` function for exact job field names: several
+   teams/sharing workers read flat top-level fields rather than the T-0007
+   `payload`, and some read `action` at the envelope’s top level.
 3. If a store is in-memory only, add a SQLite repository over the existing
    migration. Keep it in `portal/bff/src/repository/` when it implements a
    BFF-owned interface (see `defender-deployment-templates.ts`), or export a
@@ -76,7 +75,8 @@ acceptance criteria.
    typecheck/tests resolve it.
 4. Mount in `portal/bff/src/app.ts`: pass `resolveCaller`, the shared
    authorizer, tenant-scope guards, the audit sink, and any template store.
-   Keep static paths before `:param` paths.
+   Keep static paths before `:param` paths (`/teams/activity` and `/teams/lis`
+   before `/teams/:teamId`).
 5. Register every endpoint in `portal/bff/src/rbac/permissions.ts` and add the
    route module’s OpenAPI fragment to `ROUTE_OPENAPI_FRAGMENTS` in
    `portal/bff/src/routes/openapi.ts`. Regenerate the checked-in contract:
@@ -90,7 +90,8 @@ acceptance criteria.
    `renderOpenApiYaml()`. The drift test fails if this is stale.
 6. Add an adapter unit test and an `app-epic0XX-mounts.test.ts` that probes every
    endpoint through the real app (no credential gives 409; portal-local stores
-   give 200/201; assert “not a router 404”).
+   give 200/201; a domain 404 is allowed when the route reaches a store, but
+   assert “not a router 404”).
 7. For missing PowerShell entrypoints, add the wrapper under `portal/workers/`
    plus the implementation under `M365Portal.Workers/`, following the flat-job
    or T-0007-envelope convention of the neighbouring worker. Add a Pester test
@@ -120,6 +121,9 @@ acceptance criteria.
 
   The local `Pester 3.4.0` install also shadows `BeforeAll` when `#Requires
   -Module Pester` runs; explicit single-file runs avoid it.
+- The web suite occasionally flakes on `src/components/settings/Settings.test.tsx`
+  when the whole suite runs (a jsdom timing issue, not a code failure); rerun
+  the file or the suite before treating it as a regression.
 - SQLite migrations are forward-only. Add a new numbered migration; never edit
   an applied one.
 - `portal/contracts/openapi/portal.v1.yaml` drift is enforced by
