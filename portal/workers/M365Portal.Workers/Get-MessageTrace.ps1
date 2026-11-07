@@ -193,6 +193,14 @@ function ConvertTo-MessageTraceRow {
         $eventName = $status
     }
 
+    $messageId = ''
+    foreach ($prop in @('MessageTraceId', 'InternetMessageId', 'MessageId')) {
+        if ($null -ne $Record.$prop -and ([string]$Record.$prop).Trim().Length -gt 0) {
+            $messageId = [string]$Record.$prop
+            break
+        }
+    }
+
     return [pscustomobject]@{
         timestamp = $timestamp
         sender    = $senderAddress
@@ -200,6 +208,7 @@ function ConvertTo-MessageTraceRow {
         subject   = $subject
         status    = $status
         event     = $eventName
+        messageId = $messageId
     }
 }
 

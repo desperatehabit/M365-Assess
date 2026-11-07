@@ -77,6 +77,24 @@ import {
   CONNECTOR_TEMPLATES_PATH,
 } from "../routes/connector-templates.js";
 import {
+  ENCRYPTION_PATH,
+  ENCRYPTION_READ_PERMISSION,
+  ENCRYPTION_WRITE_PERMISSION,
+} from "../routes/encryption.js";
+import {
+  HISTORICAL_SEARCH_CANCEL_PATH,
+  HISTORICAL_SEARCH_JOB_PATH,
+  HISTORICAL_SEARCH_PATH,
+  HISTORICAL_SEARCH_PERMISSION,
+} from "../routes/historical-search.js";
+import {
+  MAIL_RESTORE_JOB_PATH,
+  MAIL_RESTORES_PATH,
+  MAIL_RESTORE_PERMISSION,
+} from "../routes/mail-restores.js";
+import { MESSAGE_TRACE_PATH, MESSAGE_TRACE_READ_PERMISSION } from "../routes/message-trace.js";
+import { MESSAGE_DETAIL_PATH, MESSAGES_READ_PERMISSION } from "../routes/messages.js";
+import {
   DEVICE_ACTIONS_HISTORY_OPENAPI,
   DEVICE_ACTIONS_HISTORY_PATH,
 } from "../routes/device-actions-history.js";
@@ -893,6 +911,18 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(ALERT_RULES_TEST_OPENAPI),
   ...registryEntriesFromOpenApi(ALERT_EVENTS_OPENAPI),
   ...registryEntriesFromOpenApi(NOTIFICATIONS_OPENAPI),
+  // EPIC-024 Email Tools (T-0854). Trace and detail reads accept the mail-tools
+  // read permission; historical search and restores require their elevated
+  // permission; an OME template change is a mail-tools write.
+  { method: "POST", path: MESSAGE_TRACE_PATH, permission: MESSAGE_TRACE_READ_PERMISSION },
+  { method: "POST", path: HISTORICAL_SEARCH_PATH, permission: HISTORICAL_SEARCH_PERMISSION },
+  { method: "GET", path: HISTORICAL_SEARCH_JOB_PATH, permission: HISTORICAL_SEARCH_PERMISSION },
+  { method: "POST", path: HISTORICAL_SEARCH_CANCEL_PATH, permission: HISTORICAL_SEARCH_PERMISSION },
+  { method: "GET", path: MESSAGE_DETAIL_PATH, permission: MESSAGES_READ_PERMISSION },
+  { method: "POST", path: MAIL_RESTORES_PATH, permission: MAIL_RESTORE_PERMISSION },
+  { method: "GET", path: MAIL_RESTORE_JOB_PATH, permission: MAIL_RESTORE_PERMISSION },
+  { method: "GET", path: ENCRYPTION_PATH, permission: ENCRYPTION_READ_PERMISSION },
+  { method: "PUT", path: ENCRYPTION_PATH, permission: ENCRYPTION_WRITE_PERMISSION },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

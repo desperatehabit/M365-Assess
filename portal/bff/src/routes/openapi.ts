@@ -47,6 +47,12 @@ import { TRANSPORT_RULES_OPENAPI } from "./transport-rules.js";
 import { CONNECTORS_OPENAPI } from "./connectors.js";
 import { TRANSPORT_RULE_TEMPLATES_OPENAPI } from "./transport-rule-templates.js";
 import { CONNECTOR_TEMPLATES_OPENAPI } from "./connector-templates.js";
+// EPIC-024 Email Tools (T-0854).
+import { MESSAGE_TRACE_OPENAPI } from "./message-trace.js";
+import { HISTORICAL_SEARCH_OPENAPI } from "./historical-search.js";
+import { MESSAGES_OPENAPI } from "./messages.js";
+import { MAIL_RESTORES_OPENAPI } from "./mail-restores.js";
+import { ENCRYPTION_OPENAPI } from "./encryption.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -131,6 +137,12 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   CONNECTORS_OPENAPI as unknown as OpenApiFragment,
   TRANSPORT_RULE_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
   CONNECTOR_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-024 Email Tools (T-0854).
+  MESSAGE_TRACE_OPENAPI as unknown as OpenApiFragment,
+  HISTORICAL_SEARCH_OPENAPI as unknown as OpenApiFragment,
+  MESSAGES_OPENAPI as unknown as OpenApiFragment,
+  MAIL_RESTORES_OPENAPI as unknown as OpenApiFragment,
+  ENCRYPTION_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

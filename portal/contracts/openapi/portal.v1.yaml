@@ -3769,6 +3769,258 @@ paths:
       x-permission: Identity.Role.Read
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/mail/encryption:
+    get:
+      operationId: getMessageEncryption
+      summary: "Message encryption: IRM/OME configuration and OME template settings"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The IRM/OME configuration and OME template settings.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailTools.Read or the tenant is out of scope.
+        "404":
+          description: The message encryption configuration was not found.
+      x-permission: Exchange.MailTools.Read
+    put:
+      operationId: applyMessageEncryptionTemplate
+      summary: Apply an OME template change (plan preview with preview:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - settings
+              properties:
+                templateId:
+                  type: string
+                settings:
+                  type: object
+                  additionalProperties: true
+                preview:
+                  type: boolean
+                confirm:
+                  type: boolean
+      responses:
+        "200":
+          description: Template change plan preview or the applied result with before/after and audit event.
+        "400":
+          description: Confirmation is missing, or a setting is unsupported or invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailTools.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The OME template was not found.
+      x-permission: Exchange.MailTools.ReadWrite
+  /tenants/{tenantId}/mail/historical-search:
+    post:
+      operationId: startHistoricalSearch
+      summary: Enqueue a cancellable historical search across mailboxes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: The enqueued historical-search job with progress.
+        "400":
+          description: The scoped search parameters are invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailSearch.Execute or the tenant is out of scope.
+      x-permission: Exchange.MailSearch.Execute
+  /tenants/{tenantId}/mail/historical-search/{jobId}:
+    get:
+      operationId: getHistoricalSearch
+      summary: Poll a historical search for progress or ephemeral results
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job progress, or matches with the download reference when complete.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailSearch.Execute or the tenant is out of scope.
+        "404":
+          description: The historical search job was not found.
+      x-permission: Exchange.MailSearch.Execute
+  /tenants/{tenantId}/mail/historical-search/{jobId}/cancel:
+    post:
+      operationId: cancelHistoricalSearch
+      summary: Cancel an in-flight historical search
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The cancelled historical-search job.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailSearch.Execute or the tenant is out of scope.
+        "404":
+          description: The historical search job was not found.
+        "409":
+          description: The job is terminal and cannot be cancelled.
+      x-permission: Exchange.MailSearch.Execute
+  /tenants/{tenantId}/mail/message-trace:
+    post:
+      operationId: traceMessages
+      summary: Trace messages by sender, recipient, subject, date range, and status within the EXO message trace window
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated message trace rows (Timestamp, Sender, Recipient, Subject, Status, Event).
+        "400":
+          description: The filter is invalid or the date range is beyond the EXO message trace window.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailTools.Read or Exchange.MailSearch.Execute, or the tenant is out of scope.
+      x-permission: Exchange.MailTools.Read
+  /tenants/{tenantId}/mail/messages/{messageId}:
+    get:
+      operationId: getMessageDetail
+      summary: "Message viewer: delivery timeline (events, connectors, filters hit) and headers; the body ships only for callers holding Exchange.MailContent.Reveal and is otherwise reported as gated"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The message detail with delivery events, connectors, filters hit, headers, and the gated-or-present body.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailTools.Read or the tenant is out of scope.
+        "404":
+          description: The message was not found.
+      x-permission: Exchange.MailTools.Read
+  /tenants/{tenantId}/mail/restores:
+    post:
+      operationId: startMailRestore
+      summary: Start a mailbox restore (plan preview with preview:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The restore plan preview; nothing is restored.
+        "202":
+          description: The started restore with the persisted RestoreJob and audit event.
+        "400":
+          description: The restore input is invalid or confirmation is missing.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailRestore.Execute or Remediation.Apply, or the tenant is out of scope.
+      x-permission: Exchange.MailRestore.Execute
+  /tenants/{tenantId}/mail/restores/{jobId}:
+    get:
+      operationId: getMailRestore
+      summary: Poll a mailbox restore for progress from the persisted RestoreJob
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The persisted RestoreJob with progress and before/after counts.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.MailRestore.Execute or the tenant is out of scope.
+        "404":
+          description: The restore job was not found.
+      x-permission: Exchange.MailRestore.Execute
   /tenants/{tenantId}/mailbox-permissions:
     get:
       operationId: getTenantsTenantIdMailboxPermissions
@@ -5157,3 +5409,4 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+

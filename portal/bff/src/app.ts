@@ -206,6 +206,13 @@ import { createIncidentsDetailRoute } from "./routes/incidents-detail.js";
 import { createIncidentsActionsRoute } from "./routes/incidents-actions.js";
 import { createAlertActionsRoute, createAlertsRoutes } from "./routes/alerts.js";
 import { createCheckAlertsRoutes } from "./routes/check-alerts.js";
+// EPIC-024 Email Tools (T-0854).
+import { createEmailToolsProviders } from "./adapters/email-tools.js";
+import { createMessageTraceRoutes } from "./routes/message-trace.js";
+import { createHistoricalSearchRoutes } from "./routes/historical-search.js";
+import { createMessageRoutes } from "./routes/messages.js";
+import { createMailRestoreRoutes } from "./routes/mail-restores.js";
+import { createEncryptionRoutes, ENCRYPTION_APPLY_PERMISSION, ENCRYPTION_WRITE_PERMISSION } from "./routes/encryption.js";
 // EPIC-019 Defender & Vulnerabilities (T-0849).
 import { createDefenderProviders } from "./adapters/defender.js";
 import { CveExceptionRepository } from "./repository/cve-exceptions.js";
@@ -847,6 +854,31 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     }
   };
 
+  // EPIC-024 Email Tools (T-0854). Trace, historical search, message detail, and
+  // encryption reads run their EXO workers; restores persist their RestoreJob
+  // through the shared repository (migration 0032). Message data is never stored.
+  const emailTools = createEmailToolsProviders(run, credentialRows, repo);
+  // Trace reads accept the mail-tools read permission or the elevated search one,
+  // matching the route module's own fallback.
+  const authorizeMessageTrace = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, "Exchange.MailSearch.Execute")
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  // An OME template change may be authorized by the mail-tools write permission or
+  // by Remediation.Apply, as the route's own no-authorizer path allows.
+  const authorizeEncryptionWrite = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, ENCRYPTION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
   // in-memory store.
@@ -1257,6 +1289,44 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }).map(audited),
     ...createDeletedMailboxRoutes({ provider: mailboxes.deletedMailboxes, recordAudit: routeAudit, ...caller }),
+
+    // EPIC-024 Email Tools (T-0854). The factories existed but were never mounted and
+    // no adapter bound them, so every §6 endpoint 404'd. Trace/search/detail/encryption
+    // reads run the EXO workers; restores persist their RestoreJob and record the
+    // worker's audit event. Every message read is audited because it exposes metadata.
+    ...createMessageTraceRoutes({
+      provider: emailTools.messageTrace,
+      resolveCaller,
+      authorize: authorizeMessageTrace,
+      recordAudit: routeAudit,
+    }),
+    ...createHistoricalSearchRoutes({
+      provider: emailTools.historicalSearch,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createMessageRoutes({
+      provider: emailTools.messages,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createMailRestoreRoutes({
+      provider: emailTools.mailRestores,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createEncryptionRoutes({
+      provider: emailTools.encryption,
+      resolveCaller,
+      authorize: (ctxCaller, permission) =>
+        permission === ENCRYPTION_WRITE_PERMISSION
+          ? authorizeEncryptionWrite(ctxCaller, permission)
+          : authorizeCaller(ctxCaller, permission),
+      recordAudit: routeAudit,
+    }),
 
     // EPIC-015 Conditional Access (T-0819).
     createCaPoliciesRoute({ provider: ca.policies, ...caller }),

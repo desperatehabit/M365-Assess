@@ -17,6 +17,7 @@ BeforeAll {
             Subject          = 'Quarterly report'
             Status           = 'Delivered'
             Event            = 'Deliver'
+            MessageTraceId   = 'trace-1'
         },
         @{
             Received         = '2026-09-26T11:00:00Z'
@@ -88,6 +89,7 @@ Describe 'Get-MessageTrace worker (T-0462)' {
             $result.items[0].subject | Should -Be 'Quarterly report'
             $result.items[0].status | Should -Be 'Delivered'
             $result.items[0].event | Should -Be 'Deliver'
+            $result.items[0].messageId | Should -Be 'trace-1'
             $result.totalCount | Should -Be 1
         }
 
