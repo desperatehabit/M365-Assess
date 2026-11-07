@@ -13,12 +13,17 @@ import { fileURLToPath } from "node:url";
 
 const PORTAL = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DATA = path.join(PORTAL, ".dev-data");
-const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+const isWindows = process.platform === "win32";
+const npm = isWindows ? "npm.cmd" : "npm";
+// Node 20+ refuses to spawn .cmd files without a shell on Windows (EINVAL).
+const shell = isWindows;
 
 const build = spawnSync(npm, ["run", "build", "-w", "contracts", "-w", "db", "-w", "bff"], {
   cwd: PORTAL,
   stdio: "inherit",
+  shell,
 });
+if (build.error) console.error(build.error);
 if (build.status !== 0) process.exit(build.status ?? 1);
 
 mkdirSync(DATA, { recursive: true });
@@ -36,6 +41,7 @@ const children = [
     cwd: path.join(PORTAL, "web"),
     env: { M365_BFF_URL: `http://127.0.0.1:${port}`, ...process.env },
     stdio: "inherit",
+    shell,
   }),
 ];
 
