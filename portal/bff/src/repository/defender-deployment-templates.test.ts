@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
 import { AppError, ErrorCodes } from "../errors.js";
 import {
   DEFENDER_POLICY_AREAS,
   type DefenderDeploymentTemplateInput,
   createInMemoryDefenderDeploymentTemplateRepository,
+  SqliteDefenderDeploymentTemplateRepository,
   validatePolicyAreas,
   validatePolicyJson,
 } from "./defender-deployment-templates.js";
@@ -157,5 +161,86 @@ describe("defender template validation helpers", () => {
     expect(() => validatePolicyJson(null)).toThrow(AppError);
     expect(() => validatePolicyJson("42")).toThrow(AppError);
     expect(validatePolicyJson({ av: true })).toEqual({ av: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SQLite adapter (T-0849)
+// ---------------------------------------------------------------------------
+
+function migration(name: string): string {
+  return readFileSync(
+    fileURLToPath(new URL(`../../../db/migrations/${name}`, import.meta.url)),
+    "utf8",
+  );
+}
+
+function openSqlite(): { db: Database.Database; repo: SqliteDefenderDeploymentTemplateRepository } {
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  db.exec(migration("0001_init.sql"));
+  db.exec(migration("0022_defender_deployment_templates.sql"));
+  const insertTenant = db.prepare(
+    "INSERT INTO tenants (id, displayName, createdAt, updatedAt) VALUES (?, ?, ?, ?)",
+  );
+  insertTenant.run(TENANT_A, "Tenant A", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+  insertTenant.run(TENANT_B, "Tenant B", "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+  return { db, repo: new SqliteDefenderDeploymentTemplateRepository(db) };
+}
+
+describe("SQLite defender deployment template repository (T-0849)", () => {
+  it("persists, lists, updates, and soft-deletes a template", async () => {
+    const { db, repo } = openSqlite();
+    try {
+      const created = await repo.create(input());
+      expect(created).toMatchObject({
+        id: TEMPLATE_A,
+        tenantId: TENANT_A,
+        name: "Recommended baseline",
+        policyAreas: ["av", "edr"],
+        policyJson: { av: { realTimeProtection: true } },
+        deletedAt: null,
+      });
+
+      expect(await repo.get(TENANT_A, TEMPLATE_A)).toEqual(created);
+      expect(await repo.get(TENANT_B, TEMPLATE_A)).toBeUndefined();
+      expect(await repo.list(TENANT_A)).toHaveLength(1);
+      expect(await repo.list(TENANT_B)).toHaveLength(0);
+      expect(await repo.list(TENANT_A, { policyArea: "edr" })).toHaveLength(1);
+      expect(await repo.list(TENANT_A, { policyArea: "asr" })).toHaveLength(0);
+
+      const updated = await repo.update(TENANT_A, TEMPLATE_A, {
+        name: "Tighter baseline",
+        policyAreas: ["av", "asr"],
+        policyJson: { asr: "block" },
+      });
+      expect(updated).toMatchObject({
+        name: "Tighter baseline",
+        policyAreas: ["av", "asr"],
+        policyJson: { asr: "block" },
+      });
+
+      expect(await repo.softDelete(TENANT_A, TEMPLATE_A)).toBe(true);
+      expect(await repo.get(TENANT_A, TEMPLATE_A)).toBeUndefined();
+      expect(await repo.list(TENANT_A)).toHaveLength(0);
+      expect(await repo.get(TENANT_A, TEMPLATE_A, { includeDeleted: true })).toMatchObject({
+        deletedAt: expect.any(String),
+      });
+      expect(await repo.softDelete(TENANT_A, TEMPLATE_A)).toBe(false);
+      expect(await repo.update(TENANT_A, TEMPLATE_A, { name: "nope" })).toBeUndefined();
+    } finally {
+      db.close();
+    }
+  });
+
+  it("rejects an unsupported policy area before writing", async () => {
+    const { db, repo } = openSqlite();
+    try {
+      await expect(repo.create(input({ policyAreas: ["firewall"] }))).rejects.toMatchObject({
+        code: ErrorCodes.validationFailed,
+      });
+    } finally {
+      db.close();
+    }
   });
 });

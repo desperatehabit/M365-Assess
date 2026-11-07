@@ -32,6 +32,8 @@ import {
   SqliteScheduleRepository,
   SqliteStandardsRepository,
   SqliteTapRecordRepository,
+  SqliteTransportRuleTemplateRepository,
+  SqliteConnectorTemplateRepository,
   SqliteUserTemplateRepository,
   loadMigrations,
   runMigrations,
@@ -189,6 +191,12 @@ import {
 import { createCheckAlertsProvider, createIncidentProviders } from "./adapters/incidents.js";
 // EPIC-029 alerting stores (T-0859).
 import { createAlertingStores } from "./adapters/alerting.js";
+// EPIC-021 Transport & Connectors providers (T-0851).
+import { createTransportProviders } from "./adapters/transport.js";
+import { createTransportRulesRoute, createTransportRulesWriteRoutes, REMEDIATION_APPLY_PERMISSION as TRANSPORT_REMEDIATION_APPLY_PERMISSION } from "./routes/transport-rules.js";
+import { createConnectorRoutes } from "./routes/connectors.js";
+import { createTransportRuleTemplateRoutes } from "./routes/transport-rule-templates.js";
+import { createConnectorTemplateRoutes } from "./routes/connector-templates.js";
 import { createAlertRulesRoutes } from "./routes/alert-rules.js";
 import { createAlertRulesTestRoutes } from "./routes/alert-rules-test.js";
 import { createAlertEventRoutes } from "./routes/alert-events.js";
@@ -198,6 +206,20 @@ import { createIncidentsDetailRoute } from "./routes/incidents-detail.js";
 import { createIncidentsActionsRoute } from "./routes/incidents-actions.js";
 import { createAlertActionsRoute, createAlertsRoutes } from "./routes/alerts.js";
 import { createCheckAlertsRoutes } from "./routes/check-alerts.js";
+// EPIC-019 Defender & Vulnerabilities (T-0849).
+import { createDefenderProviders } from "./adapters/defender.js";
+import { CveExceptionRepository } from "./repository/cve-exceptions.js";
+import { SqliteDefenderDeploymentTemplateRepository } from "./repository/defender-deployment-templates.js";
+import {
+  createDefenderCveExceptionRoutes,
+  DEFENDER_READ_PERMISSION as DEFENDER_CVE_READ_PERMISSION,
+  DEFENDER_WRITE_PERMISSION as DEFENDER_CVE_WRITE_PERMISSION,
+} from "./routes/defender-cve-exceptions.js";
+import { createDefenderDeployRoute, REMEDIATION_APPLY_PERMISSION as DEFENDER_DEPLOY_FALLBACK_PERMISSION } from "./routes/defender-deploy.js";
+import { createMdeOnboardingRoutes } from "./routes/defender-mde-onboarding.js";
+import { createDefenderStatusRoutes } from "./routes/defender-status.js";
+import { createDefenderTemplateRoutes } from "./routes/defender-templates.js";
+import { createDefenderVulnerabilitiesRoutes } from "./routes/defender-vulnerabilities.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
 import { PermissionRegistry, permissionForEndpoint } from "./rbac/permissions.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
@@ -789,6 +811,42 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const purview = createPurviewProviders(run, credentialRows);
   const purviewCompliance = new SqlitePurviewComplianceRepository(db, schemaVersion);
 
+  // EPIC-019 Defender & Vulnerabilities (T-0849). Reads run the Defender/TVM/MDE
+  // workers for the tenant; CVE exceptions and deployment templates are portal-local
+  // records, the latter over migration 0022 rather than an in-memory store.
+  const defender = createDefenderProviders(run, credentialRows);
+  const defenderTemplates = new SqliteDefenderDeploymentTemplateRepository(db);
+  const cveExceptions = new CveExceptionRepository(db);
+  const authorizeDefender = (caller: unknown, permission: string): void => {
+    if (!canAccess(caller as RequestCaller, permission)) throw forbidden(permission);
+  };
+  const authorizeDefenderDeploy = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, DEFENDER_DEPLOY_FALLBACK_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
+  // EPIC-021 Transport & Connectors (T-0851). Reads and writes run their EXO
+  // workers through the connector adapter; transport-rule and connector templates
+  // persist through migrations 0027/0028 rather than an in-memory store.
+  const transport = createTransportProviders(run, credentialRows);
+  const transportRuleTemplates = new SqliteTransportRuleTemplateRepository(db, schemaVersion);
+  const connectorTemplates = new SqliteConnectorTemplateRepository(db, schemaVersion);
+  const authorizeTransport = (caller: unknown, permission: string): void => {
+    if (!canAccess(caller as RequestCaller, permission)) throw forbidden(permission);
+  };
+  const authorizeTransportWrite = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, TRANSPORT_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
   // in-memory store.
@@ -1279,6 +1337,84 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       queue: runJobs,
       resolveCaller,
       authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+
+    // EPIC-019 Defender & Vulnerabilities (T-0849). The route factories existed but
+    // were never imported here and no adapter bound them, so every §6 endpoint 404'd.
+    // CVE exceptions and deployment templates are tenant-local repositories; the
+    // template routes carry their own permission, so each is guarded here.
+    ...createDefenderStatusRoutes({
+      provider: defender.status,
+      resolveCaller,
+      authorize: authorizeDefender,
+    }),
+    createDefenderDeployRoute({
+      provider: defender.deploy,
+      resolveCaller,
+      authorize: authorizeDefenderDeploy,
+      recordAudit,
+      templateRepository: defenderTemplates,
+    }),
+    ...createDefenderVulnerabilitiesRoutes({
+      provider: defender.vulnerabilities,
+      resolveCaller,
+      authorize: authorizeDefender,
+    }),
+    ...createMdeOnboardingRoutes({
+      provider: defender.mdeOnboarding,
+      resolveCaller,
+      authorize: authorizeDefender,
+    }),
+    ...createDefenderTemplateRoutes(defenderTemplates).map((route) =>
+      guardRoute(route, route.permission),
+    ),
+    ...createDefenderCveExceptionRoutes({
+      repository: cveExceptions,
+      authorize: (ctx, permission) => authorizeContext(ctx, permission),
+      audit: (event) => recordAudit({ ...event, targetType: "cveException" }),
+      actor: (ctx) => actorOf(ctx),
+    }).map((route) => {
+      const permission =
+        permissionForEndpoint(route) ??
+        (route.method === "GET" ? DEFENDER_CVE_READ_PERMISSION : DEFENDER_CVE_WRITE_PERMISSION);
+      return guardRoute(route, permission);
+    }),
+
+    // EPIC-021 Transport & Connectors (T-0851). The factories existed but were never
+    // mounted and no adapter bound them, so every §6 endpoint 404'd. Reads and
+    // writes run the EXO workers; the template routes persist through SQLite and
+    // deploy one target per worker call through the EPIC-006 apply seam.
+    createTransportRulesRoute({
+      provider: transport.rules,
+      resolveCaller,
+      authorize: authorizeTransport,
+    }),
+    ...createTransportRulesWriteRoutes({
+      provider: transport.rulesWrite,
+      resolveCaller,
+      authorize: authorizeTransportWrite,
+    }),
+    ...createConnectorRoutes({
+      provider: transport.connectors,
+      resolveCaller,
+      authorize: authorizeTransportWrite,
+      secrets: credentialSecrets,
+    }),
+    ...createTransportRuleTemplateRoutes({
+      store: transportRuleTemplates,
+      authorize: (ctx, permission) => authorizeContext(ctx, permission),
+      readBody,
+      resolveCaller,
+      deployExecutor: transport.deploy,
+      recordAudit: routeAudit,
+    }),
+    ...createConnectorTemplateRoutes({
+      store: connectorTemplates,
+      authorize: (ctx, permission) => authorizeContext(ctx, permission),
+      readBody,
+      resolveCaller,
+      deployExecutor: transport.deploy,
       recordAudit: routeAudit,
     }),
 

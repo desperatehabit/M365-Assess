@@ -715,6 +715,140 @@ paths:
       x-permission: Purview.Compliance.ReadWrite
       security:
         - bearerAuth: []
+  /connector-templates:
+    get:
+      operationId: listConnectorTemplates
+      summary: List persisted connector templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated connector templates.
+        "403":
+          description: The caller lacks Exchange.Transport.Read.
+      x-permission: Exchange.Transport.Read
+    post:
+      operationId: createConnectorTemplate
+      summary: Persist a connector as a template (connectorJson, declared variables, local source; secrets by reference only)
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: The stored template.
+        "400":
+          description: The template failed validation, or connectorJson carried secret material.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite.
+      x-permission: Exchange.Transport.ReadWrite
+  /connector-templates/{id}:
+    get:
+      operationId: getConnectorTemplate
+      summary: Read one connector template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The template.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.Read
+    patch:
+      operationId: updateConnectorTemplate
+      summary: Update a connector template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The updated template.
+        "400":
+          description: The update failed validation, or connectorJson carried secret material.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.ReadWrite
+    delete:
+      operationId: deleteConnectorTemplate
+      summary: Soft-delete a connector template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The template was deleted.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.ReadWrite
+  /connector-templates/{id}/clone:
+    post:
+      operationId: cloneConnectorTemplate
+      summary: Clone a connector template with a fresh id and name
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: The cloned template.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.ReadWrite
+  /connector-templates/{id}/deploy:
+    post:
+      operationId: deployConnectorTemplate
+      summary: "Deploy a connector template: resolves %name% variables (domains, IPs, action overrides) and applies the connector per target through the EPIC-006 gate with before/after and an AuditEvent"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Plan preview of the resolved connector (preview: true)."
+        "207":
+          description: Some targets applied and some failed; per-target results are returned.
+        "400":
+          description: A required variable is missing or the payload is invalid.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or a target is out of scope.
+        "404":
+          description: No live template has that id.
+        "422":
+          description: Every target failed; per-target results are returned.
+      x-permission: Exchange.Transport.ReadWrite
   /dashboard:
     get:
       operationId: getDashboard
@@ -2720,6 +2854,139 @@ paths:
       x-permission: Tenant.ConditionalAccess.Read
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/connectors:
+    get:
+      operationId: listConnectors
+      summary: List connectors live from EXO (name, type inbound/outbound, state, from/to, TLS, last modified)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - inbound
+              - outbound
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - enabled
+              - disabled
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated connectors with the §3.2 columns.
+        "400":
+          description: An unsupported filter value was supplied.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.Read or the tenant is out of scope.
+      x-permission: Exchange.Transport.Read
+    post:
+      operationId: createConnector
+      summary: Add a connector (plan preview with preview:true; secrets travel by reference only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview of the connector create.
+        "201":
+          description: The created connector with before/after and audit event; secret reference only.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Transport.ReadWrite
+  /tenants/{tenantId}/connectors/{connectorId}:
+    patch:
+      operationId: editConnector
+      summary: Edit, enable, or disable a connector (plan preview with preview:true; disabling a mail-flow connector warns and requires confirm:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connectorId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Edit/enable/disable plan preview or applied result with before/after and audit event.
+        "400":
+          description: Validation failed, or a mail-flow-affecting change lacks confirm:true.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.
+        "404":
+          description: The connector was not found.
+      x-permission: Exchange.Transport.ReadWrite
+    delete:
+      operationId: deleteConnector
+      summary: Remove a connector (plan preview with preview:true; apply requires confirm:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: connectorId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete plan preview or applied result with before/after and audit event.
+        "400":
+          description: Confirmation is missing for the removal.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.
+        "404":
+          description: The connector was not found.
+      x-permission: Exchange.Transport.ReadWrite
   /tenants/{tenantId}/defender/cve-exceptions:
     get:
       operationId: getTenantsTenantIdDefenderCveExceptions
@@ -2758,6 +3025,95 @@ paths:
       x-permission: Security.Defender.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/defender/deploy:
+    post:
+      operationId: deployDefenderPolicies
+      summary: Plan (preview) or apply the Defender setup-wizard policy deploy
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: preview
+          in: query
+          required: false
+          schema:
+            type: boolean
+      responses:
+        "200":
+          description: The per-policy-area deploy plan.
+        "201":
+          description: The deploy result with per-policy audit events.
+        "400":
+          description: A path or body parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the defender.write permission.
+        "501":
+          description: A requested policy area is not yet supported.
+      x-permission: Security.Defender.ReadWrite
+  /tenants/{tenantId}/defender/mde-onboarding:
+    get:
+      operationId: getMdeOnboarding
+      summary: "MDE onboarding coverage: onboarded vs total devices by platform with gaps"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's MDE onboarding coverage by platform.
+        "400":
+          description: A path parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the defender.read permission.
+      x-permission: Security.Defender.Read
+  /tenants/{tenantId}/defender/status:
+    get:
+      operationId: getDefenderStatus
+      summary: Defender configuration state per policy area (current vs recommended)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: area
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - av
+              - edr
+              - asr
+              - compliance
+              - firewall
+              - exclusions
+      responses:
+        "200":
+          description: The tenant's Defender status per policy area.
+        "400":
+          description: A path or query parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the defender.read permission.
+        "501":
+          description: The requested policy area is not yet supported.
+      x-permission: Security.Defender.Read
   /tenants/{tenantId}/defender/templates:
     get:
       operationId: getTenantsTenantIdDefenderTemplates
@@ -2805,6 +3161,82 @@ paths:
       x-permission: Security.Defender.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/defender/vulnerabilities:
+    get:
+      operationId: listTvmVulnerabilities
+      summary: List TVM vulnerabilities (CVE, severity, CVSS, exposed devices, software, recommendation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - critical
+              - high
+              - medium
+              - low
+              - none
+              - informational
+        - name: software
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: device
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's TVM vulnerabilities, cursor-paginated.
+        "400":
+          description: A filter parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the defender.read permission.
+      x-permission: Security.Defender.Read
+  /tenants/{tenantId}/defender/vulnerabilities/{cveId}:
+    get:
+      operationId: listTvmVulnerabilityDevices
+      summary: List the affected devices for one CVE (drill-through)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cveId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The CVE's affected devices, cursor-paginated.
+        "400":
+          description: A required path parameter is missing.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the defender.read permission.
+      x-permission: Security.Defender.Read
   /tenants/{tenantId}/deleted-mailboxes:
     get:
       operationId: getTenantsTenantIdDeletedMailboxes
@@ -3963,6 +4395,131 @@ paths:
       x-permission: SharePoint.Cleanup.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/transport-rules:
+    get:
+      operationId: listTransportRules
+      summary: List transport rules live from EXO (name, priority, state, conditions, actions, exceptions, last modified)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - enabled
+              - disabled
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated transport rules with the §3.1 columns.
+        "400":
+          description: An unsupported filter value was supplied.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.Read or the tenant is out of scope.
+      x-permission: Exchange.Transport.Read
+    post:
+      operationId: createTransportRule
+      summary: Create a transport rule (plan preview with preview:true; apply requires confirm:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview of the rule create with the rule JSON; no tenant write is made.
+        "201":
+          description: The created rule with before/after and an audit event.
+        "400":
+          description: Validation failed, an unsupported condition/action was supplied, or confirm:true is missing.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Transport.ReadWrite
+  /tenants/{tenantId}/transport-rules/{ruleId}:
+    patch:
+      operationId: editTransportRule
+      summary: Edit, enable/disable, or set the priority of a transport rule (plan preview with preview:true; apply requires confirm:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Edit plan preview showing the rule JSON before apply, the applied result, or a structured no-op.
+        "400":
+          description: Validation failed, an unsupported condition/action was supplied, or confirm:true is missing.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.
+        "404":
+          description: The rule was not found.
+      x-permission: Exchange.Transport.ReadWrite
+    delete:
+      operationId: deleteTransportRule
+      summary: Remove a transport rule (plan preview with preview:true; apply requires confirm:true)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete plan preview or applied result with before/after and an audit event.
+        "400":
+          description: Confirmation is missing for the removal.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or the tenant is out of scope.
+        "404":
+          description: The rule was not found.
+      x-permission: Exchange.Transport.ReadWrite
   /tenants/{tenantId}/users:
     get:
       operationId: getTenantsTenantIdUsers
@@ -4121,6 +4678,140 @@ paths:
       x-permission: Mailboxes.Vacation.ReadWrite
       security:
         - bearerAuth: []
+  /transport-rule-templates:
+    get:
+      operationId: listTransportRuleTemplates
+      summary: List persisted transport rule templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated transport rule templates.
+        "403":
+          description: The caller lacks Exchange.Transport.Read.
+      x-permission: Exchange.Transport.Read
+    post:
+      operationId: createTransportRuleTemplate
+      summary: Persist a transport rule as a template (ruleJson, declared variables, local source)
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: The stored template.
+        "400":
+          description: The template failed validation.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite.
+      x-permission: Exchange.Transport.ReadWrite
+  /transport-rule-templates/{id}:
+    get:
+      operationId: getTransportRuleTemplate
+      summary: Read one transport rule template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The template.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.Read
+    patch:
+      operationId: updateTransportRuleTemplate
+      summary: Update a transport rule template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The updated template.
+        "400":
+          description: The update failed validation.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.ReadWrite
+    delete:
+      operationId: deleteTransportRuleTemplate
+      summary: Soft-delete a transport rule template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The template was deleted.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.ReadWrite
+  /transport-rule-templates/{id}/clone:
+    post:
+      operationId: cloneTransportRuleTemplate
+      summary: Clone a transport rule template with a fresh id and name
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: The cloned template.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Transport.ReadWrite
+  /transport-rule-templates/{id}/deploy:
+    post:
+      operationId: deployTransportRuleTemplate
+      summary: "Deploy a transport rule template: resolves %name% variables (domains, IPs, action overrides) and applies the rule per target through the EPIC-006 gate with before/after and an AuditEvent"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Plan preview of the resolved rule (preview: true)."
+        "207":
+          description: Some targets applied and some failed; per-target results are returned.
+        "400":
+          description: A required variable is missing or the payload is invalid.
+        "403":
+          description: The caller lacks Exchange.Transport.ReadWrite or a target is out of scope.
+        "404":
+          description: No live template has that id.
+        "422":
+          description: Every target failed; per-target results are returned.
+      x-permission: Exchange.Transport.ReadWrite
   /user-templates:
     get:
       operationId: getUserTemplates

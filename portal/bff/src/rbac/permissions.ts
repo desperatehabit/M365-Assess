@@ -36,6 +36,47 @@ import {
   DEFENDER_TEMPLATES_PATH,
 } from "../routes/defender-templates.js";
 import {
+  DEFENDER_STATUS_PATH,
+  DEFENDER_STATUS_READ_PERMISSION,
+} from "../routes/defender-status.js";
+import {
+  DEFENDER_DEPLOY_PATH,
+  DEFENDER_DEPLOY_WRITE_PERMISSION,
+} from "../routes/defender-deploy.js";
+import {
+  VULNERABILITIES_PATH,
+  VULNERABILITIES_READ_PERMISSION,
+  VULNERABILITY_DEVICES_PATH,
+} from "../routes/defender-vulnerabilities.js";
+import {
+  MDE_ONBOARDING_PATH,
+  MDE_ONBOARDING_READ_PERMISSION,
+} from "../routes/defender-mde-onboarding.js";
+import {
+  TRANSPORT_READ_PERMISSION,
+  TRANSPORT_RULES_ITEM_PATH,
+  TRANSPORT_RULES_PATH,
+  TRANSPORT_WRITE_PERMISSION,
+} from "../routes/transport-rules.js";
+import {
+  CONNECTOR_ITEM_PATH,
+  CONNECTORS_PATH,
+} from "../routes/connectors.js";
+import {
+  TRANSPORT_RULE_TEMPLATE_CLONE_PATH,
+  TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH,
+  TRANSPORT_RULE_TEMPLATE_PATH,
+  TRANSPORT_RULE_TEMPLATE_PERMISSIONS,
+  TRANSPORT_RULE_TEMPLATES_PATH,
+} from "../routes/transport-rule-templates.js";
+import {
+  CONNECTOR_TEMPLATE_CLONE_PATH,
+  CONNECTOR_TEMPLATE_DEPLOY_PATH,
+  CONNECTOR_TEMPLATE_PATH,
+  CONNECTOR_TEMPLATE_PERMISSIONS,
+  CONNECTOR_TEMPLATES_PATH,
+} from "../routes/connector-templates.js";
+import {
   DEVICE_ACTIONS_HISTORY_OPENAPI,
   DEVICE_ACTIONS_HISTORY_PATH,
 } from "../routes/device-actions-history.js";
@@ -366,10 +407,34 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   },
   {
     method: "GET",
-    path: DEFENDER_TEMPLATES_PATH,
-    permission: DEFENDER_TEMPLATE_READ_PERMISSION,
+    path: DEFENDER_STATUS_PATH,
+    permission: DEFENDER_STATUS_READ_PERMISSION,
   },
   {
+    method: "POST",
+    path: DEFENDER_DEPLOY_PATH,
+    permission: DEFENDER_DEPLOY_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: VULNERABILITIES_PATH,
+    permission: VULNERABILITIES_READ_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: VULNERABILITY_DEVICES_PATH,
+    permission: VULNERABILITIES_READ_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: MDE_ONBOARDING_PATH,
+    permission: MDE_ONBOARDING_READ_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: DEFENDER_TEMPLATES_PATH,
+    permission: DEFENDER_TEMPLATE_READ_PERMISSION,
+  },  {
     method: "GET",
     path: DEFENDER_TEMPLATE_PATH,
     permission: DEFENDER_TEMPLATE_READ_PERMISSION,
@@ -408,6 +473,116 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
     method: "DELETE",
     path: CVE_EXCEPTION_PATH,
     permission: CVE_EXCEPTION_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: TRANSPORT_RULES_PATH,
+    permission: TRANSPORT_READ_PERMISSION,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULES_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "PATCH",
+    path: TRANSPORT_RULES_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "DELETE",
+    path: TRANSPORT_RULES_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: CONNECTORS_PATH,
+    permission: TRANSPORT_READ_PERMISSION,
+  },
+  {
+    method: "POST",
+    path: CONNECTORS_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "PATCH",
+    path: CONNECTOR_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "DELETE",
+    path: CONNECTOR_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: TRANSPORT_RULE_TEMPLATES_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULE_TEMPLATES_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "GET",
+    path: TRANSPORT_RULE_TEMPLATE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "PATCH",
+    path: TRANSPORT_RULE_TEMPLATE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "DELETE",
+    path: TRANSPORT_RULE_TEMPLATE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULE_TEMPLATE_CLONE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "GET",
+    path: CONNECTOR_TEMPLATES_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "POST",
+    path: CONNECTOR_TEMPLATES_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "GET",
+    path: CONNECTOR_TEMPLATE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "PATCH",
+    path: CONNECTOR_TEMPLATE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "DELETE",
+    path: CONNECTOR_TEMPLATE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: CONNECTOR_TEMPLATE_CLONE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: CONNECTOR_TEMPLATE_DEPLOY_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
   },
   {
     method: "GET",

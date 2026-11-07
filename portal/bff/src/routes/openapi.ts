@@ -37,6 +37,16 @@ import { ALERT_RULES_OPENAPI } from "./alert-rules.js";
 import { ALERT_RULES_TEST_OPENAPI } from "./alert-rules-test.js";
 import { ALERT_EVENTS_OPENAPI } from "./alert-events.js";
 import { NOTIFICATIONS_OPENAPI } from "./notifications.js";
+// EPIC-019 Defender & Vulnerabilities (T-0849).
+import { DEFENDER_STATUS_OPENAPI } from "./defender-status.js";
+import { DEFENDER_DEPLOY_OPENAPI } from "./defender-deploy.js";
+import { DEFENDER_VULNERABILITIES_OPENAPI } from "./defender-vulnerabilities.js";
+import { MDE_ONBOARDING_OPENAPI } from "./defender-mde-onboarding.js";
+// EPIC-021 Transport & Connectors (T-0851).
+import { TRANSPORT_RULES_OPENAPI } from "./transport-rules.js";
+import { CONNECTORS_OPENAPI } from "./connectors.js";
+import { TRANSPORT_RULE_TEMPLATES_OPENAPI } from "./transport-rule-templates.js";
+import { CONNECTOR_TEMPLATES_OPENAPI } from "./connector-templates.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -111,6 +121,16 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   ALERT_RULES_TEST_OPENAPI as unknown as OpenApiFragment,
   ALERT_EVENTS_OPENAPI as unknown as OpenApiFragment,
   NOTIFICATIONS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-019 Defender & Vulnerabilities (T-0849).
+  DEFENDER_STATUS_OPENAPI as unknown as OpenApiFragment,
+  DEFENDER_DEPLOY_OPENAPI as unknown as OpenApiFragment,
+  DEFENDER_VULNERABILITIES_OPENAPI as unknown as OpenApiFragment,
+  MDE_ONBOARDING_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-021 Transport & Connectors (T-0851).
+  TRANSPORT_RULES_OPENAPI as unknown as OpenApiFragment,
+  CONNECTORS_OPENAPI as unknown as OpenApiFragment,
+  TRANSPORT_RULE_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  CONNECTOR_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

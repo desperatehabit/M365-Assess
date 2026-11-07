@@ -28,3 +28,4 @@ export * from "./baselines-repository.js";
 export * from "./integration-repository.js";
 export * from "./graph-preset-repository.js";
 export * from "./alerting-repository.js";
+export * from "./transport-template-repository.js";

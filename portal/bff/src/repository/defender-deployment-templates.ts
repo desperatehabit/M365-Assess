@@ -4,7 +4,10 @@
 // T-0361 policy-area registry, tenant scoping, and soft delete. It names no
 // storage engine and contains no SQL: migration 0022 owns the relational shape
 // and a portal/db adapter implements this interface for durable storage, while
-// the in-memory implementation here wires the routes and the tests.
+// the in-memory implementation here wires the routes and the tests, and
+// `SqliteDefenderDeploymentTemplateRepository` (T-0849) is the durable adapter the
+// composition root mounts.
+import type Database from "better-sqlite3";
 import { AppError, ErrorCodes, type ErrorDetail } from "../errors.js";
 
 // v1 policy areas per EPIC-019 SPEC §11.2. T-0361 owns the canonical registry;
@@ -231,4 +234,170 @@ export function createInMemoryDefenderDeploymentTemplateRepository(): DefenderDe
       return true;
     },
   };
+}
+
+// ---------------------------------------------------------------------------
+// SQLite adapter (T-0849)
+// ---------------------------------------------------------------------------
+
+type Row = Record<string, unknown>;
+
+function asString(value: unknown): string {
+  return String(value);
+}
+
+function asNullableString(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
+function parseStoredAreas(value: unknown): string[] {
+  if (typeof value !== "string") return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map((entry) => String(entry)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseStoredJson(value: unknown): Record<string, unknown> {
+  if (typeof value !== "string") return {};
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isPlainObject(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Durable DefenderDeploymentTemplate store over migration 0022. The T-0363 entity
+ * module owns validation, so the adapter reuses `buildTemplate` on create and the
+ * same validators on update; it only owns SQL and row mapping.
+ */
+export class SqliteDefenderDeploymentTemplateRepository
+  implements DefenderDeploymentTemplateRepository
+{
+  constructor(private readonly db: Database.Database) {}
+
+  private map(row: Row): DefenderDeploymentTemplate {
+    return {
+      id: asString(row["id"]),
+      tenantId: asString(row["tenantId"]),
+      name: asString(row["name"]),
+      policyAreas: parseStoredAreas(row["policyAreas"]),
+      policyJson: parseStoredJson(row["policyJson"]),
+      createdAt: asString(row["createdAt"]),
+      updatedAt: asString(row["updatedAt"]),
+      deletedAt: asNullableString(row["deletedAt"]),
+    };
+  }
+
+  async get(
+    tenantId: string,
+    id: string,
+    options: DefenderTemplateListOptions = {},
+  ): Promise<DefenderDeploymentTemplate | undefined> {
+    const row = this.db
+      .prepare("SELECT * FROM defender_deployment_templates WHERE tenantId = ? AND id = ?")
+      .get(tenantId, id) as Row | undefined;
+    if (!row) return undefined;
+    const template = this.map(row);
+    if (options.includeDeleted !== true && template.deletedAt !== null) return undefined;
+    return template;
+  }
+
+  async list(
+    tenantId: string,
+    options: DefenderTemplateListOptions = {},
+  ): Promise<DefenderDeploymentTemplate[]> {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM defender_deployment_templates
+          WHERE tenantId = ? AND (? = 1 OR deletedAt IS NULL)
+          ORDER BY createdAt, id`,
+      )
+      .all(tenantId, options.includeDeleted === true ? 1 : 0) as Row[];
+    return rows
+      .map((row) => this.map(row))
+      .filter(
+        (template) =>
+          options.policyArea === undefined || template.policyAreas.includes(options.policyArea),
+      );
+  }
+
+  async create(
+    input: DefenderDeploymentTemplateInput,
+    options: DefenderTemplateValidationOptions = {},
+  ): Promise<DefenderDeploymentTemplate> {
+    const record = buildTemplate(input, options);
+    this.db
+      .prepare(
+        `INSERT INTO defender_deployment_templates
+           (id, tenantId, name, policyAreas, policyJson, createdAt, updatedAt, deletedAt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+      )
+      .run(
+        record.id,
+        record.tenantId,
+        record.name,
+        JSON.stringify(record.policyAreas),
+        JSON.stringify(record.policyJson),
+        record.createdAt,
+        record.updatedAt,
+      );
+    return record;
+  }
+
+  async update(
+    tenantId: string,
+    id: string,
+    patch: DefenderDeploymentTemplatePatch,
+    options: DefenderTemplateValidationOptions = {},
+  ): Promise<DefenderDeploymentTemplate | undefined> {
+    const existing = await this.get(tenantId, id);
+    if (!existing) return undefined;
+    const updated: DefenderDeploymentTemplate = {
+      ...existing,
+      ...(patch.name === undefined ? {} : { name: validateTemplateName(patch.name) }),
+      ...(patch.policyAreas === undefined
+        ? {}
+        : { policyAreas: validatePolicyAreas(patch.policyAreas, options) }),
+      ...(patch.policyJson === undefined
+        ? {}
+        : { policyJson: validatePolicyJson(patch.policyJson) }),
+      updatedAt: nowIso(),
+    };
+    this.db
+      .prepare(
+        `UPDATE defender_deployment_templates
+            SET name = ?, policyAreas = ?, policyJson = ?, updatedAt = ?
+          WHERE tenantId = ? AND id = ? AND deletedAt IS NULL`,
+      )
+      .run(
+        updated.name,
+        JSON.stringify(updated.policyAreas),
+        JSON.stringify(updated.policyJson),
+        updated.updatedAt,
+        tenantId,
+        id,
+      );
+    return updated;
+  }
+
+  async softDelete(
+    tenantId: string,
+    id: string,
+    options: { now?: string } = {},
+  ): Promise<boolean> {
+    const at = options.now ?? nowIso();
+    const result = this.db
+      .prepare(
+        `UPDATE defender_deployment_templates
+            SET deletedAt = ?, updatedAt = ?
+          WHERE tenantId = ? AND id = ? AND deletedAt IS NULL`,
+      )
+      .run(at, at, tenantId, id);
+    return result.changes > 0;
+  }
 }
