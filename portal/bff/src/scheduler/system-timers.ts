@@ -18,11 +18,19 @@ export interface SystemTimer {
   readonly type: SystemTimerScheduleType;
   readonly timezone: string;
   readonly command: string;
+  /**
+   * Set when the timer's command has no implementation yet. The scheduler tick
+   * skips such a timer and the API shows it disabled with this reason, instead of
+   * enqueueing a job that no runner can execute (T-0876).
+   */
+  readonly unavailableReason?: string;
 }
 
-// The operational timers (webhooks, cleanup, token-refresh) predate a
-// dedicated maintenance job type, so they ride the closest existing schedule
-// type until that taxonomy gap is closed; dispatch already keys on command.
+// The operational timers (webhooks, cleanup, token-refresh) have no worker yet:
+// nothing implements their commands, and no runner dispatches on command. They
+// stay listed so operators can see them, but are marked unavailable so the tick
+// does not enqueue them under an unrelated job type. Each has a follow-up ticket.
+const NOT_IMPLEMENTED = "not implemented yet: no worker runs this command";
 export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
   (
     [
@@ -46,6 +54,7 @@ export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
         type: "report",
         timezone: "UTC",
         command: "Invoke-WebhookRenewal",
+        unavailableReason: NOT_IMPLEMENTED,
       },
       {
         name: "cleanup",
@@ -53,6 +62,7 @@ export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
         type: "backup",
         timezone: "UTC",
         command: "Invoke-PortalCleanup",
+        unavailableReason: NOT_IMPLEMENTED,
       },
       {
         name: "token-refresh",
@@ -60,10 +70,15 @@ export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
         type: "assessment",
         timezone: "UTC",
         command: "Invoke-TokenRefresh",
+        unavailableReason: NOT_IMPLEMENTED,
       },
     ] satisfies SystemTimer[]
   ).map((timer) => Object.freeze(timer)),
 );
+
+export function isSystemTimerAvailable(timer: SystemTimer): boolean {
+  return timer.unavailableReason === undefined;
+}
 
 export function getSystemTimer(name: string): SystemTimer | undefined {
   return SYSTEM_TIMERS.find((timer) => timer.name === name);

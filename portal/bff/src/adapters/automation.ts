@@ -21,7 +21,7 @@ import {
   type ScheduleRepository,
   type SqliteRepository,
 } from "@m365-assess/db";
-import type { JobEnvelope, JobType } from "@m365-assess/contracts";
+import type { JobEnvelope, JobType, ResultEnvelope } from "@m365-assess/contracts";
 import type Database from "better-sqlite3";
 import { AppError } from "../errors.js";
 import type { RemediationApplyHandle, RemediationIdempotencyStore } from "../domain/remediation/apply.js";
@@ -35,7 +35,13 @@ import type {
   ScheduleRunQueue,
   ScheduleStore,
 } from "../routes/schedules.js";
-import type { ScriptSandbox, ScriptSandboxResult } from "../routes/scripts.js";
+import type {
+  CustomScriptStore,
+  ScriptAuditPort,
+  ScriptSandbox,
+  ScriptSandboxResult,
+} from "../routes/scripts.js";
+import { CUSTOM_SCRIPT_COMMAND } from "../routes/schedules.js";
 import type { CustomTestDispatcher, CustomTestWorkerOutput } from "../custom-tests/run.js";
 import type { TickSchedule, TickScheduleStore } from "../scheduler/tick.js";
 import type { TenantStore } from "../routes/tenants.js";
@@ -523,6 +529,7 @@ export function createScheduleRunQueue(options: ScheduleRunQueueOptions): Schedu
 export function createRunnerValidatingScheduleStore(
   store: ScheduleStore,
   runnableTypes: ReadonlySet<JobType>,
+  scripts?: CustomScriptCommandOptions["scripts"],
 ): ScheduleStore {
   return {
     listSchedules: (options) => store.listSchedules(options),
@@ -532,11 +539,22 @@ export function createRunnerValidatingScheduleStore(
       if (!runnableTypes.has(input.type as JobType)) {
         throw unavailable(JOB_DISPATCH_UNAVAILABLE, `no worker is registered for ${input.type} jobs`);
       }
+      if (scripts) await assertRunnableCustomScriptSchedule(scripts, input);
       return store.createSchedule(input);
     },
     async updateSchedule(scheduleId, patch) {
       if (patch.type !== undefined && !runnableTypes.has(patch.type as JobType)) {
         throw unavailable(JOB_DISPATCH_UNAVAILABLE, `no worker is registered for ${patch.type} jobs`);
+      }
+      if (scripts && (patch.type !== undefined || patch.command !== undefined || patch.parameters !== undefined)) {
+        const existing = await store.getSchedule(scheduleId);
+        if (existing !== undefined) {
+          await assertRunnableCustomScriptSchedule(scripts, {
+            type: patch.type ?? existing.type,
+            command: patch.command ?? existing.command,
+            parameters: patch.parameters ?? existing.parameters,
+          });
+        }
       }
       return store.updateSchedule(scheduleId, patch);
     },
@@ -678,6 +696,181 @@ export function createCustomTestDispatcher(options: ScriptSandboxOptions): Custo
       durationMs: result.durationMs ?? null,
     };
   };
+}
+
+export const SCHEDULE_CUSTOM_SCRIPT_INVALID = "schedule.custom_script_invalid";
+
+/** The schedule id a scheduled envelope belongs to, from its `schedules/<id>/<runId>` outputRef. */
+export function scheduleIdFromOutputRef(outputRef: string): string | undefined {
+  const match = /^schedules\/([^/]+)\//.exec(outputRef);
+  return match?.[1];
+}
+
+/** One handler per scheduled command that rides the `custom-script` job type. */
+export type CustomScriptCommandHandler = (
+  envelope: JobEnvelope,
+  schedule: Schedule,
+  signal: AbortSignal,
+) => Promise<{ readonly status: "succeeded" | "failed"; readonly exitCode: number; readonly message?: string }>;
+
+export interface CustomScriptRunnerOptions {
+  readonly schedules: Pick<ScheduleRepository, "getSchedule">;
+  readonly storageRoot: string;
+  /** Handlers keyed by schedule command; a command with no handler fails the job. */
+  readonly handlers: Readonly<Record<string, CustomScriptCommandHandler>>;
+}
+
+/**
+ * Runner for the `custom-script` job type (EPIC-007 SPEC §4.2/§4.3, T-0876). Several
+ * scheduled commands share this job type, so the runner loads the schedule the job came
+ * from and dispatches on its command. A job whose schedule is gone, or whose command has
+ * no handler, fails with a clear message instead of reporting success.
+ */
+export function createCustomScriptRunner(options: CustomScriptRunnerOptions): RunWorkerFn {
+  const { schedules, storageRoot, handlers } = options;
+  return async (envelope, signal) => {
+    const startedAt = new Date().toISOString();
+    const result = (status: "succeeded" | "failed", exitCode: number, message?: string): ResultEnvelope => ({
+      schemaVersion: "v1",
+      jobId: envelope.jobId,
+      jobType: "custom-script",
+      tenantId: envelope.tenantId,
+      runId: envelope.runId,
+      requestId: envelope.requestId,
+      correlationId: envelope.correlationId,
+      status,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      exitCode,
+      artifactRefs: status === "succeeded" ? [envelope.payload.outputRef] : [],
+      ...(message !== undefined && status === "failed"
+        ? { error: { code: "custom_script.failed", message, retryable: false } }
+        : {}),
+    });
+    const scheduleId = scheduleIdFromOutputRef(envelope.payload.outputRef);
+    const schedule = scheduleId === undefined ? undefined : await schedules.getSchedule(scheduleId);
+    if (schedule === undefined || schedule.deletedAt !== null) {
+      return result("failed", 1, `schedule ${scheduleId ?? "(unknown)"} for this job no longer exists`);
+    }
+    const handler = handlers[schedule.command];
+    if (handler === undefined) {
+      return result("failed", 1, `no handler is registered for the ${schedule.command} command`);
+    }
+    await mkdir(path.resolve(storageRoot, envelope.payload.outputRef), { recursive: true });
+    const outcome = await handler(envelope, schedule, signal);
+    return result(outcome.status, outcome.exitCode, outcome.message);
+  };
+}
+
+export interface CustomScriptCommandOptions {
+  readonly scripts: Pick<CustomScriptStore, "getScript" | "listVersions" | "getVersion">;
+  readonly sandbox: ScriptSandbox;
+  readonly tenants: Pick<TenantStore, "listTenants">;
+  readonly storageRoot: string;
+  readonly audit?: ScriptAuditPort;
+}
+
+async function loadRunnableScript(
+  scripts: CustomScriptCommandOptions["scripts"],
+  scriptId: unknown,
+): Promise<{ readonly scriptId: string; readonly content: string; readonly parameters: Record<string, unknown> | null } | string> {
+  if (typeof scriptId !== "string" || scriptId.trim() === "") {
+    return "the schedule's parameters.scriptId must name a custom script";
+  }
+  const script = await scripts.getScript(scriptId);
+  if (script === undefined || (script as { deletedAt?: string | null }).deletedAt) {
+    return `custom script ${scriptId} was not found`;
+  }
+  if (!script.enabled) {
+    return `custom script ${scriptId} is disabled; enable it before scheduling it`;
+  }
+  if (script.currentVersionId === null) {
+    return `custom script ${scriptId} has no current version to run`;
+  }
+  const versionId = script.currentVersionId;
+  const version = scripts.getVersion
+    ? await scripts.getVersion(versionId)
+    : (await scripts.listVersions(scriptId)).find((entry) => entry.id === versionId);
+  if (version === undefined) {
+    return `custom script ${scriptId} has no current version to run`;
+  }
+  return { scriptId, content: version.content, parameters: version.parameters ?? null };
+}
+
+/**
+ * The `Invoke-CustomScript` command: runs the schedule's script (parameters.scriptId) at
+ * its current version through the T-0126 sandbox, for real (dryRun false), once per
+ * target tenant. Each run is audited as `scripts.run`, and the per-tenant output is
+ * written to the job's output folder so the schedule history has the results (US-6).
+ */
+export function createCustomScriptCommand(options: CustomScriptCommandOptions): CustomScriptCommandHandler {
+  const { scripts, sandbox, tenants, storageRoot, audit } = options;
+  return async (envelope, schedule, signal) => {
+    if (schedule.targetScope.type === "group") {
+      return { status: "failed", exitCode: 1, message: "custom-script schedules support tenant or all targets, not groups" };
+    }
+    const loaded = await loadRunnableScript(scripts, schedule.parameters["scriptId"]);
+    if (typeof loaded === "string") {
+      return { status: "failed", exitCode: 1, message: loaded };
+    }
+    const tenantIds =
+      schedule.targetScope.type === "all"
+        ? (await tenants.listTenants()).map((tenant) => tenant.id)
+        : [envelope.tenantId];
+    const runs: { tenantId: string; exitCode: number; output: string; error: string | null; durationMs: number | null }[] = [];
+    for (const tenantId of tenantIds) {
+      if (signal.aborted) break;
+      const run = await sandbox.run({ content: loaded.content, tenantId, dryRun: false, parameters: loaded.parameters });
+      runs.push({
+        tenantId,
+        exitCode: run.exitCode,
+        output: run.output,
+        error: run.error ?? null,
+        durationMs: run.durationMs ?? null,
+      });
+      if (audit) {
+        await audit.record({
+          action: "scripts.run",
+          actorUserId: null,
+          tenantId,
+          resourceId: loaded.scriptId,
+          correlationId: envelope.correlationId,
+        });
+      }
+    }
+    const outputPath = path.resolve(storageRoot, envelope.payload.outputRef, "custom-script-results.json");
+    await writeFile(outputPath, JSON.stringify({ scriptId: loaded.scriptId, scheduleId: schedule.id, runs }, null, 2));
+    if (signal.aborted) {
+      return { status: "failed", exitCode: 1, message: "the job was cancelled before every tenant ran" };
+    }
+    const failed = runs.filter((run) => run.exitCode !== 0);
+    if (failed.length > 0) {
+      return {
+        status: "failed",
+        exitCode: failed[0]!.exitCode,
+        message: `custom script ${loaded.scriptId} failed for ${failed.length} of ${runs.length} tenant(s): ${failed.map((run) => run.tenantId).join(", ")}`,
+      };
+    }
+    return { status: "succeeded", exitCode: 0 };
+  };
+}
+
+/**
+ * Save-time check for custom-script schedules that run `Invoke-CustomScript`: the
+ * schedule must name an existing, enabled script with a current version, so a task that
+ * can never run is rejected when it is saved (SPEC §4.4).
+ */
+export async function assertRunnableCustomScriptSchedule(
+  scripts: CustomScriptCommandOptions["scripts"],
+  input: { readonly type?: string; readonly command?: string; readonly parameters?: Record<string, unknown> },
+): Promise<void> {
+  if (input.type !== "custom-script" || input.command !== CUSTOM_SCRIPT_COMMAND) return;
+  const loaded = await loadRunnableScript(scripts, input.parameters?.["scriptId"]);
+  if (typeof loaded === "string") {
+    throw new AppError(SCHEDULE_CUSTOM_SCRIPT_INVALID, loaded, 422, [
+      { field: "parameters.scriptId", reason: "not_runnable" },
+    ]);
+  }
 }
 
 interface JobRow {

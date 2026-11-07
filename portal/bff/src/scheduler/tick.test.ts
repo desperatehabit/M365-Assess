@@ -213,8 +213,11 @@ describe("system timers", () => {
       newIds: counterIds(),
     });
 
-    expect(result.enqueued).toHaveLength(4);
+    // drift is in flight; webhooks, cleanup, and token-refresh have no worker and are
+    // skipped instead of being enqueued under an unrelated job type (T-0876).
+    expect(result.enqueued).toEqual(["system-standards"]);
     expect(result.skippedRunning).toEqual(["system-drift"]);
+    expect(result.failed).toEqual([]);
     for (const envelope of queue.envelopes) {
       expect(envelope["trigger"]).toBe("schedule");
       expect(String(envelope["scheduleId"])).toMatch(/^system-/);
@@ -222,6 +225,32 @@ describe("system timers", () => {
     expect(await schedules.getSchedule("system-standards")).toMatchObject({
       nextRunAt: "2026-01-02T00:00:00.000Z",
     });
+  });
+});
+
+describe("unavailable system timers (T-0876)", () => {
+  const unavailable = SYSTEM_TIMERS.filter((timer) => timer.unavailableReason !== undefined);
+
+  it("marks the timers with no worker as unavailable", () => {
+    expect(unavailable.map((timer) => timer.name).sort()).toEqual(["cleanup", "token-refresh", "webhooks"]);
+    for (const timer of unavailable) {
+      expect(toSystemSchedule(timer).enabled).toBe(false);
+    }
+  });
+
+  it("never enqueues an unavailable timer, even from a stored state row", async () => {
+    const queue = new FakeQueue();
+    const stored = unavailable.map((timer) => ({ ...toSystemSchedule(timer), enabled: true }));
+    const result = await tickSchedules({
+      queue,
+      schedules: new FakeSchedules(stored),
+      isRunning: () => false,
+      now: NOW,
+      newIds: counterIds(),
+      systemTimers: unavailable,
+    });
+    expect(result).toEqual({ enqueued: [], skippedRunning: [], failed: [] });
+    expect(queue.envelopes).toHaveLength(0);
   });
 });
 
