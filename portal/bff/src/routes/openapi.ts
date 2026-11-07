@@ -26,6 +26,12 @@ import { API_CLIENTS_OPENAPI } from "./api-clients.js";
 import { ME_OPENAPI } from "./me.js";
 import { ROLES_OPENAPI } from "./roles.js";
 import { PORTAL_USERS_OPENAPI } from "./users.js";
+// EPIC-028 Incidents & Alerts (T-0858).
+import { INCIDENTS_OPENAPI } from "./incidents.js";
+import { INCIDENT_DETAIL_OPENAPI } from "./incidents-detail.js";
+import { INCIDENT_ACTIONS_OPENAPI } from "./incidents-actions.js";
+import { ALERTS_OPENAPI } from "./alerts.js";
+import { CHECK_ALERTS_OPENAPI } from "./check-alerts.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -89,6 +95,12 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   ROLES_OPENAPI as unknown as OpenApiFragment,
   API_CLIENTS_OPENAPI as unknown as OpenApiFragment,
   ACCESS_CHECK_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-028 Incidents & Alerts (T-0858).
+  INCIDENTS_OPENAPI as unknown as OpenApiFragment,
+  INCIDENT_DETAIL_OPENAPI as unknown as OpenApiFragment,
+  INCIDENT_ACTIONS_OPENAPI as unknown as OpenApiFragment,
+  ALERTS_OPENAPI as unknown as OpenApiFragment,
+  CHECK_ALERTS_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an
@@ -96,6 +108,9 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
 const FRAGMENT_PERMISSION_OVERRIDES: Readonly<Record<string, string>> = {
   "GET /me": AUTHENTICATED_PERMISSION,
   "POST /access/check": AUTHENTICATED_PERMISSION,
+  // The check-alerts factory only checks authentication; the app mounts it behind
+  // the incident read permission (T-0858).
+  "GET /check-alerts": "Security.Incident.Read",
 };
 
 export const OPENAPI_SKELETON: OpenApiDocument = {

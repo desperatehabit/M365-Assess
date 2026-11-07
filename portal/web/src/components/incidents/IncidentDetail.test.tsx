@@ -8,7 +8,7 @@ import {
   type IncidentDetailData,
 } from "./IncidentTabs";
 import { BulkTriageDialog, requiresBulkConfirmation } from "./BulkTriageDialog";
-import { IncidentDetailView } from "../../app/incidents/[incidentId]/page";
+import { IncidentDetailView, parseBulkTargets } from "../../app/incidents/[incidentId]/page";
 
 afterEach(() => {
   cleanup();
@@ -147,8 +147,69 @@ describe("IncidentDetailView triage round-trip", () => {
   });
 });
 
-describe("BulkTriageDialog confirmation gate", () => {
-  it("cannot confirm a bulk change until the acknowledgement is given", async () => {
+describe("incident bulk triage hand-off", () => {
+  it("parses tenant::incident pairs from the bulk query", () => {
+    expect(parseBulkTargets(null)).toEqual([]);
+    expect(parseBulkTargets("tenant-1::inc-1,tenant-2::inc-2")).toEqual([
+      { tenantId: "tenant-1", incidentId: "inc-1" },
+      { tenantId: "tenant-2", incidentId: "inc-2" },
+    ]);
+    expect(parseBulkTargets("inc-1")).toEqual([]);
+  });
+
+  it("opens the confirmation dialog and posts one bulk request per tenant", async () => {
+    const calls: { url: string; method: string; body: string }[] = [];
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      calls.push({ url, method: init?.method ?? "GET", body: String(init?.body ?? "") });
+      if (init?.method === "POST") {
+        return jsonResponse({
+          tenantId: "tenant-1",
+          action: "assign",
+          rows: [],
+          summary: { total: 2, applied: 2, planned: 0, failed: 0 },
+        });
+      }
+      return jsonResponse(DETAIL);
+    }) as unknown as typeof fetch;
+
+    render(
+      <IncidentDetailView
+        tenantId="tenant-1"
+        incidentId="inc-1"
+        fetcher={fetcher}
+        bulk={{
+          action: "assign",
+          targets: [
+            { tenantId: "tenant-1", incidentId: "inc-1" },
+            { tenantId: "tenant-1", incidentId: "inc-2" },
+          ],
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("bulk-triage-dialog")).toBeTruthy());
+
+    fireEvent.change(screen.getByTestId("bulk-triage-value"), { target: { value: "analyst@example.invalid" } });
+    fireEvent.change(screen.getByTestId("bulk-triage-reason"), { target: { value: "Phishing wave" } });
+    fireEvent.click(screen.getByTestId("bulk-triage-ack"));
+    fireEvent.click(screen.getByTestId("bulk-triage-confirm"));
+
+    await waitFor(() => {
+      const post = calls.find((call) => call.method === "POST");
+      expect(post).toBeDefined();
+      expect(post?.url).toContain("/v1/tenants/tenant-1/incidents/inc-1/assign");
+      expect(JSON.parse(post?.body ?? "{}")).toMatchObject({
+        value: "analyst@example.invalid",
+        reason: "Phishing wave",
+        incidentIds: ["inc-2"],
+        confirm: true,
+      });
+    });
+  });
+});
+
+describe("BulkTriageDialog confirmation gate", () => {  it("cannot confirm a bulk change until the acknowledgement is given", async () => {
     const onConfirm = vi.fn().mockResolvedValue(undefined);
     const onClose = vi.fn();
 

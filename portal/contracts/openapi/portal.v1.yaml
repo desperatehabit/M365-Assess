@@ -398,6 +398,52 @@ paths:
       x-permission: Tenant.ConditionalAccess.Read
       security:
         - bearerAuth: []
+  /check-alerts:
+    get:
+      operationId: listCheckAlerts
+      summary: List the module's own check-alert findings (§3.4) alongside tenant alerts; module-wide, read-only
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - Critical
+              - High
+              - Medium
+              - Low
+              - Info
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - Fail
+              - Warning
+              - Review
+              - Info
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The module's check-alert page. Check alerts carry no triage actions here; snooze/resolve and auto-incident creation are EPIC-029.
+        "400":
+          description: A query parameter is invalid.
+        "401":
+          description: Authentication is required.
+      x-permission: Security.Incident.Read
   /compliance-templates:
     get:
       operationId: getComplianceTemplates
@@ -715,6 +761,27 @@ paths:
         "200":
           description: Successful response.
       x-permission: Public
+  /incidents:
+    get:
+      operationId: aggregateIncidents
+      summary: Aggregate open incidents by severity across tenants in caller scope
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenants
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Comma-separated tenant ids, intersected with caller scope.
+      responses:
+        "200":
+          description: Open incidents aggregated by severity.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.Incident.Read permission.
+      x-permission: Security.Incident.Read
   /intune-assignment-filter-templates:
     get:
       operationId: getIntuneAssignmentFilterTemplates
@@ -1926,6 +1993,134 @@ paths:
       x-permission: Tenant.Administration.Read
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/alerts:
+    get:
+      operationId: listAlerts
+      summary: List normalized alerts with §3.3 columns (Title, Service source, Severity, Status, Entity, Created), filters, and cursor pagination
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - defender
+              - mdo
+              - graph
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - unknown
+              - informational
+              - low
+              - medium
+              - high
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - unknown
+              - new
+              - inProgress
+              - resolved
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The tenant's filtered alert page; each item carries availableActions so create-incident appears only where the source supports it.
+        "400":
+          description: A path or query parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.Incident.Read permission.
+      x-permission: Security.Incident.Read
+  /tenants/{tenantId}/alerts/{alertId}/{action}:
+    post:
+      operationId: applyAlertAction
+      summary: Set status, assign, comment, or create an incident from an alert; status/assign/comment write back to alerts_v2, create-incident is source-gated and requires confirmation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: alertId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - status
+              - assign
+              - comment
+              - create-incident
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+                  description: New status, assignee, or incident title. Required for status, assign, and create-incident.
+                comment:
+                  type: string
+                  description: Comment body. Required for comment.
+                reason:
+                  type: string
+                  description: Triage reason recorded on the state change and audit event.
+                confirm:
+                  type: boolean
+                  description: Explicit confirmation. Required for bulk changes, for any status change to resolved, and for create-incident.
+                dryRun:
+                  type: boolean
+                  description: Plan the change with no tenant write.
+                alertIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Additional target alert ids. More than one target makes the call bulk and requires confirm.
+      responses:
+        "200":
+          description: The per-alert action rows with before/after, from/to, and the created incident id (create-incident only).
+        "400":
+          description: Unknown action, invalid value, unsupported write for the alert's source, or missing confirmation/reason.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks Security.Incident.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "501":
+          description: Alert actions are not wired for this tenant.
+      x-permission: Security.Incident.ReadWrite
   /tenants/{tenantId}/apps:
     get:
       operationId: getTenantsTenantIdApps
@@ -2538,6 +2733,169 @@ paths:
       x-permission: Identity.Group.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/incidents:
+    get:
+      operationId: listIncidents
+      summary: List security incidents with §3.1 columns, filters, and cursor pagination
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: severity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - unknown
+              - informational
+              - low
+              - medium
+              - high
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: classification
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: assigned
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: The tenant's filtered incident page.
+        "400":
+          description: A path or query parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.Incident.Read permission.
+      x-permission: Security.Incident.Read
+  /tenants/{tenantId}/incidents/{incidentId}:
+    get:
+      operationId: getIncidentDetail
+      summary: Get a security incident with its alerts, entities, timeline, and notes
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: incidentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The incident's detail tab data.
+        "400":
+          description: A required path parameter is missing.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.Incident.Read permission.
+        "404":
+          description: No incident with that id exists in the tenant.
+      x-permission: Security.Incident.Read
+  /tenants/{tenantId}/incidents/{incidentId}/{action}:
+    post:
+      operationId: applyIncidentAction
+      summary: Assign, set status, classify, or comment on a security incident; status/classify write back to Graph, assign/comment persist portal-side; bulk and resolve require confirmation
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: incidentId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - assign
+              - status
+              - classify
+              - comment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                value:
+                  type: string
+                  description: New status, classification, or assignee. Required for assign, status, and classify.
+                comment:
+                  type: string
+                  description: Comment body. Required for comment.
+                reason:
+                  type: string
+                  description: Triage reason recorded on the state change and audit event.
+                confirm:
+                  type: boolean
+                  description: Explicit confirmation. Required for bulk changes and for any status change to resolved.
+                dryRun:
+                  type: boolean
+                  description: Plan the change with no tenant write.
+                incidentIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Additional target incident ids. More than one target makes the call bulk and requires confirm.
+      responses:
+        "200":
+          description: The per-incident action rows with before/after, from/to, and the persisted note (comment only).
+        "400":
+          description: Unknown action, invalid value, or missing confirmation/reason.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks Security.Incident.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "501":
+          description: Incident actions are not wired for this tenant.
+      x-permission: Security.Incident.ReadWrite
   /tenants/{tenantId}/intune/assignment-filters:
     get:
       operationId: getTenantsTenantIdIntuneAssignmentFilters
@@ -3344,6 +3702,16 @@ paths:
         "200":
           description: Successful response.
       x-permission: Identity.Mfa.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/users/{userId}:
+    patch:
+      operationId: patchTenantsTenantIdUsersUserId
+      summary: PATCH /tenants/{tenantId}/users/{userId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Identity.User.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/users/{userId}/actions/{action}:

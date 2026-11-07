@@ -184,6 +184,13 @@ import {
   createSystemTimerStateStore,
   createWebhookRenewalCommand,
 } from "./scheduler/maintenance.js";
+// EPIC-028 Incidents & Alerts providers (T-0858).
+import { createCheckAlertsProvider, createIncidentProviders } from "./adapters/incidents.js";
+import { createIncidentsRoutes } from "./routes/incidents.js";
+import { createIncidentsDetailRoute } from "./routes/incidents-detail.js";
+import { createIncidentsActionsRoute } from "./routes/incidents-actions.js";
+import { createAlertActionsRoute, createAlertsRoutes } from "./routes/alerts.js";
+import { createCheckAlertsRoutes } from "./routes/check-alerts.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
 import { PermissionRegistry, permissionForEndpoint } from "./rbac/permissions.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
@@ -538,6 +545,10 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const offboardingRepo = new SqliteOffboardingRepository(db, schemaVersion);
   const offboarding = createOffboardingRunner(envelope, offboardingRepo);
   const tenantWorker = createTenantWorker(run, credentialRows);
+  // EPIC-028 (T-0858): worker-backed incident/alert providers plus the module
+  // findings read that backs /v1/check-alerts.
+  const incidents = createIncidentProviders(run, credentialRows, repo);
+  const checkAlerts = createCheckAlertsProvider({ tenants: tenantStore, findings: repo });
   const mfa = createMfaProviders(envelope);
   const roles = createRoleProviders(tenantWorker);
   // EPIC-020 mailboxes (T-0850): every read and write runs a feature worker for the
@@ -1259,6 +1270,30 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       authorize: authorizeCaller,
       recordAudit: routeAudit,
     }),
+
+    // EPIC-028 Incidents & Alerts (T-0858). The factories existed but were never
+    // mounted, so every §6 endpoint 404'd. The providers run the real workers and
+    // the shared repository persists incident notes and alert state changes
+    // (migration 0055). /v1/check-alerts has no permission in its own fragment, so
+    // mount it behind the same read permission as the tenant alert list.
+    ...createIncidentsRoutes({ provider: incidents.incidents, ...caller }),
+    ...createIncidentsDetailRoute({ provider: incidents.detail, ...caller }),
+    ...createIncidentsActionsRoute({
+      execute: incidents.actions,
+      store: repo,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
+    ...createAlertsRoutes({ provider: incidents.alerts, ...caller }),
+    ...createAlertActionsRoute({
+      execute: incidents.alertActions,
+      store: repo,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
+    ...createCheckAlertsRoutes({ provider: checkAlerts, resolveCaller }).map((route) =>
+      guardRoute(route, "Security.Incident.Read"),
+    ),
 
     // EPIC-025 SharePoint & OneDrive (T-0855). The factories existed but were never
     // mounted, so every §6 endpoint 404'd; the providers enqueue the real workers.

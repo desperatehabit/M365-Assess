@@ -8,12 +8,16 @@
 // surfaces; this page performs no writes. Report theme tokens only.
 
 import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
-import { useRouter } from "next/navigation";
 import {
   AlertsTable,
   type AlertRow,
   type AlertRowAction,
 } from "../../components/incidents/AlertsTable";
+import {
+  AlertTriageDialog,
+  type AlertDialogAction,
+  type AlertTriagePayload,
+} from "../../components/incidents/AlertTriageDialog";
 import { CheckAlertsPanel, type CheckAlertRow } from "../../components/incidents/CheckAlertsPanel";
 import { useCurrentTenantId } from "../../lib/useCurrentTenant";
 
@@ -99,14 +103,42 @@ export async function listCheckAlerts(
   return body.items ?? [];
 }
 
+/** T-0548 alert triage: status/assign/comment/create-incident on one alert. */
+export async function submitAlertAction(
+  tenantId: string,
+  alertId: string,
+  action: AlertDialogAction,
+  payload: AlertTriagePayload,
+  fetcher: typeof fetch = fetch,
+): Promise<unknown> {
+  const response = await fetcher(
+    `/v1/tenants/${encodeURIComponent(tenantId)}/alerts/${encodeURIComponent(alertId)}/${action}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        value: payload.value,
+        comment: payload.comment,
+        reason: payload.reason,
+        confirm: payload.confirm,
+      }),
+    },
+  );
+  if (!response.ok) throw await throwApiError(response, `Apply alert ${action}`);
+  return response.json();
+}
+
 export default function AlertsPage(): ReactElement {
-  const router = useRouter();
   const currentTenant = useCurrentTenantId();
   const [tenantId, setTenantId] = useState("");
   const [alerts, setAlerts] = useState<readonly AlertRow[]>([]);
   const [checkAlerts, setCheckAlerts] = useState<readonly CheckAlertRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [triage, setTriage] = useState<{ readonly action: AlertDialogAction; readonly alert: AlertRow } | null>(null);
+  const [triageBusy, setTriageBusy] = useState(false);
+  const [triageError, setTriageError] = useState<string | null>(null);
+  const [viewed, setViewed] = useState<AlertRow | null>(null);
 
   const loadCheckAlerts = useCallback(async (): Promise<void> => {
     try {
@@ -148,11 +180,35 @@ export default function AlertsPage(): ReactElement {
     }
   }, [currentTenant, load]);
 
-  // Triage actions are handed off to the T-0548 alert triage surfaces.
+  // Row actions stay on the list: View selects the alert for the detail panel and
+  // every write opens the confirmation dialog (T-0858). The detail page this used
+  // to navigate to never existed, so each action 404'd.
   const handleRowAction = (action: AlertRowAction, alert: AlertRow): void => {
-    const tenant = encodeURIComponent(tenantId.trim());
-    router.push(`/alerts/${encodeURIComponent(alert.id)}?action=${action}&tenant=${tenant}`);
+    if (action === "view") {
+      setViewed(alert);
+      return;
+    }
+    setTriage({ action, alert });
+    setTriageError(null);
   };
+
+  const handleTriage = useCallback(
+    async (payload: AlertTriagePayload): Promise<void> => {
+      if (triage === null) return;
+      setTriageBusy(true);
+      setTriageError(null);
+      try {
+        await submitAlertAction(tenantId.trim(), triage.alert.id, triage.action, payload);
+        setTriage(null);
+        await load(tenantId);
+      } catch (err) {
+        setTriageError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setTriageBusy(false);
+      }
+    },
+    [triage, tenantId, load],
+  );
 
   return (
     <div style={pageStyle} data-testid="alerts-page">
@@ -191,6 +247,48 @@ export default function AlertsPage(): ReactElement {
         error={error}
         onRowAction={handleRowAction}
       />
+
+      {viewed && (
+        <section
+          aria-label="Selected alert"
+          data-testid="alert-detail-panel"
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius, 8px)",
+            padding: "16px",
+            background: "var(--surface)",
+            display: "flex",
+            flexDirection: "column",
+            gap: "6px",
+            fontSize: "13px",
+          }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+            <strong>{viewed.title}</strong>
+            <button type="button" style={buttonStyle} onClick={() => setViewed(null)} data-testid="alert-detail-close">
+              Close
+            </button>
+          </div>
+          <div style={{ color: "var(--text-soft)" }}>
+            {viewed.source} · {viewed.severity} · {viewed.status} · {viewed.created}
+          </div>
+        </section>
+      )}
+
+      {triage && (
+        <AlertTriageDialog
+          open
+          action={triage.action}
+          alertTitle={triage.alert.title}
+          busy={triageBusy}
+          error={triageError}
+          onConfirm={handleTriage}
+          onClose={() => {
+            setTriage(null);
+            setTriageError(null);
+          }}
+        />
+      )}
 
       <CheckAlertsPanel checkAlerts={checkAlerts} tenantAlerts={alerts} />
     </div>

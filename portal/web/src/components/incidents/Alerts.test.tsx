@@ -192,7 +192,7 @@ describe("AlertsPage (T-0549)", () => {
     });
   });
 
-  it("routes a row triage action to the T-0548 surface without writing", async () => {
+  it("opens the triage dialog from a row action without writing", async () => {
     const fetchMock = makeFetch(TENANT_ALERTS, CHECK_ALERTS);
     vi.stubGlobal("fetch", fetchMock);
     render(<AlertsPage />);
@@ -202,12 +202,37 @@ describe("AlertsPage (T-0549)", () => {
     });
     fireEvent.click(screen.getByTestId("alert-action-status-alert-def"));
 
-    expect(mockPush).toHaveBeenCalledWith(
-      "/alerts/alert-def?action=status&tenant=tenant-1",
-    );
+    expect(screen.getByTestId("alert-triage-dialog")).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
     for (const call of fetchMock.mock.calls) {
       expect(call[1]).toBeUndefined();
     }
+  });
+
+  it("applies an alert status through the T-0548 action route after a reason is entered", async () => {
+    const fetchMock = makeFetch(TENANT_ALERTS, CHECK_ALERTS);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<AlertsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("alert-action-status-alert-def")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("alert-action-status-alert-def"));
+    fireEvent.change(screen.getByTestId("alert-triage-reason"), { target: { value: "confirmed malicious" } });
+    fireEvent.click(screen.getByTestId("alert-triage-confirm"));
+
+    await waitFor(() => {
+      const post = fetchMock.mock.calls.find(
+        (call) => typeof call[0] === "string" && call[0].includes("/alerts/alert-def/status"),
+      );
+      expect(post).toBeDefined();
+      expect(post![1]).toMatchObject({ method: "POST" });
+      expect(JSON.parse(String(post![1]?.body))).toMatchObject({
+        value: "new",
+        reason: "confirmed malicious",
+        confirm: true,
+      });
+    });
   });
 
   it("uses report theme tokens with zero colour literals", async () => {

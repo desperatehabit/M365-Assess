@@ -219,6 +219,12 @@ import {
 } from "../routes/compliance-templates.js";
 import { PORTAL_USERS_OPENAPI } from "../routes/users.js";
 import { ROLES_OPENAPI } from "../routes/roles.js";
+// EPIC-028 Incidents & Alerts (T-0858).
+import { INCIDENTS_OPENAPI, INCIDENTS_READ_PERMISSION } from "../routes/incidents.js";
+import { INCIDENT_DETAIL_OPENAPI } from "../routes/incidents-detail.js";
+import { INCIDENT_ACTIONS_OPENAPI } from "../routes/incidents-actions.js";
+import { ALERTS_OPENAPI } from "../routes/alerts.js";
+import { CHECK_ALERTS_PATH } from "../routes/check-alerts.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -694,6 +700,14 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "PATCH", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
   { method: "DELETE", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
   { method: "POST", path: COMPLIANCE_TEMPLATE_DEPLOY_PATH, permission: COMPLIANCE_DEPLOY_PERMISSION },
+  // EPIC-028 Incidents & Alerts (T-0858). check-alerts documents no permission
+  // because the factory only checks authentication; the app guards the mounted
+  // route with the same read permission as the tenant alert list.
+  ...registryEntriesFromOpenApi(INCIDENTS_OPENAPI),
+  ...registryEntriesFromOpenApi(INCIDENT_DETAIL_OPENAPI),
+  ...registryEntriesFromOpenApi(INCIDENT_ACTIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(ALERTS_OPENAPI),
+  { method: "GET", path: CHECK_ALERTS_PATH, permission: INCIDENTS_READ_PERMISSION },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three
