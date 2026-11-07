@@ -125,3 +125,60 @@ describe("BaselinesPage catalog", () => {
     expect(calls.find((call) => call.url === "/v1/baselines/tpl-1/migrate-from-standards")?.init?.method).toBe("POST");
   });
 });
+
+describe("BaselinesPage stage advance (T-0879)", () => {
+  it("advances an eligible tenant and reloads the rollout", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    let advanced = false;
+    const fetcher = (async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      if (url === "/v1/baselines") {
+        return jsonResponse({
+          items: [
+            {
+              id: "bl-1",
+              name: "Server baseline",
+              logic: "and",
+              alerting: { enabled: false },
+              enabled: true,
+              stages: [{ order: 0, conditions: [], action: "report" }],
+              createdAt: "2026-11-01T00:00:00.000Z",
+              updatedAt: "2026-11-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+      if (url === "/v1/baselines/fleet") {
+        return jsonResponse({
+          ...FLEET,
+          baselines: [
+            { id: "bl-1", name: "Server baseline", stages: 2, assignedTenants: 1, fleetCompliance: 0, lastRunAt: null },
+          ],
+          needsAttention: advanced
+            ? [{ tenantId: "tenant-a", baselineId: "bl-1", stage: 1, state: "active", openDeviations: 0 }]
+            : [{ tenantId: "tenant-a", baselineId: "bl-1", stage: 0, state: "eligible", openDeviations: 0 }],
+        });
+      }
+      if (url === "/v1/baselines/bl-1/stages/0/advance" && init?.method === "POST") {
+        advanced = true;
+        return jsonResponse({
+          rollout: { baselineId: "bl-1", tenantId: "tenant-a", stage: 1, state: "active", lastRunAt: "2026-11-07T00:00:00.000Z" },
+        });
+      }
+      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as unknown as typeof fetch;
+
+    render(<BaselinesPage fetcher={fetcher} navigate={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId("baselines-eligible")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("baseline-advance-tenant-a"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("baselines-notice").textContent).toContain("advanced to stage 2"),
+    );
+    expect(calls.find((call) => call.url === "/v1/baselines/bl-1/stages/0/advance")?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls.find((call) => call.url === "/v1/baselines/bl-1/stages/0/advance")?.init?.body))).toEqual({
+      tenantId: "tenant-a",
+    });
+  });
+});

@@ -23,6 +23,16 @@ export interface BaselineAssignmentInput {
   readonly precedence?: number;
 }
 
+export type BaselineRolloutState = "active" | "eligible" | "complete";
+
+export interface BaselineRollout {
+  readonly baselineId: string;
+  readonly tenantId: string;
+  readonly stage: number;
+  readonly state: BaselineRolloutState;
+  readonly lastRunAt: string;
+}
+
 export interface BaselineSummary {
   readonly id: string;
   readonly name: string;
@@ -127,6 +137,24 @@ export async function assignBaseline(
     assignments: BaselineDetail["assignments"];
   };
   return body.assignments;
+}
+
+export async function advanceBaselineStage(
+  baselineId: string,
+  stageOrder: number,
+  tenantId: string,
+  fetcher?: Fetcher,
+): Promise<BaselineRollout> {
+  const response = await asFetcher(fetcher)(
+    `/v1/baselines/${encodeURIComponent(baselineId)}/stages/${encodeURIComponent(String(stageOrder))}/advance`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tenantId }),
+    },
+  );
+  const body = (await expectOk(response, "Advancing baseline stage")) as { rollout: BaselineRollout };
+  return body.rollout;
 }
 
 // ─── Fleet overview (T-0187) ────────────────────────────────────────────────
