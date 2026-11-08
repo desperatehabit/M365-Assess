@@ -11,7 +11,9 @@ import type { Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const LOGBOOK_PATH = "/v1/logbook";
-export const LOGBOOK_ADMIN_SCOPE = "CIPP.Admin.*";
+// The admin surface requires the CIPP.Admin family (SPEC §7); the concrete
+// permission keeps the registry taxonomy-valid while base-role `*` covers it.
+export const LOGBOOK_ADMIN_SCOPE = "CIPP.Admin.Logbook";
 export const LOGBOOK_UNAUTHENTICATED = "request.unauthenticated";
 export const LOGBOOK_FORBIDDEN = "auth.forbidden";
 

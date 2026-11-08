@@ -192,7 +192,7 @@ function jsonResponse(body: unknown, status = 200): Response {
 
 describe("CustomTestsPage Table Actions (T-0709)", () => {
   it("exposes Edit, View versions, Enable/Disable test, Enable/Disable alerts, Delete, Save to GitHub", async () => {
-    const fetcher = vi.fn(async () => jsonResponse(CUSTOM_TEST_ROWS));
+    const fetcher = vi.fn(async () => jsonResponse({ items: CUSTOM_TEST_ROWS }));
     render(<CustomTestsPage fetcher={fetcher as unknown as typeof fetch} />);
 
     expect(await screen.findByText("Check Inactive Mailboxes Retention")).toBeDefined();

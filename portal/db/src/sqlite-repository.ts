@@ -2757,6 +2757,63 @@ export class SqliteRepository implements Repository {
     return persisted;
   }
 
+  async applySettings(
+    changes: readonly { key: string; value: unknown }[],
+    options: { updatedBy?: string | null } = {},
+  ): Promise<AppSetting[]> {
+    const updatedBy = options.updatedBy ?? null;
+    const updatedAt = nowIso();
+    const keys: string[] = [];
+    this.db.transaction(() => {
+      for (const change of changes) {
+        const settingKey = assertSettingKey(change.key);
+        assertJsonValue(change.value);
+        keys.push(settingKey);
+        const scope = assertSettingScope("global");
+        const before = this.db
+          .prepare("SELECT * FROM app_settings WHERE key = ?")
+          .get(settingKey) as Row | undefined;
+        this.db
+          .prepare(
+            `INSERT INTO app_settings (key, value, scope, updatedAt, updatedBy)
+             VALUES (@key, @value, @scope, @updatedAt, @updatedBy)
+             ON CONFLICT(key) DO UPDATE SET
+               value = excluded.value,
+               scope = excluded.scope,
+               updatedAt = excluded.updatedAt,
+               updatedBy = excluded.updatedBy`,
+          )
+          .run({ key: settingKey, value: JSON.stringify(change.value), scope, updatedAt, updatedBy });
+        this.db
+          .prepare(
+            `INSERT INTO audit_events
+               (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            updatedAt,
+            updatedBy,
+            updatedBy === null ? "system" : "user",
+            null,
+            "settings.upsert",
+            "app_setting",
+            settingKey,
+            before ? JSON.stringify(this.mapSetting(before)) : null,
+            JSON.stringify({ key: settingKey, value: change.value, scope, updatedAt, updatedBy }),
+            "success",
+            null,
+            "request",
+            null,
+            updatedAt,
+          );
+      }
+    })();
+    const persisted = await this.listSettings();
+    const wanted = new Set(keys);
+    return persisted.filter((setting) => wanted.has(setting.key));
+  }
+
   async getFeatureFlags(): Promise<FeatureFlag[]> {
     return (this.db.prepare("SELECT * FROM feature_flags ORDER BY key").all() as Row[]).map(
       (row) => this.mapFeatureFlag(row),

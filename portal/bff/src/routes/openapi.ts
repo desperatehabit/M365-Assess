@@ -81,6 +81,22 @@ import { LICENSES_OPENAPI } from "./licenses.js";
 import { LICENSE_ASSIGN_OPENAPI } from "./license-assign.js";
 import { LICENSE_OPTIMIZATION_OPENAPI } from "./licenses-optimization.js";
 import { LICENSE_PRICING_OPENAPI } from "./license-pricing.js";
+// EPIC-034 Domains & DNS (T-0864).
+import { DOMAINS_OPENAPI } from "./domains.js";
+import { DOMAINS_ACTIONS_OPENAPI } from "./domains-actions.js";
+import { DOMAINS_DNS_OPENAPI } from "./domains-dns.js";
+import { DOMAINS_RECOMMENDATIONS_OPENAPI } from "./domains-recommendations.js";
+import { DOMAINS_SCHEDULE_OPENAPI } from "./domains-schedule.js";
+// EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+import { TEST_PACKS_OPENAPI } from "./test-packs.js";
+import { CUSTOM_TESTS_OPENAPI } from "./custom-tests.js";
+// EPIC-037 Settings, Branding & Preferences (T-0867).
+import { SETTINGS_OPENAPI } from "./settings.js";
+import { BRANDING_OPENAPI } from "./branding.js";
+import { FEATURE_FLAGS_OPENAPI } from "./feature-flags.js";
+import { PREFERENCES_OPENAPI } from "./preferences.js";
+import { LOGBOOK_OPENAPI } from "./logbook.js";
+import { DIAGNOSTICS_OPENAPI } from "./diagnostics.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -199,6 +215,22 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   LICENSE_ASSIGN_OPENAPI as unknown as OpenApiFragment,
   LICENSE_OPTIMIZATION_OPENAPI as unknown as OpenApiFragment,
   LICENSE_PRICING_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-034 Domains & DNS (T-0864).
+  DOMAINS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_ACTIONS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_DNS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_RECOMMENDATIONS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_SCHEDULE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+  TEST_PACKS_OPENAPI as unknown as OpenApiFragment,
+  CUSTOM_TESTS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-037 Settings, Branding & Preferences (T-0867).
+  SETTINGS_OPENAPI as unknown as OpenApiFragment,
+  BRANDING_OPENAPI as unknown as OpenApiFragment,
+  FEATURE_FLAGS_OPENAPI as unknown as OpenApiFragment,
+  PREFERENCES_OPENAPI as unknown as OpenApiFragment,
+  LOGBOOK_OPENAPI as unknown as OpenApiFragment,
+  DIAGNOSTICS_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

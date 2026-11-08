@@ -1550,6 +1550,14 @@ export interface Repository {
     value: unknown,
     options?: { updatedBy?: string | null; scope?: SettingScope },
   ): Promise<AppSetting>;
+  /**
+   * Apply a validated batch atomically: every row and its audit event lands in
+   * one transaction, so a failure leaves no key written (EPIC-037 §4.1).
+   */
+  applySettings(
+    changes: readonly { key: string; value: unknown }[],
+    options?: { updatedBy?: string | null },
+  ): Promise<AppSetting[]>;
   getFeatureFlags(): Promise<FeatureFlag[]>;
   getFeatureFlag(key: string): Promise<FeatureFlag | undefined>;
   upsertFeatureFlag(input: FeatureFlagInput): Promise<FeatureFlag>;

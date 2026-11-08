@@ -32,6 +32,7 @@ export default function PackDetailPage({
 
   const packId = typeof params?.id === "string" ? params.id : "";
   const runId = searchParams?.get("runId") ?? null;
+  const tenantId = (searchParams?.get("tenantId") ?? "tenant-current").trim();
 
   const [report, setReport] = useState<PackReportData | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -44,7 +45,9 @@ export default function PackDetailPage({
         return;
       }
       try {
-        const res = await fetcher(`/v1/test-runs/${encodeURIComponent(runId)}`);
+        const res = await fetcher(
+          `/v1/test-runs/${encodeURIComponent(runId)}?tenantId=${encodeURIComponent(tenantId)}`,
+        );
         if (!res.ok) {
           setReport(null);
           setLoadError(`Failed to load report (status ${res.status}).`);
@@ -66,7 +69,7 @@ export default function PackDetailPage({
       }
     }
     void loadReport();
-  }, [fetcher, runId]);
+  }, [fetcher, runId, tenantId]);
 
   return (
     <div style={pageStyle} aria-label="Pack Detail Page">

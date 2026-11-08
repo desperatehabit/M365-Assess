@@ -349,6 +349,22 @@ import {
   LICENSE_GATES_PATH,
   LICENSE_GATES_READ_PERMISSION,
 } from "../routes/license-gates.js";
+// EPIC-034 Domains & DNS (T-0864).
+import { DOMAINS_OPENAPI } from "../routes/domains.js";
+import { DOMAINS_ACTIONS_OPENAPI } from "../routes/domains-actions.js";
+import { DOMAINS_DNS_OPENAPI } from "../routes/domains-dns.js";
+import { DOMAINS_RECOMMENDATIONS_OPENAPI } from "../routes/domains-recommendations.js";
+import { DOMAINS_SCHEDULE_OPENAPI } from "../routes/domains-schedule.js";
+// EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+import { TEST_PACKS_OPENAPI } from "../routes/test-packs.js";
+import { CUSTOM_TESTS_OPENAPI } from "../routes/custom-tests.js";
+// EPIC-037 Settings, Branding & Preferences (T-0867).
+import { SETTINGS_OPENAPI } from "../routes/settings.js";
+import { BRANDING_OPENAPI } from "../routes/branding.js";
+import { FEATURE_FLAGS_OPENAPI } from "../routes/feature-flags.js";
+import { PREFERENCES_OPENAPI } from "../routes/preferences.js";
+import { LOGBOOK_OPENAPI } from "../routes/logbook.js";
+import { DIAGNOSTICS_OPENAPI } from "../routes/diagnostics.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -1024,6 +1040,24 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(LICENSE_OPTIMIZATION_OPENAPI),
   ...registryEntriesFromOpenApi(LICENSE_PRICING_OPENAPI),
   { method: "GET", path: LICENSE_GATES_PATH, permission: LICENSE_GATES_READ_PERMISSION },
+  // EPIC-034 Domains & DNS (T-0864). The five fragments publish every mounted
+  // endpoint: inventory read, the four writes, check-dns/history,
+  // recommendations, and the analysis schedule (read + write).
+  ...registryEntriesFromOpenApi(DOMAINS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_ACTIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_DNS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_RECOMMENDATIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_SCHEDULE_OPENAPI),
+  // EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+  ...registryEntriesFromOpenApi(TEST_PACKS_OPENAPI),
+  ...registryEntriesFromOpenApi(CUSTOM_TESTS_OPENAPI),
+  // EPIC-037 Settings, Branding & Preferences (T-0867).
+  ...registryEntriesFromOpenApi(SETTINGS_OPENAPI),
+  ...registryEntriesFromOpenApi(BRANDING_OPENAPI),
+  ...registryEntriesFromOpenApi(FEATURE_FLAGS_OPENAPI),
+  ...registryEntriesFromOpenApi(PREFERENCES_OPENAPI),
+  ...registryEntriesFromOpenApi(LOGBOOK_OPENAPI),
+  ...registryEntriesFromOpenApi(DIAGNOSTICS_OPENAPI),
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

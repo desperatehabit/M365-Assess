@@ -264,7 +264,31 @@ import { createLicenseAssignRoutes } from "./routes/license-assign.js";
 import { createLicenseOptimizationRoute } from "./routes/licenses-optimization.js";
 import { createLicensePricingRoutes } from "./routes/license-pricing.js";
 import { createLicenseGatesRoutes } from "./routes/license-gates.js";
-import { SqliteLicensingRepository } from "@m365-assess/db";
+import { SqliteLicensingRepository, SqliteDomainRepository, type DomainCheck } from "@m365-assess/db";
+// EPIC-034 Domains & DNS (T-0864).
+import {
+  createDomainsProviders,
+} from "./adapters/domains.js";
+import { createDomainsRoute } from "./routes/domains.js";
+import {
+  createDomainsActionsRoutes,
+  createMemoryDomainActionIdempotencyStore,
+} from "./routes/domains-actions.js";
+import { createDomainsDnsRoutes } from "./routes/domains-dns.js";
+import { createDomainsRecommendationsRoutes } from "./routes/domains-recommendations.js";
+import { createDomainsScheduleRoutes } from "./routes/domains-schedule.js";
+import { DnsResultCache } from "./cache/dns-cache.js";
+// EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+import { createTestPacksRoutes } from "./routes/test-packs.js";
+import { createCustomTestsRoutes } from "./routes/custom-tests.js";
+// EPIC-037 Settings, Branding & Preferences (T-0867).
+import { createSettingsStores } from "./adapters/settings.js";
+import { createSettingsRoutes } from "./routes/settings.js";
+import { createBrandingRoutes } from "./routes/branding.js";
+import { createFeatureFlagRoutes } from "./routes/feature-flags.js";
+import { createPreferencesRoutes } from "./routes/preferences.js";
+import { createLogbookRoutes } from "./routes/logbook.js";
+import { createDiagnosticsRoutes } from "./routes/diagnostics.js";
 // EPIC-019 Defender & Vulnerabilities (T-0849).
 import { createDefenderProviders } from "./adapters/defender.js";
 import { CveExceptionRepository } from "./repository/cve-exceptions.js";
@@ -744,6 +768,23 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     listLicensePricing: (tenantId: string) => licensingRepo.listLicensePricing(tenantId),
   });
 
+  // EPIC-034 Domains & DNS (T-0864). Inventory and domain writes run their Graph
+  // workers; the DNS analyser resolves publicly and needs no tenant credential.
+  // DomainCheck history and the recommendations cache live over migration 0057,
+  // and the domain-analysis schedule is an ordinary EPIC-007 schedule row.
+  const domainsRepo = new SqliteDomainRepository(db, schemaVersion);
+  const domains = createDomainsProviders(run, credentialRows, { checks: domainsRepo });
+  const domainChecks = new DnsResultCache<DomainCheck>();
+  // The route factory keeps one store per route set so an Idempotency-Key replay
+  // returns the prior outcome; writes persist through their worker, not the store.
+  const domainActionIdempotency = createMemoryDomainActionIdempotencyStore();
+
+  // EPIC-037 Settings, Branding & Preferences (T-0867). The route factories were
+  // never mounted and no adapter bridged the db repositories, so every §6
+  // endpoint 404'd. Settings apply as one atomic audited batch; branding,
+  // feature flags, and preferences persist through the same connection.
+  const settingsStores = createSettingsStores(repo);
+
   const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
     assessment: createSupervisorRunner({
       workerScriptPath: path.join(config.workersDir, RUN_WORKER),
@@ -993,6 +1034,16 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
 
   // These routes read the raw body themselves; the server has already parsed it.
   const readBody = async (ctx: RequestContext) => (ctx.body === undefined ? "" : JSON.stringify(ctx.body));
+  // EPIC-036 test-pack runs reuse the already-wired create-run route (T-0043), so
+  // the pack service never duplicates check logic; EPIC-003 supersedes the
+  // EPIC-001 runs module on every path.
+  const runsCreateRoute = createRunsCreateRoute({
+    store: runStore,
+    queue: runQueue,
+    groupResolver: createRunGroupResolver(createTenantGroupStore(repo)),
+    readBody,
+    ...caller,
+  });
 
   const routes: Route[] = [
     ...createHealthRoutes({
@@ -1019,13 +1070,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     // EPIC-001/003 runs (T-0821). runs.ts, the EPIC-001 version of these routes, is
     // superseded by the EPIC-003 modules on every path and is not mounted.
     createRunsListRoute({ store: runStore, ...caller }),
-    createRunsCreateRoute({
-      store: runStore,
-      queue: runQueue,
-      groupResolver: createRunGroupResolver(createTenantGroupStore(repo)),
-      readBody,
-      ...caller,
-    }),
+    runsCreateRoute,
     ...createRunsDetailRoutes({ store: runStore, ...caller }),
     ...createRunsActionsRoutes({ store: runStore, queue: runQueue, eventHub: hub, readBody, ...caller }),
     ...createRunsArtifactsRoutes({ store: runStore, artifactRoot: config.artifactPath, ...caller }),
@@ -1600,6 +1645,141 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       provider: licensing.gates,
       resolveCaller,
       authorize: authorizeCaller,
+    }),
+
+    // EPIC-034 Domains & DNS (T-0864). The factories existed but were never
+    // mounted and no adapter bound them, so every §6 endpoint 404'd. Inventory
+    // and add/verify/remove/default run their Graph workers (writes require
+    // confirmation and an Idempotency-Key); the DNS analyser resolves publicly
+    // and persists one append-only DomainCheck per check, served from the TTL
+    // cache inside its window; recommendations are derived from the latest
+    // stored records. The analysis schedule is a normal EPIC-007 schedule row.
+    ...createDomainsScheduleRoutes({
+      schedules: scheduleStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    createDomainsRoute({
+      provider: domains.list,
+      db,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createDomainsActionsRoutes({
+      provider: domains.actions,
+      resolveCaller,
+      authorize: (actionCaller, permission) =>
+        canAccess(actionCaller as RequestCaller, permission),
+      recordAudit: async (event) => routeAudit(event),
+      idempotency: domainActionIdempotency,
+    }),
+    ...createDomainsDnsRoutes({
+      analyser: domains.dns,
+      cache: domainChecks,
+      checks: domainsRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createDomainsRecommendationsRoutes({
+      provider: domains.recommendations,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-036 Compliance Test Packs and Custom Tests (T-0866). The factories
+    // existed but were never mounted and no adapter bound the SQLite
+    // TestPack/TestRun/CustomTest repository, so every §6 endpoint 404'd. Pack
+    // runs reuse the create-run route; custom tests persist their authoring
+    // records and immutable version history through the shared repository
+    // (migrations 0044/0045).
+    ...createTestPacksRoutes({
+      store: repo,
+      runRoute: runsCreateRoute,
+      detailStore: runStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createCustomTestsRoutes({
+      store: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-037 Settings, Branding & Preferences (T-0867). The factories existed
+    // but were never mounted and no adapter bridged the db repositories, so every
+    // §6 endpoint 404'd. Settings writes apply as one atomic audited batch;
+    // branding, flags, and preferences persist through the same connection.
+    // Logbook and diagnostics are the read-only admin surface; the seeded
+    // diagnostic report is the full one rather than the EPIC-001 stub.
+    ...createSettingsRoutes({
+      store: settingsStores.settings,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createBrandingRoutes({
+      store: settingsStores.branding,
+      artifactRoot: config.artifactPath,
+      resolveCaller,
+      authorize: authorizeCaller,
+      // The repository already audits the config write; only the asset upload
+      // (which has no repository row) needs the route's audit port.
+      audit: {
+        record: (event) =>
+          event["action"] === "branding.asset.upload" ? routeAudit(event) : undefined,
+      },
+    }),
+    ...createFeatureFlagRoutes({
+      store: settingsStores.featureFlags,
+      resolveCaller,
+      authorize: (flagCaller, permission) =>
+        authorizeCaller(flagCaller as RequestCaller, permission),
+    }),
+    ...createPreferencesRoutes({
+      store: settingsStores.preferences,
+      resolveCaller: (ctx) => {
+        const userId = resolveCaller(ctx)?.userId;
+        return userId ? { userId } : undefined;
+      },
+    }),
+    ...createLogbookRoutes({
+      store: settingsStores.logbook,
+      resolveCaller,
+      authorize: (logbookCaller, permission) =>
+        authorizeCaller(logbookCaller as RequestCaller, permission),
+    }),
+    ...createDiagnosticsRoutes({
+      ...(options.version !== undefined ? { version: options.version } : {}),
+      storage: {
+        schemaVersion,
+        checkReachability: () => {
+          try {
+            db.prepare("SELECT 1").get();
+            return true;
+          } catch {
+            return false;
+          }
+        },
+      },
+      queue: { depth: runJobs.depth, poolSize: config.workerPoolSize },
+      workerCount: config.workerPoolSize,
+      resolveCaller,
+      authorize: (diagnosticsCaller, permission) =>
+        authorizeCaller(diagnosticsCaller as RequestCaller, permission),
+      timers: {
+        listTimerState: async () => {
+          const timers = [...SYSTEM_TIMERS, SECURE_SCORE_SNAPSHOT_TIMER];
+          return Promise.all(
+            timers.map(async (timer) => {
+              const state = await systemTimerState.get(timer.name);
+              return {
+                ...timer,
+                lastRunAt: state?.lastRunAt ?? null,
+                nextRunAt: state?.nextRunAt ?? null,
+              };
+            }),
+          );
+        },
+      },
     }),
 
     // EPIC-015 Conditional Access (T-0819).

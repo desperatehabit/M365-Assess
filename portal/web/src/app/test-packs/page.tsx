@@ -66,8 +66,8 @@ export default function TestPacksPage({
         setLoadError(`Failed to load test packs (status ${res.status}).`);
         return;
       }
-      const data = (await res.json()) as TestPackItem[];
-      setPacks(Array.isArray(data) ? data : []);
+      const data = (await res.json()) as { packs?: TestPackItem[] };
+      setPacks(Array.isArray(data?.packs) ? data.packs : []);
       setLoadError(null);
     } catch (err) {
       setPacks([]);
@@ -93,7 +93,7 @@ export default function TestPacksPage({
       if (res.ok) {
         const runData = (await res.json()) as { id: string };
         setStatusMessage(`Run started successfully (Run ID: ${runData.id})`);
-        router.push(`/test-packs/${encodeURIComponent(pack.id)}?runId=${encodeURIComponent(runData.id)}`);
+        router.push(`/test-packs/${encodeURIComponent(pack.id)}?runId=${encodeURIComponent(runData.id)}&tenantId=${encodeURIComponent(tenantId)}`);
       } else {
         setStatusMessage(`Failed to run pack: status ${res.status}`);
       }

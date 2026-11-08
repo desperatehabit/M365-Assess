@@ -12,7 +12,9 @@ export interface TestPackItem {
   readonly name: string;
   readonly description?: string;
   readonly frameworkId?: string;
-  readonly checks: readonly string[];
+  readonly checks?: readonly string[];
+  /** The API's precomputed check count; preferred when `checks` is absent. */
+  readonly checkCount?: number;
 }
 
 export interface PackListProps {
@@ -134,7 +136,7 @@ export function PackList({
           <tbody>
             {packs.map((pack) => {
               const isRunning = runningPackId === pack.id;
-              const checkCount = pack.checks?.length ?? 0;
+              const checkCount = pack.checkCount ?? pack.checks?.length ?? 0;
 
               return (
                 <tr key={pack.id}>

@@ -1,28 +1,31 @@
 # Handoff — M365-Assess portal
 
-_Last updated: 2026-11-08, after the EPIC-031/032/033 mount batch._
+_Last updated: 2026-11-08, after the EPIC-034/036/037 mount batch._
 
 ## State
 
 - Branch: `main`.
-- T-0861 mounted EPIC-031 Secure Score: the current/peers/trend/fleet routes run
-  `get-secure-score.ps1`, improvement actions resolve through the registry mapping
-  (and persist as `ScoreActionMapping` rows), and a daily `secure-score-snapshot`
-  maintenance timer records one trend point per tenant and prunes retention.
-- T-0862 mounted EPIC-032 Audit Logs & Webhooks: search/directory/coverage run
-  `search-audit.ps1` / `get-audit-coverage.ps1`; saved searches and exclusion
-  windows persist through the audit repository; webhooks run `manage-webhooks.ps1`
-  with the configured notification URL; migration 0129 adds webhook soft delete and
-  the repository gains update/soft-delete. The Saved Log Searches page now exists
-  under `web/src/app/audit-logs/searches/`.
-- T-0863 mounted EPIC-033 Licensing: consumption/optimization/gates/per-user changes
-  run their Graph workers; pricing and `LicenseChange` rows persist through
-  `SqliteLicensingRepository`. The missing `get-license-optimization.ps1` and
-  `get-license-gates.ps1` entrypoints now exist with Pester tests.
-- Tickets **T-0861**, **T-0862**, and **T-0863** are `fixed-unverified`;
-  `TICKETS.md` reflects the new counts (open 14, fixed-unverified 24).
+- T-0864 mounted EPIC-034 Domains & DNS: inventory and add/verify/remove/default
+  run `get-domains.ps1` / `domain-action.ps1`; the new `check-domain-dns.ps1`
+  resolves MX/SPF/DKIM/DMARC/MTA-STS/TLS-RPT with no tenant credential and
+  persists one append-only `DomainCheck` per check behind the DNS TTL cache;
+  recommendations run the new `get-dns-recommendations.ps1` over the latest
+  stored records; the analysis schedule is a normal EPIC-007 row.
+- T-0866 mounted EPIC-036 Compliance Test Packs and Custom Tests over the shared
+  SQLite TestPack/TestRun/CustomTest repository. Pack runs reuse the extracted
+  `runsCreateRoute`; the pages now read the routes' `{ packs }` / `{ items }`
+  envelopes (and `checkCount`) instead of assuming raw arrays.
+- T-0867 mounted EPIC-037 Settings, Branding & Preferences through
+  `createSettingsStores`: settings apply atomically with per-key audit, branding
+  adds the schema version, preferences fall back to typed defaults, and the
+  logbook projects the audit store. `GET /v1/diagnostics` now serves the full
+  report (health + cache + system timers). Logbook/diagnostics use concrete
+  `CIPP.Admin.Logbook` / `CIPP.Admin.Diagnostics` permissions so the registry
+  stays taxonomy-valid.
+- Tickets **T-0864**, **T-0866**, and **T-0867** are `fixed-unverified`;
+  `TICKETS.md` reflects the new counts (open 11, fixed-unverified 27).
 - Full portal test suites are green:
-  - BFF: `365 files / 4202 tests`
+  - BFF: `370 files / 4258 tests`
   - Web: `154 files / 1324 tests`
   - DB: `44 files / 303 tests`
   - `npm run typecheck` at `portal/` is clean.
@@ -43,13 +46,10 @@ npm test --workspace @m365-assess/web
 
 ## Next issues up to bat
 
-Register order (severity, then id) after T-0863:
+Register order (severity, then id) after T-0867:
 
 | Ticket | Sev | Title |
 |---|---|---|
-| T-0864 | medium | Mount and deliver EPIC-034 Domains & DNS routes and worker |
-| T-0866 | medium | Mount EPIC-036 Compliance Test Packs and Custom Tests routes |
-| T-0867 | medium | Mount EPIC-037 Settings, Branding & Preferences routes |
 | T-0869 | medium | Mount EPIC-039 Template Library & Catalog routes |
 | T-0870 | medium | Mount EPIC-040 Graph Explorer & Admin Tools routes |
 | T-0874 | medium | No scheduled credential-expiry check |
@@ -62,7 +62,7 @@ Register order (severity, then id) after T-0863:
 | T-0853 | low | Mount EPIC-023 Contacts & Resources routes |
 | T-0865 | low | Mount EPIC-035 Backup routes and invoke retention/replication |
 
-**Recommended next batch:** T-0864, T-0866, T-0867 (same “mount and deliver”
+**Recommended next batch:** T-0869, T-0870 (same “mount and deliver”
 pattern, contiguous in the register). T-0874/T-0877/T-0878 are small targeted
 fixes and good fill-ins between larger mounts.
 

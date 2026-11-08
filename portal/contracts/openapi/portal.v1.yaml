@@ -545,6 +545,132 @@ paths:
       x-permission: Tenant.Baselines.ReadWrite
       security:
         - bearerAuth: []
+  /branding:
+    get:
+      operationId: getBranding
+      summary: Load the instance branding config with resolved asset URLs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The stored branding config.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.Read.
+      x-permission: CIPP.AppSettings.Read
+    put:
+      operationId: putBranding
+      summary: Validate and save the instance branding config
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrandingConfig"
+      responses:
+        "200":
+          description: The saved branding config.
+        "400":
+          description: The config failed branding schema validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.ReadWrite.
+      x-permission: CIPP.AppSettings.ReadWrite
+  /branding/assets/{kind}:
+    post:
+      operationId: postBrandingAsset
+      summary: Upload a validated branding asset (logo or cover)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - logo
+              - cover
+          description: Asset kind.
+        - name: fileName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Original file name, used for format detection.
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: The stored asset reference and resolved URL.
+        "400":
+          description: The upload failed branding upload validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.ReadWrite.
+      x-permission: CIPP.AppSettings.ReadWrite
+  /branding/assets/{name}:
+    get:
+      operationId: getBrandingAsset
+      summary: Stream a stored branding asset
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Asset file name, as returned by the upload endpoint.
+      responses:
+        "200":
+          description: The asset bytes.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.Read.
+        "404":
+          description: No such branding asset.
+      x-permission: CIPP.AppSettings.Read
+  /branding/preview:
+    post:
+      operationId: postBrandingPreview
+      summary: Render preview fragments for an unsaved branding draft
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: reportKind
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Report kind whose per-report defaults apply to the preview.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BrandingConfig"
+      responses:
+        "200":
+          description: The token-override CSS and cover/footer fragments.
+        "400":
+          description: The draft failed branding schema validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.Read.
+      x-permission: CIPP.AppSettings.Read
   /ca-templates:
     get:
       operationId: getCaTemplates
@@ -849,6 +975,213 @@ paths:
         "422":
           description: Every target failed; per-target results are returned.
       x-permission: Exchange.Transport.ReadWrite
+  /custom-tests:
+    get:
+      tags:
+        - CustomTests
+      operationId: listCustomTests
+      summary: List custom tests
+      description: Returns the custom-test authoring records (Name, Category, Enabled, Alerts, Version).
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The custom tests.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.Read.
+      x-permission: CIPP.Tests.Read
+    post:
+      tags:
+        - CustomTests
+      operationId: createCustomTest
+      summary: Create a custom test
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+              properties:
+                name:
+                  type: string
+                category:
+                  type: string
+                enabled:
+                  type: boolean
+                alertsEnabled:
+                  type: boolean
+      responses:
+        "201":
+          description: The created custom test.
+        "400":
+          description: name failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.ReadWrite.
+      x-permission: CIPP.Tests.ReadWrite
+  /custom-tests/{id}:
+    get:
+      tags:
+        - CustomTests
+      operationId: getCustomTest
+      summary: Custom test detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The custom test.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.Read.
+        "404":
+          description: Custom test not found.
+      x-permission: CIPP.Tests.Read
+    patch:
+      tags:
+        - CustomTests
+      operationId: updateCustomTest
+      summary: Edit a custom test, or enable/disable the test or its alerts
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                name:
+                  type: string
+                category:
+                  type: string
+                enabled:
+                  type: boolean
+                alertsEnabled:
+                  type: boolean
+      responses:
+        "200":
+          description: The updated custom test.
+        "400":
+          description: No editable field was supplied, or a field failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.ReadWrite.
+        "404":
+          description: Custom test not found.
+      x-permission: CIPP.Tests.ReadWrite
+    delete:
+      tags:
+        - CustomTests
+      operationId: deleteCustomTest
+      summary: Soft-delete a custom test; its immutable version history remains readable
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed; no body.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.ReadWrite.
+        "404":
+          description: Custom test not found.
+      x-permission: CIPP.Tests.ReadWrite
+  /custom-tests/{id}/versions:
+    get:
+      tags:
+        - CustomTests
+      operationId: listCustomTestVersions
+      summary: List a custom test's immutable version history
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The version history, oldest first.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.Read.
+        "404":
+          description: Custom test not found.
+      x-permission: CIPP.Tests.Read
+    post:
+      tags:
+        - CustomTests
+      operationId: appendCustomTestVersion
+      summary: Append an immutable version and repoint currentVersionId
+      description: Validates the parameter document against the T-0705 schema before persisting; an invalid parameter set is rejected with the validator's stable codes.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                markdownTemplate:
+                  type:
+                    - string
+                    - "null"
+                parameters:
+                  type: object
+                  description: "T-0705 parameter schema: { schemaVersion, parameters[] }."
+      responses:
+        "201":
+          description: The appended immutable version.
+        "400":
+          description: content is missing or the parameters failed T-0705 validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks CIPP.Tests.ReadWrite.
+        "404":
+          description: Custom test not found.
+      x-permission: CIPP.Tests.ReadWrite
   /dashboard:
     get:
       operationId: getDashboard
@@ -898,6 +1231,22 @@ paths:
       x-permission: Portal.Dashboard.Read
       security:
         - bearerAuth: []
+  /diagnostics:
+    get:
+      operationId: getDiagnostics
+      summary: Service health, cache status, and timer state
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Health report, cache status, and timer state.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+        "503":
+          description: Total liveness failure; the report carries the structured health payload.
+      x-permission: CIPP.Admin.Diagnostics
   /drift/alignment:
     get:
       operationId: getDriftAlignment
@@ -1034,6 +1383,41 @@ paths:
       x-permission: Endpoint.Autopilot.ReadWrite
       security:
         - bearerAuth: []
+  /feature-flags:
+    get:
+      operationId: getFeatureFlags
+      summary: List the instance feature flags
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The instance-global feature flags.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.Read.
+      x-permission: CIPP.AppSettings.Read
+    put:
+      operationId: putFeatureFlag
+      summary: Upsert one instance feature flag
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeatureFlagInput"
+      responses:
+        "200":
+          description: The upserted flag.
+        "400":
+          description: Invalid flag body, or a reserved tenant scope.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.ReadWrite.
+      x-permission: CIPP.AppSettings.ReadWrite
   /gdap/sync:
     post:
       operationId: postGdapSync
@@ -1416,6 +1800,76 @@ paths:
         "403":
           description: The caller lacks the CIPP.Admin.* scope.
       x-permission: CIPP.Admin.ReadWrite
+  /logbook:
+    get:
+      operationId: listLogbook
+      summary: Search the logbook with actor, action, tenant, result, and date filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: actor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: action
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: tenant
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: result
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - success
+              - failure
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: format
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - json
+              - csv
+      responses:
+        "200":
+          description: A cursor page of audit entries, or the complete filtered set as CSV when format=csv.
+        "400":
+          description: A filter value is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.Logbook
   /me:
     get:
       operationId: getCurrentCaller
@@ -1605,6 +2059,37 @@ paths:
       x-permission: Identity.Role.Read
       security:
         - bearerAuth: []
+  /preferences:
+    get:
+      operationId: getPreferences
+      summary: Load the caller's preferences
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The caller's preferences, or the defaults when none are saved.
+        "401":
+          description: Authentication required.
+      x-permission: Portal.Preferences.Read
+    put:
+      operationId: putPreferences
+      summary: Replace the caller's preferences
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserPreferences"
+      responses:
+        "200":
+          description: The saved preferences.
+        "400":
+          description: The body failed preferences validation.
+        "401":
+          description: Authentication required.
+      x-permission: Portal.Preferences.ReadWrite
   /remediation/actions/{actionId}/verify:
     post:
       operationId: postRemediationActionsActionIdVerify
@@ -2180,6 +2665,41 @@ paths:
         "403":
           description: The caller lacks the Security.SecureScore.Read permission.
       x-permission: Security.SecureScore.Read
+  /settings:
+    get:
+      operationId: getSettings
+      summary: Load the application settings grouped by tab
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The typed settings grouped by the §3.1 tab schema, with sensitive values masked.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.Read.
+      x-permission: CIPP.AppSettings.Read
+    put:
+      operationId: putSettings
+      summary: Validate and atomically apply a batch of application settings
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsUpdate"
+      responses:
+        "200":
+          description: The applied settings grouped by tab.
+        "400":
+          description: One or more keys are unknown or ill-typed; nothing is written. The details name every failing key.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Requires CIPP.AppSettings.ReadWrite.
+      x-permission: CIPP.AppSettings.ReadWrite
   /standards/alignment:
     get:
       operationId: getStandardsAlignment
@@ -3731,6 +4251,334 @@ paths:
       x-permission: Endpoint.DeviceKeys.Reveal
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/domains:
+    get:
+      operationId: listTenantDomains
+      summary: List tenant domains with type, verification, DNS health, and last-checked
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated domain inventory with DNS health and last-checked.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Domains.Read or the tenant is out of scope.
+      x-permission: Tenant.Domains.Read
+    post:
+      tags:
+        - Domains
+      operationId: addDomain
+      summary: Add a domain; returns the DNS verification records (TXT/MX) to publish. The domain stays unverified until verify succeeds.
+      security:
+        - bearerAuth: []
+      parameters:
+        - &a4
+          name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - &a5
+          name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 256
+          description: Required. A repeated key replays the prior outcome.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - domain
+                - confirm
+              properties:
+                domain:
+                  type: string
+                  description: The domain name to add.
+                confirm: &a20
+                  type: boolean
+                  description: Required unless dryRun is true; the EPIC-006 apply confirmation.
+                dryRun: &a21
+                  type: boolean
+                  description: Plans the write with no tenant change. Defaults to true.
+                reason: &a22
+                  type: string
+                  description: Caller-supplied reason recorded on the audit event.
+      responses:
+        "200":
+          description: The add outcome with the verification records to publish.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainActionOutcome"
+        "400": &a6
+          description: Missing Idempotency-Key, confirmation, or invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401": &a7
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403": &a8
+          description: Forbidden or tenant out of scope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      x-permission: Tenant.Domains.ReadWrite
+  /tenants/{tenantId}/domains/analysis-schedule:
+    get:
+      tags:
+        - Domains
+      operationId: getDomainAnalysisSchedule
+      summary: The tenant's scheduled domain analysis task, or null when none exists.
+      security:
+        - bearerAuth: []
+      parameters:
+        - &a1
+          name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The domain analysis schedule, or null.
+        "401": &a2
+          description: Authentication required.
+        "403": &a3
+          description: The caller lacks Tenant.Domains.Read/Tenant.Domains.ReadWrite or the tenant is out of scope.
+      x-permission: Tenant.Domains.Read
+    post:
+      tags:
+        - Domains
+      operationId: setDomainAnalysisSchedule
+      summary: Create the scheduled domain analysis task, or edit its cron and enabled state.
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                scheduleId:
+                  type: string
+                  description: Edit an existing task instead of creating one.
+                cron:
+                  type: string
+                  description: 6-field cron expression; required when creating.
+                timezone:
+                  type: string
+                  description: Timezone offset for the cron; defaults to UTC.
+                enabled:
+                  type: boolean
+                  description: Enable or disable the scheduled run; defaults to true.
+      responses:
+        "200":
+          description: The created or updated domain analysis schedule.
+        "400":
+          description: Invalid cron, timezone, or body.
+        "401": *a2
+        "403": *a3
+        "404":
+          description: The referenced schedule was not found.
+      x-permission: Tenant.Domains.ReadWrite
+  /tenants/{tenantId}/domains/{domain}:
+    delete:
+      tags:
+        - Domains
+      operationId: removeDomain
+      summary: Remove a domain from the tenant (confirm; dryRun plans only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a4
+        - &a9
+          name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+        - *a5
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainActionRequest"
+      responses:
+        "200":
+          description: The remove outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainActionOutcome"
+        "400": *a6
+        "401": *a7
+        "403": *a8
+      x-permission: Tenant.Domains.ReadWrite
+  /tenants/{tenantId}/domains/{domain}/check-dns:
+    post:
+      tags:
+        - Domains
+      operationId: checkDomainDns
+      summary: Run the DNS analyser for a domain now; repeat calls inside the cache TTL are served from cache.
+      security:
+        - bearerAuth: []
+      parameters:
+        - &a10
+          name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - &a11
+          name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The persisted DNS analysis, or the cached result inside the TTL.
+        "401": &a12
+          description: Authentication required.
+        "403": &a13
+          description: The caller lacks Tenant.Domains.Read or the tenant is out of scope.
+      x-permission: Tenant.Domains.Read
+  /tenants/{tenantId}/domains/{domain}/default:
+    post:
+      tags:
+        - Domains
+      operationId: setDomainDefault
+      summary: Set the domain as the tenant's default domain (confirm; dryRun plans only)
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a4
+        - *a9
+        - *a5
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainActionRequest"
+      responses:
+        "200":
+          description: The default-domain outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainActionOutcome"
+        "400": *a6
+        "401": *a7
+        "403": *a8
+      x-permission: Tenant.Domains.ReadWrite
+  /tenants/{tenantId}/domains/{domain}/history:
+    get:
+      tags:
+        - Domains
+      operationId: getDomainDnsHistory
+      summary: Ordered stored DNS checks for a domain (trend view).
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a10
+        - *a11
+      responses:
+        "200":
+          description: The domain's stored checks ordered by time.
+        "401": *a12
+        "403": *a13
+      x-permission: Tenant.Domains.Read
+  /tenants/{tenantId}/domains/{domain}/recommendations:
+    get:
+      tags:
+        - Domains
+      operationId: getDomainDnsRecommendations
+      summary: Ranked, actionable DNS recommendations for a domain; empty when the domain is clean.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: domain
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Ranked recommendations (record family, severity, explanation, remediation link, CheckID).
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Domains.Read or the tenant is out of scope.
+      x-permission: Tenant.Domains.Read
+  /tenants/{tenantId}/domains/{domain}/verify:
+    post:
+      tags:
+        - Domains
+      operationId: verifyDomain
+      summary: Trigger Graph verification for an unverified domain (confirm; dryRun plans only).
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a4
+        - *a9
+        - *a5
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainActionRequest"
+      responses:
+        "200":
+          description: The verify outcome.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainActionOutcome"
+        "400": *a6
+        "401": *a7
+        "403": *a8
+      x-permission: Tenant.Domains.ReadWrite
   /tenants/{tenantId}/enrollment-profiles:
     get:
       operationId: getTenantsTenantIdEnrollmentProfiles
@@ -4204,13 +5052,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - &a1
+        - &a14
           name: tenantId
           in: path
           required: true
           schema:
             type: string
-        - &a2
+        - &a15
           name: Idempotency-Key
           in: header
           required: true
@@ -4222,7 +5070,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: &a3
+            schema: &a16
               type: object
               additionalProperties: false
               required:
@@ -4261,19 +5109,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseChangeOutcome"
-        "400": &a4
+        "400": &a17
           description: Missing Idempotency-Key, confirmation, plan preview, or invalid body.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401": &a5
+        "401": &a18
           description: Unauthenticated.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403": &a6
+        "403": &a19
           description: Forbidden or tenant out of scope.
           content:
             application/json:
@@ -4330,13 +5178,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a1
-        - *a2
+        - *a14
+        - *a15
       requestBody:
         required: true
         content:
           application/json:
-            schema: *a3
+            schema: *a16
       responses:
         "200":
           description: The plan preview (dry run) or the per-row results (applied).
@@ -4344,9 +5192,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseChangeOutcome"
-        "400": *a4
-        "401": *a5
-        "403": *a6
+        "400": *a17
+        "401": *a18
+        "403": *a19
       x-permission: Tenant.Licenses.ReadWrite
   /tenants/{tenantId}/mail/encryption:
     get:
@@ -6598,6 +7446,91 @@ paths:
         "403":
           description: The caller lacks the CIPP.Admin.* scope.
       x-permission: CIPP.Admin.ReadWrite
+  /test-packs:
+    get:
+      tags:
+        - TestPacks
+      operationId: listTestPacks
+      summary: List available compliance test packs
+      description: Returns the available packs with description and check count.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The available packs.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Not permitted.
+      x-permission: CIPP.Tests.Read
+  /test-packs/{id}/run:
+    post:
+      tags:
+        - TestPacks
+      operationId: runTestPack
+      summary: Run a pack against a tenant and return the scored test run
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - tenantId
+              properties:
+                tenantId:
+                  type: string
+      responses:
+        "201":
+          description: The scored test run.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Tenant is outside the caller scope.
+        "404":
+          description: Pack not found.
+      x-permission: CIPP.Tests.Execute
+  /test-runs/{id}:
+    get:
+      tags:
+        - TestPacks
+      operationId: getTestRun
+      summary: Get a pack run report with per-control results and the score
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The test run report.
+        "400":
+          description: tenantId is required.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Tenant is outside the caller scope.
+        "404":
+          description: Test run not found.
+      x-permission: CIPP.Tests.Read
   /transport-rule-templates:
     get:
       operationId: listTransportRuleTemplates
@@ -7274,6 +8207,396 @@ components:
         currency:
           type: string
         updatedAt:
+          type: string
+    DomainActionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - confirm
+      properties:
+        confirm: *a20
+        dryRun: *a21
+        reason: *a22
+    DomainActionOutcome:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - domain
+        - action
+        - status
+      properties:
+        tenantId:
+          type: string
+        domain:
+          type: string
+        action:
+          type: string
+          enum:
+            - add
+            - verify
+            - remove
+            - setDefault
+        status:
+          type: string
+          enum:
+            - applied
+            - planned
+            - failed
+        verificationRecords:
+          type:
+            - array
+            - "null"
+          items:
+            type: object
+            additionalProperties: true
+            properties:
+              recordType:
+                type: string
+              label:
+                type: string
+              text:
+                type: string
+              mailExchange:
+                type: string
+              preference:
+                type: integer
+              ttl:
+                type: integer
+        code:
+          type:
+            - string
+            - "null"
+        error:
+          type:
+            - string
+            - "null"
+    SettingEntry:
+      type: object
+      additionalProperties: false
+      required:
+        - value
+        - masked
+        - scope
+        - updatedAt
+        - updatedBy
+      properties:
+        value:
+          type:
+            - string
+            - boolean
+            - number
+            - "null"
+          description: The typed value, or null when the value is masked.
+        masked:
+          type: boolean
+          description: True when the value is sensitive and was withheld.
+        scope:
+          type: string
+          enum:
+            - global
+            - tenant
+        updatedAt:
+          type:
+            - string
+            - "null"
+        updatedBy:
+          type:
+            - string
+            - "null"
+    SettingsGroup:
+      type: object
+      additionalProperties:
+        $ref: "#/components/schemas/SettingEntry"
+      description: Settings for one §3.1 tab, keyed by the name after the tab prefix.
+    SettingsResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - settings
+      properties:
+        schemaVersion:
+          type: string
+        settings:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/SettingsGroup"
+    SettingsUpdate:
+      type: object
+      additionalProperties:
+        type:
+          - string
+          - boolean
+          - number
+      description: Map of typed setting key to value. Every key is validated against the schema before any write.
+    BrandingColors:
+      type: object
+      additionalProperties: false
+      required:
+        - primary
+        - secondary
+      properties:
+        primary:
+          type: string
+        secondary:
+          type: string
+    BrandingWatermark:
+      type: object
+      additionalProperties: false
+      required:
+        - enabled
+        - text
+      properties:
+        enabled:
+          type: boolean
+        text:
+          type: string
+    BrandingFooter:
+      type: object
+      additionalProperties: false
+      required:
+        - show
+        - text
+        - coverText
+      properties:
+        show:
+          type: boolean
+        text:
+          type: string
+        coverText:
+          type: string
+    BrandingPageNumbers:
+      type: object
+      additionalProperties: false
+      required:
+        - show
+      properties:
+        show:
+          type: boolean
+    BrandingPreset:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+        - colors
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        colors:
+          $ref: "#/components/schemas/BrandingColors"
+    BrandingReportDefaults:
+      type: object
+      additionalProperties: false
+      properties:
+        primary:
+          type: string
+        secondary:
+          type: string
+        logoRef:
+          type:
+            - string
+            - "null"
+        watermarkText:
+          type: string
+        footerText:
+          type: string
+        showPageNumbers:
+          type: boolean
+    BrandingConfig:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - colors
+        - logoRef
+        - coverRef
+        - watermark
+        - footer
+        - pageNumbers
+        - presets
+        - perReportDefaults
+      properties:
+        schemaVersion:
+          type: string
+        colors:
+          $ref: "#/components/schemas/BrandingColors"
+        logoRef:
+          type:
+            - string
+            - "null"
+        coverRef:
+          type:
+            - string
+            - "null"
+        watermark:
+          $ref: "#/components/schemas/BrandingWatermark"
+        footer:
+          $ref: "#/components/schemas/BrandingFooter"
+        pageNumbers:
+          $ref: "#/components/schemas/BrandingPageNumbers"
+        presets:
+          type: array
+          items:
+            $ref: "#/components/schemas/BrandingPreset"
+        perReportDefaults:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/BrandingReportDefaults"
+    FeatureFlag:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - enabled
+        - scope
+        - description
+        - updatedAt
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+        scope:
+          type: string
+          enum:
+            - global
+            - tenant
+        description:
+          type: string
+        updatedAt:
+          type: string
+        updatedBy:
+          type:
+            - string
+            - "null"
+    FeatureFlagInput:
+      type: object
+      additionalProperties: false
+      required:
+        - key
+        - enabled
+      properties:
+        key:
+          type: string
+        enabled:
+          type: boolean
+        scope:
+          type: string
+          enum:
+            - global
+          description: v1 accepts 'global' only; 'tenant' is reserved.
+        description:
+          type: string
+    UserPreferences:
+      type: object
+      additionalProperties: false
+      required:
+        - schemaVersion
+        - general
+        - navigation
+        - appearance
+        - portalLinks
+      properties:
+        schemaVersion:
+          type: string
+        general:
+          type: object
+          additionalProperties: false
+          required:
+            - usageLocation
+            - tablePageSize
+            - tableViewMode
+            - defaultTestSuite
+            - persistFilters
+          properties:
+            usageLocation:
+              type: string
+            tablePageSize:
+              type: integer
+            tableViewMode:
+              type: string
+              enum:
+                - table
+                - card
+            defaultTestSuite:
+              type: string
+            persistFilters:
+              type: boolean
+        navigation:
+          type: object
+          additionalProperties: false
+          required:
+            - bookmarks
+            - compactNav
+          properties:
+            bookmarks:
+              type: array
+              items:
+                $ref: "#/components/schemas/PreferencesBookmark"
+            compactNav:
+              type: boolean
+        appearance:
+          type: object
+          additionalProperties: false
+          required:
+            - theme
+            - density
+            - textScale
+          properties:
+            theme:
+              type: string
+              enum:
+                - light
+                - dark
+                - system
+            density:
+              type: string
+              enum:
+                - compact
+                - comfortable
+            textScale:
+              type: number
+        portalLinks:
+          type: object
+          additionalProperties: false
+          required:
+            - links
+          properties:
+            links:
+              type: array
+              items:
+                $ref: "#/components/schemas/PreferencesPortalLink"
+    PreferencesBookmark:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - label
+        - path
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        path:
+          type: string
+    PreferencesPortalLink:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - label
+        - url
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        url:
           type: string
   responses:
     Error:

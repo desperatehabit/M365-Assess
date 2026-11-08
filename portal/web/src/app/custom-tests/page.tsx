@@ -154,8 +154,8 @@ export default function CustomTestsPage({
         setLoadError(`Failed to load custom tests (status ${res.status}).`);
         return;
       }
-      const data = (await res.json()) as CustomTestRow[];
-      setTests(Array.isArray(data) ? data : []);
+      const data = (await res.json()) as { items?: CustomTestRow[] };
+      setTests(Array.isArray(data?.items) ? data.items : []);
       setLoadError(null);
     } catch (err) {
       setTests([]);

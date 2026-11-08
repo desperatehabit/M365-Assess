@@ -174,7 +174,8 @@ export function createTestPacksRoutes(options: TestPacksRouteOptions): Route[] {
 }
 
 export const TEST_PACKS_OPENAPI = {
-  "/v1/test-packs": {
+  paths: {
+    "/test-packs": {
     get: {
       tags: ["TestPacks"],
       operationId: "listTestPacks",
@@ -189,7 +190,7 @@ export const TEST_PACKS_OPENAPI = {
       },
     },
   },
-  "/v1/test-packs/{id}/run": {
+  "/test-packs/{id}/run": {
     post: {
       tags: ["TestPacks"],
       operationId: "runTestPack",
@@ -218,7 +219,7 @@ export const TEST_PACKS_OPENAPI = {
       },
     },
   },
-  "/v1/test-runs/{id}": {
+  "/test-runs/{id}": {
     get: {
       tags: ["TestPacks"],
       operationId: "getTestRun",
@@ -237,5 +238,6 @@ export const TEST_PACKS_OPENAPI = {
         "404": { description: "Test run not found." },
       },
     },
+  },
   },
 } as const;
