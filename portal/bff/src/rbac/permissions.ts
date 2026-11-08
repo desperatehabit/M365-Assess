@@ -325,6 +325,30 @@ import { ALERT_RULES_OPENAPI } from "../routes/alert-rules.js";
 import { ALERT_RULES_TEST_OPENAPI } from "../routes/alert-rules-test.js";
 import { ALERT_EVENTS_OPENAPI } from "../routes/alert-events.js";
 import { NOTIFICATIONS_OPENAPI } from "../routes/notifications.js";
+// EPIC-031 Secure Score (T-0861).
+import { SECURE_SCORE_OPENAPI } from "../routes/secure-score.js";
+import { SECURE_SCORE_FLEET_OPENAPI } from "../routes/secure-score-fleet.js";
+import { SECURE_SCORE_PEERS_OPENAPI } from "../routes/secure-score-peers.js";
+import { SECURE_SCORE_TREND_OPENAPI } from "../routes/secure-score-trend.js";
+// EPIC-032 Audit Logs & Webhooks (T-0862).
+import { AUDIT_SEARCH_OPENAPI } from "../routes/audit-search.js";
+import { AUDIT_SEARCHES_OPENAPI } from "../routes/audit-searches.js";
+import { AUDIT_COVERAGE_OPENAPI } from "../routes/audit-coverage.js";
+import { AUDIT_EXCLUSION_WINDOWS_OPENAPI } from "../routes/audit-exclusion-windows.js";
+import { WEBHOOKS_OPENAPI } from "../routes/webhooks.js";
+// EPIC-033 Licensing (T-0863).
+import {
+  LICENSES_OPENAPI,
+} from "../routes/licenses.js";
+import { LICENSE_ASSIGN_OPENAPI } from "../routes/license-assign.js";
+import {
+  LICENSE_OPTIMIZATION_OPENAPI,
+} from "../routes/licenses-optimization.js";
+import { LICENSE_PRICING_OPENAPI } from "../routes/license-pricing.js";
+import {
+  LICENSE_GATES_PATH,
+  LICENSE_GATES_READ_PERMISSION,
+} from "../routes/license-gates.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -982,6 +1006,24 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "GET", path: EXTERNAL_USERS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
   { method: "GET", path: EXTERNAL_USER_ACCESS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
   { method: "POST", path: SHARING_LINKS_REMOVE_PATH, permission: SHARING_WRITE_PERMISSION },
+  // EPIC-031 Secure Score (T-0861).
+  ...registryEntriesFromOpenApi(SECURE_SCORE_OPENAPI),
+  ...registryEntriesFromOpenApi(SECURE_SCORE_FLEET_OPENAPI),
+  ...registryEntriesFromOpenApi(SECURE_SCORE_PEERS_OPENAPI),
+  ...registryEntriesFromOpenApi(SECURE_SCORE_TREND_OPENAPI),
+  // EPIC-032 Audit Logs & Webhooks (T-0862).
+  ...registryEntriesFromOpenApi(AUDIT_SEARCH_OPENAPI),
+  ...registryEntriesFromOpenApi(AUDIT_SEARCHES_OPENAPI),
+  ...registryEntriesFromOpenApi(AUDIT_COVERAGE_OPENAPI),
+  ...registryEntriesFromOpenApi(AUDIT_EXCLUSION_WINDOWS_OPENAPI),
+  ...registryEntriesFromOpenApi(WEBHOOKS_OPENAPI),
+  // EPIC-033 Licensing (T-0863). The gates route publishes no OpenAPI fragment,
+  // so its mounted endpoint is registered directly.
+  ...registryEntriesFromOpenApi(LICENSES_OPENAPI),
+  ...registryEntriesFromOpenApi(LICENSE_ASSIGN_OPENAPI),
+  ...registryEntriesFromOpenApi(LICENSE_OPTIMIZATION_OPENAPI),
+  ...registryEntriesFromOpenApi(LICENSE_PRICING_OPENAPI),
+  { method: "GET", path: LICENSE_GATES_PATH, permission: LICENSE_GATES_READ_PERMISSION },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

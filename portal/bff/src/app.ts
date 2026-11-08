@@ -227,6 +227,44 @@ import { createSharingReportRoute } from "./routes/sharing-report.js";
 import { createSharingPermissionsRoute } from "./routes/sharing-permissions.js";
 import { createExternalUsersRoutes } from "./routes/sharing-external-users.js";
 import { createSharingLinksRemoveRoutes } from "./routes/sharing-links-remove.js";
+// EPIC-031 Secure Score (T-0861).
+import {
+  SECURE_SCORE_SNAPSHOT_COMMAND,
+  SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
+  SECURE_SCORE_SNAPSHOT_TIMER,
+  createSecureScoreProviders,
+  createSecureScoreSnapshotCommand,
+} from "./adapters/secure-score.js";
+import {
+  createSecureScoreRoutes,
+  type ProviderSecureScoreAction,
+} from "./routes/secure-score.js";
+import { createSecureScoreFleetRoutes } from "./routes/secure-score-fleet.js";
+import { createSecureScorePeersRoutes } from "./routes/secure-score-peers.js";
+import { createSecureScoreTrendRoutes } from "./routes/secure-score-trend.js";
+import { SqliteSecureScoreRepository } from "./repository/secure-score.js";
+import { persistResolvedMapping, resolveFixTarget } from "./domain/secure-score/mapping.js";
+import { SYSTEM_TIMERS } from "./scheduler/system-timers.js";
+// EPIC-032 Audit Logs & Webhooks (T-0862).
+import { createAuditProviders } from "./adapters/audit-logs.js";
+import {
+  createAuditSearchRoutes as createAuditLogSearchRoutes,
+} from "./routes/audit-search.js";
+import {
+  createAuditSearchRoutes as createSavedAuditSearchRoutes,
+} from "./routes/audit-searches.js";
+import { createAuditCoverageRoutes } from "./routes/audit-coverage.js";
+import { createAuditExclusionWindowRoutes } from "./routes/audit-exclusion-windows.js";
+import { createWebhooksRoutes } from "./routes/webhooks.js";
+import { SqliteAuditRepository } from "@m365-assess/db";
+// EPIC-033 Licensing (T-0863).
+import { createLicensingProviders } from "./adapters/licensing.js";
+import { createLicensesRoute } from "./routes/licenses.js";
+import { createLicenseAssignRoutes } from "./routes/license-assign.js";
+import { createLicenseOptimizationRoute } from "./routes/licenses-optimization.js";
+import { createLicensePricingRoutes } from "./routes/license-pricing.js";
+import { createLicenseGatesRoutes } from "./routes/license-gates.js";
+import { SqliteLicensingRepository } from "@m365-assess/db";
 // EPIC-019 Defender & Vulnerabilities (T-0849).
 import { createDefenderProviders } from "./adapters/defender.js";
 import { CveExceptionRepository } from "./repository/cve-exceptions.js";
@@ -675,6 +713,37 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       correlationId: event.correlationId,
     });
 
+  // EPIC-031 Secure Score (T-0861). The current read, peers, trend, and fleet routes
+  // run the Get-SecureScore worker (or the snapshot repository); the daily snapshot
+  // timer records one trend point per tenant and prunes the retention window.
+  // Improvement actions resolve through the shipped registry mapping (T-0603).
+  const secureScoreRepo = new SqliteSecureScoreRepository(db, schemaVersion);
+  const secureScore = createSecureScoreProviders(run, credentialRows);
+  const secureScoreMapping = {
+    resolve: (action: ProviderSecureScoreAction) =>
+      resolveFixTarget({ actionId: action.id, name: action.title }),
+    persist: async (target: Parameters<typeof persistResolvedMapping>[1], ctx: RequestContext) => {
+      await persistResolvedMapping(secureScoreRepo, target, { by: actorOf(ctx), source: "request" });
+    },
+  };
+
+  // EPIC-032 Audit Logs & Webhooks (T-0862). Searches, coverage, and directory
+  // audits run their Graph/Purview workers; saved searches, coverage cache, and
+  // exclusion windows persist through the audit repository (migration 0040).
+  // Webhook lifecycle calls manage-webhooks.ps1 and mirrors each result into the
+  // repository so delete/update survive (migration 0129).
+  const auditRepo = new SqliteAuditRepository(db, schemaVersion);
+  const audit = createAuditProviders(run, credentialRows, { webhookStore: auditRepo });
+  const webhookNotificationUrl = `${config.workerBaseUrl}/v1/webhooks/notify`;
+
+  // EPIC-033 Licensing (T-0863). Consumption, optimization, gates, and per-user
+  // changes run their Graph workers; pricing and the append-only LicenseChange
+  // rows persist through the licensing repository (migration 0056).
+  const licensingRepo = new SqliteLicensingRepository(db, schemaVersion);
+  const licensing = createLicensingProviders(run, credentialRows, {
+    listLicensePricing: (tenantId: string) => licensingRepo.listLicensePricing(tenantId),
+  });
+
   const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
     assessment: createSupervisorRunner({
       workerScriptPath: path.join(config.workersDir, RUN_WORKER),
@@ -755,6 +824,12 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           ports: createCleanupPorts(db, config.artifactPath),
           storageRoot: config.artifactPath,
         }),
+        [SECURE_SCORE_SNAPSHOT_COMMAND]: createSecureScoreSnapshotCommand({
+          tenants: tenantStore,
+          provider: secureScore.secureScore,
+          store: secureScoreRepo,
+          retentionDays: SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
+        }),
       },
     }),
   };
@@ -820,6 +895,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     isRunning: (scheduleId) => scheduleJobState.isRunning(scheduleId),
     lastFinishedJob: (scheduleId) => scheduleJobState.lastFinishedJob(scheduleId),
     systemTimerState: (name) => systemTimerState.get(name),
+    // The registry is code-deployed; EPIC-031 adds its daily snapshot timer here.
+    systemTimers: [...SYSTEM_TIMERS, SECURE_SCORE_SNAPSHOT_TIMER],
     ...(options.schedulerIntervalMs !== undefined ? { intervalMs: options.schedulerIntervalMs } : {}),
   });
   scheduler.start();
@@ -903,6 +980,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // link removal runs the Remove-SharingLinks worker per link and persists its
   // LinkRemovalJob through the shared repository (migration 0035).
   const sharing = createSharingProviders(run, credentialRows);
+
+
 
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
@@ -1415,6 +1494,112 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       resolveCaller,
       authorize: authorizeCaller,
       recordAudit: (event) => recordAudit({ ...event }),
+    }),
+
+    // EPIC-031 Secure Score (T-0861). The factories existed but were never mounted
+    // and no adapter bound them, so every §6 endpoint 404'd. Reads run the
+    // Get-SecureScore worker; the trend/snapshot routes persist portal-local
+    // snapshots; actions resolve through the registry mapping and are persisted as
+    // the action→check mapping rows. The fleet route filters to caller scope.
+    ...createSecureScoreRoutes({
+      provider: secureScore.secureScore,
+      resolveCaller,
+      authorize: authorizeCaller,
+      mapping: secureScoreMapping,
+    }),
+    ...createSecureScorePeersRoutes({
+      provider: secureScore.peers,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createSecureScoreTrendRoutes({
+      provider: secureScore.secureScore,
+      store: secureScoreRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      retentionDays: SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
+    }),
+    ...createSecureScoreFleetRoutes({
+      repository: secureScoreRepo,
+      tenants: {
+        listTenantIds: async () =>
+          (await tenantStore.listTenants()).map((tenant) => tenant.id),
+      },
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-032 Audit Logs & Webhooks (T-0862). The factories existed but were
+    // never mounted and no adapter bound them, so every §6 endpoint 404'd.
+    // Searches and coverage run their workers; saved searches and windows persist
+    // through the audit repository; webhook writes run manage-webhooks.ps1 with a
+    // configured notification URL (so create no longer answers 501).
+    ...createAuditLogSearchRoutes({
+      provider: audit.search,
+      audit: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createSavedAuditSearchRoutes({
+      store: auditRepo,
+      schedules: scheduleStore,
+      search: audit.savedSearch,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createAuditCoverageRoutes({
+      provider: audit.coverage,
+      store: auditRepo,
+      findings: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createAuditExclusionWindowRoutes({
+      store: auditRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createWebhooksRoutes({
+      provider: audit.webhooks,
+      resolveCaller,
+      authorize: authorizeCaller,
+      notificationUrl: webhookNotificationUrl,
+      readBody,
+    }),
+
+    // EPIC-033 Licensing (T-0863). The factories existed but were never mounted
+    // and no adapter bound them, so every §6 endpoint 404'd. Consumption,
+    // optimization, gates, and per-user changes run their Graph workers; pricing
+    // and LicenseChange rows persist through the licensing repository.
+    createLicensesRoute({
+      provider: licensing.licenses,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createLicenseAssignRoutes({
+      provider: licensing.licenseChanges,
+      resolveCaller,
+      authorize: (assignCaller, permission) =>
+        canAccess(assignCaller as RequestCaller, permission),
+      recordChange: async (change) => {
+        await licensingRepo.appendLicenseChange(change);
+      },
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    createLicenseOptimizationRoute({
+      provider: licensing.optimization,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createLicensePricingRoutes({
+      repository: licensingRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createLicenseGatesRoutes({
+      provider: licensing.gates,
+      resolveCaller,
+      authorize: authorizeCaller,
     }),
 
     // EPIC-015 Conditional Access (T-0819).

@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ManualSearchPage from "../../app/audit-logs/manual/page";
+import SavedSearchesPage from "../../app/audit-logs/searches/page";
 import { ManualSearchForm } from "./ManualSearchForm";
 import { SavedSearchesTable, formatAuditSearchFilters } from "./SavedSearchesTable";
 import {
@@ -425,5 +426,38 @@ describe("auditApi", () => {
 
   it("exposes the §3.1 workloads", () => {
     expect(AUDIT_SEARCH_WORKLOADS).toEqual(["Exchange", "SharePoint", "OneDrive", "Directory", "SignIn"]);
+  });
+});
+
+// ─── SavedSearchesPage (T-0862) ─────────────────────────────────────────────
+
+describe("SavedSearchesPage", () => {
+  it("loads and renders the tenant's saved searches", async () => {
+    const fetcher = vi.fn(async (url: string): Promise<Response> => {
+      if (url === "/v1/tenants/contoso/audit/searches") {
+        return jsonResponse({ items: [savedSearch()] });
+      }
+      return jsonResponse({});
+    });
+
+    render(<SavedSearchesPage fetcher={fetcher as unknown as typeof fetch} />);
+    fireEvent.change(screen.getByTestId("saved-searches-tenant-input"), {
+      target: { value: "contoso" },
+    });
+
+    await waitFor(() => expect(screen.getByTestId("saved-search-row-s1")).toBeTruthy());
+    expect(screen.getByTestId("saved-search-name-s1").textContent).toBe("New admins");
+    expect(fetcher).toHaveBeenCalledWith("/v1/tenants/contoso/audit/searches");
+  });
+
+  it("surfaces a load error", async () => {
+    const fetcher = vi.fn(async (): Promise<Response> => new Response("boom", { status: 500 }));
+
+    render(<SavedSearchesPage fetcher={fetcher as unknown as typeof fetch} />);
+    fireEvent.change(screen.getByTestId("saved-searches-tenant-input"), {
+      target: { value: "contoso" },
+    });
+
+    await waitFor(() => expect(screen.getByTestId("saved-searches-error")).toBeTruthy());
   });
 });

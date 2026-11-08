@@ -1358,6 +1358,64 @@ paths:
       x-permission: Identity.Role.ReadWrite
       security:
         - bearerAuth: []
+  /license-pricing:
+    get:
+      operationId: getLicensePricing
+      summary: List effective license pricing (tenant override else global)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Tenant whose effective pricing to list; omit for the global rows.
+      responses:
+        "200":
+          description: Effective pricing rows; a SKU with no pricing is absent, never a zero.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the licensing read permission.
+      x-permission: Tenant.Licensing.Read
+    put:
+      operationId: putLicensePricing
+      summary: Upsert a license price (global default or per-tenant override)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - skuId
+                - unitPrice
+                - currency
+              properties:
+                skuId:
+                  type: string
+                skuPartNumber:
+                  type: string
+                unitPrice:
+                  type: number
+                  minimum: 0
+                currency:
+                  type: string
+                tenantId:
+                  type: string
+      responses:
+        "200":
+          description: The upserted pricing row.
+        "400":
+          description: Invalid pricing body.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.ReadWrite
   /me:
     get:
       operationId: getCurrentCaller
@@ -2108,6 +2166,20 @@ paths:
       x-permission: CIPP.Scripts.ReadWrite
       security:
         - bearerAuth: []
+  /secure-score/fleet:
+    get:
+      operationId: getSecureScoreFleet
+      summary: Latest Secure Score per visible tenant, with a short trend series for sparklines
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The latest snapshot per tenant in the caller's scope; tenants with no snapshot are reported with hasSnapshot false.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.SecureScore.Read permission.
+      x-permission: Security.SecureScore.Read
   /standards/alignment:
     get:
       operationId: getStandardsAlignment
@@ -2651,6 +2723,338 @@ paths:
       x-permission: Endpoint.Application.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/audit/coverage:
+    get:
+      operationId: getAuditCoverage
+      summary: Report a tenant's audit search coverage
+      description: "Computes coverage live (SPEC §11.3): the worker reads the tenant's audit configuration at request time and the route caches the result through the T-0621 AuditCoverage repository. Gaps reference the COMPLIANCE-AUDIT-001 finding from the run results and link to the EPIC-006 remediation."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's audit coverage.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditCoverage"
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.Read or the tenant is out of scope.
+      x-permission: Security.Audit.Read
+  /tenants/{tenantId}/audit/directory:
+    get:
+      operationId: listAuditDirectory
+      summary: List directory audits with category and date filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: endDate
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: top
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Directory audit entries (SPEC §3.4 columns), newest first.
+        "400":
+          description: A filter is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.Read or the tenant is out of scope.
+      x-permission: Security.Audit.Read
+  /tenants/{tenantId}/audit/exclusion-windows:
+    get:
+      operationId: listAuditExclusionWindows
+      summary: List a tenant's audit exclusion windows as active/upcoming/expired
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's exclusion windows with display status.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.Read or the tenant is out of scope.
+      x-permission: Security.Audit.Read
+    post:
+      operationId: createAuditExclusionWindow
+      summary: Create a portal-only exclusion window during which scheduled searches are skipped
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditExclusionWindowCreate"
+      responses:
+        "201":
+          description: The created exclusion window.
+        "400":
+          description: startsAt or endsAt is missing or invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.ReadWrite or the tenant is out of scope.
+      x-permission: Security.Audit.ReadWrite
+  /tenants/{tenantId}/audit/search:
+    post:
+      operationId: searchAuditLog
+      summary: Run a manual audit-log search with per-workload routing
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Normalised audit records (SPEC §3.1 columns), or CSV when format is csv.
+        "400":
+          description: The scoped search filters are invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.AuditSearch.ReadWrite or the tenant is out of scope.
+      x-permission: Security.AuditSearch.ReadWrite
+  /tenants/{tenantId}/audit/searches:
+    get:
+      operationId: listAuditSearches
+      summary: List saved audit-log searches for a tenant
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's saved searches.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.Read or the tenant is out of scope.
+      x-permission: Security.Audit.Read
+    post:
+      operationId: createAuditSearch
+      summary: Save an audit-log search with a §3.1 filter
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditSearchCreate"
+      responses:
+        "201":
+          description: The created saved search.
+        "400":
+          description: The filter or name is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.ReadWrite or the tenant is out of scope.
+      x-permission: Security.Audit.ReadWrite
+  /tenants/{tenantId}/audit/searches/{searchId}:
+    get:
+      operationId: getAuditSearch
+      summary: Saved search detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: searchId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The saved search.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.Read or the tenant is out of scope.
+        "404":
+          description: Saved search not found.
+      x-permission: Security.Audit.Read
+    patch:
+      operationId: updateAuditSearch
+      summary: Edit a saved search's name or filter
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: searchId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditSearchUpdate"
+      responses:
+        "200":
+          description: The updated saved search.
+        "400":
+          description: The filter or name is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Saved search not found.
+      x-permission: Security.Audit.ReadWrite
+    delete:
+      operationId: deleteAuditSearch
+      summary: Soft-delete a saved search
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: searchId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Soft-deleted; no body.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Saved search not found.
+      x-permission: Security.Audit.ReadWrite
+  /tenants/{tenantId}/audit/searches/{searchId}/run:
+    post:
+      operationId: runAuditSearch
+      summary: Re-dispatch the T-0622 search job and stamp lastRunAt
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: searchId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "202":
+          description: The enqueued search job and the updated saved search.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.AuditSearch.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Saved search not found.
+      x-permission: Security.AuditSearch.ReadWrite
+  /tenants/{tenantId}/audit/searches/{searchId}/schedule:
+    post:
+      operationId: scheduleAuditSearch
+      summary: Create or update the EPIC-007 schedule for a saved search
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: searchId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AuditSearchSchedule"
+      responses:
+        "200":
+          description: The updated saved search and its schedule.
+        "400":
+          description: The cron expression is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Security.Audit.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Saved search or the referenced schedule was not found.
+      x-permission: Security.Audit.ReadWrite
   /tenants/{tenantId}/auth-methods-policy:
     get:
       operationId: getTenantsTenantIdAuthMethodsPolicy
@@ -3769,6 +4173,181 @@ paths:
       x-permission: Identity.Role.Read
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/licenses:
+    get:
+      operationId: getLicenses
+      summary: License consumption per SKU with utilization and cost
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Per-SKU license consumption with utilization and monthly cost.
+        "400":
+          description: A path parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Tenant.Licenses.Read permission or tenant is out of scope.
+      x-permission: Tenant.Licenses.Read
+  /tenants/{tenantId}/licenses/assign:
+    post:
+      tags:
+        - Licensing
+      operationId: assignUserLicenses
+      summary: Assign a SKU to one or many users; dry run returns the plan preview.
+      security:
+        - bearerAuth: []
+      parameters:
+        - &a1
+          name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - &a2
+          name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            maxLength: 256
+          description: Required. A repeated key replays the prior outcome.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &a3
+              type: object
+              additionalProperties: false
+              required:
+                - skuId
+              properties:
+                skuId:
+                  type: string
+                  description: The SKU to assign or remove.
+                userIds:
+                  type: array
+                  items:
+                    type: string
+                  description: Target users (up to 500). A single 'userId' is also accepted.
+                userId:
+                  type: string
+                  description: Single target user; convenience for a one-row change.
+                dryRun:
+                  type: boolean
+                  description: Returns the before/after plan preview and writes nothing. Defaults to true.
+                confirm:
+                  type: boolean
+                  description: Required for a non-dry-run write (EPIC-006 apply).
+                confirmPlan:
+                  type: string
+                  description: "Required for a removal: the planHash returned by the preview."
+                continueOnFailure:
+                  type: boolean
+                  description: Continue past a failed row instead of stopping the batch. Defaults to false.
+                reason:
+                  type: string
+                  description: Caller-supplied reason recorded on the audit event.
+      responses:
+        "200":
+          description: The plan preview (dry run) or the per-row results (applied).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseChangeOutcome"
+        "400": &a4
+          description: Missing Idempotency-Key, confirmation, plan preview, or invalid body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401": &a5
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403": &a6
+          description: Forbidden or tenant out of scope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      x-permission: Tenant.Licenses.ReadWrite
+  /tenants/{tenantId}/licenses/gates:
+    get:
+      operationId: getTenantsTenantIdLicensesGates
+      summary: GET /tenants/{tenantId}/licenses/gates
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Licenses.Read
+      security:
+        - bearerAuth: []
+  /tenants/{tenantId}/licenses/optimization:
+    get:
+      operationId: getLicenseOptimization
+      summary: Advisory unused, overused, and expiring licence findings with affected users
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: inactivityDays
+          in: query
+          required: false
+          description: Days without activity before an assigned licence is unused. Defaults to 30.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 3650
+            default: 30
+      responses:
+        "200":
+          description: Grouped unused, overused, and expiring licences with affected users.
+        "400":
+          description: A path or query parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Tenant.Licenses.Read permission or tenant is out of scope.
+      x-permission: Tenant.Licenses.Read
+  /tenants/{tenantId}/licenses/remove:
+    post:
+      tags:
+        - Licensing
+      operationId: removeUserLicenses
+      summary: Remove a SKU from one or many users; requires the plan preview and confirmation.
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a1
+        - *a2
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *a3
+      responses:
+        "200":
+          description: The plan preview (dry run) or the per-row results (applied).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LicenseChangeOutcome"
+        "400": *a4
+        "401": *a5
+        "403": *a6
+      x-permission: Tenant.Licenses.ReadWrite
   /tenants/{tenantId}/mail/encryption:
     get:
       operationId: getMessageEncryption
@@ -4559,6 +5138,94 @@ paths:
       x-permission: Purview.Compliance.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/secure-score:
+    get:
+      operationId: getSecureScore
+      summary: Latest Secure Score (current/max/percentage), category split, and improvement actions
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's current Secure Score, category split, and improvement actions with points achieved/available and impact.
+        "400":
+          description: A path parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.
+      x-permission: Security.SecureScore.Read
+  /tenants/{tenantId}/secure-score/peers:
+    get:
+      operationId: getSecureScorePeers
+      summary: Peer comparison benchmarks from Graph secureScores, when Microsoft provides them
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Peer comparison benchmarks; available is false with no comparisons when Microsoft returns none.
+        "400":
+          description: A path parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.
+      x-permission: Security.SecureScore.Read
+  /tenants/{tenantId}/secure-score/snapshot:
+    post:
+      operationId: recordSecureScoreSnapshot
+      summary: Record a Secure Score snapshot on demand
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: The recorded snapshot and the pruned-row count.
+        "400":
+          description: A path parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.
+      x-permission: Security.SecureScore.Read
+  /tenants/{tenantId}/secure-score/trend:
+    get:
+      operationId: getSecureScoreTrend
+      summary: A tenant's Secure Score snapshots in time order
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's snapshots, oldest first.
+        "400":
+          description: A path parameter is invalid.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks the Security.SecureScore.Read permission or the tenant is out of scope.
+      x-permission: Security.SecureScore.Read
   /tenants/{tenantId}/sharepoint/recyclebin:
     get:
       operationId: getTenantsTenantIdSharepointRecyclebin
@@ -5773,6 +6440,164 @@ paths:
       x-permission: Mailboxes.Vacation.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/webhooks:
+    get:
+      operationId: listWebhookSubscriptions
+      summary: List the tenant's Graph webhook subscriptions with computed state
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's subscriptions with active/expiring/expired state.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.ReadWrite
+    post:
+      operationId: createWebhookSubscription
+      summary: Subscribe to Graph change notifications for a required resource
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - resource
+              properties:
+                resource:
+                  type: string
+                  enum:
+                    - users
+                    - groups
+                    - policies
+      responses:
+        "200":
+          description: The created subscription and its audit event.
+        "400":
+          description: The body is invalid or names an unsupported resource.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+        "501":
+          description: The webhook notification URL is not configured.
+      x-permission: CIPP.Admin.ReadWrite
+  /tenants/{tenantId}/webhooks/{subscriptionId}:
+    delete:
+      operationId: deleteWebhookSubscription
+      summary: Delete a Graph webhook subscription
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The deleted subscription id and its audit event.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.ReadWrite
+  /tenants/{tenantId}/webhooks/{subscriptionId}/recreate:
+    post:
+      operationId: recreateWebhookSubscription
+      summary: Replace a subscription with a fresh one for the same resource
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The recreated subscription and its audit event.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.ReadWrite
+  /tenants/{tenantId}/webhooks/{subscriptionId}/renew:
+    post:
+      operationId: renewWebhookSubscription
+      summary: Renew a subscription's expiration before it expires
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The renewed subscription, or success=false with the renewal-failure alert.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.ReadWrite
+  /tenants/{tenantId}/webhooks/{subscriptionId}/test:
+    post:
+      operationId: testWebhookSubscription
+      summary: Check a subscription exists and is not expired
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: subscriptionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The subscription with a healthy flag.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope.
+      x-permission: CIPP.Admin.ReadWrite
   /transport-rule-templates:
     get:
       operationId: listTransportRuleTemplates
@@ -6245,6 +7070,211 @@ components:
           type: string
         updatedAt:
           type: string
+    AuditSearchFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        startDate:
+          type: string
+        endDate:
+          type: string
+        user:
+          type: string
+        activity:
+          type: string
+        workload:
+          type: string
+        ip:
+          type: string
+    AuditSearch:
+      type: object
+      required:
+        - id
+        - tenantId
+        - name
+        - filters
+        - saved
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        name:
+          type: string
+        filters:
+          $ref: "#/components/schemas/AuditSearchFilters"
+        saved:
+          type: boolean
+        scheduleId:
+          type:
+            - string
+            - "null"
+        lastRunAt:
+          type:
+            - string
+            - "null"
+        createdBy:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        deletedAt:
+          type:
+            - string
+            - "null"
+    AuditSearchCreate:
+      type: object
+      required:
+        - name
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        filters:
+          $ref: "#/components/schemas/AuditSearchFilters"
+    AuditSearchUpdate:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        filters:
+          $ref: "#/components/schemas/AuditSearchFilters"
+    AuditSearchSchedule:
+      type: object
+      required:
+        - cron
+      additionalProperties: false
+      properties:
+        cron:
+          type: string
+        timezone:
+          type: string
+        scheduleId:
+          type: string
+    AuditCoverage:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - auditEnabled
+        - lastSearchAt
+        - gaps
+      properties:
+        tenantId:
+          type: string
+        auditEnabled:
+          type: boolean
+          description: Whether unified audit log ingestion is enabled for the tenant.
+        lastSearchAt:
+          type:
+            - string
+            - "null"
+          description: Newest saved-search run instant, or null when the tenant has no search history.
+        gaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditCoverageGap"
+    AuditCoverageGap:
+      type: object
+      additionalProperties: false
+      required:
+        - checkId
+        - title
+        - description
+        - remediation
+        - findingId
+        - runId
+      properties:
+        checkId:
+          type: string
+          description: The check the gap ties to, e.g. COMPLIANCE-AUDIT-001.
+        title:
+          type: string
+        description:
+          type: string
+        remediation:
+          type: string
+          description: EPIC-006 audit-enablement remediation prose.
+        findingId:
+          type:
+            - string
+            - "null"
+          description: The run-results finding the gap references, when one exists.
+        runId:
+          type:
+            - string
+            - "null"
+          description: The run that produced the finding.
+    AuditExclusionWindow:
+      type: object
+      required:
+        - id
+        - tenantId
+        - startsAt
+        - endsAt
+      properties:
+        id:
+          type: string
+        tenantId:
+          type: string
+        startsAt:
+          type: string
+        endsAt:
+          type: string
+        reason:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+        deletedAt:
+          type:
+            - string
+            - "null"
+    AuditExclusionWindowCreate:
+      type: object
+      required:
+        - startsAt
+        - endsAt
+      additionalProperties: false
+      properties:
+        startsAt:
+          type: string
+        endsAt:
+          type: string
+        reason:
+          type: string
+    LicensePricing:
+      type: object
+      additionalProperties: false
+      required:
+        - skuId
+        - unitPrice
+        - currency
+        - updatedAt
+      properties:
+        skuId:
+          type: string
+        tenantId:
+          type:
+            - string
+            - "null"
+        skuPartNumber:
+          type:
+            - string
+            - "null"
+        unitPrice:
+          type: number
+        currency:
+          type: string
+        updatedAt:
+          type: string
   responses:
     Error:
       description: Structured error response.
@@ -6252,4 +7282,3 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
-

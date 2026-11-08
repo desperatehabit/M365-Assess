@@ -1,20 +1,35 @@
 # Handoff — M365-Assess portal
 
-_Last updated: 2026-11-07, after commits `90923bca`, `b1fb719a`, and `97cb0a64`._
+_Last updated: 2026-11-08, after the EPIC-031/032/033 mount batch._
 
 ## State
 
-- Branch: `main`, working tree clean.
-- `90923bca` — mounted EPIC-024 Email Tools routes and delivered the Message Viewer (T-0854).
-- `b1fb719a` — mounted EPIC-026 Teams & Voice routes and the linked team pages (T-0856).
-- `97cb0a64` — mounted EPIC-027 Sharing & Permissions routes (T-0857).
-- Tickets **T-0854**, **T-0856**, and **T-0857** are `fixed-unverified`; `TICKETS.md`
-  reflects the new counts (open 17, fixed-unverified 21).
+- Branch: `main`.
+- T-0861 mounted EPIC-031 Secure Score: the current/peers/trend/fleet routes run
+  `get-secure-score.ps1`, improvement actions resolve through the registry mapping
+  (and persist as `ScoreActionMapping` rows), and a daily `secure-score-snapshot`
+  maintenance timer records one trend point per tenant and prunes retention.
+- T-0862 mounted EPIC-032 Audit Logs & Webhooks: search/directory/coverage run
+  `search-audit.ps1` / `get-audit-coverage.ps1`; saved searches and exclusion
+  windows persist through the audit repository; webhooks run `manage-webhooks.ps1`
+  with the configured notification URL; migration 0129 adds webhook soft delete and
+  the repository gains update/soft-delete. The Saved Log Searches page now exists
+  under `web/src/app/audit-logs/searches/`.
+- T-0863 mounted EPIC-033 Licensing: consumption/optimization/gates/per-user changes
+  run their Graph workers; pricing and `LicenseChange` rows persist through
+  `SqliteLicensingRepository`. The missing `get-license-optimization.ps1` and
+  `get-license-gates.ps1` entrypoints now exist with Pester tests.
+- Tickets **T-0861**, **T-0862**, and **T-0863** are `fixed-unverified`;
+  `TICKETS.md` reflects the new counts (open 14, fixed-unverified 24).
 - Full portal test suites are green:
-  - BFF: `359 files / 4154 tests`
-  - Web: `154 files / 1322 tests`
-  - DB: `44 files / 302 tests`
+  - BFF: `365 files / 4202 tests`
+  - Web: `154 files / 1324 tests`
+  - DB: `44 files / 303 tests`
   - `npm run typecheck` at `portal/` is clean.
+- The EPIC-032 notification receiver (`POST /v1/webhooks/notify`) is deliberately
+  **not mounted**: the repository does not yet store the subscription
+  `clientState` it validates, and content-bundle handling is deferred by SPEC §11.2.
+
 
 ## Verification commands
 
@@ -28,13 +43,10 @@ npm test --workspace @m365-assess/web
 
 ## Next issues up to bat
 
-Register order (severity, then id) after T-0857:
+Register order (severity, then id) after T-0863:
 
 | Ticket | Sev | Title |
 |---|---|---|
-| T-0861 | medium | Mount and deliver EPIC-031 Secure Score routes |
-| T-0862 | medium | Mount and deliver EPIC-032 Audit Logs & Webhooks routes |
-| T-0863 | medium | Mount and deliver EPIC-033 Licensing routes and workers |
 | T-0864 | medium | Mount and deliver EPIC-034 Domains & DNS routes and worker |
 | T-0866 | medium | Mount EPIC-036 Compliance Test Packs and Custom Tests routes |
 | T-0867 | medium | Mount EPIC-037 Settings, Branding & Preferences routes |
@@ -50,7 +62,7 @@ Register order (severity, then id) after T-0857:
 | T-0853 | low | Mount EPIC-023 Contacts & Resources routes |
 | T-0865 | low | Mount EPIC-035 Backup routes and invoke retention/replication |
 
-**Recommended next batch:** T-0861, T-0862, T-0863 (same “mount and deliver”
+**Recommended next batch:** T-0864, T-0866, T-0867 (same “mount and deliver”
 pattern, contiguous in the register). T-0874/T-0877/T-0878 are small targeted
 fixes and good fill-ins between larger mounts.
 

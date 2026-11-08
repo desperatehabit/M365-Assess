@@ -65,6 +65,22 @@ import { SHARING_REPORT_OPENAPI } from "./sharing-report.js";
 import { SHARING_PERMISSIONS_OPENAPI } from "./sharing-permissions.js";
 import { SHARING_EXTERNAL_USERS_OPENAPI } from "./sharing-external-users.js";
 import { SHARING_LINKS_REMOVE_OPENAPI } from "./sharing-links-remove.js";
+// EPIC-031 Secure Score (T-0861).
+import { SECURE_SCORE_OPENAPI } from "./secure-score.js";
+import { SECURE_SCORE_FLEET_OPENAPI } from "./secure-score-fleet.js";
+import { SECURE_SCORE_PEERS_OPENAPI } from "./secure-score-peers.js";
+import { SECURE_SCORE_TREND_OPENAPI } from "./secure-score-trend.js";
+// EPIC-032 Audit Logs & Webhooks (T-0862).
+import { AUDIT_SEARCH_OPENAPI } from "./audit-search.js";
+import { AUDIT_SEARCHES_OPENAPI } from "./audit-searches.js";
+import { AUDIT_COVERAGE_OPENAPI } from "./audit-coverage.js";
+import { AUDIT_EXCLUSION_WINDOWS_OPENAPI } from "./audit-exclusion-windows.js";
+import { WEBHOOKS_OPENAPI } from "./webhooks.js";
+// EPIC-033 Licensing (T-0863).
+import { LICENSES_OPENAPI } from "./licenses.js";
+import { LICENSE_ASSIGN_OPENAPI } from "./license-assign.js";
+import { LICENSE_OPTIMIZATION_OPENAPI } from "./licenses-optimization.js";
+import { LICENSE_PRICING_OPENAPI } from "./license-pricing.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -167,6 +183,22 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   SHARING_PERMISSIONS_OPENAPI as unknown as OpenApiFragment,
   SHARING_EXTERNAL_USERS_OPENAPI as unknown as OpenApiFragment,
   SHARING_LINKS_REMOVE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-031 Secure Score (T-0861).
+  SECURE_SCORE_OPENAPI as unknown as OpenApiFragment,
+  SECURE_SCORE_FLEET_OPENAPI as unknown as OpenApiFragment,
+  SECURE_SCORE_PEERS_OPENAPI as unknown as OpenApiFragment,
+  SECURE_SCORE_TREND_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-032 Audit Logs & Webhooks (T-0862).
+  AUDIT_SEARCH_OPENAPI as unknown as OpenApiFragment,
+  AUDIT_SEARCHES_OPENAPI as unknown as OpenApiFragment,
+  AUDIT_COVERAGE_OPENAPI as unknown as OpenApiFragment,
+  AUDIT_EXCLUSION_WINDOWS_OPENAPI as unknown as OpenApiFragment,
+  WEBHOOKS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-033 Licensing (T-0863).
+  LICENSES_OPENAPI as unknown as OpenApiFragment,
+  LICENSE_ASSIGN_OPENAPI as unknown as OpenApiFragment,
+  LICENSE_OPTIMIZATION_OPENAPI as unknown as OpenApiFragment,
+  LICENSE_PRICING_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

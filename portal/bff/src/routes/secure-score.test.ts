@@ -204,6 +204,50 @@ describe("secure score routes (T-0602)", () => {
     expect(action?.standardKey).toBeNull();
   });
 
+  it("resolves improvement actions through the supplied mapping", async () => {
+    const { provider } = route();
+    const persisted: string[] = [];
+    const routes = createSecureScoreRoutes({
+      provider,
+      resolveCaller: () => ({
+        tenantScope: tenantScope([TENANT]),
+        permissions: [SECURE_SCORE_READ_PERMISSION],
+      }),
+      mapping: {
+        resolve: (action) =>
+          action.id === "MFARegistrationV2"
+            ? {
+                kind: "mapped",
+                actionId: action.id,
+                check: "identity-mfa-enabled",
+                standardKey: "cisa-scuba",
+                source: "derived",
+              }
+            : { kind: "unmapped", actionId: action.id, reason: "no-automated-remediation" },
+        persist: async (target, ctx) => {
+          persisted.push(`${target.kind}:${ctx.params["tenantId"] ?? ""}`);
+        },
+      },
+    });
+
+    const response = await routes[0]?.handler({
+      method: "GET",
+      path: `/v1/tenants/${TENANT}/secure-score`,
+      params: { tenantId: TENANT },
+      query: new URLSearchParams(),
+      headers: {},
+    });
+
+    const body = response?.body as SecureScore;
+    const action = body.actions.find((entry) => entry.id === "MFARegistrationV2");
+    expect(action?.check).toBe("identity-mfa-enabled");
+    expect(action?.standardKey).toBe("cisa-scuba");
+    const unknown = body.actions.find((entry) => entry.id === "DataClassification");
+    expect(unknown?.check).toBeNull();
+    expect(unknown?.standardKey).toBeNull();
+    expect(persisted).toEqual([`mapped:${TENANT}`]);
+  });
+
   it("publishes the Security.SecureScore.Read permission through the route module", () => {
     const entry = SECURE_SCORE_OPENAPI.paths["/tenants/{tenantId}/secure-score"];
     expect(entry.get.permission).toBe("Security.SecureScore.Read");

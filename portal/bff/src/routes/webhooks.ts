@@ -18,7 +18,7 @@ export const WEBHOOKS_RENEW_PATH = "/v1/tenants/:tenantId/webhooks/:subscription
 export const WEBHOOKS_RECREATE_PATH = "/v1/tenants/:tenantId/webhooks/:subscriptionId/recreate";
 export const WEBHOOKS_TEST_PATH = "/v1/tenants/:tenantId/webhooks/:subscriptionId/test";
 
-export const WEBHOOKS_ADMIN_SCOPE = "CIPP.Admin.*";
+export const WEBHOOKS_ADMIN_SCOPE = "CIPP.Admin.ReadWrite";
 
 export const WEBHOOKS_UNAUTHENTICATED = "request.unauthenticated";
 export const WEBHOOKS_FORBIDDEN = "auth.forbidden";

@@ -106,6 +106,18 @@ export interface AuditRepository {
     from: string,
     to: string,
   ): Promise<WebhookSubscription[]>;
+  /** Applies a renewal/recreate result to the stored row (T-0862). */
+  updateWebhookSubscription(
+    tenantId: string,
+    subscriptionId: string,
+    update: WebhookSubscriptionUpdate,
+  ): Promise<WebhookSubscription | undefined>;
+  /** Soft-deletes a subscription; reads exclude rows with `deletedAt` set. */
+  softDeleteWebhookSubscription(
+    tenantId: string,
+    subscriptionId: string,
+    options?: { now?: string },
+  ): Promise<boolean>;
 
   createAuditExclusionWindow(input: AuditExclusionWindowInput): Promise<AuditExclusionWindow>;
   getAuditExclusionWindow(
@@ -128,6 +140,11 @@ export interface AuditRepository {
     options?: { now?: string },
   ): Promise<boolean>;
 }
+
+/** The mutable webhook subscription fields the renewal lifecycle updates. */
+export type WebhookSubscriptionUpdate = Partial<
+  Pick<WebhookSubscription, "resource" | "expiresOn" | "state" | "notificationUrl">
+>;
 
 function snapshot(value: unknown): Record<string, unknown> | null {
   return value === null || value === undefined
@@ -453,7 +470,9 @@ export class SqliteAuditRepository implements AuditRepository {
     subscriptionId: string,
   ): Promise<WebhookSubscription | undefined> {
     const row = this.db
-      .prepare("SELECT * FROM webhook_subscriptions WHERE id = ? AND tenantId = ?")
+      .prepare(
+        "SELECT * FROM webhook_subscriptions WHERE id = ? AND tenantId = ? AND deletedAt IS NULL",
+      )
       .get(subscriptionId, tenantId) as Row | undefined;
     return row ? this.mapSubscription(row) : undefined;
   }
@@ -461,7 +480,9 @@ export class SqliteAuditRepository implements AuditRepository {
   async listWebhookSubscriptions(tenantId: string): Promise<WebhookSubscription[]> {
     return (
       this.db
-        .prepare("SELECT * FROM webhook_subscriptions WHERE tenantId = ? ORDER BY createdAt, id")
+        .prepare(
+          "SELECT * FROM webhook_subscriptions WHERE tenantId = ? AND deletedAt IS NULL ORDER BY createdAt, id",
+        )
         .all(tenantId) as Row[]
     ).map((row) => this.mapSubscription(row));
   }
@@ -475,11 +496,81 @@ export class SqliteAuditRepository implements AuditRepository {
       this.db
         .prepare(
           `SELECT * FROM webhook_subscriptions
-           WHERE tenantId = ? AND expiresOn IS NOT NULL AND expiresOn >= ? AND expiresOn <= ?
+           WHERE tenantId = ? AND deletedAt IS NULL
+             AND expiresOn IS NOT NULL AND expiresOn >= ? AND expiresOn <= ?
            ORDER BY expiresOn, id`,
         )
         .all(tenantId, from, to) as Row[]
     ).map((row) => this.mapSubscription(row));
+  }
+
+  async updateWebhookSubscription(
+    tenantId: string,
+    subscriptionId: string,
+    update: WebhookSubscriptionUpdate,
+  ): Promise<WebhookSubscription | undefined> {
+    const existing = await this.getWebhookSubscription(tenantId, subscriptionId);
+    if (!existing) return undefined;
+    const updated: WebhookSubscription = {
+      ...existing,
+      resource: update.resource ?? existing.resource,
+      expiresOn: update.expiresOn === undefined ? existing.expiresOn : update.expiresOn,
+      state: update.state ?? existing.state,
+      notificationUrl: update.notificationUrl ?? existing.notificationUrl,
+      updatedAt: nowIso(),
+    };
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          `UPDATE webhook_subscriptions
+              SET resource = ?, expiresOn = ?, state = ?, notificationUrl = ?, updatedAt = ?
+            WHERE id = ? AND tenantId = ? AND deletedAt IS NULL`,
+        )
+        .run(
+          updated.resource,
+          updated.expiresOn,
+          updated.state,
+          updated.notificationUrl,
+          updated.updatedAt,
+          subscriptionId,
+          tenantId,
+        );
+      this.writeAuditEvent(
+        "audit.webhook.update",
+        "webhook_subscription",
+        subscriptionId,
+        tenantId,
+        existing,
+        updated,
+      );
+    })();
+    return this.getWebhookSubscription(tenantId, subscriptionId);
+  }
+
+  async softDeleteWebhookSubscription(
+    tenantId: string,
+    subscriptionId: string,
+    options: { now?: string } = {},
+  ): Promise<boolean> {
+    const existing = await this.getWebhookSubscription(tenantId, subscriptionId);
+    if (!existing) return false;
+    const at = options.now ?? nowIso();
+    this.db.transaction(() => {
+      this.db
+        .prepare(
+          "UPDATE webhook_subscriptions SET deletedAt = ?, updatedAt = ? WHERE id = ? AND tenantId = ? AND deletedAt IS NULL",
+        )
+        .run(at, at, subscriptionId, tenantId);
+      this.writeAuditEvent(
+        "audit.webhook.delete",
+        "webhook_subscription",
+        subscriptionId,
+        tenantId,
+        existing,
+        { ...existing, deletedAt: at },
+      );
+    })();
+    return true;
   }
 
   async createAuditExclusionWindow(
