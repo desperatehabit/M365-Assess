@@ -1,38 +1,31 @@
 # Handoff — M365-Assess portal
 
-_Last updated: 2026-11-08, after the EPIC-034/036/037 mount batch._
+_Last updated: 2026-11-09, after the EPIC-039/040 mount batch._
 
 ## State
 
 - Branch: `main`.
-- T-0864 mounted EPIC-034 Domains & DNS: inventory and add/verify/remove/default
-  run `get-domains.ps1` / `domain-action.ps1`; the new `check-domain-dns.ps1`
-  resolves MX/SPF/DKIM/DMARC/MTA-STS/TLS-RPT with no tenant credential and
-  persists one append-only `DomainCheck` per check behind the DNS TTL cache;
-  recommendations run the new `get-dns-recommendations.ps1` over the latest
-  stored records; the analysis schedule is a normal EPIC-007 row.
-- T-0866 mounted EPIC-036 Compliance Test Packs and Custom Tests over the shared
-  SQLite TestPack/TestRun/CustomTest repository. Pack runs reuse the extracted
-  `runsCreateRoute`; the pages now read the routes' `{ packs }` / `{ items }`
-  envelopes (and `checkCount`) instead of assuming raw arrays.
-- T-0867 mounted EPIC-037 Settings, Branding & Preferences through
-  `createSettingsStores`: settings apply atomically with per-key audit, branding
-  adds the schema version, preferences fall back to typed defaults, and the
-  logbook projects the audit store. `GET /v1/diagnostics` now serves the full
-  report (health + cache + system timers). Logbook/diagnostics use concrete
-  `CIPP.Admin.Logbook` / `CIPP.Admin.Diagnostics` permissions so the registry
-  stays taxonomy-valid.
-- Tickets **T-0864**, **T-0866**, and **T-0867** are `fixed-unverified`;
-  `TICKETS.md` reflects the new counts (open 11, fixed-unverified 27).
+- T-0869 mounted EPIC-039 Template Library & Catalog: library/repo/clone/package
+  routes bind to `SqliteTemplateRepository`, save-to-GitHub rides the EPIC-041
+  GitHub adapter (409 until enabled), and the Template Package Manager page
+  imports/exports/lists live data.
+- T-0870 mounted EPIC-040 Graph Explorer & Admin Tools: Graph Explorer runs the
+  new `invoke-graph-request.ps1` worker; presets persist through the existing
+  SQLite store; `ConsentDecision` moved to migration `0130_consent_decisions.sql`
+  and `SqliteConsentDecisionRepository`; tenant lookup, consent requests, GeoIP,
+  and the individual domain check are mounted; breach lookup stays fail-closed
+  until EPIC-041 registers a provider; Breach Lookup and Tenant Breach Lookup
+  pages were added.
+- Tickets **T-0869** and **T-0870** are `fixed-unverified`; `TICKETS.md`
+  reflects the new counts (open 9, fixed-unverified 29).
 - Full portal test suites are green:
-  - BFF: `370 files / 4258 tests`
-  - Web: `154 files / 1324 tests`
-  - DB: `44 files / 303 tests`
+  - BFF: `372 files / 4288 tests`
+  - Web: `156 files / 1329 tests`
+  - DB: `45 files / 306 tests`
   - `npm run typecheck` at `portal/` is clean.
 - The EPIC-032 notification receiver (`POST /v1/webhooks/notify`) is deliberately
   **not mounted**: the repository does not yet store the subscription
   `clientState` it validates, and content-bundle handling is deferred by SPEC §11.2.
-
 
 ## Verification commands
 
@@ -46,12 +39,10 @@ npm test --workspace @m365-assess/web
 
 ## Next issues up to bat
 
-Register order (severity, then id) after T-0867:
+Register order (severity, then id) after T-0870:
 
 | Ticket | Sev | Title |
 |---|---|---|
-| T-0869 | medium | Mount EPIC-039 Template Library & Catalog routes |
-| T-0870 | medium | Mount EPIC-040 Graph Explorer & Admin Tools routes |
 | T-0874 | medium | No scheduled credential-expiry check |
 | T-0875 | medium | Report bundle is not assembled; executive report renders empty sections |
 | T-0877 | medium | Standards catalog tenant license classification returns 501 |
@@ -62,9 +53,8 @@ Register order (severity, then id) after T-0867:
 | T-0853 | low | Mount EPIC-023 Contacts & Resources routes |
 | T-0865 | low | Mount EPIC-035 Backup routes and invoke retention/replication |
 
-**Recommended next batch:** T-0869, T-0870 (same “mount and deliver”
-pattern, contiguous in the register). T-0874/T-0877/T-0878 are small targeted
-fixes and good fill-ins between larger mounts.
+**Recommended next batch:** T-0874, T-0877, T-0878 are small targeted fixes and
+good fill-ins before the next larger mount.
 
 Each ticket file under `ISSUES/` has the authoritative scope, SPEC link, and
 acceptance criteria.

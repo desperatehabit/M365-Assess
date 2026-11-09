@@ -97,6 +97,14 @@ import { FEATURE_FLAGS_OPENAPI } from "./feature-flags.js";
 import { PREFERENCES_OPENAPI } from "./preferences.js";
 import { LOGBOOK_OPENAPI } from "./logbook.js";
 import { DIAGNOSTICS_OPENAPI } from "./diagnostics.js";
+// EPIC-039 Template Library & Catalog (T-0869).
+import { TEMPLATE_REPOS_OPENAPI } from "../templates/repo-routes.js";
+// EPIC-040 Graph Explorer & Admin Tools (T-0870).
+import { GRAPH_EXPLORER_OPENAPI } from "../tools/graph-explorer-routes.js";
+import { GRAPH_PRESET_OPENAPI } from "../tools/graph-preset-routes.js";
+import { TENANT_LOOKUP_OPENAPI } from "../tools/tenant-lookup-routes.js";
+import { GEOIP_OPENAPI, DOMAIN_CHECK_OPENAPI } from "../tools/geoip-routes.js";
+import { BREACH_LOOKUP_OPENAPI } from "../tools/breach-lookup-routes.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -231,6 +239,15 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   PREFERENCES_OPENAPI as unknown as OpenApiFragment,
   LOGBOOK_OPENAPI as unknown as OpenApiFragment,
   DIAGNOSTICS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-039 Template Library & Catalog (T-0869).
+  { paths: TEMPLATE_REPOS_OPENAPI } as unknown as OpenApiFragment,
+  // EPIC-040 Graph Explorer & Admin Tools (T-0870).
+  GRAPH_EXPLORER_OPENAPI as unknown as OpenApiFragment,
+  GRAPH_PRESET_OPENAPI as unknown as OpenApiFragment,
+  TENANT_LOOKUP_OPENAPI as unknown as OpenApiFragment,
+  GEOIP_OPENAPI as unknown as OpenApiFragment,
+  DOMAIN_CHECK_OPENAPI as unknown as OpenApiFragment,
+  BREACH_LOOKUP_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

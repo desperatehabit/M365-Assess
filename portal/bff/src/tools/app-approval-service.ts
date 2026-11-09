@@ -1,10 +1,11 @@
 // Application approval — consent request decisions (EPIC-040 SPEC.md §3.3, §4.2,
-// §5, §6, §8; T-0786).
+// §5, §6, §8; T-0786). Mounted by T-0870.
 //
-// The service holds pending consent requests and persisted decisions in memory.
-// Approve/deny is a tenant write: it routes through the EPIC-006 write boundary
-// (an injected port), persists a ConsentDecision row, and records an AuditEvent
-// with before/after state. Deny requires a reason.
+// Pending consent requests are read from the tenant; approve/deny is a tenant
+// write that routes through the EPIC-006 write boundary (an injected port),
+// persists a ConsentDecision through the injected SQLite-backed store, and
+// records an AuditEvent with before/after state. Deny requires a reason.
+import type { ConsentDecisionRecord } from "@m365-assess/db";
 
 export const CONSENT_DECISION_APPROVE = "approve" as const;
 export const CONSENT_DECISION_DENY = "deny" as const;
@@ -24,14 +25,13 @@ export interface ConsentRequest {
   readonly status: "pending";
 }
 
-export interface ConsentDecision {
-  readonly id: string;
-  readonly tenantId: string;
-  readonly appId: string;
-  readonly decision: ConsentDecisionValue;
-  readonly by: string;
-  readonly at: string;
-  readonly reason: string | null;
+/** A persisted approve/deny decision (EPIC-040 §5). */
+export type ConsentDecision = ConsentDecisionRecord;
+
+/** The persistent decision store; the SQLite repository satisfies it. */
+export interface ConsentDecisionStore {
+  listConsentDecisions(tenantId: string): Promise<ConsentDecision[]>;
+  appendConsentDecision(input: ConsentDecision): Promise<ConsentDecision>;
 }
 
 export interface ConsentAuditEvent {
@@ -96,6 +96,7 @@ export interface ConsentAuditPort {
 export interface AppApprovalServiceOptions {
   readonly writePort: ConsentWritePort;
   readonly auditPort: ConsentAuditPort;
+  readonly decisions: ConsentDecisionStore;
   readonly now?: () => Date;
   readonly requests?: readonly ConsentRequest[];
 }
@@ -130,7 +131,6 @@ function validateDecision(input: ConsentDecisionInput): ConsentDecisionValue {
 export function createAppApprovalService(options: AppApprovalServiceOptions): AppApprovalService {
   const now = options.now ?? (() => new Date());
   const requests = new Map<string, ConsentRequest>();
-  const decisions: ConsentDecision[] = [];
 
   for (const request of options.requests ?? []) {
     requests.set(request.id, { ...request });
@@ -177,7 +177,7 @@ export function createAppApprovalService(options: AppApprovalServiceOptions): Ap
       at,
       reason,
     };
-    decisions.push(consentDecision);
+    await options.decisions.appendConsentDecision(consentDecision);
 
     const auditEvent: ConsentAuditEvent = {
       id: globalThis.crypto.randomUUID(),
@@ -204,7 +204,7 @@ export function createAppApprovalService(options: AppApprovalServiceOptions): Ap
   }
 
   async function listDecisions(tenantId: string): Promise<ConsentDecision[]> {
-    return decisions.filter((d) => d.tenantId === tenantId);
+    return options.decisions.listConsentDecisions(tenantId);
   }
 
   return { list, decide, listDecisions };

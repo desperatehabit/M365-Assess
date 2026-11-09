@@ -168,7 +168,7 @@ export function createTemplateRepoRoutes(options: TemplateRepoRoutesOptions): Ro
 // ─── OpenAPI fragment (§6) ───────────────────────────────────────────────────
 
 export const TEMPLATE_REPOS_OPENAPI = {
-  "/v1/template-repos": {
+  "/template-repos": {
     get: {
       tags: ["Templates"],
       operationId: "listTemplateRepos",
@@ -216,7 +216,7 @@ export const TEMPLATE_REPOS_OPENAPI = {
       },
     },
   },
-  "/v1/template-repos/{id}": {
+  "/template-repos/{id}": {
     delete: {
       tags: ["Templates"],
       operationId: "removeTemplateRepo",
@@ -232,7 +232,7 @@ export const TEMPLATE_REPOS_OPENAPI = {
       },
     },
   },
-  "/v1/template-repos/{id}/templates": {
+  "/template-repos/{id}/templates": {
     get: {
       tags: ["Templates"],
       operationId: "getTemplateRepoTemplates",

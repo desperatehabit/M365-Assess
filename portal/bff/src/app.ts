@@ -19,6 +19,9 @@ import {
   SqliteDashboardLayoutRepository,
   SqliteDashboardRepository,
   SqliteDriftRepository,
+  SqliteGraphPresetRepository,
+  SqliteConsentDecisionRepository,
+  SqliteIntegrationRepository,
   SqliteJitRepository,
   SqliteJitTemplatesRepository,
   SqliteOffboardingRepository,
@@ -32,6 +35,7 @@ import {
   SqliteScheduleRepository,
   SqliteStandardsRepository,
   SqliteTapRecordRepository,
+  SqliteTemplateRepository,
   SqliteTransportRuleTemplateRepository,
   SqliteConnectorTemplateRepository,
   SqliteUserTemplateRepository,
@@ -289,6 +293,34 @@ import { createFeatureFlagRoutes } from "./routes/feature-flags.js";
 import { createPreferencesRoutes } from "./routes/preferences.js";
 import { createLogbookRoutes } from "./routes/logbook.js";
 import { createDiagnosticsRoutes } from "./routes/diagnostics.js";
+// EPIC-039 Template Library & Catalog (T-0869). The route factories live under
+// templates/ and were never imported; the services bind to the SQLite template
+// repository, and save-to-GitHub rides the EPIC-041 GitHub adapter.
+import { createTemplateServices } from "./adapters/templates.js";
+import { createTemplateLibraryRoutes } from "./templates/library-routes.js";
+import { createTemplateRepoRoutes } from "./templates/repo-routes.js";
+import { createTemplateLibraryCloneRoute } from "./templates/clone-routes.js";
+import { createTemplatePackageRoutes } from "./templates/package-routes.js";
+import { createSaveToGitHubRoute } from "./templates/save-to-github.js";
+import { createGithubAdapter } from "./integrations/github/github-adapter.js";
+// EPIC-040 Graph Explorer & Admin Tools (T-0870). The route factories live
+// under tools/ and were never mounted; ConsentDecision now persists through
+// SQLite and the Graph Explorer runs the new invoke-graph-request worker.
+import {
+  createConsentWritePort,
+  createTenantLookupGraphClient,
+} from "./adapters/tools.js";
+import { createGraphExplorerRoutes } from "./tools/graph-explorer-routes.js";
+import { createGraphExplorerWorkerExecutor } from "./tools/graph-explorer-service.js";
+import { createGraphPresetRoutes } from "./tools/graph-preset-routes.js";
+import { createGraphPresetService } from "./tools/graph-preset-service.js";
+import { createTenantLookupRoutes } from "./tools/tenant-lookup-routes.js";
+import { createTenantLookupService } from "./tools/tenant-lookup-service.js";
+import { createAppApprovalRoutes } from "./tools/app-approval-routes.js";
+import { createAppApprovalService } from "./tools/app-approval-service.js";
+import { createBreachLookupRoutes } from "./tools/breach-lookup-routes.js";
+import { createBreachLookupService } from "./tools/breach-lookup-service.js";
+import { createDomainCheckRoutes, createGeoipRoutes } from "./tools/geoip-routes.js";
 // EPIC-019 Defender & Vulnerabilities (T-0849).
 import { createDefenderProviders } from "./adapters/defender.js";
 import { CveExceptionRepository } from "./repository/cve-exceptions.js";
@@ -784,6 +816,58 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // endpoint 404'd. Settings apply as one atomic audited batch; branding,
   // feature flags, and preferences persist through the same connection.
   const settingsStores = createSettingsStores(repo);
+
+  // EPIC-039 Template Library & Catalog (T-0869). The route factories live under
+  // templates/ and were never mounted; nothing bound the SQLite template
+  // repository. Library, repo, clone, and package work persist through it, and
+  // save-to-GitHub rides the EPIC-041 GitHub adapter (failing closed until the
+  // integration row is enabled).
+  const templateRepo = new SqliteTemplateRepository(db, schemaVersion);
+  const integrationRepo = new SqliteIntegrationRepository(db, schemaVersion);
+  const templates = createTemplateServices({
+    repository: templateRepo,
+    integrations: integrationRepo,
+    github: createGithubAdapter({
+      readSecret: (ref) => credentialSecrets.readSecret(ref),
+      recordAudit: (event) => {
+        routeAudit(event);
+        return Promise.resolve();
+      },
+    }),
+    audit: async (event) => {
+      routeAudit(event);
+    },
+  });
+
+  // EPIC-040 Graph Explorer & Admin Tools (T-0870). Presets and consent
+  // decisions persist through SQLite; the Graph Explorer runs the new
+  // invoke-graph-request worker with the tenant credential. Tenant lookup
+  // resolves portal tenants locally and public domains through OpenID
+  // configuration; breach lookup has no provider yet (EPIC-041) so it fails
+  // closed; the domain check reuses the EPIC-034 DNS analyser.
+  const graphPresets = new SqliteGraphPresetRepository(db, schemaVersion);
+  const consentDecisions = new SqliteConsentDecisionRepository(db, schemaVersion);
+  const graphExplorer = createGraphExplorerWorkerExecutor(run, credentialRows);
+  const tenantLookup = createTenantLookupService({
+    graph: createTenantLookupGraphClient({ store: tenantStore }),
+    store: tenantStore,
+  });
+  const appApproval = createAppApprovalService({
+    writePort: createConsentWritePort(),
+    auditPort: { record: (event) => routeAudit(event) },
+    decisions: consentDecisions,
+  });
+  const breachLookup = createBreachLookupService({
+    auditPort: { record: (event) => routeAudit(event) },
+  });
+  const domainCheck = {
+    async checkDomain(domain: string): Promise<Record<string, unknown>> {
+      // The DNS analyser needs no tenant credential; its job envelope still
+      // requires a non-empty tenant id, so use a portal-local marker.
+      const result = await domains.dns.analyse("portal", domain);
+      return { ...result };
+    },
+  };
 
   const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
     assessment: createSupervisorRunner({
@@ -1780,6 +1864,68 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           );
         },
       },
+    }),
+
+    // EPIC-039 Template Library & Catalog (T-0869). The factories existed but
+    // were never mounted and no adapter bound them, so every §6 endpoint 404'd.
+    // Browsing is read-only; clone plans through the owning epic's deploy flow;
+    // package import/export and repo add/remove persist through SQLite;
+    // save-to-GitHub fails closed until the GitHub integration is enabled.
+    ...createTemplateLibraryRoutes(templates.library, { authorize: authorizeContext }),
+    ...createTemplateRepoRoutes({
+      service: templates.repos,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    createTemplateLibraryCloneRoute(templates.clone, { authorize: authorizeContext }),
+    ...createTemplatePackageRoutes({
+      service: templates.packages,
+      resolveCaller,
+      authorize: (packageCaller, permission) =>
+        canAccess(packageCaller as RequestCaller, permission),
+    }),
+    createSaveToGitHubRoute(templates.saveToGitHub, { authorize: authorizeContext }),
+
+    // EPIC-040 Graph Explorer & Admin Tools (T-0870). The factories existed but
+    // were never mounted, so every §6 endpoint 404'd. Graph Explorer runs the
+    // new worker (write methods stay admin-only inside the route); presets and
+    // consent decisions persist through SQLite; tenant lookup uses the portal
+    // store plus public OpenID discovery; breach lookup fails closed until
+    // EPIC-041 registers a provider; the domain check reuses EPIC-034 DNS.
+    ...createGraphExplorerRoutes({
+      executor: graphExplorer,
+      audit: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createGraphPresetRoutes({
+      service: createGraphPresetService({ store: graphPresets }),
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createTenantLookupRoutes({
+      service: tenantLookup,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createAppApprovalRoutes({
+      service: appApproval,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createBreachLookupRoutes({
+      service: breachLookup,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createGeoipRoutes({
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createDomainCheckRoutes({
+      provider: domainCheck,
+      resolveCaller,
+      authorize: authorizeCaller,
     }),
 
     // EPIC-015 Conditional Access (T-0819).

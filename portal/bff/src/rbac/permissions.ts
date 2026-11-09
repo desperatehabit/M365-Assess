@@ -365,6 +365,35 @@ import { FEATURE_FLAGS_OPENAPI } from "../routes/feature-flags.js";
 import { PREFERENCES_OPENAPI } from "../routes/preferences.js";
 import { LOGBOOK_OPENAPI } from "../routes/logbook.js";
 import { DIAGNOSTICS_OPENAPI } from "../routes/diagnostics.js";
+// EPIC-039 Template Library & Catalog (T-0869).
+import {
+  TEMPLATE_LIBRARY_PATH,
+  TEMPLATE_LIBRARY_PERMISSIONS,
+} from "../templates/library-routes.js";
+import {
+  TEMPLATE_REPOS_OPENAPI,
+} from "../templates/repo-routes.js";
+import {
+  TEMPLATE_LIBRARY_CLONE_PATH,
+  TEMPLATE_LIBRARY_CLONE_PERMISSION,
+} from "../templates/clone-routes.js";
+import {
+  TEMPLATE_PACKAGES_PATH,
+  TEMPLATE_PACKAGE_EXPORT_PATH,
+  TEMPLATES_READ_PERMISSION,
+  TEMPLATES_WRITE_PERMISSION,
+} from "../templates/package-routes.js";
+import { SAVE_TO_GITHUB_PATH, SAVE_TO_GITHUB_PERMISSION } from "../templates/save-to-github.js";
+// EPIC-040 Graph Explorer & Admin Tools (T-0870).
+import { GRAPH_EXPLORER_OPENAPI } from "../tools/graph-explorer-routes.js";
+import { GRAPH_PRESET_OPENAPI } from "../tools/graph-preset-routes.js";
+import { TENANT_LOOKUP_OPENAPI } from "../tools/tenant-lookup-routes.js";
+import {
+  BREACH_ADMIN_SCOPE,
+  BREACH_LOOKUP_PATH,
+} from "../tools/breach-lookup-routes.js";
+import { APPROVAL_ADMIN_SCOPE, CONSENT_REQUESTS_PATH } from "../tools/app-approval-routes.js";
+import { GEOIP_OPENAPI, DOMAIN_CHECK_OPENAPI } from "../tools/geoip-routes.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -1058,6 +1087,28 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(PREFERENCES_OPENAPI),
   ...registryEntriesFromOpenApi(LOGBOOK_OPENAPI),
   ...registryEntriesFromOpenApi(DIAGNOSTICS_OPENAPI),
+  // EPIC-039 Template Library & Catalog (T-0869). Repos publish a fragment; the
+  // other four modules declare their endpoints directly. Clone plans through the
+  // owning epic and is gated on templates.clone.
+  ...registryEntriesFromOpenApi({ paths: TEMPLATE_REPOS_OPENAPI }),
+  { method: "GET", path: TEMPLATE_LIBRARY_PATH, permission: TEMPLATE_LIBRARY_PERMISSIONS.read },
+  { method: "DELETE", path: `${TEMPLATE_LIBRARY_PATH}/:id`, permission: TEMPLATE_LIBRARY_PERMISSIONS.write },
+  { method: "POST", path: TEMPLATE_LIBRARY_CLONE_PATH, permission: TEMPLATE_LIBRARY_CLONE_PERMISSION },
+  { method: "POST", path: SAVE_TO_GITHUB_PATH, permission: SAVE_TO_GITHUB_PERMISSION },
+  { method: "GET", path: TEMPLATE_PACKAGES_PATH, permission: TEMPLATES_READ_PERMISSION },
+  { method: "POST", path: TEMPLATE_PACKAGES_PATH, permission: TEMPLATES_WRITE_PERMISSION },
+  { method: "GET", path: TEMPLATE_PACKAGE_EXPORT_PATH, permission: TEMPLATES_READ_PERMISSION },
+  // EPIC-040 Graph Explorer & Admin Tools (T-0870). The tools.read routes publish
+  // fragments; approval and breach decisions are admin-family endpoints, registered
+  // with concrete tokens because the wildcard scope is not a taxonomy value.
+  ...registryEntriesFromOpenApi(GRAPH_EXPLORER_OPENAPI),
+  ...registryEntriesFromOpenApi(GRAPH_PRESET_OPENAPI),
+  ...registryEntriesFromOpenApi(TENANT_LOOKUP_OPENAPI),
+  ...registryEntriesFromOpenApi(GEOIP_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAIN_CHECK_OPENAPI),
+  { method: "GET", path: CONSENT_REQUESTS_PATH, permission: APPROVAL_ADMIN_SCOPE },
+  { method: "POST", path: CONSENT_REQUESTS_PATH, permission: APPROVAL_ADMIN_SCOPE },
+  { method: "POST", path: BREACH_LOOKUP_PATH, permission: BREACH_ADMIN_SCOPE },
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

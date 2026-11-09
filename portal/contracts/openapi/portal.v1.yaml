@@ -671,6 +671,39 @@ paths:
         "403":
           description: Requires CIPP.AppSettings.Read.
       x-permission: CIPP.AppSettings.Read
+  /breach-lookup:
+    post:
+      operationId: breachLookup
+      summary: Query an account or tenant against a breach data source
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account:
+                  type: string
+                  description: Email address or UPN to query.
+                tenantId:
+                  type: string
+                  description: Tenant GUID to query.
+      responses:
+        "200":
+          description: The breaches the data source reports for the query.
+        "400":
+          description: Neither an account nor a tenantId was supplied.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks CIPP.Admin.BreachLookup or the tenant is outside scope.
+        "501":
+          description: No breach data source is configured (EPIC-041).
+        "502":
+          description: The configured breach data source failed the query.
+      x-permission: CIPP.Admin.BreachLookup
   /ca-templates:
     get:
       operationId: getCaTemplates
@@ -1247,6 +1280,30 @@ paths:
         "503":
           description: Total liveness failure; the report carries the structured health payload.
       x-permission: CIPP.Admin.Diagnostics
+  /domain-check:
+    get:
+      operationId: checkDomain
+      summary: Run an individual DNS check for a domain
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The domain's DNS check results.
+        "400":
+          description: A domain query parameter is required.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks tools.read.
+        "501":
+          description: The shared EPIC-034 domain-check service is not yet available.
+      x-permission: tools.read
   /drift/alignment:
     get:
       operationId: getDriftAlignment
@@ -1428,6 +1485,105 @@ paths:
       x-permission: Tenant.Administration.ReadWrite
       security:
         - bearerAuth: []
+  /geoip/{ip}:
+    get:
+      operationId: getGeoIp
+      summary: GeoIP lookup for an IP address
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: ip
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: GeoIP fields for the address.
+        "400":
+          description: The address is not a valid IP.
+        "401":
+          description: Authentication is required.
+        "403":
+          description: The caller lacks tools.read.
+        "404":
+          description: The address is valid but absent from the offline database.
+      x-permission: tools.read
+  /graph-presets:
+    get:
+      operationId: listGraphPresets
+      summary: List the caller's saved Graph request presets
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The presets owned by the caller.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks tools.read.
+      x-permission: tools.read
+    post:
+      operationId: createGraphPreset
+      summary: Save a Graph request preset owned by the caller
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - method
+                - url
+              properties:
+                name:
+                  type: string
+                method:
+                  type: string
+                  enum:
+                    - GET
+                    - POST
+                    - PATCH
+                    - PUT
+                    - DELETE
+                url:
+                  type: string
+                body: {}
+      responses:
+        "201":
+          description: The saved preset.
+        "400":
+          description: The name, method, or url failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks tools.read.
+      x-permission: tools.read
+  /graph-presets/{id}:
+    delete:
+      operationId: deleteGraphPreset
+      summary: Delete a preset the caller owns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The deleted preset's id.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks tools.read or does not own the preset and is not an admin.
+        "404":
+          description: No preset with that id exists.
+      x-permission: tools.read
   /group-templates:
     get:
       operationId: getGroupTemplates
@@ -2807,6 +2963,248 @@ paths:
       x-permission: Tenant.Standards.ReadWrite
       security:
         - bearerAuth: []
+  /template-library:
+    get:
+      operationId: getTemplateLibrary
+      summary: GET /template-library
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.read
+      security:
+        - bearerAuth: []
+  /template-library/{id}:
+    delete:
+      operationId: deleteTemplateLibraryId
+      summary: DELETE /template-library/{id}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.write
+      security:
+        - bearerAuth: []
+  /template-library/{id}/clone:
+    post:
+      operationId: postTemplateLibraryIdClone
+      summary: POST /template-library/{id}/clone
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.clone
+      security:
+        - bearerAuth: []
+  /template-library/{id}/save-to-github:
+    post:
+      operationId: postTemplateLibraryIdSaveToGithub
+      summary: POST /template-library/{id}/save-to-github
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.write
+      security:
+        - bearerAuth: []
+  /template-packages:
+    get:
+      operationId: getTemplatePackages
+      summary: GET /template-packages
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.read
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTemplatePackages
+      summary: POST /template-packages
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.write
+      security:
+        - bearerAuth: []
+  /template-packages/export:
+    get:
+      operationId: getTemplatePackagesExport
+      summary: GET /template-packages/export
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: templates.read
+      security:
+        - bearerAuth: []
+  /template-repos:
+    get:
+      tags:
+        - Templates
+      operationId: listTemplateRepos
+      summary: List community template repos.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Repos.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateRepoListResponse"
+        "401":
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      x-permission: templates.read
+    post:
+      tags:
+        - Templates
+      operationId: addTemplateRepo
+      summary: Add a community template repo.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ref
+                - types
+              properties:
+                ref:
+                  type: string
+                  description: URL or owner/repo.
+                name:
+                  type: string
+                types:
+                  type: array
+                  items:
+                    type: string
+                writeAccess:
+                  type: boolean
+                scope:
+                  type: string
+                  enum:
+                    - user
+                    - org
+      responses:
+        "201":
+          description: Created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateRepo"
+        "400":
+          description: Invalid reference or type.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      x-permission: templates.write
+  /template-repos/{id}:
+    delete:
+      tags:
+        - Templates
+      operationId: removeTemplateRepo
+      summary: Remove a community template repo.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateRepoDeleteResponse"
+        "401":
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      x-permission: templates.write
+  /template-repos/{id}/templates:
+    get:
+      tags:
+        - Templates
+      operationId: getTemplateRepoTemplates
+      summary: List a repo's indexed templates.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Templates.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TemplateLibraryItemListResponse"
+        "401":
+          description: Unauthenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      x-permission: templates.read
   /tenant-groups:
     get:
       operationId: getTenantGroups
@@ -2893,6 +3291,35 @@ paths:
       x-permission: Tenant.Administration.Read
       security:
         - bearerAuth: []
+  /tenant-lookup:
+    get:
+      operationId: lookupTenant
+      summary: Look up a tenant by domain or tenant ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+          description: A verified domain or the tenant's GUID.
+      responses:
+        "200":
+          description: The tenant's details and whether it is in the portal.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantLookupResult"
+        "400":
+          description: A non-empty query parameter is required.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks tools.read or the tenant is outside the caller scope.
+        "404":
+          description: No tenant matches the query.
+      x-permission: tools.read
   /tenant-variables:
     get:
       operationId: getTenantVariables
@@ -2997,6 +3424,28 @@ paths:
       x-permission: CIPP.Admin.TenantCredentials
       security:
         - bearerAuth: []
+  /tenants/{id}/graph-explorer:
+    post:
+      operationId: runGraphExplorerRequest
+      summary: Run a Graph request against the tenant with the portal app's credentials
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "The Graph response envelope: status, headers, durationMs, and the parsed body."
+        "400":
+          description: The request failed validation (method, URL, or body).
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks tools.read, the write scope CIPP.Admin.*, or the tenant is out of scope.
+      x-permission: tools.read
   /tenants/{id}/onboard:
     post:
       operationId: postTenantsIdOnboard
@@ -3911,6 +4360,25 @@ paths:
         "404":
           description: The connector was not found.
       x-permission: Exchange.Transport.ReadWrite
+  /tenants/{tenantId}/consent-requests:
+    get:
+      operationId: getTenantsTenantIdConsentRequests
+      summary: GET /tenants/{tenantId}/consent-requests
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Admin.Approval
+      security:
+        - bearerAuth: []
+    post:
+      operationId: postTenantsTenantIdConsentRequests
+      summary: POST /tenants/{tenantId}/consent-requests
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: CIPP.Admin.Approval
+      security:
+        - bearerAuth: []
   /tenants/{tenantId}/defender/cve-exceptions:
     get:
       operationId: getTenantsTenantIdDefenderCveExceptions
@@ -8598,6 +9066,30 @@ components:
           type: string
         url:
           type: string
+    TenantLookupResult:
+      type: object
+      required:
+        - tenantId
+        - name
+        - defaultDomain
+        - verifiedDomains
+        - region
+        - inPortal
+      properties:
+        tenantId:
+          type: string
+        name:
+          type: string
+        defaultDomain:
+          type: string
+        verifiedDomains:
+          type: array
+          items:
+            type: string
+        region:
+          type: string
+        inPortal:
+          type: boolean
   responses:
     Error:
       description: Structured error response.

@@ -1353,6 +1353,22 @@ export interface GraphPresetListOptions {
   createdBy?: string;
 }
 
+// Application approval decisions (EPIC-040 SPEC.md §3.3, §5; T-0786). The
+// tenant read model holds pending consent requests; only the auditable
+// approve/deny decision is persisted. `by` is the deciding actor and `at` the
+// decision instant; deny requires a reason, approve stores null.
+export type ConsentDecisionValue = "approve" | "deny";
+
+export interface ConsentDecisionRecord {
+  id: string;
+  tenantId: string;
+  appId: string;
+  decision: ConsentDecisionValue;
+  by: string;
+  at: string;
+  reason: string | null;
+}
+
 /**
  * The only surface feature code may depend on. Tenant-scoped reads require the
  * tenant id, rows with `deletedAt` set are hidden unless explicitly requested,
