@@ -54,7 +54,7 @@ Describe 'Set-GroupGalDelivery worker (T-0269)' {
             $plan = Invoke-SetGroupGalDelivery -TenantId 'tenant-test' -GroupId 'grp-123' -Target 'gal' -HiddenFromAddressListsEnabled $true -DryRun $true
             $plan.dryRun | Should -BeTrue
             $plan.diff[0] | Should -Match 'Set HiddenFromAddressListsEnabled: False -> True'
-            Assert-MockCalled Set-UnifiedGroup -Times 0
+            Should -Invoke Set-UnifiedGroup -Times 0
         }
 
         It 'applies GAL changes and records audit event' {
@@ -62,7 +62,7 @@ Describe 'Set-GroupGalDelivery worker (T-0269)' {
             $res.success | Should -BeTrue
             $res.after.hiddenFromAddressListsEnabled | Should -BeTrue
             $res.auditEvent.action | Should -Be 'group.gal'
-            Assert-MockCalled Set-UnifiedGroup -Times 1 -ParameterFilter { $HiddenFromAddressListsEnabled -eq $true }
+            Should -Invoke Set-UnifiedGroup -Times 1 -ParameterFilter { $HiddenFromAddressListsEnabled -eq $true }
         }
 
         It 'applies delivery management changes and records audit event' {
@@ -71,7 +71,7 @@ Describe 'Set-GroupGalDelivery worker (T-0269)' {
             $res.after.requireSenderAuthenticationEnabled | Should -BeTrue
             $res.after.grantSendOnBehalfTo[0] | Should -Be 'admin@contoso.com'
             $res.auditEvent.action | Should -Be 'group.delivery'
-            Assert-MockCalled Set-UnifiedGroup -Times 1 -ParameterFilter { $RequireSenderAuthenticationEnabled -eq $true }
+            Should -Invoke Set-UnifiedGroup -Times 1 -ParameterFilter { $RequireSenderAuthenticationEnabled -eq $true }
         }
     }
 }

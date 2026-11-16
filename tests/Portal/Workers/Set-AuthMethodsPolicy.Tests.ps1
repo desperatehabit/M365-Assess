@@ -98,7 +98,7 @@ Describe 'Set-AuthMethodsPolicy worker (T-0225)' {
             $result.diff[0].before | Should -Be 'disabled'
             $result.diff[0].after | Should -Be 'enabled'
 
-            Assert-MockCalled Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'PATCH' }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'PATCH' }
         }
 
         It 'applies changed methods and calls PATCH when Confirmed' {
@@ -112,7 +112,7 @@ Describe 'Set-AuthMethodsPolicy worker (T-0225)' {
             $result.dryRun | Should -BeFalse
             $result.diff.Count | Should -Be 1
 
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'PATCH' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'PATCH' }
         }
     }
 }

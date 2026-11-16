@@ -114,8 +114,8 @@ Describe 'verify-remediation entrypoint (T-0839)' {
 
         & $script:entrypoint -JobFile $script:jobFile -OutputFolder $script:outFolder | Out-Null
 
-        Assert-MockCalled Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
-        Assert-MockCalled Invoke-RemediationVerify -ParameterFilter {
+        Should -Invoke Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
+        Should -Invoke Invoke-RemediationVerify -ParameterFilter {
             $Action['id'] -eq 'act-1' -and $Action['checkId'] -eq 'ENTRA-SECDEFAULT-001' -and $TenantId -eq 't-a'
         }
 

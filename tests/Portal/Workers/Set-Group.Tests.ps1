@@ -87,7 +87,7 @@ Describe 'Set-Group worker (T-0262)' {
             $plan.dryRun | Should -BeTrue
             $plan.targetName | Should -Be 'Test Group'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'POST' }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'POST' }
         }
 
         It 'create without DryRun calls POST and produces an audit record' {
@@ -96,15 +96,15 @@ Describe 'Set-Group worker (T-0262)' {
             $res.auditEvent | Should -Not -BeNullOrEmpty
             $res.auditEvent.action | Should -Be 'group.create'
             $res.auditEvent.targetId | Should -Be 'grp-new-1'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
         }
 
         It 'edit with DryRun returns diff against existing group' {
             $plan = Invoke-SetGroup -TenantId 'tenant-test' -Action 'edit' -GroupId 'grp-123' -DisplayName 'Renamed Group' -DryRun $true
             $plan.valid | Should -BeTrue
             $plan.diff[0] | Should -Match 'Change displayName'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'GET' }
-            Assert-MockCalled Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'PATCH' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'GET' }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'PATCH' }
         }
 
         It 'delete requires naming confirmation' {
@@ -117,7 +117,7 @@ Describe 'Set-Group worker (T-0262)' {
             $res = Invoke-SetGroup -TenantId 'tenant-test' -Action 'delete' -GroupId 'grp-123' -ConfirmName 'Old Security Group'
             $res.success | Should -BeTrue
             $res.auditEvent.action | Should -Be 'group.delete'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'DELETE' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'DELETE' }
         }
     }
 }
