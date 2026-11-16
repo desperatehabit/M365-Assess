@@ -26,7 +26,7 @@ def main() -> None:
 
     out = [
         "# Feature Epics — Index & Status\n",
-        "> Generated tracker for the 41 portal feature epics. Update `Status` in each SPEC.md's",
+        "> Generated tracker for the portal feature epics. Update `Status` in each SPEC.md's",
         "> header; this table reflects it. **Stub** = skeleton only; **Drafted** = sections 2-11",
         "> written; **Approved** = owner sign-off, ready for ticket authoring.\n",
         "| Epic | Title | Cluster | Sev | Depends on | Status |",

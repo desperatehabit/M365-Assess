@@ -43,6 +43,7 @@ Register order (severity, then id) after T-0870:
 
 | Ticket | Sev | Title |
 |---|---|---|
+| T-0852 | high | Mount and deliver EPIC-022 Spam, Quarantine & Allow/Block (reopened 2026-11-16) |
 | T-0874 | medium | No scheduled credential-expiry check |
 | T-0875 | medium | Report bundle is not assembled; executive report renders empty sections |
 | T-0877 | medium | Standards catalog tenant license classification returns 501 |
@@ -53,8 +54,27 @@ Register order (severity, then id) after T-0870:
 | T-0853 | low | Mount EPIC-023 Contacts & Resources routes |
 | T-0865 | low | Mount EPIC-035 Backup routes and invoke retention/replication |
 
-**Recommended next batch:** T-0874, T-0877, T-0878 are small targeted fixes and
-good fill-ins before the next larger mount.
+**T-0852 was reopened on 2026-11-16.** It had been marked `fixed-unverified` and
+was missing from `TICKETS.md`, but its cited fleet commit (`fa46b848`) is not in
+the repository: the EPIC-022 route modules (`quarantine*`, `allow-block`,
+`filters`, `filter-templates`) are not imported by `app.ts`, and
+`get-quarantine.ps1`, `get-allow-block.ps1`, and `get-quarantine-policies.ps1`
+do not exist. Register counts are now open 10, fixed-unverified 29.
+
+**Recommended next batch:** T-0852 (the only open high), then T-0874, T-0877,
+T-0878 as small targeted fixes before the next larger mount.
+
+## Compliance-console epics (drafted 2026-11-16)
+
+The ordered checklist for everything that remains is in `MASTER_PLAN.md`.
+
+EPIC-042 to EPIC-048 extend the portal from M365 management to a multi-source
+compliance console (frameworks, evidence, Intune CIS baselines, ConnectWise
+Automate and NinjaOne, policy documents, network posture, agent). SPECs are
+**Drafted, not Approved**, and no child tickets exist yet; new children start at
+T-0905. Do not run `fleet/sync-epics.sh` to publish them: the `ISSUES/epics/`
+copies of EPIC-001 to EPIC-041 have diverged from their `epic.md` originals and
+the script would overwrite them.
 
 Each ticket file under `ISSUES/` has the authoritative scope, SPEC link, and
 acceptance criteria.
