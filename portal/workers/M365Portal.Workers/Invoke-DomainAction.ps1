@@ -718,7 +718,7 @@ function Invoke-DomainAction {
             return Set-DomainDefault @base
         }
         default {
-            throw "domains.unknown_action: unknown domain action '$Action'; expected one of: $(Get-DomainActions -join ', ')"
+            throw "domains.unknown_action: unknown domain action '$Action'; expected one of: $((Get-DomainActions) -join ', ')"
         }
     }
     return $null

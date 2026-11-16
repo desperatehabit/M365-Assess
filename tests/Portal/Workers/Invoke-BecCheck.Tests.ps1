@@ -195,6 +195,9 @@ Describe 'Invoke-BecCheck worker (T-0207)' {
         }
 
         It 'reports unknown with a reason when Exchange Online is unavailable' {
+            # Other test files define global stubs for these cmdlets; make sure
+            # they are absent so the worker sees no Exchange Online session.
+            Remove-Item -Path 'Function:\Get-MailboxPermission', 'Function:\Get-MailboxJunkEmailConfiguration' -ErrorAction SilentlyContinue
             $result = Invoke-BecCheck -TenantId 'tenant-a' -UserId 'user-1'
 
             $permissions = @($result.checks | Where-Object { $_.check -eq 'mailboxPermissions' })[0]

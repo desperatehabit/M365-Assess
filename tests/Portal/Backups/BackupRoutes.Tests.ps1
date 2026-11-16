@@ -29,9 +29,9 @@ Describe 'Backups routes (T-0685)' {
             $script:source | Should -Match 'DELETE.*BACKUP_PATH'
         }
 
-        It 'enforces the backup.read and backup.write permission seam' {
-            $script:source | Should -Match 'BACKUP_READ_PERMISSION\s*=\s*"backup\.read"'
-            $script:source | Should -Match 'BACKUP_WRITE_PERMISSION\s*=\s*"backup\.write"'
+        It 'enforces the Tenant.Backup.Read and Tenant.Backup.ReadWrite permission seam' {
+            $script:source | Should -Match 'BACKUP_READ_PERMISSION\s*=\s*"Tenant\.Backup\.Read"'
+            $script:source | Should -Match 'BACKUP_WRITE_PERMISSION\s*=\s*"Tenant\.Backup\.ReadWrite"'
             $script:source | Should -Match 'requireBackupPermission'
         }
 

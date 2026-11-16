@@ -135,7 +135,8 @@ Describe 'Get-BrandingStyles' {
             $result | Should -Match '<style id="m365-branding-css">'
         }
 
-        It 'Injects a cover fragment before <div id="root"> when logo is supplied' {
+        # No angle brackets in the name: Pester expands <...> in test names as a template.
+        It 'Injects a cover fragment before the root div when logo is supplied' {
             $cfg = [PSCustomObject]@{ LogoUrl = 'https://example.com/logo.png' }
             $result = Inject-BrandingIntoHtml -HtmlContent $script:MinimalHtml -BrandingConfig $cfg
             # cover fragment must precede root div

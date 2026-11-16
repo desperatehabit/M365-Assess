@@ -64,8 +64,10 @@ Describe 'EPIC-038 route mounting (T-0868)' {
     Context 'the OpenAPI JSON route' {
         It 'serves both the root and versioned JSON paths' {
             $openapiSource = Get-Content -LiteralPath $script:openapiRoute -Raw
-            $openapiSource | Should -Match 'OPENAPI_JSON_PATH = "/openapi\.json"'
-            $openapiSource | Should -Match 'OPENAPI_VERSIONED_JSON_PATH = "/v1/openapi\.json"'
+            # The path constants live in the permission registry with the other route paths.
+            $permissionsSource = Get-Content -LiteralPath (Join-Path $script:bffSrc 'rbac/permissions.ts') -Raw
+            $permissionsSource | Should -Match 'OPENAPI_JSON_PATH = "/openapi\.json"'
+            $permissionsSource | Should -Match 'OPENAPI_VERSIONED_JSON_PATH = "/v1/openapi\.json"'
             $openapiSource | Should -Match 'method: "GET", path: OPENAPI_JSON_PATH'
             $openapiSource | Should -Match 'method: "GET", path: OPENAPI_VERSIONED_JSON_PATH'
         }
