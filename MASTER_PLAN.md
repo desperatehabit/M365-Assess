@@ -36,14 +36,17 @@ may be Automate for endpoints and Auvik for network.
 Small, and it stops the tracking problems that hid T-0852.
 
 - [ ] Commit the 2026-11-16 planning changes (T-0852 reopen, EPIC-042 to EPIC-048, this file).
-- [ ] Make `fleet.py index` runnable on the Windows workstation, or decide the register is only
-      ever generated on the Linux host. `fleet/config.toml` has Linux paths.
-- [ ] Regenerate `TICKETS.md` with the tool and confirm it matches the hand edits (10 open,
-      29 fixed-unverified, 7 epic).
-- [ ] Settle epic status. EPIC-001 to EPIC-041 are `closed` although three still have open
-      children (EPIC-022, EPIC-023, EPIC-035); the new epics use `epic`. Pick one convention.
-- [ ] Reconcile `epic.md` originals with their `ISSUES/epics/` copies, which have diverged.
-      Until then, do not run `fleet/sync-epics.sh`.
+- [x] Retire the `fleet/` ticket tool. _Removed 2026-11-16. A final `fleet.py index` run
+      regenerated `TICKETS.md` (10 open, 29 fixed-unverified, 7 epic; matched the hand edits)
+      and found T-0852's malformed front-matter delimiter, which had hidden it. `TICKETS.md`
+      is now maintained by hand._
+- [x] Settle epic status. _Done 2026-11-16: an epic is `closed` only when every child is
+      closed. 32 of the 41 "closed" epics had open or `fixed-unverified` children and are back
+      to `epic`, each with a "Reopened" section listing what is outstanding. 9 remain closed
+      (EPIC-001, 003, 006, 012, 013, 017, 018, 030, 041)._
+- [x] Reconcile `epic.md` originals with their `ISSUES/epics/` copies. _Done 2026-11-16:
+      `ISSUES/epics/` is the only copy (it held every status change and resolution note);
+      the 48 `epic.md` drafts were deleted and each SPEC links to its epic ticket._
 - [ ] Fix the local Pester setup (Pester 6.2.0 breaks tests written for Pester 5; a stray 3.4.0
       shadows `BeforeAll`) so the full suite can run before Phase 2.
 

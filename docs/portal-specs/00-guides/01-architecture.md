@@ -153,4 +153,4 @@ single-node SQLite start is possible.
 - [`04-data-modeling.md`](04-data-modeling.md) — entities
 - [`05-programming.md`](05-programming.md) — code conventions
 - [`06-remediation.md`](06-remediation.md) — the write contract
-- [`../99-reference/fleet-conventions.md`](../99-reference/fleet-conventions.md) — ticket pipeline
+- [`../99-reference/ticket-conventions.md`](../99-reference/ticket-conventions.md) — ticket format

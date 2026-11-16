@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-038, EPIC-042, EPIC-043, EPIC-045
 - **CIPP provenance:** none (net-new)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-048.md`](../../../../ISSUES/epics/EPIC-048.md)
 
 > **PARKED until EPIC-044 and EPIC-045 are live.** Intune and the two RMMs should cover most
 > endpoints. The agent is built for the gaps that remain, and the size of those gaps is not
@@ -159,4 +159,4 @@ explicit decision.
 - [`../EPIC-045-rmm-integrations/SPEC.md`](../EPIC-045-rmm-integrations/SPEC.md) — preferred endpoint source
 - [`../EPIC-044-intune-cis-baselines/SPEC.md`](../EPIC-044-intune-cis-baselines/SPEC.md) — Intune baselines
 - [`../EPIC-047-network-posture/SPEC.md`](../EPIC-047-network-posture/SPEC.md) — collector role
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-048.md`](../../../../ISSUES/epics/EPIC-048.md) — epic ticket

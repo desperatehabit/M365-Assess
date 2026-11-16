@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-011, EPIC-006, EPIC-038
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #24,#27; CIPP `CIPPCore/Public/PIM/`, `Set-CIPPUserJITAdmin.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-013.md`](../../../../ISSUES/epics/EPIC-013.md)
 
 ## 1. Purpose
 
@@ -160,4 +160,4 @@ role assignment grants require explicit confirmation.
 - [`../EPIC-011-users-offboarding/SPEC.md`](../EPIC-011-users-offboarding/SPEC.md) — users
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-038-rbac-api-clients/SPEC.md`](../EPIC-038-rbac-api-clients/SPEC.md) — who may grant
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-013.md`](../../../../ISSUES/epics/EPIC-013.md) — epic ticket

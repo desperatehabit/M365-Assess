@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-016, EPIC-010, EPIC-006, EPIC-042
 - **CIPP provenance:** none (builds on EPIC-016 Intune templates)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-044.md`](../../../../ISSUES/epics/EPIC-044.md)
 
 ## 1. Purpose
 
@@ -154,4 +154,4 @@ script remediation (EPIC-045).
 - [`../EPIC-016-intune-policies/SPEC.md`](../EPIC-016-intune-policies/SPEC.md) — Intune policies
 - [`../EPIC-010-baselines-rollouts/SPEC.md`](../EPIC-010-baselines-rollouts/SPEC.md) — rings
 - [`../EPIC-045-rmm-integrations/SPEC.md`](../EPIC-045-rmm-integrations/SPEC.md) — non-Intune devices
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-044.md`](../../../../ISSUES/epics/EPIC-044.md) — epic ticket

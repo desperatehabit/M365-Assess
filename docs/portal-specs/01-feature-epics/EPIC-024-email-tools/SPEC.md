@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-020, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #38; CIPP `Email-Exchange/Tools/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-024.md`](../../../../ISSUES/epics/EPIC-024.md)
 
 ## 1. Purpose
 
@@ -153,4 +153,4 @@ audited. Trace/search/view are read-only but audited because they expose message
 - [`../EPIC-022-spam-quarantine/SPEC.md`](../EPIC-022-spam-quarantine/SPEC.md) — quarantine
 - [`../EPIC-032-audit-logs-webhooks/SPEC.md`](../EPIC-032-audit-logs-webhooks/SPEC.md) — audit
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-024.md`](../../../../ISSUES/epics/EPIC-024.md) — epic ticket

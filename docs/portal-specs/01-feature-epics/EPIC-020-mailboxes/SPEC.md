@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #29,#35,#37; CIPP `HTTP Functions/Email-Exchange/Administration/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-020.md`](../../../../ISSUES/epics/EPIC-020.md)
 
 ## 1. Purpose
 
@@ -184,4 +184,4 @@ also audited.
 - [`../EPIC-022-spam-quarantine/SPEC.md`](../EPIC-022-spam-quarantine/SPEC.md) — filters
 - [`../EPIC-011-users-offboarding/SPEC.md`](../EPIC-011-users-offboarding/SPEC.md) — BEC/offboarding
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-020.md`](../../../../ISSUES/epics/EPIC-020.md) — epic ticket

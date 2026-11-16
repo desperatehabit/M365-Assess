@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-020, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #31; CIPP `Email-Exchange/Transport/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-021.md`](../../../../ISSUES/epics/EPIC-021.md)
 
 ## 1. Purpose
 
@@ -136,4 +136,4 @@ connector disable) carry explicit warnings and are audited with before/after.
 - [`../EPIC-020-mailboxes/SPEC.md`](../EPIC-020-mailboxes/SPEC.md) — EXO base
 - [`../EPIC-022-spam-quarantine/SPEC.md`](../EPIC-022-spam-quarantine/SPEC.md) — filters
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-021.md`](../../../../ISSUES/epics/EPIC-021.md) — epic ticket

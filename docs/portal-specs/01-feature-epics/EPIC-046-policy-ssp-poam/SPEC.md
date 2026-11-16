@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-042, EPIC-043, EPIC-005
 - **CIPP provenance:** none (net-new)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-046.md`](../../../../ISSUES/epics/EPIC-046.md)
 
 ## 1. Purpose
 
@@ -176,4 +176,4 @@ applies a change by itself.
 - [`../EPIC-042-compliance-frameworks-console/SPEC.md`](../EPIC-042-compliance-frameworks-console/SPEC.md) — control model
 - [`../EPIC-043-evidence-locker/SPEC.md`](../EPIC-043-evidence-locker/SPEC.md) — evidence
 - [`../EPIC-005-executive-reports/SPEC.md`](../EPIC-005-executive-reports/SPEC.md) — rendering
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-046.md`](../../../../ISSUES/epics/EPIC-046.md) — epic ticket

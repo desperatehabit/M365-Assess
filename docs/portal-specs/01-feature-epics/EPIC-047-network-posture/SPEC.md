@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-042, EPIC-045
 - **CIPP provenance:** none (net-new)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-047.md`](../../../../ISSUES/epics/EPIC-047.md)
 
 ## 1. Purpose
 
@@ -155,4 +155,4 @@ portal and confirmed by the next sync.
 - [`../EPIC-045-rmm-integrations/SPEC.md`](../EPIC-045-rmm-integrations/SPEC.md) — device model, RMM source
 - [`../EPIC-048-portal-agent/SPEC.md`](../EPIC-048-portal-agent/SPEC.md) — on-premises collection
 - [`../EPIC-034-domains-dns/SPEC.md`](../EPIC-034-domains-dns/SPEC.md) — DNS posture
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-047.md`](../../../../ISSUES/epics/EPIC-047.md) — epic ticket

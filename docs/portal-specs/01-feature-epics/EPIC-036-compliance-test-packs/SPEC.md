@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-003, EPIC-007, EPIC-029
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #10; CIPP `CIPPTests/Public/Tests/` (CIS, CISA, EIDSCA, ORCA, ZTNA, SMB1001, E8, CopilotReadiness, Custom)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-036.md`](../../../../ISSUES/epics/EPIC-036.md)
 
 ## 1. Purpose
 
@@ -146,4 +146,4 @@ writes, in which case it obeys EPIC-006 and the EPIC-007 sandbox. Standard packs
 - [`../EPIC-003-assessment-runs/SPEC.md`](../EPIC-003-assessment-runs/SPEC.md) — engine
 - [`../EPIC-007-scheduler-custom-scripts/SPEC.md`](../EPIC-007-scheduler-custom-scripts/SPEC.md) — sandbox
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — test alerts
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-036.md`](../../../../ISSUES/epics/EPIC-036.md) — epic ticket

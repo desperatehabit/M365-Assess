@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-003, EPIC-007, EPIC-006, EPIC-008
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #46; CIPP `Invoke-ListSecureScoreReport.ps1`, `Get-CIPPSecureScoreReport.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-031.md`](../../../../ISSUES/epics/EPIC-031.md)
 
 ## 1. Purpose
 
@@ -151,4 +151,4 @@ score improvement happens via standards/remediation.
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — remediation linkage
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — standards linkage
 - [`../EPIC-004-dashboard-widgets/SPEC.md`](../EPIC-004-dashboard-widgets/SPEC.md) — dashboard widget
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-031.md`](../../../../ISSUES/epics/EPIC-031.md) — epic ticket

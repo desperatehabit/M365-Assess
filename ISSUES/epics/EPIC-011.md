@@ -3,7 +3,7 @@ id: "EPIC-011"
 source: "docs/portal-specs/01-feature-epics/EPIC-011-users-offboarding/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,8 @@ children:
   - T-0208
   - T-0209
   - T-0210
+  - T-0880
+  - T-0881
 scope_kind: "epic"
 scope_note: "Rollup for Users & Offboarding. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -44,4 +46,11 @@ code. Children are authored into `ISSUES/` and name real `scope:` paths from SPE
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0880 — `fixed-unverified`
+- T-0881 — `fixed-unverified`

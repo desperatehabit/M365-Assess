@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-008
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #7; [`cipp-standards-ux.md`](../../99-reference/cipp-standards-ux.md) §4-6; CIPP `Get-CIPPDrift.ps1`, `Set-CIPPDriftDeviation.ps1`, `Get-CIPPTenantAlignment.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-009.md`](../../../../ISSUES/epics/EPIC-009.md)
 
 ## 1. Purpose
 
@@ -193,4 +193,4 @@ confirmation in §3.2 and a full audit record. No drift-specific executor.
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — templates + compare store
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — delete/remediate execution
 - [`../EPIC-010-baselines-rollouts/SPEC.md`](../EPIC-010-baselines-rollouts/SPEC.md) — rollouts + trend
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-009.md`](../../../../ISSUES/epics/EPIC-009.md) — epic ticket

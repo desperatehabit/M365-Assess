@@ -3,7 +3,7 @@ id: "EPIC-002"
 source: "docs/portal-specs/01-feature-epics/EPIC-002-tenants-onboarding/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "critical"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -25,6 +25,7 @@ children:
   - T-0030
   - T-0031
   - T-0032
+  - T-0874
 scope_kind: "epic"
 scope_note: "Rollup for Tenants & Onboarding. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -47,4 +48,10 @@ file layout and real `scope:` paths can be named.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0874 — `open`

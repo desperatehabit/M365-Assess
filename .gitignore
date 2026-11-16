@@ -72,8 +72,5 @@ npm-debug.log*
 *.user
 .superpowers/
 
-# Fleet orchestration runtime state (claims, logs, reports, generated configs)
-.fleet/
-
 # Runtime data written by the BFF and by bff tests (T-0898)
 portal/bff/data/

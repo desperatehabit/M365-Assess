@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-002, EPIC-006, EPIC-029
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #43; CIPP `Get-CIPPDomainAnalyser.ps1`, `DNSHealth`; module `Get-DnsSecurityConfig`, `Resolve-DnsRecord`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-034.md`](../../../../ISSUES/epics/EPIC-034.md)
 
 ## 1. Purpose
 
@@ -147,4 +147,4 @@ is read-only. DNS changes (MX) are not auto-applied; they are recommended.
 - [`../EPIC-002-tenants-onboarding/SPEC.md`](../EPIC-002-tenants-onboarding/SPEC.md) — tenants
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — DNS-change alerts
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-034.md`](../../../../ISSUES/epics/EPIC-034.md) — epic ticket

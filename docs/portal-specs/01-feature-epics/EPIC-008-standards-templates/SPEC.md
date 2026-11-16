@@ -5,7 +5,7 @@
 - **Severity:** critical
 - **Depends on:** EPIC-006, EPIC-003, EPIC-007
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #6,#9,#21; [`cipp-standards-ux.md`](../../99-reference/cipp-standards-ux.md) §2-3, §9; CIPP `CIPPStandards/Public/Standards/`, `Get-CIPPStandards.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-008.md`](../../../../ISSUES/epics/EPIC-008.md)
 
 ## 1. Purpose
 
@@ -214,4 +214,4 @@ scope, read-only, and allowlist gates all still apply.
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — apply path
 - [`../EPIC-007-scheduler-custom-scripts/SPEC.md`](../EPIC-007-scheduler-custom-scripts/SPEC.md) — scheduling
 - [`../EPIC-009-drift-management/SPEC.md`](../EPIC-009-drift-management/SPEC.md) — desired-state comparison
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-008.md`](../../../../ISSUES/epics/EPIC-008.md) — epic ticket

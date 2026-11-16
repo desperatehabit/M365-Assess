@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-016, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #15; CIPP `Invoke-ExecDeviceAction.ps1`, `Invoke-ExecBitlockerSearch.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-018.md`](../../../../ISSUES/epics/EPIC-018.md)
 
 ## 1. Purpose
 
@@ -160,4 +160,4 @@ confirmation required. Key reveals are audited and never persisted.
 - [`../EPIC-016-intune-policies/SPEC.md`](../EPIC-016-intune-policies/SPEC.md) — Intune base
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution + audit
 - [`../EPIC-019-defender-vulnerabilities/SPEC.md`](../EPIC-019-defender-vulnerabilities/SPEC.md) — device security
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-018.md`](../../../../ISSUES/epics/EPIC-018.md) — epic ticket

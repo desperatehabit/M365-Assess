@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-016, EPIC-006, EPIC-007
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #13,#14; CIPP `HTTP Functions/Endpoint/Applications/`, `Endpoint/Autopilot/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-017.md`](../../../../ISSUES/epics/EPIC-017.md)
 
 ## 1. Purpose
 
@@ -175,4 +175,4 @@ audited; device imports report per-row results. No destructive device actions he
 - [`../EPIC-016-intune-policies/SPEC.md`](../EPIC-016-intune-policies/SPEC.md) — Intune base
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-018-device-actions/SPEC.md`](../EPIC-018-device-actions/SPEC.md) — device actions
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-017.md`](../../../../ISSUES/epics/EPIC-017.md) — epic ticket

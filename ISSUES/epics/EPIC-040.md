@@ -3,7 +3,7 @@ id: "EPIC-040"
 source: "docs/portal-specs/01-feature-epics/EPIC-040-graph-explorer-tools/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -21,6 +21,7 @@ children:
   - T-0786
   - T-0787
   - T-0788
+  - T-0870
 scope_kind: "epic"
 scope_note: "Rollup for Graph Explorer & Admin Tools. Children authored in ISSUES/. The 'Depends on' header lists EPIC-002; SPEC.md §9 additionally names EPIC-041 as a soft dep for breach lookup (deferred)."
 ---
@@ -47,4 +48,10 @@ SPEC.md §1/§3-§6.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0870 — `fixed-unverified`

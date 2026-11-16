@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-015, EPIC-016, EPIC-008
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #52; CIPP `Tools/GitHub/`, `Config/CommunityRepos.json`, `tools/templatelib/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-039.md`](../../../../ISSUES/epics/EPIC-039.md)
 
 ## 1. Purpose
 
@@ -152,4 +152,4 @@ Library/catalog browsing is read-only.
 - [`../EPIC-015-conditional-access/SPEC.md`](../EPIC-015-conditional-access/SPEC.md) — CA templates
 - [`../EPIC-016-intune-policies/SPEC.md`](../EPIC-016-intune-policies/SPEC.md) — Intune templates
 - [`../EPIC-041-integrations-copilot/SPEC.md`](../EPIC-041-integrations-copilot/SPEC.md) — GitHub integration
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-039.md`](../../../../ISSUES/epics/EPIC-039.md) — epic ticket

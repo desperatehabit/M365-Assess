@@ -3,7 +3,7 @@ id: "EPIC-007"
 source: "docs/portal-specs/01-feature-epics/EPIC-007-scheduler-custom-scripts/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,11 @@ children:
   - T-0128
   - T-0129
   - T-0130
+  - T-0873
+  - T-0876
+  - T-0902
+  - T-0903
+  - T-0904
 scope_kind: "epic"
 scope_note: "Rollup for Scheduler & Custom Scripts. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -45,4 +50,13 @@ and real `scope:` paths can be named.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0876 — `fixed-unverified`
+- T-0902 — `fixed-unverified`
+- T-0903 — `fixed-unverified`
+- T-0904 — `fixed-unverified`

@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-041, EPIC-038, EPIC-042
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #59 (extensions); un-parks the RMM half of EPIC-041
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-045.md`](../../../../ISSUES/epics/EPIC-045.md)
 
 ## 1. Purpose
 
@@ -200,4 +200,4 @@ approved allow-list can be dispatched; the portal never sends arbitrary script t
 - [`../EPIC-041-integrations-copilot/SPEC.md`](../EPIC-041-integrations-copilot/SPEC.md) — integration framework
 - [`../EPIC-044-intune-cis-baselines/SPEC.md`](../EPIC-044-intune-cis-baselines/SPEC.md) — Intune-managed devices
 - [`../EPIC-047-network-posture/SPEC.md`](../EPIC-047-network-posture/SPEC.md) — network devices
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-045.md`](../../../../ISSUES/epics/EPIC-045.md) — epic ticket

@@ -4,8 +4,8 @@
 > evolving M365-Assess into a multi-tenant portal with remediation and a CIPP-class
 > feature set. It is *specification only* — no application code lives here.
 >
-> **Next milestone:** dispatch the authored child tickets (see `ISSUES/README.md`). All 41
-> epics now have child tickets in `ISSUES/`, and the fleet tooling is committed at `fleet/`.
+> **Next milestone:** see `MASTER_PLAN.md` at the repo root. All 41 original epics have child
+> tickets in `ISSUES/` (see `ISSUES/README.md`).
 > Track per-epic progress in [`01-feature-epics/README.md`](01-feature-epics/README.md).
 >
 > **Working name:** "M365-Portal" / "the portal". Placeholder — rename in one pass
@@ -34,8 +34,7 @@ without re-deriving requirements each session. The pipeline is:
       ▼
 01-feature-epics/      one EPIC-NNN folder per feature area
       │  SPEC.md  = vivid functional spec (the "what")
-      │  epic.md  = fleet rollup ticket (status: epic, children: [])
-      │  tickets/ = fleet child tickets (the "how", added in later sessions)
+      │  (epic ticket: ISSUES/epics/EPIC-NNN.md; child tickets: ISSUES/T-NNNN.md)
       ▼
 02-controls/           per-check remediation breakdown (manual vs automated)
       │
@@ -48,7 +47,7 @@ ISSUES/                fleet ticket store (at repo root) — populated at dispat
 1. [`00-guides/01-architecture.md`](00-guides/01-architecture.md) — the system shape.
 2. [`00-guides/02-ui-design.md`](00-guides/02-ui-design.md) — the design system (M365-Assess theme).
 3. [`00-guides/06-remediation.md`](00-guides/06-remediation.md) — the remediation contract.
-4. The EPIC folder you are working on: `SPEC.md` then `epic.md`.
+4. The EPIC folder you are working on: `SPEC.md`, then its epic ticket in `ISSUES/epics/`.
 5. [`99-reference/`](99-reference/) only when you need CIPP provenance detail.
 
 ## Directory contract
@@ -57,13 +56,11 @@ ISSUES/                fleet ticket store (at repo root) — populated at dispat
 |---|---|---|
 | `00-guides/` | Six cross-cutting standards. Stable; changes are ADR-worthy. | Humans, by hand |
 | `01-feature-epics/` | 41 EPIC folders; see [`01-feature-epics/README.md`](01-feature-epics/README.md) for the index + status tracker | Humans/agents per session |
-| `01-feature-epics/EPIC-NNN-<slug>/epic.md` | Fleet rollup ticket (`status: epic`) | Derived from SPEC scope |
-| `01-feature-epics/EPIC-NNN-<slug>/tickets/` | Fleet child tickets | Later sessions, once `scope:` is known |
 | `02-controls/remediation-matrix.csv` | All 292 registry checks × remediation mode | Generated from `registry.json` |
 | `02-controls/manual/` | In-tool instruction docs for manual remediation | Later sessions |
 | `02-controls/auto/` | Module specs for automated remediation | Later sessions |
-| `99-reference/` | Captured provenance (CIPP, theme, fleet contract) | Session 1, append-only |
-| `ISSUES/` (repo root) | The live ticket store the fleet tool dispatches from | `fleet.py` + authors |
+| `99-reference/` | Captured provenance (CIPP, theme, ticket contract) | Session 1, append-only |
+| `ISSUES/` (repo root) | The live ticket store | Authors |
 
 ## Naming & ID conventions
 
@@ -77,11 +74,10 @@ These IDs are chosen to satisfy the DAXX fleet tool's ID regex
 | Child ticket | `T-NNNN` | `T-0142` | Globally unique across open + closed |
 | Control doc | `NNN-<checkId>.md` | `014-ENTRA-SECDEFAULT-001.md` | Numbered within `02-controls/{manual,auto}/` |
 
-> **Fleet hard rules** (see [`99-reference/fleet-conventions.md`](99-reference/fleet-conventions.md)):
+> **Ticket rules** (see [`99-reference/ticket-conventions.md`](99-reference/ticket-conventions.md)):
 > one markdown file per ticket, flat YAML front matter first, `id`/`status`/`severity`/`scope`
-> present, H1 exactly `<ID> — <Title>`, body with `## Report` + `## Acceptance`. `scope:` must
-> be non-empty for dispatch — that is why child tickets are authored *after* the SPEC fixes the
-> file layout, not during Session 1.
+> present, H1 exactly `<ID> — <Title>`, body with `## Report` + `## Acceptance`. Child tickets
+> are authored *after* the SPEC fixes the file layout, so `scope:` can name real paths.
 
 ## SPEC.md template
 
@@ -112,9 +108,9 @@ Every `SPEC.md` uses the same section order. Keep it; agents and humans both key
 
 - This README + the directory tree.
 - `00-guides/` — six substantive master guides.
-- `99-reference/` — full CIPP/theme/fleet capture so later sessions never re-explore.
+- `99-reference/` — full CIPP/theme capture and the ticket contract.
 - `01-feature-epics/` — **41 epic folders, all SPECs drafted** (sections 2–11, all §11 open
-  questions resolved or explicitly deferred) + fleet `epic.md` rollups + a status tracker
+  questions resolved or explicitly deferred) + a status tracker
   ([`01-feature-epics/README.md`](01-feature-epics/README.md)).
 - `02-controls/remediation-matrix.csv` — all 292 checks, mode classified + generator.
 - `ISSUES/` — the fleet ticket store: 41 epic rollups + 398 child tickets (T-0001–T-0820).

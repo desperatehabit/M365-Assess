@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-001
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #60,#62; CIPP `CippBrandingSettings.jsx`, `Config/FeatureFlags.json`, `Invoke-ListLogs.ps1`, `pages/cipp/preferences.jsx`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-037.md`](../../../../ISSUES/epics/EPIC-037.md)
 
 ## 1. Purpose
 
@@ -163,4 +163,4 @@ Read from the audit/log tables with filters (actor, action, tenant, result, date
 - [`../EPIC-005-executive-reports/SPEC.md`](../EPIC-005-executive-reports/SPEC.md) — branding consumer
 - [`../EPIC-038-rbac-api-clients/SPEC.md`](../EPIC-038-rbac-api-clients/SPEC.md) — permissions
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — notifications config
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-037.md`](../../../../ISSUES/epics/EPIC-037.md) — epic ticket

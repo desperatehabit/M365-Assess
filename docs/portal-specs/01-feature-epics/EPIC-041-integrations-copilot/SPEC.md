@@ -5,7 +5,7 @@
 - **Severity:** low
 - **Depends on:** EPIC-038
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #59,#61; CIPP `CippExtensions/`, `pages/copilot/`, `Invoke-ListShadowAI.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-041.md`](../../../../ISSUES/epics/EPIC-041.md)
 
 > **PARKED.** This epic is deliberately deferred. It exists so the seams are named, not because it
 > is planned for v1. Un-park only when there is confirmed demand and a specific integration target.
@@ -124,4 +124,4 @@ writes and route through **EPIC-006**.
 - [`../EPIC-039-template-library/SPEC.md`](../EPIC-039-template-library/SPEC.md) — GitHub dependency
 - [`../EPIC-038-rbac-api-clients/SPEC.md`](../EPIC-038-rbac-api-clients/SPEC.md) — API/permissions
 - [`../EPIC-032-audit-logs-webhooks/SPEC.md`](../EPIC-032-audit-logs-webhooks/SPEC.md) — SIEM source
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-041.md`](../../../../ISSUES/epics/EPIC-041.md) — epic ticket

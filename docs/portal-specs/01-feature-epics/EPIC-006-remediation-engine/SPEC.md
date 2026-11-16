@@ -5,7 +5,7 @@
 - **Severity:** critical
 - **Depends on:** EPIC-001, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #6; [`cipp-standards-ux.md`](../../99-reference/cipp-standards-ux.md) §9; [`06-remediation.md`](../../00-guides/06-remediation.md); [`../../02-controls/`](../../02-controls/)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-006.md`](../../../../ISSUES/epics/EPIC-006.md)
 
 ## 1. Purpose
 
@@ -220,4 +220,4 @@ This epic **is** the implementation of
 - [`../../02-controls/remediation-matrix.csv`](../../02-controls/remediation-matrix.csv) — all 292 checks
 - [`../EPIC-001-platform-foundation/SPEC.md`](../EPIC-001-platform-foundation/SPEC.md) — execution + audit
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — scheduled reuse
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-006.md`](../../../../ISSUES/epics/EPIC-006.md) — epic ticket

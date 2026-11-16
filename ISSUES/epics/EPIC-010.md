@@ -3,7 +3,7 @@ id: "EPIC-010"
 source: "docs/portal-specs/01-feature-epics/EPIC-010-baselines-rollouts/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,8 @@ children:
   - T-0188
   - T-0189
   - T-0190
+  - T-0809
+  - T-0879
 scope_kind: "epic"
 scope_note: "Rollup for Baselines & Rollouts. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -45,4 +47,10 @@ real `scope:` paths can be named.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0879 — `fixed-unverified`

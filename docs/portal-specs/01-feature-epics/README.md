@@ -61,8 +61,8 @@
 > tickets yet**; they await SPEC approval. EPIC-042 is the foundation and must be approved first.
 >
 > **Tickets:** EPIC-001 to EPIC-041 have child tickets authored in `ISSUES/` (T-0001–T-0820, 398
-> children). `bash fleet/sync-epics.sh` keeps `ISSUES/epics/` in step. The `Status` column
-> above is the SPEC's status, not ticket progress — dispatch state lives in `TICKETS.md`.
+> children). The `Status` column above is the SPEC's status, not ticket progress — ticket
+> state lives in `TICKETS.md`.
 
 See [`../README.md`](../README.md) for the SPEC template, ID scheme, and directory contract.
-Fleet ticket format: [`../99-reference/fleet-conventions.md`](../99-reference/fleet-conventions.md).
+Ticket format: [`../99-reference/ticket-conventions.md`](../99-reference/ticket-conventions.md).

@@ -3,7 +3,7 @@ id: "EPIC-020"
 source: "docs/portal-specs/01-feature-epics/EPIC-020-mailboxes/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -22,6 +22,11 @@ children:
   - T-0387
   - T-0388
   - T-0389
+  - T-0586
+  - T-0850
+  - T-0894
+  - T-0895
+  - T-0901
 scope_kind: "epic"
 scope_note: "Rollup for Mailboxes. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -48,7 +53,7 @@ path every mailbox mutation routes through.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
 
 ## Progress
 
@@ -77,3 +82,9 @@ Run with `scripts/portal/Verify-PortalWorkerEndpoints.ps1` against a live tenant
 - **Outstanding:** mailbox detail and the mutation paths (shared conversion, quota/archive/hold,
   permissions, rules, forwarding, vacation, retention) need seeded mailboxes to exercise.
 
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0894 — `fixed-unverified`
+- T-0901 — `fixed-unverified`

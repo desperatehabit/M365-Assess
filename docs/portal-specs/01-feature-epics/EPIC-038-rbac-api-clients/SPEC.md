@@ -5,7 +5,7 @@
 - **Severity:** critical
 - **Depends on:** EPIC-001, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #57-#58; [`cipp-ui-patterns.md`](../../99-reference/cipp-ui-patterns.md) §1 (scoping); [`05-programming.md`](../../00-guides/05-programming.md) §3
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-038.md`](../../../../ISSUES/epics/EPIC-038.md)
 
 ## 1. Purpose
 
@@ -232,4 +232,4 @@ every remediation access decision.
 - [`../../00-guides/06-remediation.md`](../../00-guides/06-remediation.md) — `Remediation.Apply`
 - [`../EPIC-002-tenants-onboarding/SPEC.md`](../EPIC-002-tenants-onboarding/SPEC.md) — tenant scoping input
 - [`../EPIC-037-settings-branding/SPEC.md`](../EPIC-037-settings-branding/SPEC.md) — logbook
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-038.md`](../../../../ISSUES/epics/EPIC-038.md) — epic ticket

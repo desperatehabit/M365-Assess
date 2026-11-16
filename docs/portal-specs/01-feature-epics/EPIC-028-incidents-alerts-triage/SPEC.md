@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006, EPIC-029
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #17; CIPP `Security/Incidents/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-028.md`](../../../../ISSUES/epics/EPIC-028.md)
 
 ## 1. Purpose
 
@@ -149,4 +149,4 @@ Status/classification/assignment changes are tenant writes and route through **E
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — alert rules + delivery
 - [`../EPIC-019-defender-vulnerabilities/SPEC.md`](../EPIC-019-defender-vulnerabilities/SPEC.md) — Defender
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-028.md`](../../../../ISSUES/epics/EPIC-028.md) — epic ticket
