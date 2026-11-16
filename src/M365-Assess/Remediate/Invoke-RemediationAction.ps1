@@ -3,6 +3,8 @@ function Get-RemediationTypedState {
     .SYNOPSIS
         Reads current tenant state for a typed remediation command.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'TenantCredential',
+        Justification = 'TenantCredential is the auth hashtable from Resolve-TenantCredential (client id plus certificate reference or SecureString secret), never a plain-text password.')]
     [CmdletBinding()]
     [OutputType([object])]
     param(
@@ -48,6 +50,8 @@ function Invoke-RemediationTypedApply {
     .SYNOPSIS
         Applies one typed remediation command with bound parameters.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'TenantCredential',
+        Justification = 'TenantCredential is the auth hashtable from Resolve-TenantCredential (client id plus certificate reference or SecureString secret), never a plain-text password.')]
     [CmdletBinding()]
     [OutputType([object])]
     param(
@@ -160,6 +164,8 @@ function Invoke-RemediationAction {
     .EXAMPLE
         Invoke-RemediationAction -CheckId 'SPO-SHARING-001.1' -TenantId 'tenant-a' -CallerContext $ctx -AllowlistCheckIds @('SPO-SHARING-001') -WhatIf
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'TenantCredential',
+        Justification = 'TenantCredential is the auth hashtable from Resolve-TenantCredential (client id plus certificate reference or SecureString secret), never a plain-text password.')]
     [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
     [OutputType([PSCustomObject])]
     param(
