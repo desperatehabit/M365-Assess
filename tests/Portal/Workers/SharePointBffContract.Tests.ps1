@@ -140,7 +140,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.items[0].storageUsedPercent | Should -BeGreaterThan 0
             $result.items[0].sensitivity | Should -Be 'General'
             $result.items[0].sharing | Should -Be 'externalUserSharingOnly'
-            Assert-MockCalled Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
+            Should -Invoke Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
         }
 
         It 'get-site-browser.ps1 reads SiteId and answers the browser with hand-off paths' {
@@ -227,7 +227,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.id | Should -Not -BeNullOrEmpty
             $result.name | Should -Be 'Team Alpha'
             $result.error | Should -BeNullOrEmpty
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/groups' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/groups' }
         }
 
         It 'new-sharepoint-site-bulk.ps1 reads payload.csv and answers one row per site' {
@@ -275,7 +275,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.auditEvent.action | Should -Be 'sharepoint.site.delete'
             $result.auditEvent.result | Should -Be 'success'
             $result.auditEvent.actor | Should -Be ''
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/groups/site-live' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/groups/site-live' }
         }
 
         It 'invoke-sharepoint-site-action.ps1 restores a soft-deleted site' {
@@ -297,7 +297,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.operation | Should -Be 'restore'
             $result.targetName | Should -Be 'Retired Site'
             $result.auditEvent.action | Should -Be 'sharepoint.site.restore'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/directory/deletedItems/site-deleted/restore' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/directory/deletedItems/site-deleted/restore' }
         }
 
         It 'invoke-sharepoint-site-action.ps1 lists the recycle bin' {
@@ -340,7 +340,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.summary.succeeded | Should -Be 1
             $result.results[0].status | Should -Be 'emptied'
             $result.auditEvents[0].action | Should -Be 'sharepoint.recyclebin.empty'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/directory/deletedItems/recycled-1' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/directory/deletedItems/recycled-1' }
         }
 
         It 'invoke-sharepoint-site-action.ps1 reads the edit action and patches site properties' {

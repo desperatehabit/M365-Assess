@@ -94,7 +94,7 @@ Describe 'Restore-Mailbox worker (T-0388)' {
             $page.items[0].mailboxType | Should -Be 'UserMailbox'
             $page.items[0].deletedAt | Should -Not -BeNullOrEmpty
             $page.items[0].daysUntilPurge | Should -Be 19
-            Assert-MockCalled Undo-SoftDeletedMailbox -Times 0
+            Should -Invoke Undo-SoftDeletedMailbox -Times 0
         }
 
         It 'filters the projection by search text' {
@@ -128,14 +128,14 @@ Describe 'Restore-Mailbox worker (T-0388)' {
             $plan.before['state'] | Should -Be 'softDeleted'
             $plan.after['state'] | Should -Be 'active'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Undo-SoftDeletedMailbox -Times 0
+            Should -Invoke Undo-SoftDeletedMailbox -Times 0
         }
 
         It 'restore apply without confirmation is refused' {
             {
                 Invoke-RestoreMailbox -TenantId 'tenant-test' -MailboxId 'mbx-deleted-1' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Undo-SoftDeletedMailbox -Times 0
+            Should -Invoke Undo-SoftDeletedMailbox -Times 0
         }
 
         It 'restore apply with confirmation calls Undo-SoftDeletedMailbox and produces before/after plus an audit record' {
@@ -149,21 +149,21 @@ Describe 'Restore-Mailbox worker (T-0388)' {
             $res.auditEvent.targetId | Should -Be 'mbx-deleted-1'
             $res.auditEvent.before['state'] | Should -Be 'softDeleted'
             $res.auditEvent.after['state'] | Should -Be 'active'
-            Assert-MockCalled Undo-SoftDeletedMailbox -Times 1 -ParameterFilter { $SoftDeletedMailbox -eq 'mbx-deleted-1' }
+            Should -Invoke Undo-SoftDeletedMailbox -Times 1 -ParameterFilter { $SoftDeletedMailbox -eq 'mbx-deleted-1' }
         }
 
         It 'restoring a mailbox that is not soft-deleted throws NotFound without writing' {
             {
                 Invoke-RestoreMailbox -TenantId 'tenant-test' -MailboxId 'mbx-live-9' -DryRun $true
             } | Should -Throw '*NotFound*soft-deleted*'
-            Assert-MockCalled Undo-SoftDeletedMailbox -Times 0
+            Should -Invoke Undo-SoftDeletedMailbox -Times 0
         }
 
         It 'restoring an unknown mailbox throws NotFound without writing' {
             {
                 Invoke-RestoreMailbox -TenantId 'tenant-test' -MailboxId 'mbx-missing' -DryRun $true
             } | Should -Throw '*NotFound*soft-deleted*'
-            Assert-MockCalled Undo-SoftDeletedMailbox -Times 0
+            Should -Invoke Undo-SoftDeletedMailbox -Times 0
         }
     }
 

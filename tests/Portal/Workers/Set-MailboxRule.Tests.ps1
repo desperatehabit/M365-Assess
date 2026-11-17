@@ -165,14 +165,14 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $plan.requiresConfirmation | Should -BeTrue
             $plan.warning | Should -Match 'security-sensitive'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled New-InboxRule -Times 0
+            Should -Invoke New-InboxRule -Times 0
         }
 
         It 'create apply without confirmation is refused' {
             {
                 Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'create' -MailboxId 'mbx-1' -Name 'Forward cover' -ForwardTo 'smtp:cover@example.invalid' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled New-InboxRule -Times 0
+            Should -Invoke New-InboxRule -Times 0
         }
 
         It 'create apply with confirmation calls New-InboxRule and produces an audit record' {
@@ -187,14 +187,14 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $res.auditEvent.targetId | Should -Be 'rule-new'
             $res.auditEvent.before | Should -BeNullOrEmpty
             $res.auditEvent.after['forwardTo'] | Should -Be 'smtp:cover@example.invalid'
-            Assert-MockCalled New-InboxRule -Times 1
+            Should -Invoke New-InboxRule -Times 1
         }
 
         It 'create with a missing name throws before any write' {
             {
                 Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'create' -MailboxId 'mbx-1' -DryRun $true
             } | Should -Throw '*ValidationFailed*'
-            Assert-MockCalled New-InboxRule -Times 0
+            Should -Invoke New-InboxRule -Times 0
         }
     }
 
@@ -220,7 +220,7 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $plan.securitySensitive | Should -BeTrue
             $plan.warning | Should -Match 'security-sensitive'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Set-InboxRule -Times 0
+            Should -Invoke Set-InboxRule -Times 0
         }
 
         It 'edit that changes nothing is a structured no-op with no write' {
@@ -230,14 +230,14 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $res.result['noop'] | Should -BeTrue
             $res.plan.before['name'] | Should -Be 'File invoices'
             $res.plan.after['name'] | Should -Be 'File invoices'
-            Assert-MockCalled Set-InboxRule -Times 0
+            Should -Invoke Set-InboxRule -Times 0
         }
 
         It 'edit apply without confirmation is refused' {
             {
                 Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'edit' -MailboxId 'mbx-1' -RuleId 'rule-2' -Name 'Renamed' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-InboxRule -Times 0
+            Should -Invoke Set-InboxRule -Times 0
         }
 
         It 'edit apply captures before/after and produces an audit record' {
@@ -249,7 +249,7 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $res.auditEvent.action | Should -Be 'mailbox.rule.edit'
             $res.auditEvent.targetId | Should -Be 'rule-2'
             $res.auditEvent.before['name'] | Should -Be 'File invoices'
-            Assert-MockCalled Set-InboxRule -Times 1 -ParameterFilter { $Identity -eq 'rule-2' }
+            Should -Invoke Set-InboxRule -Times 1 -ParameterFilter { $Identity -eq 'rule-2' }
         }
 
         It 'edit of an unknown rule throws NotFound' {
@@ -257,7 +257,7 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             {
                 Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'edit' -MailboxId 'mbx-1' -RuleId 'rule-missing' -Name 'Renamed' -DryRun $true
             } | Should -Throw '*NotFound*'
-            Assert-MockCalled Set-InboxRule -Times 0
+            Should -Invoke Set-InboxRule -Times 0
         }
     }
 
@@ -282,14 +282,14 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $plan.after | Should -BeNullOrEmpty
             $plan.securitySensitive | Should -BeTrue
             $plan.warning | Should -Match 'security-sensitive'
-            Assert-MockCalled Remove-InboxRule -Times 0
+            Should -Invoke Remove-InboxRule -Times 0
         }
 
         It 'delete apply without confirmation is refused' {
             {
                 Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'delete' -MailboxId 'mbx-1' -RuleId 'rule-1' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Remove-InboxRule -Times 0
+            Should -Invoke Remove-InboxRule -Times 0
         }
 
         It 'delete apply removes the rule and produces an audit record' {
@@ -302,7 +302,7 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             $res.auditEvent.targetId | Should -Be 'rule-1'
             $res.auditEvent.before['name'] | Should -Be 'Forward cover'
             $res.auditEvent.after | Should -BeNullOrEmpty
-            Assert-MockCalled Remove-InboxRule -Times 1 -ParameterFilter { $Identity -eq 'rule-1' }
+            Should -Invoke Remove-InboxRule -Times 1 -ParameterFilter { $Identity -eq 'rule-1' }
         }
 
         It 'delete of an unknown rule throws NotFound' {
@@ -310,7 +310,7 @@ Describe 'Set-MailboxRule worker (T-0385)' {
             {
                 Invoke-SetMailboxRule -TenantId 'tenant-test' -Action 'delete' -MailboxId 'mbx-1' -RuleId 'rule-missing' -DryRun $true
             } | Should -Throw '*NotFound*'
-            Assert-MockCalled Remove-InboxRule -Times 0
+            Should -Invoke Remove-InboxRule -Times 0
         }
     }
 

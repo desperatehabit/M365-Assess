@@ -90,7 +90,7 @@ function Assert-GraphRequestAllowed {
     }
 }
 
-function Invoke-GraphRequest {
+function Invoke-PortalGraphRequest {
     <#
     .SYNOPSIS
         Runs one validated Graph request and shapes the response envelope.
@@ -103,7 +103,7 @@ function Invoke-GraphRequest {
     .PARAMETER Body
         Optional request body (object or JSON string).
     .EXAMPLE
-        Invoke-GraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://graph.microsoft.com/v1.0/me'
+        Invoke-PortalGraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://graph.microsoft.com/v1.0/me'
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]

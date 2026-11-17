@@ -136,30 +136,30 @@ Describe 'Set-MailboxSettings worker (T-0383)' {
             $plan.after['prohibitSendQuota'] | Should -Be '50 GB'
             $plan.diff | Should -Not -BeNullOrEmpty
             $plan.requiresConfirmation | Should -BeFalse
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'DryRun of an archive enable flags confirmation' {
             $plan = Invoke-SetMailboxSettings -TenantId 'tenant-test' -MailboxId 'mbx-2' -Settings @{ archiveEnabled = $true } -DryRun $true
             $plan.requiresConfirmation | Should -BeTrue
             $plan.diff[0] | Should -Match 'archiveEnabled'
-            Assert-MockCalled Enable-Mailbox -Times 0
+            Should -Invoke Enable-Mailbox -Times 0
         }
 
         It 'matching settings are a structured no-op with no write' {
             $res = Invoke-SetMailboxSettings -TenantId 'tenant-test' -MailboxId 'mbx-2' -Settings @{ maxRecipientsPerMessage = 500 } -DryRun $false -Confirmed $true
             $res.success | Should -BeTrue
             $res.noop | Should -BeTrue
-            Assert-MockCalled Set-Mailbox -Times 0
-            Assert-MockCalled Enable-Mailbox -Times 0
-            Assert-MockCalled Set-CalendarProcessing -Times 0
+            Should -Invoke Set-Mailbox -Times 0
+            Should -Invoke Enable-Mailbox -Times 0
+            Should -Invoke Set-CalendarProcessing -Times 0
         }
 
         It 'apply without confirmation is refused' {
             {
                 Invoke-SetMailboxSettings -TenantId 'tenant-test' -MailboxId 'mbx-2' -Settings @{ prohibitSendQuota = '50 GB' } -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'quota, hold, locale, limits, calendar, and GAL apply with before/after, an operation, and an audit record' {
@@ -184,16 +184,16 @@ Describe 'Set-MailboxSettings worker (T-0383)' {
             $res.auditEvent.targetId | Should -Be 'mbx-2'
             $res.auditEvent.before['prohibitSendQuota'] | Should -Match '49 GB'
             $res.auditEvent.after['prohibitSendQuota'] | Should -Match '50 GB'
-            Assert-MockCalled Set-Mailbox -Times 1
-            Assert-MockCalled Set-MailboxRegionalConfiguration -Times 1
-            Assert-MockCalled Set-CalendarProcessing -Times 1
+            Should -Invoke Set-Mailbox -Times 1
+            Should -Invoke Set-MailboxRegionalConfiguration -Times 1
+            Should -Invoke Set-CalendarProcessing -Times 1
         }
 
         It 'archive enable calls Enable-Mailbox' {
             $res = Invoke-SetMailboxSettings -TenantId 'tenant-test' -MailboxId 'mbx-2' -Settings @{ archiveEnabled = $true } -DryRun $false -Confirmed $true
             $res.success | Should -BeTrue
             $res.plan.requiresConfirmation | Should -BeTrue
-            Assert-MockCalled Enable-Mailbox -Times 1
+            Should -Invoke Enable-Mailbox -Times 1
         }
 
         It 'an unknown mailbox throws NotFound' {
@@ -207,7 +207,7 @@ Describe 'Set-MailboxSettings worker (T-0383)' {
             {
                 Invoke-SetMailboxSettings -TenantId 'tenant-test' -MailboxId 'mbx-2' -Settings @{ prohibitSendQuota = 'huge' } -DryRun $true
             } | Should -Throw '*ValidationFailed*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
     }
 

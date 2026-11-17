@@ -137,8 +137,8 @@ Describe 'apply-remediation entrypoint (T-0838)' {
 
         & $script:entrypoint -JobFile $script:jobFile -OutputFolder $script:outFolder -PlanFile $script:planFile | Out-Null
 
-        Assert-MockCalled Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
-        Assert-MockCalled Invoke-RemediationApply -ParameterFilter {
+        Should -Invoke Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
+        Should -Invoke Invoke-RemediationApply -ParameterFilter {
             $PlanId -eq 'plan-7' -and @($Actions).Count -eq 2 -and $Actions[0].id -eq 'act-1' -and $Actions[1].id -eq 'act-2'
         }
 
@@ -181,7 +181,7 @@ Describe 'apply-remediation entrypoint (T-0838)' {
 
         & $script:entrypoint -JobFile $script:jobFile -OutputFolder $script:outFolder | Out-Null
 
-        Assert-MockCalled Invoke-RemediationApply -ParameterFilter { @($Actions).Count -eq 1 -and $Actions[0].id -eq 'act-1' }
+        Should -Invoke Invoke-RemediationApply -ParameterFilter { @($Actions).Count -eq 1 -and $Actions[0].id -eq 'act-1' }
         $apply = Get-Content -LiteralPath (Join-Path $script:outFolder 'remediation-apply.json') -Raw | ConvertFrom-Json
         $apply.Results[0].actionId | Should -Be 'act-1'
     }
@@ -241,7 +241,7 @@ Describe 'apply-remediation entrypoint (T-0838)' {
 
         & $script:entrypoint -JobFile $script:jobFile -OutputFolder $script:outFolder -PlanFile $script:planFile | Out-Null
 
-        Assert-MockCalled Invoke-RemediationApply -ParameterFilter { $DryRun -eq $true }
+        Should -Invoke Invoke-RemediationApply -ParameterFilter { $DryRun -eq $true }
         $apply = Get-Content -LiteralPath (Join-Path $script:outFolder 'remediation-apply.json') -Raw | ConvertFrom-Json
         $apply.Results[0].dryRun | Should -BeTrue
         $apply.Results[0].state | Should -Be 'dryrun'
