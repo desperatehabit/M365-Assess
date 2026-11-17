@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
     $script:workersDir = Join-Path $script:repoRoot 'portal/workers/M365Portal.Workers'
     $script:entrypoints = Join-Path $script:repoRoot 'portal/workers'
@@ -61,7 +61,13 @@ BeforeAll {
                 return @{ id = 'group-new' }
             }
             if ($key -like 'GET /v1.0/sites/site-1*') {
-                return @{ id = 'site-1'; webUrl = 'https://contoso.sharepoint.com/sites/alpha' }
+                return @{
+                    id                = 'site-1'
+                    displayName       = 'Team Alpha'
+                    webUrl            = 'https://contoso.sharepoint.com/sites/alpha'
+                    sharingCapability = 'disabled'
+                    lockState         = 'Unlock'
+                }
             }
             if ($key -like 'GET /v1.0/groups/site-live*') {
                 return @{ id = 'site-live'; displayName = 'Project Alpha'; mail = 'project-alpha.example.invalid'; visibility = 'Public' }
@@ -336,5 +342,39 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.auditEvents[0].action | Should -Be 'sharepoint.recyclebin.empty'
             Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/directory/deletedItems/recycled-1' }
         }
+
+        It 'invoke-sharepoint-site-action.ps1 reads the edit action and patches site properties' {
+            script:New-GraphMock
+            script:New-JobFile @{
+                schemaVersion = 'v1'
+                correlationId = 'corr-edit-1'
+                action        = 'edit'
+                payload       = @{
+                    siteId      = 'site-1'
+                    displayName = 'Team Beta'
+                    sharing     = 'externalUserSharingOnly'
+                    lockState   = 'ReadOnly'
+                    dryRun      = $false
+                }
+            }
+
+            $result = script:Run-Entrypoint 'invoke-sharepoint-site-action.ps1'
+
+            $result.success | Should -BeTrue
+            $result.state | Should -Be 'succeeded'
+            $result.operation | Should -Be 'edit'
+            $result.siteId | Should -Be 'site-1'
+            $result.targetName | Should -Be 'Team Beta'
+            $result.plan.before.displayName | Should -Be 'Team Alpha'
+            $result.plan.after.displayName | Should -Be 'Team Beta'
+            $result.plan.after.sharing | Should -Be 'externalUserSharingOnly'
+            $result.plan.after.lockState | Should -Be 'ReadOnly'
+            $result.auditEvent.action | Should -Be 'sharepoint.site.edit'
+            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'PATCH' -and $Uri -eq '/v1.0/sites/site-1' }
+        }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\global:Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

@@ -94,6 +94,7 @@ interface SiteActionAppliedOutput {
   readonly siteId: string;
   readonly targetName: string;
   readonly plan: SiteActionPlanOutput | null;
+  readonly error?: string | null;
   readonly auditEvent: Record<string, unknown> | null;
 }
 
@@ -180,7 +181,7 @@ function toLifecycleResult(output: SiteActionOutput): SharePointSiteOperationRes
     targetName: output.targetName,
     before: (output.plan?.before ?? null) as Record<string, unknown> | null,
     after: (output.plan?.after ?? null) as Record<string, unknown> | null,
-    error: output.success ? null : `site ${output.operation} failed`,
+    error: output.success ? null : (output.error ?? `site ${output.operation} failed`),
     ...(output.auditEvent ? { auditEvent: toAuditEvent(output.auditEvent) } : {}),
   };
 }
@@ -276,6 +277,24 @@ export function createSharePointProviders(run: WorkerRunner, credentials: Creden
     },
 
     lifecycle: {
+      editSite: async (tenantId, siteId, input, preview) => {
+        const output = await call<SiteActionOutput>("invoke-sharepoint-site-action.ps1", tenantId, {
+          schemaVersion: "v1",
+          correlationId: globalThis.crypto.randomUUID(),
+          action: "edit",
+          payload: {
+            siteId,
+            ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+            ...(input.sharing !== undefined ? { sharing: input.sharing } : {}),
+            ...(input.owners !== undefined ? { owners: [...input.owners] } : {}),
+            ...(input.lockState !== undefined ? { lockState: input.lockState } : {}),
+            dryRun: preview,
+            confirm: input.confirm === true,
+          },
+        });
+        return toLifecycleResult(output);
+      },
+
       deleteSite: async (tenantId, siteId, input, preview) => {
         const output = await call<SiteActionOutput>("invoke-sharepoint-site-action.ps1", tenantId, {
           schemaVersion: "v1",

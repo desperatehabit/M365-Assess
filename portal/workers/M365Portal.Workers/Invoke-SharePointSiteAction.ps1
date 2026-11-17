@@ -1,4 +1,4 @@
-# Invoke-SharePointSiteAction.ps1 — EPIC-025 site delete/restore and recycle-bin
+﻿# Invoke-SharePointSiteAction.ps1 — EPIC-025 site delete/restore and recycle-bin
 # lifecycle worker (SPEC §2 US-3, §3.1, §4.1, §6, §8; T-0485).
 #
 # Covers the destructive lifecycle: soft-delete a site, restore it from the
@@ -22,11 +22,24 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $script:SharePointSiteActions = @(
+    'edit'
     'delete'
     'restore'
     'recyclebin-list'
     'recyclebin-restore'
     'recyclebin-empty'
+)
+$script:SharePointSiteSharingValues = @(
+    'disabled'
+    'externalUserSharingOnly'
+    'externalUserAndGuestSharing'
+    'existingExternalUserSharingOnly'
+)
+$script:SharePointSiteLockStateValues = @(
+    'Unlock'
+    'NoAdditions'
+    'ReadOnly'
+    'NoAccess'
 )
 
 function ConvertTo-SharePointSiteRow {
@@ -789,22 +802,424 @@ function Invoke-SharePointRecycleBinAction {
     }
 }
 
+function Get-SharePointProperty {
+    <#
+    .SYNOPSIS
+        Reads a named property from either a dictionary or a PowerShell object.
+    .DESCRIPTION
+        Supports both hashtable and PSCustomObject responses from Graph mocks
+        or live Invoke-MgGraphRequest calls without throwing under StrictMode.
+    .PARAMETER InputObject
+        Dictionary or object to inspect.
+    .PARAMETER Name
+        Property or key name to read.
+    .EXAMPLE
+        Get-SharePointProperty -InputObject $site -Name 'displayName'
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter()]
+        [object]$InputObject,
+
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    if ($null -eq $InputObject) {
+        return $null
+    }
+    if ($InputObject -is [System.Collections.IDictionary]) {
+        if ($InputObject.Contains($Name)) {
+            return $InputObject[$Name]
+        }
+        return $null
+    }
+    $prop = $InputObject.PSObject.Properties[$Name]
+    if ($null -ne $prop) {
+        return $prop.Value
+    }
+    return $null
+}
+
+function Get-SharePointSiteEditState {
+    <#
+    .SYNOPSIS
+        Reads one live site (or backing group) for the edit before snapshot.
+    .DESCRIPTION
+        Queries /v1.0/sites/{siteId} first and falls back to /v1.0/groups/{siteId}
+        when the caller passed a group id. Returns null when neither exists so the
+        caller refuses the edit with a structured NotFound error.
+    .PARAMETER SiteId
+        SharePoint site or group identity.
+    .EXAMPLE
+        Get-SharePointSiteEditState -SiteId 'site-1'
+    #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SiteId
+    )
+
+    $site = $null
+    try {
+        $siteUri = '/v1.0/sites/{0}?$select=id,displayName,webUrl,sharingCapability,lockState' -f $SiteId
+        $site = Invoke-MgGraphRequest -Method GET -Uri $siteUri -ErrorAction Stop
+    }
+    catch {
+        $site = $null
+    }
+
+    if ($null -ne $site) {
+        $idValue = [string](Get-SharePointProperty -InputObject $site -Name 'id')
+        if ([string]::IsNullOrWhiteSpace($idValue)) {
+            $idValue = $SiteId
+        }
+        $nameValue = [string](Get-SharePointProperty -InputObject $site -Name 'displayName')
+        if ([string]::IsNullOrWhiteSpace($nameValue)) {
+            $nameValue = $idValue
+        }
+        $urlValue = Get-SharePointProperty -InputObject $site -Name 'webUrl'
+        $sharingValue = [string](Get-SharePointProperty -InputObject $site -Name 'sharingCapability')
+        $lockValue = [string](Get-SharePointProperty -InputObject $site -Name 'lockState')
+
+        return [pscustomobject]@{
+            id          = $idValue
+            displayName = $nameValue
+            url         = if ($null -ne $urlValue -and -not [string]::IsNullOrWhiteSpace([string]$urlValue)) { [string]$urlValue } else { $null }
+            sharing     = $sharingValue
+            lockState   = $lockValue
+            source      = 'site'
+            state       = 'active'
+        }
+    }
+
+    try {
+        $groupUri = '/v1.0/groups/{0}?$select=id,displayName,mail,visibility' -f $SiteId
+        $group = Invoke-MgGraphRequest -Method GET -Uri $groupUri -ErrorAction Stop
+        if ($null -eq $group) {
+            return $null
+        }
+        $row = ConvertTo-SharePointSiteRow -Site $group
+        return [pscustomobject]@{
+            id          = $row.id
+            displayName = $row.displayName
+            url         = $row.url
+            sharing     = ''
+            lockState   = ''
+            source      = 'group'
+            state       = 'active'
+        }
+    }
+    catch {
+        return $null
+    }
+}
+
+function Invoke-SharePointSiteEdit {
+    <#
+    .SYNOPSIS
+        Previews or applies property updates to one SharePoint site.
+    .DESCRIPTION
+        Validates editable fields (displayName, sharing, owners, lockState),
+        looks up the live site for the before snapshot, returns a DryRun plan
+        with no Graph writes when -DryRun is true, and otherwise patches Graph
+        and emits an AuditEvent plus a SiteOperation-shaped row.
+    .PARAMETER TenantId
+        Tenant the site belongs to.
+    .PARAMETER SiteId
+        Site identity to update.
+    .PARAMETER DisplayName
+        Updated site display name.
+    .PARAMETER Sharing
+        Updated external sharing capability.
+    .PARAMETER Owners
+        Owner UPNs to add to the site.
+    .PARAMETER LockState
+        Updated site lock state (Unlock, NoAdditions, ReadOnly, NoAccess).
+    .PARAMETER DryRun
+        Report the intended change without writing to the tenant.
+    .PARAMETER Confirmed
+        Optional confirmation flag carried from the envelope.
+    .PARAMETER Actor
+        Caller identity recorded on the audit event.
+    .PARAMETER CorrelationId
+        Correlation id recorded on the audit event.
+    .PARAMETER WriteAudit
+        Seam: scriptblock (event) -> void. Defaults to a no-op.
+    .EXAMPLE
+        Invoke-SharePointSiteEdit -TenantId 'tenant-a' -SiteId 'site-1' -DisplayName 'Project Beta' -DryRun $true
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantId,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SiteId,
+
+        [Parameter()]
+        [string]$DisplayName = '',
+
+        [Parameter()]
+        [string]$Sharing = '',
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]]$Owners = @(),
+
+        [Parameter()]
+        [string]$LockState = '',
+
+        [Parameter()]
+        [bool]$DryRun = $false,
+
+        [Parameter()]
+        [bool]$Confirmed = $false,
+
+        [Parameter()]
+        [string]$Actor = '',
+
+        [Parameter()]
+        [string]$CorrelationId = '',
+
+        [Parameter()]
+        [scriptblock]$WriteAudit = { param($AuditEvent) }
+    )
+
+    $siteKey = $SiteId.Trim()
+    $trimmedDisplayName = $DisplayName.Trim()
+    $trimmedSharing = $Sharing.Trim()
+    $trimmedLockState = $LockState.Trim()
+    $cleanOwners = @($Owners | ForEach-Object -Process { ([string]$_).Trim() } | Where-Object -FilterScript { $_ -ne '' })
+
+    if ($trimmedSharing.Length -gt 0 -and ($script:SharePointSiteSharingValues -notcontains $trimmedSharing)) {
+        throw "ValidationFailed: sharing '$trimmedSharing' is not a supported sharing capability"
+    }
+    if ($trimmedLockState.Length -gt 0 -and ($script:SharePointSiteLockStateValues -notcontains $trimmedLockState)) {
+        throw "ValidationFailed: lockState '$trimmedLockState' must be Unlock, NoAdditions, ReadOnly, or NoAccess"
+    }
+    if ($trimmedDisplayName.Length -eq 0 -and $trimmedSharing.Length -eq 0 -and $trimmedLockState.Length -eq 0 -and $cleanOwners.Count -eq 0) {
+        throw 'ValidationFailed: at least one editable site property (displayName, sharing, owners, lockState) is required'
+    }
+
+    $before = Get-SharePointSiteEditState -SiteId $siteKey
+    if ($null -eq $before) {
+        throw "NotFound: site '$siteKey' was not found; edit is available only for a live site"
+    }
+
+    $beforeSnapshot = [pscustomobject]@{
+        id          = $before.id
+        displayName = $before.displayName
+        url         = $before.url
+        sharing     = $before.sharing
+        lockState   = $before.lockState
+        state       = 'active'
+    }
+
+    $afterMap = [ordered]@{
+        id          = $before.id
+        displayName = $before.displayName
+        url         = $before.url
+        sharing     = $before.sharing
+        lockState   = $before.lockState
+        state       = 'active'
+    }
+    $diff = [System.Collections.Generic.List[string]]::new()
+    $sitePatch = @{}
+    $groupPatch = @{}
+
+    if ($trimmedDisplayName.Length -gt 0) {
+        $afterMap['displayName'] = $trimmedDisplayName
+        $sitePatch['displayName'] = $trimmedDisplayName
+        $groupPatch['displayName'] = $trimmedDisplayName
+        $diff.Add("Set displayName to '$trimmedDisplayName'") | Out-Null
+    }
+    if ($trimmedSharing.Length -gt 0) {
+        $afterMap['sharing'] = $trimmedSharing
+        $sitePatch['sharingCapability'] = $trimmedSharing
+        $diff.Add("Set sharing to '$trimmedSharing'") | Out-Null
+    }
+    if ($trimmedLockState.Length -gt 0) {
+        $afterMap['lockState'] = $trimmedLockState
+        $sitePatch['lockState'] = $trimmedLockState
+        $diff.Add("Set lockState to '$trimmedLockState'") | Out-Null
+    }
+    if ($cleanOwners.Count -gt 0) {
+        $afterMap['owners'] = @($cleanOwners)
+        $diff.Add("Set owners to '$($cleanOwners -join ', ')'") | Out-Null
+    }
+
+    $targetName = [string]$afterMap['displayName']
+    $afterSnapshot = [pscustomobject]$afterMap
+
+    $plan = [pscustomobject]@{
+        action               = 'edit'
+        siteId               = $siteKey
+        targetName           = $targetName
+        before               = $beforeSnapshot
+        after                = $afterSnapshot
+        diff                 = @($diff)
+        valid                = $true
+        dryRun               = $DryRun
+        requiresConfirmation = $false
+    }
+
+    if ($DryRun) {
+        return $plan
+    }
+
+    try {
+        if ($before.source -eq 'group') {
+            if ($groupPatch.Count -gt 0) {
+                $groupBody = $groupPatch | ConvertTo-Json -Depth 5 -Compress
+                $null = Invoke-MgGraphRequest -Method PATCH -Uri ('/v1.0/groups/{0}' -f $siteKey) -Body $groupBody
+            }
+            $spoOnlyPatch = @{}
+            if ($sitePatch.ContainsKey('sharingCapability')) {
+                $spoOnlyPatch['sharingCapability'] = $sitePatch['sharingCapability']
+            }
+            if ($sitePatch.ContainsKey('lockState')) {
+                $spoOnlyPatch['lockState'] = $sitePatch['lockState']
+            }
+            if ($spoOnlyPatch.Count -gt 0) {
+                $spoBody = $spoOnlyPatch | ConvertTo-Json -Depth 5 -Compress
+                $null = Invoke-MgGraphRequest -Method PATCH -Uri ('/v1.0/sites/{0}' -f $siteKey) -Body $spoBody
+            }
+        }
+        elseif ($sitePatch.Count -gt 0) {
+            $siteBody = $sitePatch | ConvertTo-Json -Depth 5 -Compress
+            $null = Invoke-MgGraphRequest -Method PATCH -Uri ('/v1.0/sites/{0}' -f $siteKey) -Body $siteBody
+        }
+
+        foreach ($owner in $cleanOwners) {
+            if ($before.source -eq 'group') {
+                $ownerUser = Invoke-MgGraphRequest -Method GET -Uri ('/v1.0/users/{0}' -f $owner)
+                $ownerUserId = [string](Get-SharePointProperty -InputObject $ownerUser -Name 'id')
+                $refBody = @{ '@odata.id' = ('https://graph.microsoft.com/v1.0/directoryObjects/{0}' -f $ownerUserId) } | ConvertTo-Json -Depth 5 -Compress
+                $null = Invoke-MgGraphRequest -Method POST -Uri ('/v1.0/groups/{0}/owners/$ref' -f $siteKey) -Body $refBody
+            }
+            else {
+                $permBody = @{
+                    roles               = @('owner')
+                    grantedToIdentities = @(@{ user = @{ userPrincipalName = $owner } })
+                } | ConvertTo-Json -Depth 5 -Compress
+                $null = Invoke-MgGraphRequest -Method POST -Uri ('/v1.0/sites/{0}/permissions' -f $siteKey) -Body $permBody
+            }
+        }
+    }
+    catch {
+        $failedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+        $message = $_.Exception.Message
+        $failedAudit = @{
+            id            = [guid]::NewGuid().ToString()
+            tenantId      = $TenantId
+            action        = 'sharepoint.site.edit'
+            targetId      = $siteKey
+            targetName    = $targetName
+            timestamp     = $failedAt
+            result        = 'failure'
+            before        = $beforeSnapshot
+            after         = $null
+            error         = $message
+            actor         = $Actor
+            correlationId = $CorrelationId
+        }
+        & $WriteAudit $failedAudit
+        $failedOperation = @{
+            id        = [guid]::NewGuid().ToString()
+            tenantId  = $TenantId
+            siteId    = $siteKey
+            operation = 'edit'
+            state     = 'failed'
+            by        = $Actor
+            at        = $failedAt
+            result    = $message
+        }
+        return [pscustomobject]@{
+            success       = $false
+            state         = 'failed'
+            operation     = 'edit'
+            siteId        = $siteKey
+            targetName    = $targetName
+            plan          = $plan
+            result        = $null
+            error         = $message
+            auditEvent    = $failedAudit
+            siteOperation = $failedOperation
+        }
+    }
+
+    $appliedAt = [DateTime]::UtcNow.ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $audit = @{
+        id            = [guid]::NewGuid().ToString()
+        tenantId      = $TenantId
+        action        = 'sharepoint.site.edit'
+        targetId      = $siteKey
+        targetName    = $targetName
+        timestamp     = $appliedAt
+        result        = 'success'
+        before        = $beforeSnapshot
+        after         = $afterSnapshot
+        error         = $null
+        actor         = $Actor
+        correlationId = $CorrelationId
+    }
+    & $WriteAudit $audit
+
+    $operation = @{
+        id        = [guid]::NewGuid().ToString()
+        tenantId  = $TenantId
+        siteId    = $siteKey
+        operation = 'edit'
+        state     = 'succeeded'
+        by        = $Actor
+        at        = $appliedAt
+        result    = 'edited'
+    }
+
+    return [pscustomobject]@{
+        success       = $true
+        state         = 'succeeded'
+        operation     = 'edit'
+        siteId        = $siteKey
+        targetName    = $targetName
+        plan          = $plan
+        result        = @{ id = $siteKey; state = 'edited' }
+        auditEvent    = $audit
+        siteOperation = $operation
+    }
+}
+
 function Invoke-SharePointSiteAction {
     <#
     .SYNOPSIS
         Dispatches one SharePoint site lifecycle action to its handler.
     .DESCRIPTION
         Maps the action name used by the job envelope and entrypoint onto the
-        delete, restore, recycle-bin list, and recycle-bin restore/empty
+        edit, delete, restore, recycle-bin list, and recycle-bin restore/empty
         handlers so the entrypoint stays thin.
     .PARAMETER TenantId
         Tenant the action targets.
     .PARAMETER Action
-        delete | restore | recyclebin-list | recyclebin-restore | recyclebin-empty.
+        edit | delete | restore | recyclebin-list | recyclebin-restore | recyclebin-empty.
     .PARAMETER SiteId
-        Site identity for delete/restore.
+        Site identity for edit/delete/restore.
     .PARAMETER RecycleBinIds
         Recycle-bin identities for restore/empty.
+    .PARAMETER DisplayName
+        Updated display name for edit.
+    .PARAMETER Sharing
+        Updated sharing capability for edit.
+    .PARAMETER Owners
+        Owner UPNs for edit.
+    .PARAMETER LockState
+        Updated site lock state for edit.
     .PARAMETER DryRun
         Report the intended change without writing.
     .PARAMETER Confirmed
@@ -816,7 +1231,7 @@ function Invoke-SharePointSiteAction {
     .PARAMETER WriteAudit
         Seam: scriptblock (event) -> void. Defaults to a no-op.
     .EXAMPLE
-        Invoke-SharePointSiteAction -TenantId 'tenant-a' -Action 'delete' -SiteId 'site-1' -Confirmed
+        Invoke-SharePointSiteAction -TenantId 'tenant-a' -Action 'delete' -SiteId 'site-1' -Confirmed $true
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -826,7 +1241,7 @@ function Invoke-SharePointSiteAction {
         [string]$TenantId,
 
         [Parameter(Mandatory)]
-        [ValidateSet('delete', 'restore', 'recyclebin-list', 'recyclebin-restore', 'recyclebin-empty')]
+        [ValidateSet('edit', 'delete', 'restore', 'recyclebin-list', 'recyclebin-restore', 'recyclebin-empty')]
         [string]$Action,
 
         [Parameter()]
@@ -835,6 +1250,19 @@ function Invoke-SharePointSiteAction {
         [Parameter()]
         [AllowEmptyCollection()]
         [string[]]$RecycleBinIds = @(),
+
+        [Parameter()]
+        [string]$DisplayName = '',
+
+        [Parameter()]
+        [string]$Sharing = '',
+
+        [Parameter()]
+        [AllowEmptyCollection()]
+        [string[]]$Owners = @(),
+
+        [Parameter()]
+        [string]$LockState = '',
 
         [Parameter()]
         [bool]$DryRun = $false,
@@ -853,6 +1281,9 @@ function Invoke-SharePointSiteAction {
     )
 
     switch ($Action) {
+        'edit' {
+            return Invoke-SharePointSiteEdit -TenantId $TenantId -SiteId $SiteId -DisplayName $DisplayName -Sharing $Sharing -Owners $Owners -LockState $LockState -DryRun $DryRun -Confirmed $Confirmed -Actor $Actor -CorrelationId $CorrelationId -WriteAudit $WriteAudit
+        }
         'delete' {
             return Invoke-SharePointSiteDelete -TenantId $TenantId -SiteId $SiteId -DryRun $DryRun -Confirmed $Confirmed -Actor $Actor -CorrelationId $CorrelationId -WriteAudit $WriteAudit
         }
@@ -916,7 +1347,11 @@ function Read-SharePointSiteActionJob {
     }
     $ids = @()
     if ($null -ne $payload['recycleBinIds']) {
-        $ids = @($payload['recycleBinIds'] | ForEach-Object { [string]$_ })
+        $ids = @($payload['recycleBinIds'] | ForEach-Object -Process { [string]$_ })
+    }
+    $owners = @()
+    if ($null -ne $payload['owners']) {
+        $owners = @($payload['owners'] | ForEach-Object -Process { [string]$_ })
     }
 
     return @{
@@ -924,6 +1359,10 @@ function Read-SharePointSiteActionJob {
         Action        = $action
         SiteId        = if ($payload['siteId']) { [string]$payload['siteId'] } else { '' }
         RecycleBinIds = $ids
+        DisplayName   = if ($payload['displayName']) { [string]$payload['displayName'] } else { '' }
+        Sharing       = if ($payload['sharing']) { [string]$payload['sharing'] } else { '' }
+        LockState     = if ($payload['lockState']) { [string]$payload['lockState'] } else { '' }
+        Owners        = $owners
         Confirmed     = ($payload['confirm'] -eq $true)
         DryRun        = ($payload['dryRun'] -eq $true)
         Actor         = if ($job['actor']) { [string]$job['actor'] } else { '' }

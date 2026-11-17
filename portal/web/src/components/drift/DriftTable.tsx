@@ -21,6 +21,7 @@ export interface DriftTableProps {
   readonly onAccept?: (deviation: DriftDeviation) => void;
   readonly onOverride?: (deviation: DriftDeviation) => void;
   readonly onDeny?: (deviation: DriftDeviation) => void;
+  readonly onRemediate?: (deviation: DriftDeviation) => void;
   readonly onBulk?: (action: DriftBulkAction, deviationIds: string[]) => void;
 }
 
@@ -233,6 +234,7 @@ export function DriftTable({
   onAccept,
   onOverride,
   onDeny,
+  onRemediate,
   onBulk,
 }: DriftTableProps): ReactElement {
   const [stateFilter, setStateFilter] = useState<string>("all");
@@ -490,6 +492,14 @@ export function DriftTable({
                       >
                         Deny
                       </button>
+                      <button
+                        type="button"
+                        style={actionBtnStyle}
+                        data-testid={`drift-remediate-${deviation.id}`}
+                        onClick={() => onRemediate?.(deviation)}
+                      >
+                        Remediate
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -570,6 +580,17 @@ export function DriftTable({
               }}
             >
               Deny
+            </button>
+            <button
+              type="button"
+              style={buttonStyle}
+              data-testid="drift-drawer-remediate"
+              onClick={() => {
+                setDrawerId(null);
+                onRemediate?.(drawerDeviation);
+              }}
+            >
+              Remediate
             </button>
           </div>
         </div>

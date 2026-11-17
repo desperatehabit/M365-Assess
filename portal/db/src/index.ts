@@ -30,3 +30,5 @@ export * from "./graph-preset-repository.js";
 export * from "./consent-decision-repository.js";
 export * from "./alerting-repository.js";
 export * from "./transport-template-repository.js";
+export * from "./filter-template-repository.js";
+export * from "./quarantine-repository.js";

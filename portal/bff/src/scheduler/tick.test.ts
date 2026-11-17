@@ -187,11 +187,19 @@ describe("system timers", () => {
       "drift",
       "webhooks",
       "cleanup",
+      "credential-expiry",
     ]);
     expect(getSystemTimer("standards")?.cron).toBe("0 0 */12 * * *");
     expect(getSystemTimer("drift")?.cron).toBe("0 15 */12 * * *");
     expect(getSystemTimer("webhooks")?.cron).toBe("0 */15 * * * *");
     expect(getSystemTimer("cleanup")?.cron).toBe("0 0 3 * * *");
+    expect(getSystemTimer("credential-expiry")).toMatchObject({
+      cron: "0 0 4 * * *",
+      type: "report",
+      jobType: "maintenance",
+      timezone: "UTC",
+      command: "Invoke-CredentialExpiryScan",
+    });
     // Token refresh is retired (T-0904): credentials are certificate-based.
     expect(getSystemTimer("token-refresh")).toBeUndefined();
     expect(Object.isFrozen(SYSTEM_TIMERS)).toBe(true);
@@ -213,13 +221,19 @@ describe("system timers", () => {
       newIds: counterIds(),
     });
 
-    // drift is in flight; standards and the two maintenance timers are due because
+    // drift is in flight; standards and the maintenance timers are due because
     // they have no persisted nextRunAt yet.
-    expect(result.enqueued).toEqual(["system-standards", "system-webhooks", "system-cleanup"]);
+    expect(result.enqueued).toEqual([
+      "system-standards",
+      "system-webhooks",
+      "system-cleanup",
+      "system-credential-expiry",
+    ]);
     expect(result.skippedRunning).toEqual(["system-drift"]);
     expect(result.failed).toEqual([]);
     expect(queue.envelopes.map((envelope) => envelope["jobType"])).toEqual([
       "standards",
+      "maintenance",
       "maintenance",
       "maintenance",
     ]);
@@ -227,6 +241,7 @@ describe("system timers", () => {
       "Invoke-StandardsRun",
       "Invoke-WebhookRenewal",
       "Invoke-PortalCleanup",
+      "Invoke-CredentialExpiryScan",
     ]);
     for (const envelope of queue.envelopes) {
       expect(envelope["trigger"]).toBe("schedule");
@@ -243,10 +258,11 @@ describe("system timers", () => {
       string,
       { readonly lastRunAt?: string | null; readonly nextRunAt?: string | null }
     >([
-      // standards is due; drift and the two maintenance timers already ran recently.
+      // standards is due; drift and the maintenance timers already ran recently.
       ["drift", { nextRunAt: "2026-01-01T12:15:00.000Z" }],
       ["webhooks", { nextRunAt: "2026-01-01T12:15:00.000Z" }],
       ["cleanup", { nextRunAt: "2026-01-02T03:00:00.000Z" }],
+      ["credential-expiry", { nextRunAt: "2026-01-02T04:00:00.000Z" }],
     ]);
     const result = await tickSchedules({
       queue,
@@ -270,6 +286,12 @@ describe("system timers", () => {
       command: "Invoke-WebhookRenewal",
     });
     expect(toSystemSchedule(getSystemTimer("cleanup")!).jobType).toBe("maintenance");
+    expect(toSystemSchedule(getSystemTimer("credential-expiry")!)).toMatchObject({
+      id: "system-credential-expiry",
+      type: "report",
+      jobType: "maintenance",
+      command: "Invoke-CredentialExpiryScan",
+    });
   });
 });
 

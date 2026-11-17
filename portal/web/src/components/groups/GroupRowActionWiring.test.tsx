@@ -126,12 +126,94 @@ describe("Groups row actions: navigation (T-0883)", () => {
     fireEvent.click(screen.getByTestId("action-view-grp-1"));
     expect(screen.getByTestId("group-detail-drawer")).toBeTruthy();
   });
+});
 
-  it("Convert says it is not available instead of doing nothing, and sends no write", async () => {
+describe("Groups row actions: Convert (T-0900)", () => {
+  it("opens the convert dialog, previews via /convert, converts, and reloads the list", async () => {
     await renderList();
     fireEvent.click(screen.getByTestId("action-convert-grp-1"));
-    expect(screen.getByTestId("groups-notice").textContent).toContain("Convert is not available");
-    expect(push).not.toHaveBeenCalled();
+    expect(screen.getByTestId("group-convert-dialog")).toBeTruthy();
+
+    fireEvent.change(screen.getByTestId("group-convert-target-type"), { target: { value: "distribution" } });
+
+    responder = (call) =>
+      call.method === "POST"
+        ? { json: { action: "convert", diff: ["Convert group 'Finance Team': m365 -> distribution"], dryRun: true } }
+        : undefined;
+    fireEvent.click(screen.getByTestId("group-convert-preview"));
+    const plan = await screen.findByTestId("group-convert-plan");
+    expect(plan.textContent).toContain("m365 -> distribution");
+
+    responder = (call) =>
+      call.method === "POST"
+        ? { json: { success: true, plan: { diff: [] }, result: { id: "grp-1", groupType: "distribution" } } }
+        : { json: listPage([group({ type: "distribution", groupType: "distribution" })]) };
+    fireEvent.click(screen.getByTestId("group-convert-submit"));
+
+    expect(await screen.findByTestId("group-convert-success")).toBeTruthy();
+    expect(writes()).toEqual([
+      {
+        method: "POST",
+        path: "/v1/tenants/tenant-1/groups/grp-1/convert",
+        body: { targetType: "distribution", preview: true },
+      },
+      {
+        method: "POST",
+        path: "/v1/tenants/tenant-1/groups/grp-1/convert",
+        body: { targetType: "distribution", preview: false },
+      },
+    ]);
+    await waitFor(() => expect(screen.getByTestId("badge-type-grp-1").textContent).toBe("distribution"));
+    expect(calls.filter((c) => c.method === "GET")).toHaveLength(2);
+  });
+
+  it("supports converting to dynamic with a validated rule", async () => {
+    await renderList();
+    fireEvent.click(screen.getByTestId("action-convert-grp-1"));
+    fireEvent.change(screen.getByTestId("group-convert-target-type"), { target: { value: "dynamic" } });
+
+    const submit = screen.getByTestId("group-convert-submit") as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+
+    fireEvent.change(screen.getByTestId("group-convert-dynamic-rule"), {
+      target: { value: '(user.department -eq "Finance")' },
+    });
+    expect(submit.disabled).toBe(false);
+
+    responder = (call) =>
+      call.method === "POST"
+        ? { json: { success: true, plan: { diff: [] }, result: { id: "grp-1", groupType: "dynamic" } } }
+        : { json: listPage([group({ type: "dynamic", groupType: "dynamic", isDynamic: true })]) };
+    fireEvent.click(submit);
+
+    expect(await screen.findByTestId("group-convert-success")).toBeTruthy();
+    expect(writes()).toEqual([
+      {
+        method: "POST",
+        path: "/v1/tenants/tenant-1/groups/grp-1/convert",
+        body: { targetType: "dynamic", dynamicRule: '(user.department -eq "Finance")', preview: false },
+      },
+    ]);
+  });
+
+  it("shows the BFF error and does not reload when convert fails", async () => {
+    await renderList();
+    fireEvent.click(screen.getByTestId("action-convert-grp-1"));
+    responder = (call) =>
+      call.method === "POST"
+        ? { status: 502, json: { code: "worker.failed", message: "Graph refused conversion" } }
+        : undefined;
+    fireEvent.click(screen.getByTestId("group-convert-submit"));
+    expect((await screen.findByTestId("group-convert-error")).textContent).toContain("Graph refused conversion");
+    expect(screen.queryByTestId("group-convert-success")).toBeNull();
+    expect(calls.filter((c) => c.method === "GET")).toHaveLength(1);
+  });
+
+  it("Cancel closes the convert dialog without a write", async () => {
+    await renderList();
+    fireEvent.click(screen.getByTestId("action-convert-grp-1"));
+    fireEvent.click(screen.getByTestId("group-convert-cancel"));
+    expect(screen.queryByTestId("group-convert-dialog")).toBeNull();
     expect(writes()).toHaveLength(0);
   });
 });
@@ -270,13 +352,21 @@ describe("Groups row actions: Hide from GAL and Delivery management (T-0883)", (
     expect(screen.queryByTestId("apply-result")).toBeNull();
   });
 
-  it("Delivery management POSTs the delivery route with the sender-auth flag and send-on-behalf list", async () => {
-    responder = () => ({ json: listPage([group({ deliveryManagementEnabled: true })]) });
+  it("Delivery management pre-populates existing send-on-behalf entries from the list row and POSTs the delivery route", async () => {
+    responder = () => ({
+      json: listPage([
+        group({
+          deliveryManagementEnabled: true,
+          grantSendOnBehalfTo: ["existing@example.invalid"],
+        }),
+      ]),
+    });
     await renderList();
     fireEvent.click(screen.getByTestId("action-delivery-grp-1"));
     expect(within(screen.getByTestId("gal-delivery-dialog")).getByText("Delivery Management")).toBeTruthy();
-    // The dialog starts from the row's delivery-management state.
+    // The dialog starts from the row's delivery-management state and existing send-on-behalf grants.
     expect((screen.getByTestId("input-require-sender-auth") as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByTestId("tag-send-on-behalf-existing@example.invalid")).toBeTruthy();
 
     fireEvent.change(screen.getByTestId("input-send-on-behalf"), { target: { value: "alice@example.invalid" } });
     fireEvent.click(screen.getByTestId("btn-add-send-on-behalf"));
@@ -292,7 +382,7 @@ describe("Groups row actions: Hide from GAL and Delivery management (T-0883)", (
         path: "/v1/tenants/tenant-1/groups/grp-1/delivery",
         body: {
           requireSenderAuthenticationEnabled: true,
-          grantSendOnBehalfTo: ["alice@example.invalid"],
+          grantSendOnBehalfTo: ["existing@example.invalid", "alice@example.invalid"],
           preview: false,
         },
       },

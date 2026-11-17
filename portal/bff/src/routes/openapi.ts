@@ -105,6 +105,29 @@ import { GRAPH_PRESET_OPENAPI } from "../tools/graph-preset-routes.js";
 import { TENANT_LOOKUP_OPENAPI } from "../tools/tenant-lookup-routes.js";
 import { GEOIP_OPENAPI, DOMAIN_CHECK_OPENAPI } from "../tools/geoip-routes.js";
 import { BREACH_LOOKUP_OPENAPI } from "../tools/breach-lookup-routes.js";
+// EPIC-023 Contacts & Resources (T-0853).
+import { CONTACTS_OPENAPI } from "./contacts.js";
+import { CONTACTS_CRUD_OPENAPI } from "./contacts-crud.js";
+import { CONTACTS_IMPORT_OPENAPI } from "./contacts-import.js";
+import { CONTACT_TEMPLATES_OPENAPI } from "./contact-templates.js";
+import { CONTACT_TEMPLATE_DEPLOY_OPENAPI } from "./contact-templates-deploy.js";
+import { RESOURCES_OPENAPI } from "./resources.js";
+import { RESOURCES_CRUD_OPENAPI } from "./resources-crud.js";
+// EPIC-035 Backup & Restore (T-0865).
+import { BACKUPS_OPENAPI } from "./backups.js";
+import { BACKUP_SETTINGS_OPENAPI } from "./backup-settings.js";
+import { BACKUP_RESTORE_PERMISSION, BACKUPS_RESTORE_OPENAPI } from "./backups-restore.js";
+// EPIC-025 SharePoint Templates (T-0896).
+import { SHAREPOINT_TEMPLATES_OPENAPI } from "./sharepoint-templates.js";
+// EPIC-014 Groups CRUD & Convert (T-0900).
+import { GROUPS_CRUD_OPENAPI } from "./groups-crud.js";
+// EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+import { QUARANTINE_OPENAPI } from "./quarantine.js";
+import { QUARANTINE_BULK_OPENAPI } from "./quarantine-bulk.js";
+import { QUARANTINE_POLICIES_OPENAPI } from "./quarantine-policies.js";
+import { ALLOW_BLOCK_OPENAPI } from "./allow-block.js";
+import { FILTERS_OPENAPI } from "./filters.js";
+import { FILTER_TEMPLATES_OPENAPI } from "./filter-templates.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -248,6 +271,29 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   GEOIP_OPENAPI as unknown as OpenApiFragment,
   DOMAIN_CHECK_OPENAPI as unknown as OpenApiFragment,
   BREACH_LOOKUP_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-023 Contacts & Resources (T-0853).
+  CONTACTS_OPENAPI as unknown as OpenApiFragment,
+  CONTACTS_CRUD_OPENAPI as unknown as OpenApiFragment,
+  CONTACTS_IMPORT_OPENAPI as unknown as OpenApiFragment,
+  CONTACT_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  CONTACT_TEMPLATE_DEPLOY_OPENAPI as unknown as OpenApiFragment,
+  RESOURCES_OPENAPI as unknown as OpenApiFragment,
+  RESOURCES_CRUD_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-035 Backup & Restore (T-0865).
+  BACKUPS_OPENAPI as unknown as OpenApiFragment,
+  BACKUP_SETTINGS_OPENAPI as unknown as OpenApiFragment,
+  BACKUPS_RESTORE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-025 SharePoint Templates (T-0896).
+  SHAREPOINT_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-014 Groups CRUD & Convert (T-0900).
+  GROUPS_CRUD_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+  QUARANTINE_BULK_OPENAPI as unknown as OpenApiFragment,
+  QUARANTINE_OPENAPI as unknown as OpenApiFragment,
+  QUARANTINE_POLICIES_OPENAPI as unknown as OpenApiFragment,
+  ALLOW_BLOCK_OPENAPI as unknown as OpenApiFragment,
+  FILTERS_OPENAPI as unknown as OpenApiFragment,
+  FILTER_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an
@@ -258,6 +304,9 @@ const FRAGMENT_PERMISSION_OVERRIDES: Readonly<Record<string, string>> = {
   // The check-alerts factory only checks authentication; the app mounts it behind
   // the incident read permission (T-0858).
   "GET /check-alerts": "Security.Incident.Read",
+  // Restore's OpenAPI fragment carries the wildcard scope; map it to the concrete
+  // taxonomy token registered in PermissionRegistry (T-0865).
+  "POST /backups/{id}/restore": BACKUP_RESTORE_PERMISSION,
 };
 
 export const OPENAPI_SKELETON: OpenApiDocument = {
@@ -461,7 +510,7 @@ export function buildRouteMetadata(): Map<string, OpenApiMetadata> {
         const key = operationKey(method, path);
         const operationId = operation["operationId"];
         if (typeof operationId === "string") usedIds.add(operationId);
-        const permission = readPermission(operation) ?? FRAGMENT_PERMISSION_OVERRIDES[key];
+        const permission = FRAGMENT_PERMISSION_OVERRIDES[key] ?? readPermission(operation);
         metadata.set(key, permission === undefined ? { operation } : { operation, permission });
       }
     }

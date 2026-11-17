@@ -226,6 +226,20 @@ export async function applyQuarantineBulk(
   return response.json();
 }
 
+export async function submitQuarantineForReview(
+  tenantId: string,
+  messageId: string,
+  fetcher: Fetcher = fetch,
+): Promise<{ status?: string; submissionId?: string | null }> {
+  const response = await fetcher(`${quarantineBasePath(tenantId, messageId)}/submit`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ refresh: false }),
+  });
+  if (!response.ok) throw await readError(response, "Submit quarantined message for review");
+  return (await response.json()) as { status?: string; submissionId?: string | null };
+}
+
 const pageStyle: CSSProperties = {
   padding: "24px",
   maxWidth: "1400px",
@@ -491,6 +505,17 @@ export function QuarantineView({
     }
   }
 
+  async function handleSubmitForReview(message: QuarantineMessage): Promise<void> {
+    setError(null);
+    try {
+      const submitted = await submitQuarantineForReview(tenantId, message.messageId, fetcher);
+      setNotice(`Submitted “${message.subject}” for Microsoft review (${submitted.status ?? "pending"}).`);
+      await fetchList(tab, filter);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
   function openBulk(action: "release" | "delete"): void {
     if (selectedIds.size === 0) return;
     setPendingBulk({ action, label: action === "release" ? "Release selected" : "Delete selected", messageIds: [...selectedIds] });
@@ -720,7 +745,7 @@ export function QuarantineView({
                       <button type="button" style={buttonStyle} onClick={() => void downloadRow(message)} data-testid={`quarantine-download-${message.messageId}`}>Download</button>
                       <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Block sender"} onClick={() => void runActionPreview({ action: "block", label: "Block sender", message })} data-testid={`quarantine-block-${message.messageId}`}>Block sender</button>
                       <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Delete"} onClick={() => void runActionPreview({ action: "delete", label: "Delete", message })} data-testid={`quarantine-delete-${message.messageId}`}>Delete</button>
-                      <button type="button" style={{ ...buttonStyle, ...disabledStyle }} disabled title="Submit for review is not yet available" data-testid={`quarantine-submit-${message.messageId}`}>Submit for review</button>
+                      <button type="button" style={writeDisabled ? { ...buttonStyle, ...disabledStyle } : buttonStyle} disabled={writeDisabled} title={writeDisabled ? "Requires Exchange.Quarantine.ReadWrite permission" : "Submit for review"} onClick={() => void handleSubmitForReview(message)} data-testid={`quarantine-submit-${message.messageId}`}>Submit for review</button>
                     </div>
                   </td>
                 </tr>

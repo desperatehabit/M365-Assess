@@ -39,6 +39,8 @@ import {
   SqliteTransportRuleTemplateRepository,
   SqliteConnectorTemplateRepository,
   SqliteUserTemplateRepository,
+  SqliteFilterTemplateRepository,
+  SqliteQuarantineActionRepository,
   loadMigrations,
   runMigrations,
 } from "@m365-assess/db";
@@ -140,7 +142,8 @@ import {
   createStandardsRunStore,
   createStandardsTemplateStore,
   createStandardsVariableResolver,
-  unavailableTenantLicenses,
+  createTenantLicenseResolver,
+  loadLicensingOverlaySync,
   withStandardsIngestion,
 } from "./adapters/standards.js";
 import {
@@ -183,10 +186,12 @@ import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
 import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
 import { createScheduler, type Scheduler } from "./scheduler/scheduler.js";
 import {
+  CREDENTIAL_EXPIRY_COMMAND,
   PORTAL_CLEANUP_COMMAND,
   WEBHOOK_RENEWAL_COMMAND,
   createCleanupCommand,
   createCleanupPorts,
+  createCredentialExpiryCommand,
   createMaintenanceRunner,
   createSystemTimerStateStore,
   createWebhookRenewalCommand,
@@ -461,6 +466,44 @@ import { createSharePointSiteLifecycleRoutes } from "./routes/sharepoint-site-li
 import { createSharePointSitesRoute } from "./routes/sharepoint-sites.js";
 import { createSharePointSitesCreateRoutes } from "./routes/sharepoint-sites-create.js";
 import { createSharePointStorageRoutes } from "./routes/sharepoint-storage.js";
+import { createSharePointTemplateRoutes } from "./routes/sharepoint-templates.js";
+// EPIC-023 Contacts & Resources (T-0853).
+import { createContactsResourcesAdapters } from "./adapters/contacts-resources.js";
+import { createContactsRoutes } from "./routes/contacts.js";
+import {
+  createContactsCrudRoutes,
+  REMEDIATION_APPLY_PERMISSION as CONTACTS_REMEDIATION_APPLY_PERMISSION,
+} from "./routes/contacts-crud.js";
+import { createContactsImportRoutes } from "./routes/contacts-import.js";
+import { createContactTemplateRoutes } from "./routes/contact-templates.js";
+import { createContactTemplateDeployRoute } from "./routes/contact-templates-deploy.js";
+import {
+  createResourcesRoutes,
+  CONTACTS_READ_PERMISSION as RESOURCES_CONTACT_READ_PERMISSION,
+} from "./routes/resources.js";
+import { createResourcesCrudRoutes } from "./routes/resources-crud.js";
+// EPIC-035 Backup & Restore (T-0865).
+import {
+  BACKUP_MAINTENANCE_COMMAND,
+  BACKUP_MAINTENANCE_TIMER,
+  createBackupMaintenanceCommand,
+  createBackupsArtifactTier,
+  createBackupsStore,
+} from "./adapters/backups.js";
+import { createBackupRoutes } from "./routes/backups.js";
+import { createBackupSettingsRoutes } from "./routes/backup-settings.js";
+import { createBackupsRestoreRoutes } from "./routes/backups-restore.js";
+// EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+import { createSpamQuarantineAdapters } from "./adapters/spam-quarantine.js";
+import { createQuarantineBulkRoutes } from "./routes/quarantine-bulk.js";
+import {
+  createQuarantineRoutes,
+  REMEDIATION_APPLY_PERMISSION as QUARANTINE_REMEDIATION_APPLY_PERMISSION,
+} from "./routes/quarantine.js";
+import { createQuarantinePoliciesRoutes } from "./routes/quarantine-policies.js";
+import { createAllowBlockRoutes } from "./routes/allow-block.js";
+import { createFilterRoutes } from "./routes/filters.js";
+import { createFilterTemplateRoutes } from "./routes/filter-templates.js";
 import type { RequestAuthenticator, RequestCaller, RequestContext, Route } from "./server.js";
 import { ProgressEventHub } from "./sse/hub.js";
 
@@ -753,7 +796,50 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
-  const reportRuns = createReportRunReader(repo, config.artifactPath);
+  const secureScoreRepo = new SqliteSecureScoreRepository(db, schemaVersion);
+  const reportRuns = createReportRunReader(repo, config.artifactPath, {
+    secureScore: secureScoreRepo,
+  });
+  const standardsOverlay = loadLicensingOverlaySync().checks;
+  const contactsResources = createContactsResourcesAdapters(run, credentialRows);
+  const backupsStore = createBackupsStore(db, repo);
+  const backupsArtifacts = createBackupsArtifactTier(config.artifactPath);
+  const backupInstanceVersion = options.version ?? "1.0.0";
+  const authorizeContactsWrite = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, CONTACTS_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  const authorizeResourcesRead = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, RESOURCES_CONTACT_READ_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  const authorizeResourcesWrite = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, CONTACTS_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  const spamQuarantine = createSpamQuarantineAdapters(run, credentialRows);
+  const filterTemplateRepo = new SqliteFilterTemplateRepository(db, schemaVersion);
+  const quarantineActionRepo = new SqliteQuarantineActionRepository(db, schemaVersion);
+  const authorizeQuarantineWrite = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, QUARANTINE_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
 
   // EPIC-007 scheduled custom scripts (T-0876): the script repository and sandbox are shared
   // by the script routes and the custom-script job runner.
@@ -773,7 +859,6 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // run the Get-SecureScore worker (or the snapshot repository); the daily snapshot
   // timer records one trend point per tenant and prunes the retention window.
   // Improvement actions resolve through the shipped registry mapping (T-0603).
-  const secureScoreRepo = new SqliteSecureScoreRepository(db, schemaVersion);
   const secureScore = createSecureScoreProviders(run, credentialRows);
   const secureScoreMapping = {
     resolve: (action: ProviderSecureScoreAction) =>
@@ -955,6 +1040,16 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
           store: secureScoreRepo,
           retentionDays: SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
         }),
+        [CREDENTIAL_EXPIRY_COMMAND]: createCredentialExpiryCommand({
+          tenants: repo,
+          credentials: repo,
+          alerting: alertingRepo,
+        }),
+        [BACKUP_MAINTENANCE_COMMAND]: createBackupMaintenanceCommand({
+          store: backupsStore,
+          artifacts: backupsArtifacts,
+          audit: recordAudit,
+        }),
       },
     }),
   };
@@ -1020,8 +1115,8 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     isRunning: (scheduleId) => scheduleJobState.isRunning(scheduleId),
     lastFinishedJob: (scheduleId) => scheduleJobState.lastFinishedJob(scheduleId),
     systemTimerState: (name) => systemTimerState.get(name),
-    // The registry is code-deployed; EPIC-031 adds its daily snapshot timer here.
-    systemTimers: [...SYSTEM_TIMERS, SECURE_SCORE_SNAPSHOT_TIMER],
+    // The registry is code-deployed; EPIC-031 and EPIC-035 add their daily maintenance timers here.
+    systemTimers: [...SYSTEM_TIMERS, SECURE_SCORE_SNAPSHOT_TIMER, BACKUP_MAINTENANCE_TIMER],
     ...(options.schedulerIntervalMs !== undefined ? { intervalMs: options.schedulerIntervalMs } : {}),
   });
   scheduler.start();
@@ -1260,11 +1355,12 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
 
-    // EPIC-008 standards (T-0825). Run-now enqueues a `standards` job (T-0841);
-    // classifying the catalog for a tenant is still refused with 501 (T-0828).
+    // EPIC-008 standards (T-0825, T-0877). Run-now enqueues a `standards` job (T-0841);
+    // catalog resolves per-check tenant licences against licensing-overlay.json.
     ...createStandardsCatalogRoutes({
       catalog: createStandardsCatalogStore(standardsRepo),
-      resolveTenantLicense: unavailableTenantLicenses,
+      resolveTenantLicense: createTenantLicenseResolver(repo),
+      overlay: standardsOverlay,
       ...caller,
     }),
     ...createStandardsTemplateRoutes({ store: createStandardsTemplateStore(standardsRepo), ...caller }),
@@ -2137,8 +2233,7 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       guardRoute(route, "Security.Incident.Read"),
     ),
 
-    // EPIC-025 SharePoint & OneDrive (T-0855). The factories existed but were never
-    // mounted, so every §6 endpoint 404'd; the providers enqueue the real workers.
+    // EPIC-025 SharePoint & OneDrive (T-0855, T-0896).
     createSharePointSitesRoute({ provider: sharepoint.sites, ...caller }),
     ...createSharePointSitesCreateRoutes({ provider: sharepoint.sitesCreate, ...caller }),
     ...createSharePointSiteLifecycleRoutes({
@@ -2149,7 +2244,134 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     }),
     createSharePointBrowseRoute({ provider: sharepoint.browse, ...caller }),
     ...createSharePointStorageRoutes({ provider: sharepoint.storage, ...caller }),
+    ...createSharePointTemplateRoutes({
+      store: repo,
+      sitesCreate: sharepoint.sitesCreate,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
     ...createOneDriveUsageRoutes({ provider: sharepoint.onedrive, ...caller }),
+
+    // EPIC-023 Contacts & Resources (T-0853).
+    ...createContactsRoutes({ provider: contactsResources.contacts, ...caller }),
+    ...createContactsImportRoutes({
+      provider: contactsResources.contactsImport,
+      resolveCaller,
+      authorize: authorizeContactsWrite,
+    }),
+    ...createContactsCrudRoutes({
+      provider: contactsResources.contactsCrud,
+      resolveCaller,
+      authorize: authorizeContactsWrite,
+    }).map((route) => (route.method === "GET" ? route : audited(route))),
+    ...createContactTemplateRoutes({
+      store: repo,
+      authorize: authorizeContext,
+    }),
+    createContactTemplateDeployRoute({
+      store: repo,
+      provider: contactsResources.contactTemplateDeploy,
+      resolveCaller,
+      authorize: authorizeContactsWrite,
+    }),
+    ...createResourcesRoutes({
+      provider: contactsResources.resources,
+      resolveCaller,
+      authorize: authorizeResourcesRead,
+    }),
+    ...createResourcesCrudRoutes({
+      provider: contactsResources.resourcesCrud,
+      resolveCaller,
+      authorize: authorizeResourcesWrite,
+    }).map((route) => (route.method === "GET" ? route : audited(route))),
+
+    // EPIC-035 Backup & Restore (T-0865).
+    ...createBackupRoutes({
+      store: backupsStore,
+      artifacts: backupsArtifacts,
+      instanceVersion: backupInstanceVersion,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createBackupSettingsRoutes({
+      store: backupsStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit,
+    }),
+    ...createBackupsRestoreRoutes({
+      store: backupsStore,
+      artifacts: backupsArtifacts,
+      instanceVersion: backupInstanceVersion,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit,
+    }),
+
+    // EPIC-022 Spam, Quarantine & Allow/Block (T-0852). Mount bulk before item
+    // routes so `/quarantine/bulk` is not shadowed by `/quarantine/:messageId`.
+    ...createQuarantineBulkRoutes({
+      provider: spamQuarantine.quarantine,
+      queue: spamQuarantine.queue,
+      recordAction: async (entry) => {
+        await quarantineActionRepo.createQuarantineAction(entry);
+      },
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: (event) => routeAudit(event),
+    }),
+    ...createQuarantineRoutes({
+      provider: spamQuarantine.quarantine,
+      submitProvider: spamQuarantine.submitProvider,
+      queue: spamQuarantine.queue,
+      recordAction: async (entry) => {
+        await quarantineActionRepo.createQuarantineAction(entry);
+      },
+      updateAction: async (input) => {
+        const existing = await quarantineActionRepo.listQuarantineActions(input.tenantId);
+        const match = [...existing]
+          .reverse()
+          .find((item) => item.messageId === input.messageId && item.action === input.action);
+        if (match) {
+          await quarantineActionRepo.updateQuarantineAction(input.tenantId, match.id, {
+            result: input.result,
+          });
+        }
+      },
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: (event) => routeAudit(event),
+    }),
+    ...createQuarantinePoliciesRoutes({
+      provider: spamQuarantine.quarantinePolicies,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    ...createAllowBlockRoutes({
+      provider: spamQuarantine.allowBlock,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    ...createFilterRoutes({
+      provider: spamQuarantine.filters,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    ...createFilterTemplateRoutes({
+      store: filterTemplateRepo,
+      provider: spamQuarantine.filters,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
   ];
 
   return {

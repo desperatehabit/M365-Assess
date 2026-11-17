@@ -817,9 +817,16 @@ export function createQuarantineRoutes(options: QuarantineRouteOptions): Route[]
     return { status: 202, headers: { "content-type": "application/json" }, body: result };
   };
 
+  const submitRouteHandler: Route["handler"] = (ctx) =>
+    actionHandler({
+      ...ctx,
+      params: { ...ctx.params, action: QUARANTINE_SUBMIT_ACTION },
+    });
+
   return [
     { method: "GET", path: QUARANTINE_PATH, handler: listHandler },
     { method: "GET", path: QUARANTINE_ITEM_PATH, handler: previewHandler },
+    { method: "POST", path: QUARANTINE_SUBMIT_PATH, handler: submitRouteHandler },
     { method: "POST", path: QUARANTINE_ACTION_PATH, handler: actionHandler },
   ];
 }

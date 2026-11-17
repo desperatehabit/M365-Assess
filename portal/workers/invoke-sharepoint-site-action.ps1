@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Worker entrypoint for the EPIC-025 SharePoint site delete/restore and recycle-bin lifecycle.
+    Worker entrypoint for the EPIC-025 SharePoint site edit, delete/restore, and recycle-bin lifecycle.
 .DESCRIPTION
     Reads a T-0007 job envelope from -JobFile (or parameters directly), runs
     the requested lifecycle action through Invoke-SharePointSiteAction, and
@@ -14,11 +14,19 @@
 .PARAMETER TenantId
     Direct tenant id for runs without a job envelope.
 .PARAMETER Action
-    delete | restore | recyclebin-list | recyclebin-restore | recyclebin-empty.
+    edit | delete | restore | recyclebin-list | recyclebin-restore | recyclebin-empty.
 .PARAMETER SiteId
-    Site identity for delete/restore runs without a job envelope.
+    Site identity for edit/delete/restore runs without a job envelope.
 .PARAMETER RecycleBinIds
     Recycle-bin identities for restore/empty runs without a job envelope.
+.PARAMETER DisplayName
+    Updated display name for edit runs without a job envelope.
+.PARAMETER Sharing
+    Updated external sharing capability for edit runs without a job envelope.
+.PARAMETER LockState
+    Updated site lock state (Unlock, NoAdditions, ReadOnly, NoAccess) for edit runs without a job envelope.
+.PARAMETER Owners
+    Owner UPNs to assign during edit runs without a job envelope.
 .PARAMETER DryRun
     Report the intended change without writing to the tenant.
 .PARAMETER Confirmed
@@ -39,7 +47,7 @@ param(
     [string]$TenantId,
 
     [Parameter(Mandatory, ParameterSetName = 'ByTenant')]
-    [ValidateSet('delete', 'restore', 'recyclebin-list', 'recyclebin-restore', 'recyclebin-empty')]
+    [ValidateSet('edit', 'delete', 'restore', 'recyclebin-list', 'recyclebin-restore', 'recyclebin-empty')]
     [string]$Action,
 
     [Parameter(ParameterSetName = 'ByTenant')]
@@ -48,6 +56,19 @@ param(
     [Parameter(ParameterSetName = 'ByTenant')]
     [AllowEmptyCollection()]
     [string[]]$RecycleBinIds = @(),
+
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [string]$DisplayName = '',
+
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [string]$Sharing = '',
+
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [string]$LockState = '',
+
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [AllowEmptyCollection()]
+    [string[]]$Owners = @(),
 
     [Parameter()]
     [switch]$DryRun,
@@ -75,6 +96,10 @@ try {
         $Action = $job['Action']
         $SiteId = $job['SiteId']
         $RecycleBinIds = $job['RecycleBinIds']
+        $DisplayName = $job['DisplayName']
+        $Sharing = $job['Sharing']
+        $LockState = $job['LockState']
+        $Owners = $job['Owners']
         $Actor = $job['Actor']
         $CorrelationId = $job['CorrelationId']
         if (-not $PSBoundParameters.ContainsKey('Confirmed')) {
@@ -85,7 +110,21 @@ try {
         }
     }
 
-    $result = Invoke-SharePointSiteAction -TenantId $TenantId -Action $Action -SiteId $SiteId -RecycleBinIds $RecycleBinIds -DryRun ([bool]$DryRun) -Confirmed ([bool]$Confirmed) -Actor $Actor -CorrelationId $CorrelationId
+    $actionParams = @{
+        TenantId      = $TenantId
+        Action        = $Action
+        SiteId        = $SiteId
+        RecycleBinIds = $RecycleBinIds
+        DisplayName   = $DisplayName
+        Sharing       = $Sharing
+        Owners        = $Owners
+        LockState     = $LockState
+        DryRun        = ([bool]$DryRun)
+        Confirmed     = ([bool]$Confirmed)
+        Actor         = $Actor
+        CorrelationId = $CorrelationId
+    }
+    $result = Invoke-SharePointSiteAction @actionParams
     $result | ConvertTo-Json -Depth 8 -Compress
 }
 finally {

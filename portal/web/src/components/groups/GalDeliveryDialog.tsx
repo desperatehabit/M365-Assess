@@ -1,7 +1,9 @@
 "use client";
 
 // ActionDialogs for hide-from-GAL and delivery management using EXO (EPIC-014 SPEC.md §3.4, §4.4; T-0269).
-import React, { useState, type CSSProperties, type ReactElement } from "react";
+import React, { useEffect, useState, type CSSProperties, type ReactElement } from "react";
+
+const EMPTY_SEND_ON_BEHALF: readonly string[] = [];
 
 export interface GalDeliveryDialogProps {
   readonly isOpen: boolean;
@@ -113,7 +115,7 @@ export function GalDeliveryDialog({
   groupName,
   initialHiddenFromAddressListsEnabled = false,
   initialRequireSenderAuthenticationEnabled = false,
-  initialGrantSendOnBehalfTo = [],
+  initialGrantSendOnBehalfTo = EMPTY_SEND_ON_BEHALF,
   onClose,
   onSuccess,
   fetcher = fetch,
@@ -127,6 +129,25 @@ export function GalDeliveryDialog({
   const [error, setError] = useState<string | null>(null);
   const [previewPlan, setPreviewPlan] = useState<any | null>(null);
   const [applyResult, setApplyResult] = useState<any | null>(null);
+
+  const initialSendOnBehalfKey = initialGrantSendOnBehalfTo.join("\0");
+  useEffect(() => {
+    if (!isOpen) return;
+    setHiddenFromGal(initialHiddenFromAddressListsEnabled);
+    setRequireSenderAuth(initialRequireSenderAuthenticationEnabled);
+    setSendOnBehalfList(initialSendOnBehalfKey ? initialSendOnBehalfKey.split("\0") : []);
+    setSendOnBehalfInput("");
+    setError(null);
+    setPreviewPlan(null);
+    setApplyResult(null);
+  }, [
+    isOpen,
+    groupId,
+    mode,
+    initialHiddenFromAddressListsEnabled,
+    initialRequireSenderAuthenticationEnabled,
+    initialSendOnBehalfKey,
+  ]);
 
   if (!isOpen) {
     return null;

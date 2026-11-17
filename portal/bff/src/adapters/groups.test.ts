@@ -72,15 +72,37 @@ describe("group providers (T-0819)", () => {
     expect(calls[0]).toMatchObject({ entrypoint: "get-group-usage.ps1", job: { inactiveDaysThreshold: 30 } });
   });
 
-  it("sends create, edit, and delete the way the group worker reads them", async () => {
+  it("sends create, edit, delete, and convert the way the group worker reads them", async () => {
     const { providers, calls } = harness(() => ({ success: true }));
-    await providers.crud.createGroup("t-a", { displayName: "Finance", groupType: "dynamic", dynamicRule: "(user.department -eq \"Finance\")" }, true);
+    await providers.crud.createGroup(
+      "t-a",
+      {
+        displayName: "Finance",
+        groupType: "dynamic",
+        dynamicRule: '(user.department -eq "Finance")',
+        hiddenFromAddressListsEnabled: true,
+        requireSenderAuthenticationEnabled: true,
+        grantSendOnBehalfTo: ["lead@example.invalid"],
+      },
+      true,
+    );
     await providers.crud.editGroup("t-a", "g-1", { description: "" }, false);
     await providers.crud.deleteGroup("t-a", "g-1", "Finance", false);
+    await providers.crud.convertGroup("t-a", "g-1", { targetType: "m365" }, true);
     expect(calls.map((c) => c.job)).toEqual([
-      expect.objectContaining({ action: "create", displayName: "Finance", groupType: "dynamic", dynamicRule: "(user.department -eq \"Finance\")", dryRun: true }),
+      expect.objectContaining({
+        action: "create",
+        displayName: "Finance",
+        groupType: "dynamic",
+        dynamicRule: '(user.department -eq "Finance")',
+        hiddenFromAddressListsEnabled: true,
+        requireSenderAuthenticationEnabled: true,
+        grantSendOnBehalfTo: ["lead@example.invalid"],
+        dryRun: true,
+      }),
       expect.objectContaining({ action: "edit", groupId: "g-1", description: "", dryRun: false }),
       expect.objectContaining({ action: "delete", groupId: "g-1", confirmName: "Finance", dryRun: false }),
+      expect.objectContaining({ action: "convert", groupId: "g-1", targetType: "m365", groupType: "m365", dryRun: true }),
     ]);
     expect(calls.every((c) => c.entrypoint === "set-group.ps1")).toBe(true);
   });

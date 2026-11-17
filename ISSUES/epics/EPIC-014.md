@@ -53,4 +53,4 @@ list above names them in dependency order.
 
 Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
 
-- T-0900 — `open`
+- T-0900 — `fixed-unverified`

@@ -18,8 +18,9 @@
 
 import { randomUUID } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
+import { buildReportBundleZip, type ReportBundleEntry } from "../domain/reports/bundle.js";
 import { AppError, ErrorCodes } from "../errors.js";
 import { paginate, parsePagination } from "../pagination.js";
 import { RbacErrorCodes } from "../rbac/authorize.js";
@@ -96,8 +97,8 @@ export interface ExecutiveRenderPayload {
   readonly runId: string | null;
   readonly tenantFacts: Record<string, unknown>;
   readonly compliance: Record<string, unknown>;
-  readonly secureScore: Record<string, unknown>;
-  readonly actionBuckets: Record<string, unknown>;
+  readonly secureScore: Record<string, unknown> | null;
+  readonly actionBuckets: Record<string, unknown> | null;
 }
 
 /** Enqueues a render job and returns the job id. */
@@ -329,7 +330,7 @@ export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
     };
   }
 
-  // POST /v1/reports/:id/bundle — gather the run's HTML/XLSX/JSON/evidence artifacts
+  // POST /v1/reports/:id/bundle — package the run's HTML/XLSX/JSON/evidence artifacts and PDF into a ZIP
   async function handlePostBundle(ctx: ReportsRequest): Promise<RouteResponse> {
     const auth = authorizer(ctx);
     if (!auth.hasPermission(REPORTS_PERMISSIONS.generate)) {
@@ -345,6 +346,8 @@ export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
       throw new AppError(REPORT_TENANT_REQUIRED, "Report has no tenantId; cannot bundle run artifacts", 400);
     }
 
+    const requestedArtifacts = parseRequestedArtifacts(ctx.body);
+
     const runId = await runs.latestRunId(report.tenantId);
     if (runId === null) {
       throw new AppError(
@@ -354,7 +357,51 @@ export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
       );
     }
 
-    const artifacts = await runs.runArtifacts(report.tenantId, runId);
+    const allArtifacts = await runs.runArtifacts(report.tenantId, runId);
+    const filter = requestedArtifacts && requestedArtifacts.length > 0 ? new Set(requestedArtifacts) : null;
+    const selectedArtifacts = filter
+      ? allArtifacts.filter((artifact) => filter.has(artifact.name))
+      : allArtifacts;
+
+    const entries: ReportBundleEntry[] = [];
+    const bundledArtifacts: Array<{
+      name: string;
+      contentType: string;
+      size: number;
+      artifactRef: string;
+    }> = [];
+
+    for (const artifact of selectedArtifacts) {
+      const filePath = resolveArtifactPath(artifactRoot, artifact.artifactRef);
+      const readResult = await readOptionalArtifact(filePath);
+      const data = readResult ?? Buffer.alloc(0);
+      entries.push({ name: artifact.name, data });
+      bundledArtifacts.push({
+        name: artifact.name,
+        contentType: artifact.contentType,
+        size: readResult !== null ? readResult.length : artifact.size,
+        artifactRef: artifact.artifactRef,
+      });
+    }
+
+    if (report.artifactRef) {
+      const pdfPath = resolveArtifactPath(artifactRoot, report.artifactRef);
+      const pdfData = await readOptionalArtifact(pdfPath);
+      if (pdfData !== null) {
+        const pdfName = path.basename(report.artifactRef);
+        if (!entries.some((entry) => entry.name === pdfName)) {
+          entries.push({ name: pdfName, data: pdfData });
+          bundledArtifacts.push({
+            name: pdfName,
+            contentType: "application/pdf",
+            size: pdfData.length,
+            artifactRef: report.artifactRef,
+          });
+        }
+      }
+    }
+
+    const zipBuffer = buildReportBundleZip(entries);
 
     await audit.record({
       action: "report.bundle",
@@ -370,7 +417,11 @@ export function createReportsRoutes(deps: ReportsDependencies): ReportsRoute[] {
         reportId: id,
         tenantId: report.tenantId,
         runId,
-        artifacts,
+        fileName: `report-${id}-bundle.zip`,
+        contentType: "application/zip",
+        size: zipBuffer.length,
+        bundleBase64: zipBuffer.toString("base64"),
+        artifacts: bundledArtifacts,
       },
     };
   }
@@ -455,6 +506,30 @@ function optionalString(record: Record<string, unknown>, field: string): string 
 
 function notFound(id: string): AppError {
   return new AppError(REPORT_NOT_FOUND, `Generated report ${id} not found`, 404);
+}
+
+function parseRequestedArtifacts(rawBody: unknown): string[] | undefined {
+  if (rawBody === undefined || rawBody === null || rawBody === "") return undefined;
+  const body = requireBodyRecord(rawBody);
+  const artifacts = body["artifacts"];
+  if (artifacts === undefined || artifacts === null) return undefined;
+  if (!Array.isArray(artifacts) || artifacts.some((item) => typeof item !== "string")) {
+    throw new AppError(ErrorCodes.validationFailed, "Field 'artifacts' must be an array of strings", 400, [
+      { field: "artifacts", reason: "invalid" },
+    ]);
+  }
+  return artifacts;
+}
+
+async function readOptionalArtifact(filePath: string): Promise<Buffer | null> {
+  try {
+    return await readFile(filePath);
+  } catch (err: unknown) {
+    if ((err as { code?: unknown }).code === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
 }
 
 /** Resolve a report's artifactRef against the artifact root, refusing paths outside it. */

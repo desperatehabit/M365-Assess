@@ -42,6 +42,7 @@ export interface GroupItem {
   readonly ownerCount: number;
   readonly hiddenFromAddressListsEnabled: boolean;
   readonly deliveryManagementEnabled: boolean;
+  readonly grantSendOnBehalfTo?: readonly string[];
   readonly dynamicRule: string;
   readonly isDynamic: boolean;
   readonly mail?: string;
@@ -72,6 +73,9 @@ export interface CreateGroupPayload {
   readonly mailNickname?: string;
   readonly description?: string;
   readonly dynamicRule?: string;
+  readonly hiddenFromAddressListsEnabled?: boolean;
+  readonly requireSenderAuthenticationEnabled?: boolean;
+  readonly grantSendOnBehalfTo?: readonly string[];
   readonly preview?: boolean;
 }
 
@@ -79,6 +83,14 @@ export interface EditGroupPayload {
   readonly displayName?: string;
   readonly description?: string;
   readonly dynamicRule?: string;
+  readonly preview?: boolean;
+}
+
+export interface ConvertGroupPayload {
+  readonly targetType: GroupType;
+  readonly groupType?: GroupType;
+  readonly dynamicRule?: string;
+  readonly mailNickname?: string;
   readonly preview?: boolean;
 }
 
@@ -196,6 +208,24 @@ export async function deleteGroup(tenantId: string, groupId: string, confirmName
   if (!response.ok) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.message ?? `Failed to delete group: HTTP ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function convertGroup(
+  tenantId: string,
+  groupId: string,
+  payload: ConvertGroupPayload,
+): Promise<GroupCrudResult | GroupPlan> {
+  const url = `/v1/tenants/${encodeURIComponent(tenantId)}/groups/${encodeURIComponent(groupId)}/convert`;
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.message ?? `Failed to convert group: HTTP ${response.status}`);
   }
   return response.json();
 }
