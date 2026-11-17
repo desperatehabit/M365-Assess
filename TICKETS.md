@@ -1,15 +1,15 @@
 # M365-Assess — ticket register
 
-_Maintained by hand (last regenerated 2026-11-16). When a ticket's `status` changes, update
+_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0912 added 2026-11-17). When a ticket's `status` changes, update
 its row and the counts below in the same commit. The ticket file is the source of truth._
 
-**87 open · 456 closed**
+**95 open · 456 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
-| fixed-unverified | 29 |
-| open | 10 |
+| fixed-unverified | 39 |
+| open | 8 |
 | closed | 9 |
 
 ## Open
@@ -42,7 +42,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [EPIC-044](ISSUES/epics/EPIC-044.md) | high | epic | 0 | Workstation CIS Baselines via Intune |
 | [EPIC-045](ISSUES/epics/EPIC-045.md) | high | epic | 0 | RMM Integrations (ConnectWise Automate, NinjaOne) |
 | [EPIC-046](ISSUES/epics/EPIC-046.md) | high | epic | 0 | Policy Documentation, SSP & POA&M |
-| [T-0852](ISSUES/T-0852.md) | high | open | 12 | Mount and deliver EPIC-022 Spam, Quarantine & Allow/Block routes and workers |
+| [T-0852](ISSUES/T-0852.md) | high | fixed-unverified | 17 | Mount and deliver EPIC-022 Spam, Quarantine & Allow/Block routes and workers |
 | [T-0858](ISSUES/T-0858.md) | high | fixed-unverified | 21 | Mount and deliver EPIC-028 Incidents & Alerts routes and bulk triage |
 | [T-0859](ISSUES/T-0859.md) | high | fixed-unverified | 12 | Mount EPIC-029 alerting routes and persist alerting entities |
 | [T-0876](ISSUES/T-0876.md) | high | fixed-unverified | 9 | Custom-script schedules and system timers enqueue job types with no runner |
@@ -79,10 +79,10 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0867](ISSUES/T-0867.md) | medium | fixed-unverified | 20 | Mount EPIC-037 Settings, Branding & Preferences routes |
 | [T-0869](ISSUES/T-0869.md) | medium | fixed-unverified | 12 | Mount EPIC-039 Template Library & Catalog routes |
 | [T-0870](ISSUES/T-0870.md) | medium | fixed-unverified | 12 | Mount EPIC-040 Graph Explorer & Admin Tools routes |
-| [T-0874](ISSUES/T-0874.md) | medium | open | 5 | No scheduled credential-expiry check |
-| [T-0875](ISSUES/T-0875.md) | medium | open | 6 | Report bundle is not assembled and the executive report renders empty sections |
-| [T-0877](ISSUES/T-0877.md) | medium | open | 5 | Standards catalog tenant license classification returns 501 |
-| [T-0878](ISSUES/T-0878.md) | medium | open | 6 | Drift deviation remediate endpoint is missing |
+| [T-0874](ISSUES/T-0874.md) | medium | fixed-unverified | 6 | No scheduled credential-expiry check |
+| [T-0875](ISSUES/T-0875.md) | medium | fixed-unverified | 7 | Report bundle is not assembled and the executive report renders empty sections |
+| [T-0877](ISSUES/T-0877.md) | medium | fixed-unverified | 5 | Standards catalog tenant license classification returns 501 |
+| [T-0878](ISSUES/T-0878.md) | medium | fixed-unverified | 11 | Drift deviation remediate endpoint is missing |
 | [T-0879](ISSUES/T-0879.md) | medium | fixed-unverified | 4 | Baseline stage advance is not reachable from the UI |
 | [T-0880](ISSUES/T-0880.md) | medium | fixed-unverified | 4 | Single-user PATCH (edit) route is missing |
 | [T-0881](ISSUES/T-0881.md) | medium | fixed-unverified | 4 | User Templates management page is missing |
@@ -90,19 +90,27 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0885](ISSUES/T-0885.md) | medium | fixed-unverified | 3 | Intune Reusable Settings page is missing |
 | [T-0887](ISSUES/T-0887.md) | medium | fixed-unverified | 2 | Add navigation sections for post-EPIC-018 feature areas |
 | [T-0891](ISSUES/T-0891.md) | medium | fixed-unverified | 4 | Wire the dashboard demo dataset behind an explicit toggle |
-| [T-0892](ISSUES/T-0892.md) | medium | open | 5 | Add a system-wide demo dataset and explicit demo mode |
+| [T-0892](ISSUES/T-0892.md) | medium | fixed-unverified | 5 | Add a system-wide demo dataset and explicit demo mode |
 | [T-0894](ISSUES/T-0894.md) | medium | fixed-unverified | 5 | Vacation schedules never enable or revert on their own; revert does not restore  |
-| [T-0896](ISSUES/T-0896.md) | medium | open | 3 | SharePoint Templates page and in-portal site property editing have no backing en |
-| [T-0900](ISSUES/T-0900.md) | medium | open | 4 | Groups: Convert has no endpoint, create form GAL/delivery options are decorative |
+| [T-0896](ISSUES/T-0896.md) | medium | fixed-unverified | 3 | SharePoint Templates page and in-portal site property editing have no backing en |
+| [T-0900](ISSUES/T-0900.md) | medium | fixed-unverified | 4 | Groups: Convert has no endpoint, create form GAL/delivery options are decorative |
 | [T-0902](ISSUES/T-0902.md) | medium | fixed-unverified | 14 | Implement the webhooks system timer (Graph subscription renewal) |
 | [T-0903](ISSUES/T-0903.md) | medium | fixed-unverified | 14 | Implement the cleanup system timer |
 | [T-0904](ISSUES/T-0904.md) | medium | fixed-unverified | 4 | Implement or retire the token-refresh system timer |
+| [T-0905](ISSUES/T-0905.md) | medium | open | 5 | Persist webhook clientState and mount POST /v1/webhooks/notify |
+| [T-0909](ISSUES/T-0909.md) | medium | open | 4 | Backup restore wizard calls an unmounted preview endpoint |
+| [T-0911](ISSUES/T-0911.md) | medium | open | 3 | GDAP page always shows "disabled" because it probes a route that does not exist |
+| [T-0912](ISSUES/T-0912.md) | medium | open | 3 | Parked EPIC-041 pages are in the nav with no backend |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |
-| [T-0853](ISSUES/T-0853.md) | low | open | 12 | Mount EPIC-023 Contacts & Resources routes |
-| [T-0865](ISSUES/T-0865.md) | low | open | 10 | Mount EPIC-035 Backup routes and invoke retention/replication |
+| [T-0853](ISSUES/T-0853.md) | low | fixed-unverified | 12 | Mount EPIC-023 Contacts & Resources routes |
+| [T-0865](ISSUES/T-0865.md) | low | fixed-unverified | 10 | Mount EPIC-035 Backup routes and invoke retention/replication |
 | [T-0901](ISSUES/T-0901.md) | low | fixed-unverified | 1 | Mailbox rule edit form shows an empty forwarding field for rules with several re |
+| [T-0906](ISSUES/T-0906.md) | low | open | 1 | Clean up global stub functions in Pester test files |
+| [T-0907](ISSUES/T-0907.md) | low | open | 5 | Fix pre-existing PowerShell lint findings in Invoke-DomainAction and Linux-only tests |
+| [T-0908](ISSUES/T-0908.md) | low | open | 1 | Resolve macos-latest CI smoke job runner-quota cancellations |
+| [T-0910](ISSUES/T-0910.md) | low | open | 1 | Tenant detail Variables and History tabs call routes that do not exist |
 
 ## Closed
 

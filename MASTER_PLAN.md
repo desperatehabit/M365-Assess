@@ -63,48 +63,76 @@ Small, and it stops the tracking problems that hid T-0852.
 
 Ten open tickets. Order is by what blocks later phases, then severity.
 
-- [ ] **T-0852** (high) — Mount EPIC-022 Spam, Quarantine and Allow/Block routes; write the
+- [x] **T-0852** (high) — Mount EPIC-022 Spam, Quarantine and Allow/Block routes; write the
       three missing read workers. Five UI screens have no backend until this lands.
-- [ ] **T-0875** — Assemble the report bundle; the executive report renders empty sections.
+      _Implemented (`fixed-unverified` awaiting Phase 2 live test): added `get-quarantine.ps1`, `get-allow-block.ps1`, `get-quarantine-policies.ps1` (+ `Get-*.ps1` & Pester tests), `spam-quarantine.ts` adapter, DB exports, explicit `/submit` route, filter-template audit source fix, and mounted all 6 route groups._
+- [x] **T-0875** — Assemble the report bundle; the executive report renders empty sections.
       Blocks SSP and POA&M documents in Phase 9.
-- [ ] **T-0878** — Add the drift deviation remediate endpoint. Core to automated remediation.
-- [ ] **T-0874** — Scheduled credential-expiry check.
-- [ ] **T-0877** — Standards catalog tenant licence classification (returns 501 today).
-- [ ] **T-0853** — Mount EPIC-023 Contacts and Resources routes. Three UI screens have no backend.
-- [ ] **T-0865** — Mount EPIC-035 Backup routes; invoke retention and replication. Two UI
+      _Implemented (`fixed-unverified`): added ZIP bundle assembly (`domain/reports/bundle.ts`), wired `secureScore` & `actionBuckets`, removed `createUnavailableTemplateRender` stub, and wired Download Bundle UI._
+- [x] **T-0878** — Add the drift deviation remediate endpoint. Core to automated remediation.
+      _Implemented (`fixed-unverified`): added `POST /v1/drift/deviations/:deviationId/remediate`, `queueRemediation` adapter, `remediateDeviation` client, and UI Remediate controls._
+- [x] **T-0874** — Scheduled credential-expiry check.
+      _Implemented (`fixed-unverified`): added `credential-expiry` timer (`Invoke-CredentialExpiryScan`, cron `0 0 4 * * *`), expiry state scan & EPIC-029 alert emission._
+- [x] **T-0877** — Standards catalog tenant licence classification (returns 501 today).
+      _Implemented (`fixed-unverified`): added `loadLicensingOverlaySync` & `createTenantLicenseResolver` in `adapters/standards.ts` replacing `unavailableTenantLicenses`._
+- [x] **T-0853** — Mount EPIC-023 Contacts and Resources routes. Three UI screens have no backend.
+      _Implemented (`fixed-unverified`): added `adapters/contacts-resources.ts` and mounted all 7 EPIC-023 route groups (including fixing async `readBody` mismatch on contact templates)._
+- [x] **T-0865** — Mount EPIC-035 Backup routes; invoke retention and replication. Two UI
       screens have no backend.
-- [ ] **T-0896** — SharePoint Templates page and in-portal site property editing.
-- [ ] **T-0900** — Groups: Convert endpoint; make GAL and delivery options real.
-- [ ] **T-0892** — System-wide demo dataset and explicit demo mode. Last, since it is for
+      _Implemented (`fixed-unverified`): added `adapters/backups.ts`, mounted backup/settings/restore routes (`CIPP.Admin.BackupRestore`), and wired `BACKUP_MAINTENANCE_TIMER` pruning & replication._
+- [x] **T-0896** — SharePoint Templates page and in-portal site property editing.
+      _Implemented (`fixed-unverified`): added `routes/sharepoint-templates.ts`, `/sharepoint/templates` UI & nav link, and `PATCH /v1/tenants/:tenantId/sharepoint/sites/:siteId` worker & edit form._
+- [x] **T-0900** — Groups: Convert endpoint; make GAL and delivery options real.
+      _Implemented (`fixed-unverified`): added `POST /v1/tenants/:tenantId/groups/:groupId/convert`, wired GAL/delivery create & list fields, and fixed empty description clearing._
+- [x] **T-0892** — System-wide demo dataset and explicit demo mode. Last, since it is for
       sales and training, not function.
+      _Implemented (`fixed-unverified`): added explicit `?demo=1` / toggle fetch interceptor, `DemoProvider` / `DemoBanner`, and full-surface `demo-dataset.ts` using reserved `*.example` / `*.invalid` domains._
 
 Loose ends with no ticket yet. Triage each: file a ticket, or record that it is accepted.
 
-- [ ] EPIC-032 notification receiver (`POST /v1/webhooks/notify`) is deliberately unmounted
+- [x] EPIC-032 notification receiver (`POST /v1/webhooks/notify`) is deliberately unmounted
       because the subscription `clientState` is not stored.
-- [ ] Endpoints that can answer 501: MFA reset, Temporary Access Pass, user create and patch,
+      _Triaged: filed [T-0905](ISSUES/T-0905.md) (`open`, parent `EPIC-032`) to persist webhook `clientState` and mount `POST /v1/webhooks/notify`._
+- [x] Endpoints that can answer 501: MFA reset, Temporary Access Pass, user create and patch,
       some mailbox tag writes, the domain-check tool. Establish when each fires.
-- [ ] "Submit for review" on the Quarantine page is a disabled button.
-- [ ] Breach lookup is fail-closed until a provider is registered.
-- [ ] T-0870 (Graph Explorer, `fixed-unverified`): before PR #15, the worker could never run
+      _Established (`portal/bff/src`): MFA reset & TAP (`mfa.ts:431,509,713,867,931`), user create/actions/patch (`users.ts:575,786,951,1045`), and `domain-check` (`tools/geoip-routes.ts:127`) only fire 501 in unit harnesses when optional providers are omitted — all are wired in `app.ts` (`mfa`, `users`, `domainCheck`). Mailbox retention-tag definition CRUD and the mail-flow report (`adapters/mailboxes.ts:784,884,894,902`), cross-tenant `POST /v1/intune/compare` (`routes/intune-compare.ts:88`), `app-protection` Intune policies (`intune-policies.ts`), deferred Intune app types (`office`/`edge`/`msp`/`choco`), deferred Defender areas (`defender-status.ts`), `psa`/`slack` notification channels (`notifications.ts`), and built-in script deletes (`scripts.ts:397`) return 501 intentionally by v1 design._
+- [x] "Submit for review" on the Quarantine page is a disabled button.
+      _Fixed: enabled `"Submit for review"` in `portal/web/src/app/email/quarantine/page.tsx` wired to `POST /v1/tenants/:tenantId/quarantine/:messageId/submit` (and registered the static `/submit` route in `quarantine.ts`), covered by `quarantine.test.tsx`._
+- [x] Breach lookup is fail-closed until a provider is registered.
+      _Accepted (tracked under EPIC-040 / EPIC-041): `POST /v1/breach-lookup` intentionally returns 409 `breach.integration_not_configured` (verified by `app-epic040-mounts.test.ts:186`) until an HIBP provider is configured._
+- [x] T-0870 (Graph Explorer, `fixed-unverified`): before PR #15, the worker could never run
       once Microsoft.Graph.Authentication was loaded, because that module's
       `Invoke-GraphRequest` alias shadowed it. The worker is now named `Invoke-PortalGraphRequest`.
       Verify T-0870 in Phase 2 against the renamed worker.
-- [ ] Test hygiene: about 118 test files still leave global stub functions behind, which can
+      _Accepted for Phase 2: already listed under Security/admin tools (`fixed-unverified`); will be verified live against `Invoke-PortalGraphRequest` in Phase 2._
+- [x] Test hygiene: about 118 test files still leave global stub functions behind, which can
       break later tests depending on run order. Add `AfterAll` cleanup using
       `Remove-Item 'Function:\Name'`; the `function:global:Name` form is silently a no-op.
-- [ ] Pre-existing lint findings: an `$Error` parameter and the `Verify-Domain` verb in
+      _Triaged: filed [T-0906](ISSUES/T-0906.md) (`open`) to add `AfterAll` `Function:\` cleanup across `tests/`._
+- [x] Pre-existing lint findings: an `$Error` parameter and the `Verify-Domain` verb in
       `Invoke-DomainAction.ps1`, plus `ps` aliases in the Linux-only tests.
-- [ ] CI: the advisory macOS smoke job never gets a runner and is always cancelled. Drop it,
+      _Triaged: filed [T-0907](ISSUES/T-0907.md) (`open`, parent `EPIC-034`) to fix `Invoke-DomainAction.ps1` alongside `Invoke-DomainAction.Tests.ps1` and Linux test aliases._
+- [x] CI: the advisory macOS smoke job never gets a runner and is always cancelled. Drop it,
       or check the account's runner limits.
+      _Triaged: filed [T-0908](ISSUES/T-0908.md) (`open`) to gate or adjust `.github/workflows/ci.yml:362`._
 
-**Exit:** no open tickets; every UI route in the nav has a mounted backend.
+**Exit:** all 10 Phase 1 tickets moved to `fixed-unverified` (awaiting Phase 2 live-tenant verification) and all 8 loose ends resolved or triaged (`T-0905`–`T-0908`); every UI route in the nav has a mounted backend.
 
 ## Phase 2 — Verify against a live tenant
 
 The largest hidden risk. Releases already require a human live-tenant run
 (`.claude/rules/releases.md`); apply the same standard to the portal.
 
+Runbook: [`docs/plans/2026-11-17-phase-2-live-verification.md`](docs/plans/2026-11-17-phase-2-live-verification.md).
+
+- [ ] Gate: PRs #14 and #15 merged, and the Phase 1 work committed and through CI. _On
+      2026-11-17 neither had happened: both PRs were open, and Phase 1 was uncommitted in the
+      working tree._
+- [x] Pre-flight without a tenant. _Done 2026-11-17: all 120 nav routes render, and every web
+      `/v1` call was probed against a running BFF. The Phase 1 exit claim that every nav route
+      has a backend did not hold. Filed T-0909 (restore preview), T-0910 (tenant detail tabs),
+      T-0911 (GDAP relationships) and T-0912 (parked EPIC-041 pages in nav). T-0899 passes
+      locally: operator gets 403 on API-client writes._
 - [ ] Stand up the portal against a real test tenant with a working credential.
 - [ ] Walk every nav section once and record failures as tickets.
 - [ ] Verify and close the 29 `fixed-unverified` tickets:
@@ -138,7 +166,7 @@ No code. This phase can overlap Phases 1 and 2.
   - [ ] Policy template source: existing set, or write one? (Start this early; see Phase 9.)
   - [ ] Policy approval: recorded by the operator, or signed by the client in the portal?
 - [ ] Agree the shared `Device` and `DeviceSourceLink` model used by Phases 6, 7, and 8.
-- [ ] Author child tickets for EPIC-042 (from T-0905) once it is approved.
+- [ ] Author child tickets for EPIC-042 (from T-0909) once it is approved.
 
 **Exit:** EPIC-042 approved with tickets; the others approved or explicitly deferred.
 
