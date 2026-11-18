@@ -8,8 +8,8 @@ its row and the counts below in the same commit. The ticket file is the source o
 | Status | Count |
 |---|---|
 | epic | 39 |
-| fixed-unverified | 43 |
-| open | 5 |
+| fixed-unverified | 44 |
+| open | 4 |
 | closed | 9 |
 
 ## Open
@@ -101,7 +101,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0905](ISSUES/T-0905.md) | medium | open | 5 | Persist webhook clientState and mount POST /v1/webhooks/notify |
 | [T-0909](ISSUES/T-0909.md) | medium | fixed-unverified | 4 | Backup restore wizard calls an unmounted preview endpoint |
 | [T-0911](ISSUES/T-0911.md) | medium | fixed-unverified | 3 | GDAP page always shows "disabled" because it probes a route that does not exist |
-| [T-0912](ISSUES/T-0912.md) | medium | open | 3 | Parked EPIC-041 pages are in the nav with no backend |
+| [T-0912](ISSUES/T-0912.md) | medium | fixed-unverified | 3 | Parked EPIC-041 pages are in the nav with no backend |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |
