@@ -104,7 +104,7 @@ Describe 'Set-RegistrationCampaign worker (T-0226)' {
             $res.status | Should -Be 'succeeded'
             $res.state | Should -Be 'enabled'
             $res.snoozeDurationInDays | Should -Be 5
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'PATCH' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'PATCH' }
             $script:lastBody.registrationEnforcement.authenticationMethodsRegistrationCampaign.state | Should -Be 'enabled'
             $script:lastBody.registrationEnforcement.authenticationMethodsRegistrationCampaign.snoozeDurationInDays | Should -Be 5
         }

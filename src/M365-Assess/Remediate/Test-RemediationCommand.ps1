@@ -213,6 +213,8 @@ function Test-RemediationCommand {
     .EXAMPLE
         Test-RemediationCommand -CheckId 'SPO-SHARING-001.1' -TenantId 'tenant-a' -CallerContext $ctx -AllowlistCheckIds @('SPO-SHARING-001')
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingPlainTextForPassword', 'TenantCredential',
+        Justification = 'TenantCredential is the auth hashtable from Resolve-TenantCredential (client id plus certificate reference or SecureString secret), never a plain-text password.')]
     [CmdletBinding()]
     [OutputType([PSCustomObject])]
     param(

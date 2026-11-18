@@ -216,8 +216,8 @@ Describe 'Set-Connector worker (T-0404)' {
 
             $found | Should -Not -BeNullOrEmpty
             $found.Identity | Should -Be 'conn-in-1'
-            Assert-MockCalled Get-InboundConnector -Times 1
-            Assert-MockCalled Get-OutboundConnector -Times 0
+            Should -Invoke Get-InboundConnector -Times 1
+            Should -Invoke Get-OutboundConnector -Times 0
         }
 
         It 'falls through to the outbound set when inbound has no match' {
@@ -234,7 +234,7 @@ Describe 'Set-Connector worker (T-0404)' {
 
             $found | Should -Not -BeNullOrEmpty
             $found.Name | Should -Be 'Partner outbound'
-            Assert-MockCalled Get-OutboundConnector -Times 1
+            Should -Invoke Get-OutboundConnector -Times 1
         }
 
         It 'returns null when no connector matches' {
@@ -275,14 +275,14 @@ Describe 'Set-Connector worker (T-0404)' {
             $plan.after['enabled'] | Should -BeTrue
             $plan.securitySensitive | Should -BeFalse
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled New-InboundConnector -Times 0
+            Should -Invoke New-InboundConnector -Times 0
         }
 
         It 'create apply without confirmation is refused' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'create' -Name 'Partner inbound' -Type 'inbound' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled New-InboundConnector -Times 0
+            Should -Invoke New-InboundConnector -Times 0
         }
 
         It 'create apply with confirmation calls New-InboundConnector and produces an audit record' {
@@ -298,14 +298,14 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.auditEvent.targetId | Should -Be 'conn-new'
             $res.auditEvent.before | Should -BeNullOrEmpty
             $res.auditEvent.after['name'] | Should -Be 'Partner inbound'
-            Assert-MockCalled New-InboundConnector -Times 1 -ParameterFilter { $Name -eq 'Partner inbound' }
+            Should -Invoke New-InboundConnector -Times 1 -ParameterFilter { $Name -eq 'Partner inbound' }
         }
 
         It 'create with a missing name throws before any write' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'create' -Type 'inbound' -DryRun $true
             } | Should -Throw '*ValidationFailed*'
-            Assert-MockCalled New-InboundConnector -Times 0
+            Should -Invoke New-InboundConnector -Times 0
         }
 
         It 'outbound create calls New-OutboundConnector' {
@@ -321,8 +321,8 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.plan.after['type'] | Should -Be 'outbound'
             $res.plan.after['recipientDomains'] | Should -Contain 'partner.example.invalid'
             $res.plan.after['requireTls'] | Should -BeTrue
-            Assert-MockCalled New-OutboundConnector -Times 1
-            Assert-MockCalled New-InboundConnector -Times 0
+            Should -Invoke New-OutboundConnector -Times 1
+            Should -Invoke New-InboundConnector -Times 0
         }
     }
 
@@ -356,7 +356,7 @@ Describe 'Set-Connector worker (T-0404)' {
             $plan.before['name'] | Should -Be 'Partner inbound'
             $plan.after['name'] | Should -Be 'Partner inbound v2'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Set-InboundConnector -Times 0
+            Should -Invoke Set-InboundConnector -Times 0
         }
 
         It 'edit that changes nothing is a structured no-op with no write' {
@@ -367,14 +367,14 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.result['noop'] | Should -BeTrue
             $res.plan.before['name'] | Should -Be 'Partner inbound'
             $res.plan.after['name'] | Should -Be 'Partner inbound'
-            Assert-MockCalled Set-InboundConnector -Times 0
+            Should -Invoke Set-InboundConnector -Times 0
         }
 
         It 'edit apply without confirmation is refused' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'edit' -ConnectorId 'conn-in-1' -Name 'Renamed' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-InboundConnector -Times 0
+            Should -Invoke Set-InboundConnector -Times 0
         }
 
         It 'edit apply captures before/after and produces an audit record' {
@@ -388,7 +388,7 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.auditEvent.targetId | Should -Be 'conn-in-1'
             $res.auditEvent.before['name'] | Should -Be 'Partner inbound'
             $res.auditEvent.after['name'] | Should -Be 'Renamed'
-            Assert-MockCalled Set-InboundConnector -Times 1 -ParameterFilter { $Identity -eq 'conn-in-1' -and $Name -eq 'Renamed' }
+            Should -Invoke Set-InboundConnector -Times 1 -ParameterFilter { $Identity -eq 'conn-in-1' -and $Name -eq 'Renamed' }
         }
 
         It 'disable apply warns, sets Enabled false, and audits before/after' {
@@ -403,14 +403,14 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.auditEvent.action | Should -Be 'connector.disable'
             $res.auditEvent.before['enabled'] | Should -BeTrue
             $res.auditEvent.after['enabled'] | Should -BeFalse
-            Assert-MockCalled Set-InboundConnector -Times 1 -ParameterFilter { $Enabled -eq $false }
+            Should -Invoke Set-InboundConnector -Times 1 -ParameterFilter { $Enabled -eq $false }
         }
 
         It 'disable apply without confirmation is refused' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'disable' -ConnectorId 'conn-in-1' -Enabled $false -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-InboundConnector -Times 0
+            Should -Invoke Set-InboundConnector -Times 0
         }
 
         It 'enable apply sets Enabled true without the mail-flow warning' {
@@ -423,7 +423,7 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.plan.before['enabled'] | Should -BeFalse
             $res.plan.after['enabled'] | Should -BeTrue
             $res.auditEvent.action | Should -Be 'connector.enable'
-            Assert-MockCalled Set-InboundConnector -Times 1 -ParameterFilter { $Enabled -eq $true }
+            Should -Invoke Set-InboundConnector -Times 1 -ParameterFilter { $Enabled -eq $true }
         }
 
         It 'edit of an unknown connector throws NotFound' {
@@ -435,7 +435,7 @@ Describe 'Set-Connector worker (T-0404)' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'edit' -ConnectorId 'conn-missing' -Name 'Renamed' -DryRun $true
             } | Should -Throw '*NotFound*'
-            Assert-MockCalled Set-InboundConnector -Times 0
+            Should -Invoke Set-InboundConnector -Times 0
         }
 
         It 'outbound edit calls Set-OutboundConnector' {
@@ -463,8 +463,8 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.success | Should -BeTrue
             $res.plan.before['type'] | Should -Be 'outbound'
             $res.plan.after['name'] | Should -Be 'Partner outbound v2'
-            Assert-MockCalled Set-OutboundConnector -Times 1
-            Assert-MockCalled Set-InboundConnector -Times 0
+            Should -Invoke Set-OutboundConnector -Times 1
+            Should -Invoke Set-InboundConnector -Times 0
         }
     }
 
@@ -493,14 +493,14 @@ Describe 'Set-Connector worker (T-0404)' {
             $plan.securitySensitive | Should -BeTrue
             $plan.requiresConfirmation | Should -BeTrue
             $plan.warning | Should -Match 'production mail flow'
-            Assert-MockCalled Remove-InboundConnector -Times 0
+            Should -Invoke Remove-InboundConnector -Times 0
         }
 
         It 'delete apply without confirmation is refused' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'delete' -ConnectorId 'conn-in-1' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Remove-InboundConnector -Times 0
+            Should -Invoke Remove-InboundConnector -Times 0
         }
 
         It 'delete apply with confirmation removes and audits before/after' {
@@ -512,7 +512,7 @@ Describe 'Set-Connector worker (T-0404)' {
             $res.plan.after | Should -BeNullOrEmpty
             $res.auditEvent.action | Should -Be 'connector.delete'
             $res.auditEvent.before['name'] | Should -Be 'Partner inbound'
-            Assert-MockCalled Remove-InboundConnector -Times 1 -ParameterFilter { $Identity -eq 'conn-in-1' }
+            Should -Invoke Remove-InboundConnector -Times 1 -ParameterFilter { $Identity -eq 'conn-in-1' }
         }
     }
 
@@ -528,7 +528,7 @@ Describe 'Set-Connector worker (T-0404)' {
             {
                 Invoke-SetConnector -TenantId 'tenant-a' -Action 'create' -Name 'Partner inbound' -Type 'inbound' -SecretRef $global:connectorSecretRef -DryRun $true
             } | Should -Throw '*credential_store_required*'
-            Assert-MockCalled New-InboundConnector -Times 0
+            Should -Invoke New-InboundConnector -Times 0
         }
 
         It 'refuses an unresolvable secret reference' {
@@ -545,7 +545,7 @@ Describe 'Set-Connector worker (T-0404)' {
             $res = Invoke-SetConnector -TenantId 'tenant-a' -Action 'create' -Name 'Partner inbound' -Type 'inbound' -SenderDomains 'partner.example.invalid' -SecretRef $global:connectorSecretRef -CredentialStore $store -DryRun $false -Confirmed $true
 
             $global:resolvedSecretRef | Should -Be $global:connectorSecretRef
-            Assert-MockCalled New-InboundConnector -Times 1 -ParameterFilter { $TlsCertificate -eq $global:connectorSecretMaterial }
+            Should -Invoke New-InboundConnector -Times 1 -ParameterFilter { $TlsCertificate -eq $global:connectorSecretMaterial }
             $res.plan.after['secretRef'] | Should -Be $global:connectorSecretRef
             $res.auditEvent.after['secretRef'] | Should -Be $global:connectorSecretRef
             $json = $res | ConvertTo-Json -Depth 8
@@ -561,7 +561,7 @@ Describe 'Set-Connector worker (T-0404)' {
             $plan.dryRun | Should -BeTrue
             $plan.after['secretRef'] | Should -Be $global:connectorSecretRef
             $global:resolvedSecretRef | Should -Be $global:connectorSecretRef
-            Assert-MockCalled New-InboundConnector -Times 0
+            Should -Invoke New-InboundConnector -Times 0
         }
     }
 

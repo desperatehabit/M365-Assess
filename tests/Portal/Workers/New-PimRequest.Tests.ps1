@@ -51,7 +51,7 @@ Describe 'New-PimRequest worker (T-0245)' {
             $result.id | Should -Be 'req-123'
             $result.startsAt | Should -Not -BeNullOrEmpty
             $result.endsAt | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
         }
 
         It 'enters pending state when approval is configured' {
@@ -105,7 +105,7 @@ Describe 'New-PimRequest worker (T-0245)' {
             $result = Get-PimRequestStatus -TenantId 'tenant-test' -RequestId 'req-123'
 
             $result.state | Should -Be 'active'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter {
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter {
                 $Method -eq 'GET' -and $Uri -eq '/v1.0/roleManagement/directory/roleAssignmentScheduleRequests/req-123'
             }
         }

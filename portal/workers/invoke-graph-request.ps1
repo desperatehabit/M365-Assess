@@ -3,7 +3,7 @@
     Worker entrypoint for the EPIC-040 Graph Explorer.
 .DESCRIPTION
     Reads a feature job envelope from -JobFile (or a tenant/method/url directly),
-    executes the request through Invoke-GraphRequest with the tenant's portal
+    executes the request through Invoke-PortalGraphRequest with the tenant's portal
     app credential, and emits the response envelope as JSON on stdout. The BFF
     validates the request before dispatch; Assert-GraphRequestAllowed re-checks
     the method and Graph host here. Reads and writes both return Graph's own
@@ -69,7 +69,7 @@ try {
         $Body = $BodyJson | ConvertFrom-Json
     }
 
-    $result = Invoke-GraphRequest -TenantId $TenantId -Method $Method -Url $Url -Body $Body
+    $result = Invoke-PortalGraphRequest -TenantId $TenantId -Method $Method -Url $Url -Body $Body
     $result | ConvertTo-Json -Depth 20 -Compress
 }
 finally {

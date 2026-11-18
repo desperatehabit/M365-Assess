@@ -156,7 +156,7 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $res = Invoke-TeamsVoice -TenantId 'tenant-test' -Action 'list'
             $res.license.Licensed | Should -BeFalse
             $res.numbers | Should -BeNullOrEmpty
-            Assert-MockCalled Get-CsPhoneNumberAssignment -Times 0
+            Should -Invoke Get-CsPhoneNumberAssignment -Times 0
         }
     }
 
@@ -191,14 +191,14 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $plan.before['lineUri'] | Should -Be ''
             $plan.after['lineUri'] | Should -Be '+15550100'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Set-CsPhoneNumberAssignment -Times 0
+            Should -Invoke Set-CsPhoneNumberAssignment -Times 0
         }
 
         It 'assign apply without confirmation is refused' {
             {
                 Invoke-TeamsVoice -TenantId 'tenant-test' -Action 'assign' -PhoneNumber '+15550100' -TargetId 'user-1' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-CsPhoneNumberAssignment -Times 0
+            Should -Invoke Set-CsPhoneNumberAssignment -Times 0
         }
 
         It 'assign apply captures before/after and produces a TeamOperation plus an audit record' {
@@ -213,7 +213,7 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $res.auditEvent.targetId | Should -Be 'user-1'
             $res.auditEvent.before['lineUri'] | Should -Be ''
             $res.auditEvent.after['lineUri'] | Should -Be '+15550100'
-            Assert-MockCalled Set-CsPhoneNumberAssignment -Times 1 -ParameterFilter { $PhoneNumber -eq '+15550100' }
+            Should -Invoke Set-CsPhoneNumberAssignment -Times 1 -ParameterFilter { $PhoneNumber -eq '+15550100' }
         }
     }
 
@@ -247,14 +247,14 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $plan.requiresConfirmation | Should -BeTrue
             $plan.before['assignedTo'] | Should -Be 'user-1'
             $plan.after['assignedTo'] | Should -Be ''
-            Assert-MockCalled Remove-CsPhoneNumberAssignment -Times 0
+            Should -Invoke Remove-CsPhoneNumberAssignment -Times 0
         }
 
         It 'release apply without confirmation is refused' {
             {
                 Invoke-TeamsVoice -TenantId 'tenant-test' -Action 'release' -NumberId 'num-1' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Remove-CsPhoneNumberAssignment -Times 0
+            Should -Invoke Remove-CsPhoneNumberAssignment -Times 0
         }
 
         It 'release apply produces a TeamOperation plus an audit record' {
@@ -264,7 +264,7 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $res.teamOperation.state | Should -Be 'applied'
             $res.auditEvent.action | Should -Be 'voice.release'
             $res.auditEvent.targetId | Should -Be 'user-1'
-            Assert-MockCalled Remove-CsPhoneNumberAssignment -Times 1
+            Should -Invoke Remove-CsPhoneNumberAssignment -Times 1
         }
     }
 
@@ -296,14 +296,14 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $plan.dryRun | Should -BeTrue
             $plan.policyId | Should -Be 'policy-1'
             $plan.after['voiceRoutingPolicy'] | Should -Be 'policy-1'
-            Assert-MockCalled Grant-CsOnlineVoiceRoutingPolicy -Times 0
+            Should -Invoke Grant-CsOnlineVoiceRoutingPolicy -Times 0
         }
 
         It 'policy apply without confirmation is refused' {
             {
                 Invoke-TeamsVoice -TenantId 'tenant-test' -Action 'policy' -PolicyId 'policy-1' -TargetId 'user-1' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Grant-CsOnlineVoiceRoutingPolicy -Times 0
+            Should -Invoke Grant-CsOnlineVoiceRoutingPolicy -Times 0
         }
 
         It 'policy apply produces a TeamOperation plus an audit record' {
@@ -313,7 +313,7 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             $res.teamOperation.state | Should -Be 'applied'
             $res.auditEvent.action | Should -Be 'voice.policy'
             $res.auditEvent.after['voiceRoutingPolicy'] | Should -Be 'policy-1'
-            Assert-MockCalled Grant-CsOnlineVoiceRoutingPolicy -Times 1 -ParameterFilter { $PolicyName -eq 'policy-1' }
+            Should -Invoke Grant-CsOnlineVoiceRoutingPolicy -Times 1 -ParameterFilter { $PolicyName -eq 'policy-1' }
         }
     }
 }

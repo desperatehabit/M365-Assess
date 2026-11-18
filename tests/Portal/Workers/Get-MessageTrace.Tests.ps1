@@ -122,7 +122,7 @@ Describe 'Get-MessageTrace worker (T-0462)' {
         It 'passes the exact filters through to Get-MessageTraceV2' {
             $null = Get-MessageTrace -TenantId 'tenant-a' -SenderAddress 'sender@example.invalid' -Status 'Delivered' -StartDate $script:windowStart -EndDate $script:windowEnd
 
-            Assert-MockCalled Get-MessageTraceV2 -ParameterFilter {
+            Should -Invoke Get-MessageTraceV2 -ParameterFilter {
                 $SenderAddress -eq 'sender@example.invalid' -and
                 $Status -eq 'Delivered' -and
                 $StartDate -is [datetime] -and

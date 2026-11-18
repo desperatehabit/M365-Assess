@@ -80,14 +80,14 @@ Describe 'Set-Mailbox worker (T-0382)' {
             $plan.before | Should -BeNullOrEmpty
             $plan.after['type'] | Should -Be 'shared'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled New-Mailbox -Times 0
+            Should -Invoke New-Mailbox -Times 0
         }
 
         It 'create apply without confirmation is refused' {
             {
                 Invoke-SetMailbox -TenantId 'tenant-test' -Action 'create' -DisplayName 'Support Desk' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled New-Mailbox -Times 0
+            Should -Invoke New-Mailbox -Times 0
         }
 
         It 'create apply with confirmation calls New-Mailbox and produces an audit record' {
@@ -102,14 +102,14 @@ Describe 'Set-Mailbox worker (T-0382)' {
             $res.auditEvent.targetId | Should -Be 'mbx-new'
             $res.auditEvent.before | Should -BeNullOrEmpty
             $res.auditEvent.after['type'] | Should -Be 'shared'
-            Assert-MockCalled New-Mailbox -Times 1
+            Should -Invoke New-Mailbox -Times 1
         }
 
         It 'create with an invalid alias throws before any write' {
             {
                 Invoke-SetMailbox -TenantId 'tenant-test' -Action 'create' -DisplayName 'Support Desk' -Alias 'not an alias!' -DryRun $true
             } | Should -Throw '*ValidationFailed*'
-            Assert-MockCalled New-Mailbox -Times 0
+            Should -Invoke New-Mailbox -Times 0
         }
     }
 
@@ -149,7 +149,7 @@ Describe 'Set-Mailbox worker (T-0382)' {
             $plan.before['type'] | Should -Be 'user'
             $plan.after['type'] | Should -Be 'shared'
             $plan.diff[0] | Should -Match 'from user to shared'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'convert of an already-shared mailbox is a structured no-op with no write' {
@@ -159,14 +159,14 @@ Describe 'Set-Mailbox worker (T-0382)' {
             $res.result['noop'] | Should -BeTrue
             $res.plan.before['type'] | Should -Be 'shared'
             $res.plan.after['type'] | Should -Be 'shared'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'convert apply without confirmation is refused' {
             {
                 Invoke-SetMailbox -TenantId 'tenant-test' -Action 'convert' -MailboxId 'mbx-2' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'convert apply captures before/after and produces an audit record' {
@@ -181,14 +181,14 @@ Describe 'Set-Mailbox worker (T-0382)' {
             $res.auditEvent.targetId | Should -Be 'mbx-2'
             $res.auditEvent.before['type'] | Should -Be 'user'
             $res.auditEvent.after['type'] | Should -Be 'shared'
-            Assert-MockCalled Set-Mailbox -Times 1 -ParameterFilter { $Type -eq 'Shared' }
+            Should -Invoke Set-Mailbox -Times 1 -ParameterFilter { $Type -eq 'Shared' }
         }
 
         It 'convert of an unknown mailbox throws NotFound' {
             {
                 Invoke-SetMailbox -TenantId 'tenant-test' -Action 'convert' -MailboxId 'mbx-missing' -DryRun $true
             } | Should -Throw '*NotFound*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'convert without a mailbox id throws ValidationFailed' {

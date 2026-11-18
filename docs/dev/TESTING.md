@@ -17,7 +17,10 @@ pwsh -NoProfile -Command "Invoke-Pester -Path './tests/Entra' -Output Detailed"
 pwsh -NoProfile -Command "Invoke-Pester -Path './tests/Common/Build-ReportData.Tests.ps1' -Output Detailed"
 ```
 
-Tests assume **PowerShell 7.4+** and **Pester 5.x**. Pester is auto-installed in CI; for local runs:
+Tests assume **PowerShell 7.4+** and **Pester 5.x or 6.x** (CI installs the latest). Use only
+syntax both support: `Should -Invoke`, never `Assert-MockCalled`. Pester 6 removed
+`Assert-MockCalled`, and on Windows PowerShell auto-loads the inbox Pester 3.4.0 to find it,
+which then breaks every `Mock` in the file. Pester is auto-installed in CI; for local runs:
 
 ```powershell
 Install-Module -Name Pester -MinimumVersion 5.0.0 -Scope CurrentUser

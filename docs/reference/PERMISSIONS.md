@@ -18,11 +18,11 @@
 | Email | ExchangeOnline | 0 | 1 | 1 | 0 |
 | Hybrid | Graph | 2 | 2 | 0 | 0 |
 | Identity | Graph | 9 | 8 | 0 | 0 |
-| Intune | Graph | 2 | 2 | 0 | 0 |
+| Intune | Graph | 2 | 4 | 0 | 0 |
 | Inventory | Graph, ExchangeOnline | 7 | 7 | 1 | 0 |
 | Licensing | Graph | 2 | 2 | 0 | 0 |
 | PowerBI | — | 0 | 0 | 0 | 0 |
-| Security | Graph, ExchangeOnline, Purview | 1 | 4 | 2 | 3 |
+| Security | Graph, ExchangeOnline, Purview | 1 | 5 | 2 | 3 |
 | SOC2 | Graph, Purview | 8 | 0 | 0 | 0 |
 | Tenant | Graph | 5 | 5 | 0 | 0 |
 | ValueOpportunity | Graph | 1 | 0 | 0 | 0 |
@@ -137,8 +137,10 @@
 
 | Permission | Reason |
 |---|---|
+| `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
 | `DeviceManagementConfiguration.Read.All` | Configuration profiles, compliance policies, Multi-Admin Approval policies |
 | `DeviceManagementManagedDevices.Read.All` | Managed device inventory and compliance state |
+| `DeviceManagementServiceConfig.Read.All` | Autopilot deployment profiles and Apple/Android enrollment profiles |
 
 ### Inventory
 
@@ -204,6 +206,7 @@
 
 | Permission | Reason |
 |---|---|
+| `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
 | `DeviceManagementApps.Read.All` | Intune audit events including device wipe/retire/delete actions |
 | `DeviceManagementConfiguration.Read.All` | Configuration profiles, compliance policies, Multi-Admin Approval policies |
 | `DeviceManagementRBAC.Read.All` | Intune RBAC role definitions and assignments (scope tag audit) |

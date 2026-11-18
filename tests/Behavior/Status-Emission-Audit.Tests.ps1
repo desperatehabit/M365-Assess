@@ -21,7 +21,10 @@ BeforeAll {
     $script:srcRoot = "$PSScriptRoot/../../src/M365-Assess"
     $script:emissionPattern = "Status\s*=\s*'(Review|Unknown|Skipped)'"
 
+    # Collectors only: Remediate/ is not a collector, and its local
+    # `$specStatus = 'unknown'` would otherwise match the pattern.
     $script:emissions = Get-ChildItem -Path $script:srcRoot -Recurse -Filter '*.ps1' |
+        Where-Object { $_.FullName -notmatch '[\\/]Remediate[\\/]' } |
         Select-String -Pattern $script:emissionPattern |
         ForEach-Object {
             if ($_.Line -match "'(Review|Unknown|Skipped)'") {

@@ -19,21 +19,27 @@ BeforeAll {
         )
         $script:mockNoDomain = [bool]$NoDomain
         $script:mockGraphFails = [bool]$GraphFails
+        # Fresh tenant per test: a domain added by an earlier test would make a
+        # later add fail with domain_already_exists.
+        $script:domainState.Clear()
+        # The mock body uses unqualified names on purpose. $script: resolves to the
+        # nearest script scope on the call stack, which is the entrypoint script
+        # when the worker runs through `& $script:entrypoint`, not this file.
         Mock Invoke-MgGraphRequest {
             param($Method, $Uri, $Body)
-            if ($script:mockGraphFails) {
+            if ($mockGraphFails) {
                 throw 'graph unavailable'
             }
             if ($Method -eq 'GET' -and $Uri -match '^/v1\.0/domains/([^/]+)$') {
                 $name = $Matches[1]
-                if ($script:mockNoDomain -or -not $script:domainState.ContainsKey($name)) {
+                if ($mockNoDomain -or -not $domainState.ContainsKey($name)) {
                     throw "domain '$name' not found"
                 }
-                return $script:domainState[$name]
+                return $domainState[$name]
             }
             if ($Method -eq 'POST' -and $Uri -eq '/v1.0/domains') {
                 $parsed = $Body | ConvertFrom-Json
-                $script:domainState[$parsed.id] = @{ id = $parsed.id; isVerified = $false; isDefault = $false }
+                $domainState[$parsed.id] = @{ id = $parsed.id; isVerified = $false; isDefault = $false }
                 return @{
                     id = $parsed.id
                     isVerified = $false
@@ -46,17 +52,17 @@ BeforeAll {
             }
             if ($Method -eq 'POST' -and $Uri -match '^/v1\.0/domains/([^/]+)/verify$') {
                 $name = $Matches[1]
-                $script:domainState[$name].isVerified = $true
-                return @{ id = $name; isVerified = $true; isDefault = $script:domainState[$name].isDefault }
+                $domainState[$name].isVerified = $true
+                return @{ id = $name; isVerified = $true; isDefault = $domainState[$name].isDefault }
             }
             if ($Method -eq 'PATCH' -and $Uri -match '^/v1\.0/domains/([^/]+)$') {
                 $name = $Matches[1]
-                $script:domainState[$name].isDefault = $true
-                return @{ id = $name; isVerified = $script:domainState[$name].isVerified; isDefault = $true }
+                $domainState[$name].isDefault = $true
+                return @{ id = $name; isVerified = $domainState[$name].isVerified; isDefault = $true }
             }
             if ($Method -eq 'DELETE' -and $Uri -match '^/v1\.0/domains/([^/]+)$') {
                 $name = $Matches[1]
-                $script:domainState.Remove($name)
+                $domainState.Remove($name)
                 return $null
             }
             return @{ id = 'ok' }
@@ -65,9 +71,12 @@ BeforeAll {
 
     function script:New-AuditSeam {
         $script:auditEvents.Clear()
+        # GetNewClosure() binds the block to a new dynamic module, where $script:
+        # would resolve to that module's (empty) scope. Capture the list itself.
+        $events = $script:auditEvents
         return {
             param($AuditEvent)
-            $script:auditEvents.Add($AuditEvent)
+            $events.Add($AuditEvent)
         }.GetNewClosure()
     }
 }
@@ -172,7 +181,9 @@ Describe 'Invoke-DomainAction worker (T-0663)' {
         }
 
         It 'refuses an existing domain with a structured code and no POST' {
-            $null = Add-Domain -TenantId 'tenant-a' -Domain 'contoso.com' -Confirmed
+            # Seed the existing domain directly so the only Add-Domain call under
+            # test is the refused one.
+            $script:domainState['contoso.com'] = @{ id = 'contoso.com'; isVerified = $false; isDefault = $false }
             $seam = script:New-AuditSeam
             $result = Add-Domain -TenantId 'tenant-a' -Domain 'contoso.com' -Confirmed -WriteAudit $seam
             $result.status | Should -Be 'failed'

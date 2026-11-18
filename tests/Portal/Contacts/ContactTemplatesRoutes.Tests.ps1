@@ -38,9 +38,9 @@ Describe 'Contact templates routes (T-0446)' {
             $script:source | Should -Not -Match 'Invoke-MgGraphRequest'
         }
 
-        It 'gates reads behind contacts.read and writes behind contacts.write' {
-            $script:source | Should -Match 'read:\s*"contacts\.read"'
-            $script:source | Should -Match 'write:\s*"contacts\.write"'
+        It 'gates reads behind Exchange.Contact.Read and writes behind Exchange.Contact.ReadWrite' {
+            $script:source | Should -Match 'read:\s*"Exchange\.Contact\.Read"'
+            $script:source | Should -Match 'write:\s*"Exchange\.Contact\.ReadWrite"'
             $script:source | Should -Match 'requirePermission'
         }
 

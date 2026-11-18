@@ -45,7 +45,7 @@ Describe 'Invoke-GraphRequest worker (T-0781, mounted by T-0870)' {
             return @{ value = @(@{ id = 'user-1' }) }
         }
 
-        $result = Invoke-GraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://graph.microsoft.com/v1.0/users'
+        $result = Invoke-PortalGraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://graph.microsoft.com/v1.0/users'
 
         $script:called.Method | Should -Be 'GET'
         $script:called.Uri | Should -Be 'https://graph.microsoft.com/v1.0/users'
@@ -62,7 +62,7 @@ Describe 'Invoke-GraphRequest worker (T-0781, mounted by T-0870)' {
             return @{ id = 'group-1' }
         }
 
-        $result = Invoke-GraphRequest -TenantId 'tenant-a' -Method POST -Url 'https://graph.microsoft.com/v1.0/groups' -Body @{ displayName = 'Probe' }
+        $result = Invoke-PortalGraphRequest -TenantId 'tenant-a' -Method POST -Url 'https://graph.microsoft.com/v1.0/groups' -Body @{ displayName = 'Probe' }
 
         $script:called.Method | Should -Be 'POST'
         ($script:called.Body | ConvertFrom-Json).displayName | Should -Be 'Probe'
@@ -76,7 +76,7 @@ Describe 'Invoke-GraphRequest worker (T-0781, mounted by T-0870)' {
             throw 'Graph returned 403 Forbidden'
         }
 
-        $result = Invoke-GraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://graph.microsoft.com/v1.0/users'
+        $result = Invoke-PortalGraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://graph.microsoft.com/v1.0/users'
 
         $result.status | Should -Be 500
         $result.body.error.code | Should -Be 'graph-explorer.request_failed'
@@ -84,12 +84,22 @@ Describe 'Invoke-GraphRequest worker (T-0781, mounted by T-0870)' {
     }
 
     It 'refuses a method outside the allowlist' {
-        { Invoke-GraphRequest -TenantId 'tenant-a' -Method 'TRACE' -Url 'https://graph.microsoft.com/v1.0/users' } |
+        { Invoke-PortalGraphRequest -TenantId 'tenant-a' -Method 'TRACE' -Url 'https://graph.microsoft.com/v1.0/users' } |
             Should -Throw '*method_not_allowed*'
     }
 
     It 'refuses a URL outside graph.microsoft.com' {
-        { Invoke-GraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://login.microsoftonline.com/tenant-a/oauth2/v2.0/token' } |
+        { Invoke-PortalGraphRequest -TenantId 'tenant-a' -Method GET -Url 'https://login.microsoftonline.com/tenant-a/oauth2/v2.0/token' } |
             Should -Throw '*url_not_allowed*'
+    }
+
+    # Microsoft.Graph.Authentication exports an alias named Invoke-GraphRequest,
+    # and aliases win over functions. The worker connects Graph (loading that
+    # module) before dispatching, so its function must not use that name.
+    It 'is not shadowed by a Microsoft.Graph.Authentication alias once Graph is loaded' -Skip:(-not (Get-Module -ListAvailable Microsoft.Graph.Authentication)) {
+        Import-Module Microsoft.Graph.Authentication -ErrorAction Stop
+        (Get-Command Invoke-PortalGraphRequest).CommandType | Should -Be 'Function'
+        $entry = Get-Content -LiteralPath (Join-Path $script:repoRoot 'portal/workers/invoke-graph-request.ps1') -Raw
+        $entry | Should -Match '=\s*Invoke-PortalGraphRequest\s'
     }
 }
