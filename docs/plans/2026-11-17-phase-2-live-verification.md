@@ -9,11 +9,12 @@ with the date, what was done, and what was seen), then update `TICKETS.md`._
 Run the live test against **committed** code that CI has passed, so that a result can be
 reproduced and attributed.
 
-- [ ] PRs #14 and #15 merged (Phase 0 exit).
-- [ ] Phase 1 PR (`feat/portal-phase1-completion`) merged with CI green.
-- [ ] CI covers the portal (**T-0913**). Until it does, run the portal checks locally: from a
-      `C:\` path (Vitest misloads under a lowercase `c:` cwd), `npm run typecheck`,
-      `npm run build`, `npm test` in `portal/`.
+- [x] PRs #14 and #15 merged (Phase 0 exit). _2026-11-16._
+- [x] Phase 1 PR (`feat/portal-phase1-completion`) merged with CI green. _PR #16, 2026-11-18._
+- [ ] CI covers the portal (**T-0913**, PR #17). Until it merges, run the portal checks
+      locally: from a `C:\` path (Vitest misloads under a lowercase `c:` cwd),
+      `npm run build`, `npm run typecheck`, `npm test` in `portal/`. Build first on a clean
+      checkout: `bff` and `web` import `contracts` and `db` through their gitignored `dist/`.
 - [ ] Pester green on that commit:
       `pwsh -NoProfile -Command "Invoke-Pester -Path './tests'"`. From a script or background
       shell, close stdin (`< /dev/null`): a worker test that reads its job envelope from stdin
@@ -27,8 +28,9 @@ Against the working tree, using `npm run dev` (BFF on :8080, web on :3000):
 - All 120 nav routes compile and return 200. The dev log shows no render or build errors.
 - Every `/v1` path the web client calls was probed against the BFF. The unmounted ones are
   filed: **T-0909** (backup restore preview), **T-0910** (tenant detail variables and history),
-  **T-0911** (GDAP relationships), and **T-0912** (parked EPIC-041 pages in the nav). Expect
-  these pages to fail during the walk; they don't need refiling.
+  **T-0911** (GDAP relationships), and **T-0912** (parked EPIC-041 pages in the nav). All four
+  were fixed on 2026-11-18 (PR #18, `fixed-unverified`): check them during the walk instead of
+  expecting failures. The three EPIC-041 pages are no longer in the nav.
 - **T-0899** checked: with `M365_BFF_DEV_IDENTITY=operator`, API-client create, update,
   delete and rotate-secret return `403 auth.forbidden`; as `admin` they pass. This is
   independent of the tenant, so the check stands. Close it once the code is committed and the
@@ -116,7 +118,7 @@ afterwards.
 | T-0862 | R | **Audit logs**: run a search, save it, check coverage. Webhooks CRUD as in T-0902. |
 | T-0863 | R then W | **License report** and optimization render. Assign and remove a licence on a test user (dry run first). |
 | T-0864 | R | **Domains**: DNS check on a verified domain shows records. Do not add or remove domains on a shared tenant. |
-| T-0865 | W | **Backup**: create, download and delete. Restore is **blocked by T-0909** (preview). |
+| T-0865 | W | **Backup**: create, download and delete. Restore: the preview lists per-table changes, then confirm restores (T-0909). |
 
 ### Standards and compliance
 | Ticket | Mode | Live check |

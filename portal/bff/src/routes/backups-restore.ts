@@ -1,11 +1,14 @@
 // Backup restore API: POST /v1/backups/{id}/restore (EPIC-035 SPEC.md §3.2,
-// §4.2 steps 3-4, §6, §7, §8, §9; T-0687).
+// §4.2 steps 3-4, §6, §7, §8, §9; T-0687) and its dry-run
+// POST /v1/backups/{id}/restore/preview (§3.2, §4.2 steps 1-2; T-0909).
 //
 // Thin BFF over the T-0687 apply domain and the T-0681 repository: authenticate,
 // require the CIPP.Admin.* scope (SPEC §7), require explicit `{ "confirm": true }`
 // and a confirming Idempotency-Key, then run the apply (automatic pre-restore
 // backup, per-table transaction, rollback on failure, before/after audit). A
-// replayed key returns the prior outcome without applying twice. The OpenAPI
+// replayed key returns the prior outcome without applying twice. The preview
+// shares the same gate and scope checks, needs no confirmation or key, and
+// calls the read-only T-0686 diff, so it cannot write. The OpenAPI
 // fragment is published here so `portal.v1.yaml` stays untouched (EPIC-001 §1).
 import type { Backup, BackupInput, BackupScopeOptions } from "@m365-assess/db";
 import type { RecordAudit } from "../adapters/audit.js";
@@ -22,10 +25,12 @@ import {
   type RestoreApplyStore,
   type RestoreIdempotencyStore,
 } from "../backup/apply.js";
+import { previewRestore } from "../backup/restore.js";
 import { BACKUP_ARTIFACT_MISSING, backupNotFoundError } from "./backups.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const BACKUP_RESTORE_PATH = "/v1/backups/:id/restore";
+export const BACKUP_RESTORE_PREVIEW_PATH = "/v1/backups/:id/restore/preview";
 
 export const BACKUP_RESTORE_PERMISSION = "CIPP.Admin.BackupRestore";
 export const BACKUP_RESTORE_ADMIN_SCOPE = "CIPP.Admin.*";
@@ -174,7 +179,9 @@ export function createBackupsRestoreRoutes(options: BackupsRestoreRouteOptions):
   // One store per route set so an Idempotency-Key replay survives across requests.
   const idempotency = options.idempotency ?? createMemoryRestoreIdempotencyStore();
 
-  async function handleRestore(ctx: RequestContext): Promise<RouteResponse> {
+  async function loadBackup(
+    ctx: RequestContext,
+  ): Promise<{ readonly caller: BackupsRestoreCaller; readonly backup: Backup }> {
     const caller = requireCaller(options.resolveCaller, ctx);
     await requireAdmin(options, caller);
 
@@ -186,6 +193,45 @@ export function createBackupsRestoreRoutes(options: BackupsRestoreRouteOptions):
     if (backup.tenantId !== null) {
       requireTenantInScope(caller, backup.tenantId);
     }
+    return { caller, backup };
+  }
+
+  async function readArchive(backup: Backup): Promise<Buffer> {
+    try {
+      return await options.artifacts.read(backup.artifactRef);
+    } catch {
+      throw new AppError(
+        BACKUP_ARTIFACT_MISSING,
+        `backup '${backup.id}' artifact is missing`,
+        404,
+        [{ field: "id", reason: "artifact_missing" }],
+      );
+    }
+  }
+
+  async function handlePreview(ctx: RequestContext): Promise<RouteResponse> {
+    const { backup } = await loadBackup(ctx);
+    // An empty body previews the full scope, as the wizard sends `{}`.
+    const body = ctx.body === undefined || ctx.body === null || ctx.body === "" ? {} : readJsonObject(ctx);
+    const tables = parseTableScope(body);
+    const archive = await readArchive(backup);
+
+    const preview = await previewRestore({
+      store: options.store,
+      archive,
+      tables,
+      filter: backup.tenantId === null ? undefined : { tenantId: backup.tenantId },
+    });
+
+    return {
+      status: 200,
+      headers: { "content-type": "application/json" },
+      body: { backupId: backup.id, schemaVersion: preview.schemaVersion, tables: preview.tables },
+    };
+  }
+
+  async function handleRestore(ctx: RequestContext): Promise<RouteResponse> {
+    const { caller, backup } = await loadBackup(ctx);
 
     const body = readJsonObject(ctx);
     if (body["confirm"] !== true) {
@@ -197,15 +243,7 @@ export function createBackupsRestoreRoutes(options: BackupsRestoreRouteOptions):
       );
     }
     const tables = parseTableScope(body);
-
-    let archive: Buffer;
-    try {
-      archive = await options.artifacts.read(backup.artifactRef);
-    } catch {
-      throw new AppError(BACKUP_ARTIFACT_MISSING, `backup '${id}' artifact is missing`, 404, [
-        { field: "id", reason: "artifact_missing" },
-      ]);
-    }
+    const archive = await readArchive(backup);
 
     const createdBy = caller.userId ?? "unknown";
     const tenantId = backup.tenantId;
@@ -265,7 +303,10 @@ export function createBackupsRestoreRoutes(options: BackupsRestoreRouteOptions):
     };
   }
 
-  return [{ method: "POST", path: BACKUP_RESTORE_PATH, handler: handleRestore }];
+  return [
+    { method: "POST", path: BACKUP_RESTORE_PATH, handler: handleRestore },
+    { method: "POST", path: BACKUP_RESTORE_PREVIEW_PATH, handler: handlePreview },
+  ];
 }
 
 // Route modules own their OpenAPI path items; a wiring ticket merges this
@@ -303,6 +344,45 @@ export const BACKUPS_RESTORE_OPENAPI = {
           },
           "400": {
             description: "Missing confirmation, missing Idempotency-Key, or an invalid table scope.",
+          },
+          "401": { description: "Authentication required." },
+          "403": {
+            description: "The caller lacks the CIPP.Admin.* scope or the tenant is out of scope.",
+          },
+          "404": { description: "The backup or its archive artifact was not found." },
+          "409": { description: "The backup schema version does not match the instance." },
+        },
+      },
+    },
+    "/backups/{id}/restore/preview": {
+      post: {
+        operationId: "previewBackupRestore",
+        summary:
+          "Dry-run a restore: the added, changed and removed records per table, without writing.",
+        permission: BACKUP_RESTORE_ADMIN_SCOPE,
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        requestBody: {
+          required: false,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  tables: { type: "array", items: { type: "string" } },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": {
+            description:
+              "The per-table diff (`added`, `changed`, `removed`) a restore of this scope would apply.",
+          },
+          "400": {
+            description: "An invalid table scope, or a table the archive does not carry.",
           },
           "401": { description: "Authentication required." },
           "403": {

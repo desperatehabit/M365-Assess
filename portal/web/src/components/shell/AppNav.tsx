@@ -204,11 +204,18 @@ export const NAV_GROUPS: readonly NavGroup[] = [
       { href: "/tools/domain-check", label: "Domain check" },
       { href: "/tools/ip-database", label: "IP database" },
       { href: "/tools/app-approval", label: "App approval" },
-      { href: "/copilot/settings", label: "Copilot settings" },
-      { href: "/copilot/shadow-ai", label: "Shadow AI" },
-      { href: "/integrations", label: "Integrations" },
     ],
   },
+];
+
+// EPIC-041 (Integrations, Copilot & Shadow AI) is parked: these pages exist but
+// the BFF serves none of their API calls, so they stay out of the nav until the
+// epic is un-parked (T-0912). Move an entry back into NAV_GROUPS together with
+// its mounted routes.
+export const PARKED_NAV_ITEMS: readonly NavItem[] = [
+  { href: "/copilot/settings", label: "Copilot settings" },
+  { href: "/copilot/shadow-ai", label: "Shadow AI" },
+  { href: "/integrations", label: "Integrations" },
 ];
 
 /** The item whose href is the longest prefix of `pathname` is active. */

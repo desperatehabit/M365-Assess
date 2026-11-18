@@ -4,16 +4,21 @@
 // When enabled, POST /v1/gdap/sync discovers partner relationships, upserts
 // `source: gdap` tenants, tracks CPV metadata, and marks unavailable relationships
 // as excluded rather than silently dropping them. Direct tenants are never touched.
+// GET /v1/gdap/relationships lists the stored relationships (T-0911). It shares
+// the flag gate, so a 404 from it still means "GDAP not configured" to the UI.
 
 import { randomUUID } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
 import type { Caller } from "../rbac/authorize.js";
+import { isTenantAllowed } from "../rbac/scope.js";
 import type { RequestContext, Route } from "../server.js";
 import type { GdapRelationship, GdapRelationshipStore } from "../tenants/gdap-tenant-source.js";
 import type { TenantAuditInput, TenantRecord, TenantStore } from "./tenants.js";
 
 export const GDAP_SYNC_PATH = "/v1/gdap/sync";
+export const GDAP_RELATIONSHIPS_PATH = "/v1/gdap/relationships";
 export const GDAP_PERMISSION = "Tenant.Administration.ReadWrite";
+export const GDAP_READ_PERMISSION = "Tenant.Administration.Read";
 
 export const GDAP_UNAUTHENTICATED = "request.unauthenticated";
 export const GDAP_DISABLED = "gdap.disabled";
@@ -29,6 +34,11 @@ export interface GdapDiscoveredTenant {
   readonly excludeReason: string | null;
   readonly excludeDate?: string | null;
   readonly environment?: string;
+}
+
+export interface GdapRelationshipView extends GdapRelationship {
+  /** The tenant's display name, when the tenant row is known. */
+  readonly customerName: string | null;
 }
 
 export interface GdapSyncResult {
@@ -90,6 +100,28 @@ export function createGdapRoutes(options: GdapRouteOptions): Route[] {
     });
 
   return [
+    {
+      method: "GET",
+      path: GDAP_RELATIONSHIPS_PATH,
+      handler: async (ctx: RequestContext) => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        await authorize(caller, GDAP_READ_PERMISSION);
+
+        const relationships = options.relationshipStore
+          ? await options.relationshipStore.listGdapRelationships()
+          : [];
+        const names = new Map<string, string | null>();
+        for (const tenant of await options.tenantStore.listTenants({ source: "gdap" })) {
+          names.set(tenant.id, tenant.displayName);
+        }
+        const items: GdapRelationshipView[] = relationships
+          .filter((rel) => isTenantAllowed(caller.tenantScope, rel.tenantId))
+          .map((rel) => ({ ...rel, customerName: names.get(rel.tenantId) ?? null }))
+          .sort((left, right) => left.tenantId.localeCompare(right.tenantId));
+
+        return { status: 200, body: { items } };
+      },
+    },
     {
       method: "POST",
       path: GDAP_SYNC_PATH,
@@ -182,6 +214,20 @@ export function createGdapRoutes(options: GdapRouteOptions): Route[] {
 
 export const GDAP_OPENAPI = {
   paths: {
+    "/v1/gdap/relationships": {
+      get: {
+        operationId: "listGdapRelationships",
+        summary: "List the stored GDAP partner relationships (served only when GDAP is enabled)",
+        permission: GDAP_READ_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        responses: {
+          "200": { description: "The relationships, with the customer's display name when known." },
+          "401": { description: "Authentication required." },
+          "403": { description: "Permission required." },
+          "404": { description: "GDAP is not configured (the route is not served)." },
+        },
+      },
+    },
     "/v1/gdap/sync": {
       post: {
         operationId: "syncGdapTenants",

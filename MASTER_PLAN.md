@@ -125,16 +125,18 @@ The largest hidden risk. Releases already require a human live-tenant run
 
 Runbook: [`docs/plans/2026-11-17-phase-2-live-verification.md`](docs/plans/2026-11-17-phase-2-live-verification.md).
 
-- [ ] Gate: PRs #14 and #15 merged, and the Phase 1 work committed and through CI. _On
-      2026-11-17 neither had happened: both PRs were open, and Phase 1 was uncommitted. Phase 1
-      is now on `feat/portal-phase1-completion`._
+- [ ] Gate: PRs #14 and #15 merged, and the Phase 1 work committed and through CI. _PRs #14,
+      #15 and #16 (Phase 1) are merged with CI green as of 2026-11-18. Remaining: PR #17
+      (T-0913), which adds the portal job to the required CI check. Its first run found a
+      timezone-dependent web test that only failed in UTC, fixed on the same PR._
 - [x] Pre-flight without a tenant. _Done 2026-11-17: all 120 nav routes render, and every web
       `/v1` call was probed against a running BFF. The Phase 1 exit claim that every nav route
       has a backend did not hold. Filed T-0909 (restore preview), T-0910 (tenant detail tabs),
       T-0911 (GDAP relationships) and T-0912 (parked EPIC-041 pages in nav). T-0899 passes
       locally: operator gets 403 on API-client writes. CI never builds or tests the portal
       (T-0913); the production `next build` was broken by about 80 pages missing a Suspense
-      boundary, fixed in the Phase 1 PR._
+      boundary, fixed in the Phase 1 PR. T-0909 to T-0912 fixed 2026-11-18 (PR #18,
+      `fixed-unverified`); verify them in the nav walk._
 - [ ] Stand up the portal against a real test tenant with a working credential.
 - [ ] Walk every nav section once and record failures as tickets.
 - [ ] Verify and close the 29 `fixed-unverified` tickets:

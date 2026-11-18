@@ -15,6 +15,7 @@ import {
   BACKUP_RESTORE_ADMIN_SCOPE,
   BACKUP_RESTORE_CONFIRM_REQUIRED,
   BACKUP_RESTORE_PATH,
+  BACKUP_RESTORE_PREVIEW_PATH,
   BACKUPS_RESTORE_OPENAPI,
   createBackupsRestoreRoutes,
   type BackupsRestoreArtifactStore,
@@ -23,6 +24,7 @@ import {
   type BackupsRestoreStore,
 } from "./backups-restore.js";
 import { BACKUP_ARTIFACT_MISSING } from "./backups.js";
+import { BACKUP_RESTORE_TABLE_MISSING } from "../backup/restore.js";
 
 const TENANT_A = "tenant-a";
 const TENANT_B = "tenant-b";
@@ -188,6 +190,7 @@ describe("Backup restore route (T-0687)", () => {
     );
     expect(routes.map((route) => `${route.method} ${route.path}`)).toEqual([
       `POST ${BACKUP_RESTORE_PATH}`,
+      `POST ${BACKUP_RESTORE_PREVIEW_PATH}`,
     ]);
   });
 
@@ -389,6 +392,177 @@ describe("Backup restore route (T-0687)", () => {
   it("publishes the portal.v1.yaml fragment for restore", () => {
     expect(BACKUPS_RESTORE_OPENAPI.paths["/backups/{id}/restore"]?.post).toMatchObject({
       operationId: "restoreBackup",
+      permission: BACKUP_RESTORE_ADMIN_SCOPE,
+    });
+  });
+});
+
+describe("Backup restore preview route (T-0909)", () => {
+  function previewRoute(options: BackupsRestoreRouteOptions) {
+    const route = createBackupsRestoreRoutes(options).find(
+      (candidate) => candidate.path === BACKUP_RESTORE_PREVIEW_PATH,
+    );
+    if (route === undefined) throw new Error("preview route is not served");
+    return route;
+  }
+
+  function previewCtx(id: string, body?: unknown) {
+    return {
+      method: "POST",
+      path: BACKUP_RESTORE_PREVIEW_PATH,
+      params: { id },
+      query: new URLSearchParams(),
+      headers: {},
+      body,
+      correlationId: "corr-1",
+    };
+  }
+
+  it("returns the per-table diff without writing, backing up, or auditing", async () => {
+    const store = new FakeRestoreStore();
+    const artifacts = new FakeRestoreArtifacts();
+    store.backups.set("bk-1", backupRow("bk-1", "instance"));
+    store.tables.set("tenants", [{ id: "tenant-a", displayName: "Old" }]);
+    store.tables.set("settings", [{ id: "font", value: "serif" }]);
+    artifacts.files.set("backups/bk-1.zip", archive());
+    const audits: unknown[] = [];
+    const route = previewRoute(
+      makeOptions(store, artifacts, {
+        recordAudit: async (event: Record<string, unknown>) => {
+          audits.push(event);
+        },
+      }),
+    );
+
+    const response = await route.handler(previewCtx("bk-1", {}));
+
+    expect(response.status).toBe(200);
+    const body = response.body as {
+      backupId: string;
+      schemaVersion: number;
+      tables: Array<{ table: string; added: unknown[]; changed: unknown[]; removed: unknown[] }>;
+    };
+    expect(body.backupId).toBe("bk-1");
+    expect(body.schemaVersion).toBe(SCHEMA_VERSION);
+    expect(body.tables.map((table) => table.table)).toEqual(["tenants", "settings"]);
+    const tenants = body.tables[0]!;
+    expect([tenants.added.length, tenants.changed.length, tenants.removed.length]).toEqual([0, 1, 0]);
+    const settings = body.tables[1]!;
+    expect([settings.added.length, settings.changed.length, settings.removed.length]).toEqual([1, 0, 1]);
+
+    expect(store.writes).toEqual([]);
+    expect(store.transactionCalls).toBe(0);
+    expect([...store.backups.keys()]).toEqual(["bk-1"]);
+    expect([...artifacts.files.keys()]).toEqual(["backups/bk-1.zip"]);
+    expect(audits).toEqual([]);
+  });
+
+  it("needs no confirmation or Idempotency-Key, and treats a missing body as full scope", async () => {
+    const store = new FakeRestoreStore();
+    const artifacts = new FakeRestoreArtifacts();
+    store.backups.set("bk-1", backupRow("bk-1", "instance"));
+    artifacts.files.set("backups/bk-1.zip", archive());
+    const route = previewRoute(makeOptions(store, artifacts));
+
+    const response = await route.handler(previewCtx("bk-1"));
+
+    expect(response.status).toBe(200);
+    expect((response.body as { tables: unknown[] }).tables).toHaveLength(2);
+  });
+
+  it("limits a selective preview to the requested tables", async () => {
+    const store = new FakeRestoreStore();
+    const artifacts = new FakeRestoreArtifacts();
+    store.backups.set("bk-1", backupRow("bk-1", "instance"));
+    artifacts.files.set("backups/bk-1.zip", archive());
+    const route = previewRoute(makeOptions(store, artifacts));
+
+    const response = await route.handler(previewCtx("bk-1", { tables: ["settings"] }));
+
+    const tables = (response.body as { tables: Array<{ table: string }> }).tables;
+    expect(tables.map((table) => table.table)).toEqual(["settings"]);
+  });
+
+  it("refuses a table the archive does not carry with 400", async () => {
+    const store = new FakeRestoreStore();
+    const artifacts = new FakeRestoreArtifacts();
+    store.backups.set("bk-1", backupRow("bk-1", "instance"));
+    artifacts.files.set("backups/bk-1.zip", archive());
+    const route = previewRoute(makeOptions(store, artifacts));
+
+    await expect(
+      route.handler(previewCtx("bk-1", { tables: ["not_in_archive"] })),
+    ).rejects.toMatchObject({ status: 400, code: BACKUP_RESTORE_TABLE_MISSING });
+  });
+
+  it("diffs a tenant backup only against that tenant's rows", async () => {
+    const store = new FakeRestoreStore();
+    const artifacts = new FakeRestoreArtifacts();
+    store.backups.set("bk-tenant-a", backupRow("bk-tenant-a", "tenant", TENANT_A));
+    store.tables.set("tenants", [
+      { id: "tenant-a", displayName: "Alpha", tenantId: TENANT_A },
+      { id: "tenant-b", displayName: "Beta", tenantId: TENANT_B },
+    ]);
+    store.tables.set("settings", []);
+    artifacts.files.set("backups/bk-tenant-a.zip", archive());
+    const route = previewRoute(makeOptions(store, artifacts));
+
+    const response = await route.handler(previewCtx("bk-tenant-a", {}));
+
+    const tenants = (
+      response.body as { tables: Array<{ table: string; removed: Array<{ id: string | null }> }> }
+    ).tables.find((table) => table.table === "tenants")!;
+    expect(tenants.removed.map((entry) => entry.id)).not.toContain("tenant-b");
+  });
+
+  it("applies the same admin, scope, and not-found checks as restore", async () => {
+    const store = new FakeRestoreStore();
+    store.backups.set("bk-tenant-b", backupRow("bk-tenant-b", "tenant", TENANT_B));
+    const artifacts = new FakeRestoreArtifacts();
+
+    await expect(
+      previewRoute(makeOptions(store, artifacts, { resolveCaller: () => undefined })).handler(
+        previewCtx("bk-tenant-b", {}),
+      ),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      previewRoute(
+        makeOptions(store, artifacts, {
+          resolveCaller: () => ({
+            tenantScope: tenantScope([TENANT_B]),
+            permissions: ["Tenant.Backup.ReadWrite"],
+            userId: "operator-1",
+          }),
+        }),
+      ).handler(previewCtx("bk-tenant-b", {})),
+    ).rejects.toMatchObject({ status: 403, code: "auth.forbidden" });
+    await expect(
+      previewRoute(makeOptions(store, artifacts)).handler(previewCtx("bk-tenant-b", {})),
+    ).rejects.toMatchObject({ status: 403, code: "auth.forbidden" });
+    await expect(
+      previewRoute(makeOptions(store, artifacts)).handler(previewCtx("bk-missing", {})),
+    ).rejects.toMatchObject({ status: 404, code: "backup.not_found" });
+  });
+
+  it("maps a missing archive to 404 and an incompatible schema to 409", async () => {
+    const missing = new FakeRestoreStore();
+    missing.backups.set("bk-1", backupRow("bk-1", "instance"));
+    await expect(
+      previewRoute(makeOptions(missing, new FakeRestoreArtifacts())).handler(previewCtx("bk-1", {})),
+    ).rejects.toMatchObject({ status: 404, code: BACKUP_ARTIFACT_MISSING });
+
+    const newer = new FakeRestoreStore(SCHEMA_VERSION + 1);
+    const artifacts = new FakeRestoreArtifacts();
+    newer.backups.set("bk-1", backupRow("bk-1", "instance"));
+    artifacts.files.set("backups/bk-1.zip", archive());
+    await expect(
+      previewRoute(makeOptions(newer, artifacts)).handler(previewCtx("bk-1", {})),
+    ).rejects.toMatchObject({ status: 409, code: BACKUP_ARCHIVE_SCHEMA_MISMATCH });
+  });
+
+  it("publishes the portal.v1.yaml fragment for the preview", () => {
+    expect(BACKUPS_RESTORE_OPENAPI.paths["/backups/{id}/restore/preview"]?.post).toMatchObject({
+      operationId: "previewBackupRestore",
       permission: BACKUP_RESTORE_ADMIN_SCOPE,
     });
   });
