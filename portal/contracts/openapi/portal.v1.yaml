@@ -646,6 +646,44 @@ paths:
         "409":
           description: The backup schema version does not match the instance.
       x-permission: CIPP.Admin.BackupRestore
+  /backups/{id}/restore/preview:
+    post:
+      operationId: previewBackupRestore
+      summary: "Dry-run a restore: the added, changed and removed records per table, without writing."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                tables:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: The per-table diff (`added`, `changed`, `removed`) a restore of this scope would apply.
+        "400":
+          description: An invalid table scope, or a table the archive does not carry.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope or the tenant is out of scope.
+        "404":
+          description: The backup or its archive artifact was not found.
+        "409":
+          description: The backup schema version does not match the instance.
+      x-permission: CIPP.Admin.BackupRestore
   /baselines:
     get:
       operationId: getBaselines

@@ -413,6 +413,7 @@ import { BACKUP_SETTINGS_OPENAPI } from "../routes/backup-settings.js";
 import {
   BACKUP_RESTORE_PATH,
   BACKUP_RESTORE_PERMISSION,
+  BACKUP_RESTORE_PREVIEW_PATH,
 } from "../routes/backups-restore.js";
 // EPIC-025 SharePoint Templates (T-0896).
 import { SHAREPOINT_TEMPLATES_OPENAPI } from "../routes/sharepoint-templates.js";
@@ -1152,6 +1153,7 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(BACKUPS_OPENAPI),
   ...registryEntriesFromOpenApi(BACKUP_SETTINGS_OPENAPI),
   { method: "POST", path: BACKUP_RESTORE_PATH, permission: BACKUP_RESTORE_PERMISSION },
+  { method: "POST", path: BACKUP_RESTORE_PREVIEW_PATH, permission: BACKUP_RESTORE_PERMISSION },
   // EPIC-025 SharePoint Templates (T-0896).
   ...registryEntriesFromOpenApi(SHAREPOINT_TEMPLATES_OPENAPI),
   // EPIC-022 Spam, Quarantine & Allow/Block (T-0852).

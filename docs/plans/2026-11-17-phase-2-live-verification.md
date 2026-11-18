@@ -116,7 +116,7 @@ afterwards.
 | T-0862 | R | **Audit logs**: run a search, save it, check coverage. Webhooks CRUD as in T-0902. |
 | T-0863 | R then W | **License report** and optimization render. Assign and remove a licence on a test user (dry run first). |
 | T-0864 | R | **Domains**: DNS check on a verified domain shows records. Do not add or remove domains on a shared tenant. |
-| T-0865 | W | **Backup**: create, download and delete. Restore is **blocked by T-0909** (preview). |
+| T-0865 | W | **Backup**: create, download and delete. Restore: the preview lists per-table changes, then confirm restores (T-0909). |
 
 ### Standards and compliance
 | Ticket | Mode | Live check |

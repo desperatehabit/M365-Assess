@@ -86,6 +86,7 @@ secondary target.
 |---|---|---|
 | `GET`/`POST` | `/v1/backups` | list/create |
 | `GET` | `/v1/backups/{id}/download` | download |
+| `POST` | `/v1/backups/{id}/restore/preview` | dry-run restore: per-table added/changed/removed, no writes (T-0909) |
 | `POST` | `/v1/backups/{id}/restore` | restore |
 | `DELETE` | `/v1/backups/{id}` | delete |
 | `GET`/`PUT` | `/v1/backup-settings` | retention/replication |

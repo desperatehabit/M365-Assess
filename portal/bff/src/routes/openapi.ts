@@ -307,6 +307,7 @@ const FRAGMENT_PERMISSION_OVERRIDES: Readonly<Record<string, string>> = {
   // Restore's OpenAPI fragment carries the wildcard scope; map it to the concrete
   // taxonomy token registered in PermissionRegistry (T-0865).
   "POST /backups/{id}/restore": BACKUP_RESTORE_PERMISSION,
+  "POST /backups/{id}/restore/preview": BACKUP_RESTORE_PERMISSION,
 };
 
 export const OPENAPI_SKELETON: OpenApiDocument = {
