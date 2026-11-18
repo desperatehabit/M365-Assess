@@ -1,15 +1,15 @@
 # M365-Assess — ticket register
 
-_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0912 added 2026-11-17). When a ticket's `status` changes, update
+_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17). When a ticket's `status` changes, update
 its row and the counts below in the same commit. The ticket file is the source of truth._
 
-**95 open · 456 closed**
+**96 open · 456 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
 | fixed-unverified | 39 |
-| open | 8 |
+| open | 9 |
 | closed | 9 |
 
 ## Open
@@ -47,6 +47,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0859](ISSUES/T-0859.md) | high | fixed-unverified | 12 | Mount EPIC-029 alerting routes and persist alerting entities |
 | [T-0876](ISSUES/T-0876.md) | high | fixed-unverified | 9 | Custom-script schedules and system timers enqueue job types with no runner |
 | [T-0899](ISSUES/T-0899.md) | high | fixed-unverified | 3 | /v1/api-clients CRUD and rotate-secret perform no authorization check |
+| [T-0913](ISSUES/T-0913.md) | high | open | 1 | CI does not build or test the portal |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
 | [EPIC-017](ISSUES/epics/EPIC-017.md) | medium | closed | 0 | Intune Apps & Autopilot |

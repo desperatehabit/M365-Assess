@@ -10,10 +10,14 @@ Run the live test against **committed** code that CI has passed, so that a resul
 reproduced and attributed.
 
 - [ ] PRs #14 and #15 merged (Phase 0 exit).
-- [ ] Phase 1 work committed, opened as a PR, CI green. On 2026-11-17 it was still uncommitted
-      in the working tree of `chore/retire-fleet-tool`.
-- [ ] Full suites green on that commit: `npm test` in `portal/`, and
-      `pwsh -NoProfile -Command "Invoke-Pester -Path './tests'"`.
+- [ ] Phase 1 PR (`feat/portal-phase1-completion`) merged with CI green.
+- [ ] CI covers the portal (**T-0913**). Until it does, run the portal checks locally: from a
+      `C:\` path (Vitest misloads under a lowercase `c:` cwd), `npm run typecheck`,
+      `npm run build`, `npm test` in `portal/`.
+- [ ] Pester green on that commit:
+      `pwsh -NoProfile -Command "Invoke-Pester -Path './tests'"`. From a script or background
+      shell, close stdin (`< /dev/null`): a worker test that reads its job envelope from stdin
+      otherwise waits forever on an open pipe.
 - [ ] A **test** tenant, not a client tenant. Several checks below write to the tenant.
 
 ## 1. Pre-flight already done without a tenant (2026-11-17)
@@ -57,7 +61,7 @@ Open every nav section once with the test tenant selected. For each page:
 - **Fail** — error banner, spinner that never ends, blank page (open dev tools; a blank page
   is a React render error), or data that is plainly wrong.
 
-File each failure as a new ticket (next free ID: **T-0913**), with the page, the request that
+File each failure as a new ticket (next free ID: **T-0914**), with the page, the request that
 failed (Network tab), the response `code` and `correlationId`, and the matching dev-log lines.
 No tenant names, domains or UPNs in tickets.
 
