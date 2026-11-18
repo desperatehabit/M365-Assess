@@ -2049,6 +2049,16 @@ paths:
         "404":
           description: Filter template not found.
       x-permission: Exchange.SpamFilter.ReadWrite
+  /gdap/relationships:
+    get:
+      operationId: getGdapRelationships
+      summary: GET /gdap/relationships
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.Read
+      security:
+        - bearerAuth: []
   /gdap/sync:
     post:
       operationId: postGdapSync
