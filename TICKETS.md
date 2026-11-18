@@ -8,8 +8,8 @@ its row and the counts below in the same commit. The ticket file is the source o
 | Status | Count |
 |---|---|
 | epic | 39 |
-| fixed-unverified | 42 |
-| open | 6 |
+| fixed-unverified | 43 |
+| open | 5 |
 | closed | 9 |
 
 ## Open
@@ -111,7 +111,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0906](ISSUES/T-0906.md) | low | open | 1 | Clean up global stub functions in Pester test files |
 | [T-0907](ISSUES/T-0907.md) | low | open | 5 | Fix pre-existing PowerShell lint findings in Invoke-DomainAction and Linux-only tests |
 | [T-0908](ISSUES/T-0908.md) | low | open | 1 | Resolve macos-latest CI smoke job runner-quota cancellations |
-| [T-0910](ISSUES/T-0910.md) | low | open | 1 | Tenant detail Variables and History tabs call routes that do not exist |
+| [T-0910](ISSUES/T-0910.md) | low | fixed-unverified | 1 | Tenant detail Variables and History tabs call routes that do not exist |
 
 ## Closed
 

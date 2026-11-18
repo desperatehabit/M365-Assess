@@ -46,13 +46,44 @@ interface VariableData {
   isSecret: boolean;
 }
 
+// One portal logbook entry (GET /v1/logbook; T-0910).
 interface AuditHistoryItem {
   id: string;
   action: string;
-  actorUserId: string | null;
+  actor: string | null;
   timestamp: string;
   result: "success" | "failure";
   error: string | null;
+}
+
+// Tenant-specific variables only; global ones are managed on the Variables page.
+export function tenantVariablesPath(tenantId: string): string {
+  return `/v1/tenant-variables?tenantId=${encodeURIComponent(tenantId)}&includeGlobal=false`;
+}
+
+// Portal activity recorded against this tenant.
+export function tenantHistoryPath(tenantId: string): string {
+  return `/v1/logbook?tenant=${encodeURIComponent(tenantId)}`;
+}
+
+async function loadList<T>(path: string, label: string): Promise<T[]> {
+  const res = await fetch(path);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { message?: string };
+      if (body?.message) detail = body.message;
+    } catch {
+      // non-JSON error body; keep the status text
+    }
+    throw new Error(`Could not load ${label}: HTTP ${res.status}${detail ? ` ${detail}` : ""}`);
+  }
+  const data = (await res.json()) as { items?: T[] } | T[];
+  return Array.isArray(data) ? data : (data.items ?? []);
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 const pageStyle: CSSProperties = {
@@ -164,6 +195,8 @@ export default function TenantDetailPage({
   const [groups, setGroups] = useState<GroupMemberData[]>([]);
   const [variables, setVariables] = useState<VariableData[]>([]);
   const [history, setHistory] = useState<AuditHistoryItem[]>([]);
+  const [variablesError, setVariablesError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
@@ -203,23 +236,23 @@ export default function TenantDetailPage({
         }
       } catch {}
 
-      // Attempt to load variables
+      // Variables and history fail independently of the page, but say so in their
+      // tab instead of showing an empty list (T-0910).
+      setVariablesError(null);
       try {
-        const varRes = await fetch(`/v1/tenants/${tenantId}/variables`);
-        if (varRes.ok) {
-          const vData = await varRes.json();
-          setVariables(vData.items ?? vData ?? []);
-        }
-      } catch {}
+        setVariables(await loadList<VariableData>(tenantVariablesPath(tenantId), "variables"));
+      } catch (err) {
+        setVariables([]);
+        setVariablesError(describeError(err));
+      }
 
-      // Attempt to load history
+      setHistoryError(null);
       try {
-        const histRes = await fetch(`/v1/tenants/${tenantId}/audit`);
-        if (histRes.ok) {
-          const hData = await histRes.json();
-          setHistory(hData.items ?? hData ?? []);
-        }
-      } catch {}
+        setHistory(await loadList<AuditHistoryItem>(tenantHistoryPath(tenantId), "history"));
+      } catch (err) {
+        setHistory([]);
+        setHistoryError(describeError(err));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -493,7 +526,11 @@ export default function TenantDetailPage({
       {activeTab === "variables" && (
         <div style={sectionCardStyle} data-testid="variables-tab-content">
           <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Tenant Variables</h3>
-          {variables.length === 0 ? (
+          {variablesError ? (
+            <p role="alert" style={{ margin: 0, color: "var(--danger)" }} data-testid="variables-error">
+              {variablesError}
+            </p>
+          ) : variables.length === 0 ? (
             <p style={{ margin: 0, color: "var(--text-soft)" }}>No tenant-specific variables defined.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -522,7 +559,11 @@ export default function TenantDetailPage({
       {activeTab === "history" && (
         <div style={sectionCardStyle} data-testid="history-tab-content">
           <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Audit History</h3>
-          {history.length === 0 ? (
+          {historyError ? (
+            <p role="alert" style={{ margin: 0, color: "var(--danger)" }} data-testid="history-error">
+              {historyError}
+            </p>
+          ) : history.length === 0 ? (
             <p style={{ margin: 0, color: "var(--text-soft)" }}>No audit events recorded for this tenant.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -540,7 +581,7 @@ export default function TenantDetailPage({
                     <tr key={h.id}>
                       <td style={{ padding: "8px", color: "var(--text-soft)" }}>{new Date(h.timestamp).toLocaleString()}</td>
                       <td style={{ padding: "8px", fontWeight: 500 }}>{h.action}</td>
-                      <td style={{ padding: "8px" }}>{h.actorUserId ?? "System"}</td>
+                      <td style={{ padding: "8px" }}>{h.actor ?? "System"}</td>
                       <td style={{ padding: "8px" }}>
                         <span
                           style={{
