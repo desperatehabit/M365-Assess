@@ -3,7 +3,7 @@ id: "EPIC-029"
 source: "docs/portal-specs/01-feature-epics/EPIC-029-alerting-notifications/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,7 @@ children:
   - T-0567
   - T-0568
   - T-0569
+  - T-0859
 scope_kind: "epic"
 scope_note: "Rollup for Alerting & Notifications. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -48,4 +49,10 @@ the child tickets, not an `depends_on` code gate.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0859 — `fixed-unverified`

@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-003, EPIC-001, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #49-#50; [`cipp-standards-ux.md`](../../99-reference/cipp-standards-ux.md) §9; CIPP `Config/CIPPTimers.json`, `Add-CIPPScheduledTask.ps1`, `Tools/Custom-Scripts/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-007.md`](../../../../ISSUES/epics/EPIC-007.md)
 
 ## 1. Purpose
 
@@ -225,4 +225,4 @@ script that cannot be sandboxed is rejected.
 - [`../EPIC-003-assessment-runs/SPEC.md`](../EPIC-003-assessment-runs/SPEC.md) — queue + worker
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — scheduled standards
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — alert delivery jobs
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-007.md`](../../../../ISSUES/epics/EPIC-007.md) — epic ticket

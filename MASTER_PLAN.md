@@ -35,17 +35,29 @@ may be Automate for endpoints and Auvik for network.
 
 Small, and it stops the tracking problems that hid T-0852.
 
-- [ ] Commit the 2026-11-16 planning changes (T-0852 reopen, EPIC-042 to EPIC-048, this file).
-- [ ] Make `fleet.py index` runnable on the Windows workstation, or decide the register is only
-      ever generated on the Linux host. `fleet/config.toml` has Linux paths.
-- [ ] Regenerate `TICKETS.md` with the tool and confirm it matches the hand edits (10 open,
-      29 fixed-unverified, 7 epic).
-- [ ] Settle epic status. EPIC-001 to EPIC-041 are `closed` although three still have open
-      children (EPIC-022, EPIC-023, EPIC-035); the new epics use `epic`. Pick one convention.
-- [ ] Reconcile `epic.md` originals with their `ISSUES/epics/` copies, which have diverged.
-      Until then, do not run `fleet/sync-epics.sh`.
-- [ ] Fix the local Pester setup (Pester 6.2.0 breaks tests written for Pester 5; a stray 3.4.0
-      shadows `BeforeAll`) so the full suite can run before Phase 2.
+- [x] Commit the 2026-11-16 planning changes (T-0852 reopen, EPIC-042 to EPIC-048, this file).
+      _On `main` in 217abe00._
+- [x] Retire the `fleet/` ticket tool. _Removed 2026-11-16. A final `fleet.py index` run
+      regenerated `TICKETS.md` (10 open, 29 fixed-unverified, 7 epic; matched the hand edits)
+      and found T-0852's malformed front-matter delimiter, which had hidden it. `TICKETS.md`
+      is now maintained by hand._
+- [x] Settle epic status. _Done 2026-11-16: an epic is `closed` only when every child is
+      closed. 32 of the 41 "closed" epics had open or `fixed-unverified` children and are back
+      to `epic`, each with a "Reopened" section listing what is outstanding. 9 remain closed
+      (EPIC-001, 003, 006, 012, 013, 017, 018, 030, 041)._
+- [x] Reconcile `epic.md` originals with their `ISSUES/epics/` copies. _Done 2026-11-16:
+      `ISSUES/epics/` is the only copy (it held every status change and resolution note);
+      the 48 `epic.md` drafts were deleted and each SPEC links to its epic ticket._
+- [x] Fix the local Pester setup (Pester 6.2.0 breaks tests written for Pester 5; a stray 3.4.0
+      shadows `BeforeAll`) so the full suite can run before Phase 2. _Done 2026-11-16 (PR #15):
+      `Assert-MockCalled` ported to `Should -Invoke`; the full suite passes locally on Pester
+      6.2.0 (5585 passed, 0 failed, 13 skipped) and in CI. The fix also turned up three real
+      bugs: the Graph Explorer worker was shadowed by a Microsoft.Graph alias (affects T-0870),
+      the DomainAction unknown-action error was malformed, and 35 files were missing from the
+      module manifest FileList._
+- [x] Turn on CI for the fork. _Enabled 2026-11-16. Required jobs are green on PR #15._
+
+**Exit:** met once PRs #14 and #15 are merged.
 
 ## Phase 1 — Finish the M365 portal
 
@@ -74,6 +86,17 @@ Loose ends with no ticket yet. Triage each: file a ticket, or record that it is 
       some mailbox tag writes, the domain-check tool. Establish when each fires.
 - [ ] "Submit for review" on the Quarantine page is a disabled button.
 - [ ] Breach lookup is fail-closed until a provider is registered.
+- [ ] T-0870 (Graph Explorer, `fixed-unverified`): before PR #15, the worker could never run
+      once Microsoft.Graph.Authentication was loaded, because that module's
+      `Invoke-GraphRequest` alias shadowed it. The worker is now named `Invoke-PortalGraphRequest`.
+      Verify T-0870 in Phase 2 against the renamed worker.
+- [ ] Test hygiene: about 118 test files still leave global stub functions behind, which can
+      break later tests depending on run order. Add `AfterAll` cleanup using
+      `Remove-Item 'Function:\Name'`; the `function:global:Name` form is silently a no-op.
+- [ ] Pre-existing lint findings: an `$Error` parameter and the `Verify-Domain` verb in
+      `Invoke-DomainAction.ps1`, plus `ps` aliases in the Linux-only tests.
+- [ ] CI: the advisory macOS smoke job never gets a runner and is always cancelled. Drop it,
+      or check the account's runner limits.
 
 **Exit:** no open tickets; every UI route in the nav has a mounted backend.
 

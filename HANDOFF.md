@@ -72,9 +72,10 @@ EPIC-042 to EPIC-048 extend the portal from M365 management to a multi-source
 compliance console (frameworks, evidence, Intune CIS baselines, ConnectWise
 Automate and NinjaOne, policy documents, network posture, agent). SPECs are
 **Drafted, not Approved**, and no child tickets exist yet; new children start at
-T-0905. Do not run `fleet/sync-epics.sh` to publish them: the `ISSUES/epics/`
-copies of EPIC-001 to EPIC-041 have diverged from their `epic.md` originals and
-the script would overwrite them.
+T-0905. Epic tickets live only in `ISSUES/epics/` (the `epic.md` drafts were
+removed 2026-11-16). An epic is `closed` only when every child is closed; 32
+epics were reopened on that rule, so most EPIC-001 to EPIC-041 are `epic` until
+their `fixed-unverified` children are verified in Phase 2.
 
 Each ticket file under `ISSUES/` has the authoritative scope, SPEC link, and
 acceptance criteria.
@@ -124,10 +125,10 @@ acceptance criteria.
 
 ## Environment caveats
 
-- `fleet/fleet.py index` is **not usable on this machine**: `fleet/config.toml`
-  points at `/home/wcoulter/Projects/M365-Assess`. Running it writes a stray
-  `C:\home\...` register. Either fix the config paths first or update the
-  affected `TICKETS.md` rows/counts by hand.
+- The `fleet/` ticket tool was removed on 2026-11-16. `TICKETS.md` is
+  maintained by hand: when a ticket's status changes, update its row and the
+  counts in the same commit. Ticket format:
+  `docs/portal-specs/99-reference/ticket-conventions.md`.
 - The BFF guard test bans collector constructs, not finding data. `checkId`,
   `CheckID`, and action tokens such as `set-default` are allowed; do not
   reintroduce `securityconfighelper`, `Initialize-SecurityConfig`,

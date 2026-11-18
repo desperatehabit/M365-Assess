@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-003, EPIC-008, EPIC-009
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #47; [`cipp-ui-patterns.md`](../../99-reference/cipp-ui-patterns.md) §6; [`cipp-ui-inventory.md`](../../99-reference/cipp-ui-inventory.md) §3
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-004.md`](../../../../ISSUES/epics/EPIC-004.md)
 
 ## 1. Purpose
 
@@ -169,4 +169,4 @@ widget but performs no writes.
 - [`../../99-reference/cipp-ui-patterns.md`](../../99-reference/cipp-ui-patterns.md) §6 — CIPP dashboard
 - [`../EPIC-003-assessment-runs/SPEC.md`](../EPIC-003-assessment-runs/SPEC.md) — run/finding source
 - [`../EPIC-005-executive-reports/SPEC.md`](../EPIC-005-executive-reports/SPEC.md) — report hand-off
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-004.md`](../../../../ISSUES/epics/EPIC-004.md) — epic ticket

@@ -5,7 +5,7 @@
 - **Severity:** critical
 - **Depends on:** EPIC-003, EPIC-004, EPIC-036
 - **CIPP provenance:** none (net-new; no CIPP equivalent)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-042.md`](../../../../ISSUES/epics/EPIC-042.md)
 
 ## 1. Purpose
 
@@ -158,4 +158,4 @@ None directly. The control detail links to existing remediation paths (EPIC-006)
 - [`../EPIC-036-compliance-test-packs/SPEC.md`](../EPIC-036-compliance-test-packs/SPEC.md) — pack derivation
 - [`../EPIC-043-evidence-locker/SPEC.md`](../EPIC-043-evidence-locker/SPEC.md) — evidence
 - [`../EPIC-046-policy-ssp-poam/SPEC.md`](../EPIC-046-policy-ssp-poam/SPEC.md) — policies, SSP, POA&M
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-042.md`](../../../../ISSUES/epics/EPIC-042.md) — epic ticket

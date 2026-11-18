@@ -88,8 +88,7 @@ scan. See [`06-remediation.md`](06-remediation.md) §2.
 
 - Collector tests filter by `$_.Setting`, not `$_.CheckId` (sub-numbering — see
   `.claude/rules/pester.md`).
-- Every fix ships a regression test that fails without it (fleet acceptance default).
-- The fleet QA is **baseline-relative**: `fleet.py baseline` must be run before dispatch.
+- Every fix ships a regression test that fails without it (ticket acceptance default).
 
 ## 6. Linting & CI
 
@@ -126,4 +125,4 @@ scan. See [`06-remediation.md`](06-remediation.md) §2.
 
 - `.claude/rules/powershell.md`, `.claude/rules/pester.md`
 - [`06-remediation.md`](06-remediation.md)
-- [`../99-reference/fleet-conventions.md`](../99-reference/fleet-conventions.md)
+- [`../99-reference/ticket-conventions.md`](../99-reference/ticket-conventions.md)

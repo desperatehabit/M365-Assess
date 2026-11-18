@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-002, EPIC-006, EPIC-016
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #16; CIPP `Security/Defender/`, `Invoke-ListDefenderTVM.ps1`, `ListCVEManagement`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-019.md`](../../../../ISSUES/epics/EPIC-019.md)
 
 ## 1. Purpose
 
@@ -161,4 +161,4 @@ portal-local records, not tenant writes. Read-only status/TVM/MDE views perform 
 - [`../EPIC-018-device-actions/SPEC.md`](../EPIC-018-device-actions/SPEC.md) — devices
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-028-incidents-alerts-triage/SPEC.md`](../EPIC-028-incidents-alerts-triage/SPEC.md) — alerts
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-019.md`](../../../../ISSUES/epics/EPIC-019.md) — epic ticket

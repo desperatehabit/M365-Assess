@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-020, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #32,#33,#34; CIPP `Email-Exchange/Spamfilter/`, `Invoke-ExecQuarantineManagement.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-022.md`](../../../../ISSUES/epics/EPIC-022.md)
 
 ## 1. Purpose
 
@@ -172,4 +172,4 @@ carries a security warning.
 - [`../EPIC-021-transport-connectors/SPEC.md`](../EPIC-021-transport-connectors/SPEC.md) — transport
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — filter standards
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-022.md`](../../../../ISSUES/epics/EPIC-022.md) — epic ticket

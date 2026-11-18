@@ -6,7 +6,7 @@
 - **Depends on:** none
 - **Decisions:** [ADR-0014](../../../adr/0014-thin-bff-over-powershell-workers.md) (thin BFF + PowerShell workers), [ADR-0015](../../../adr/0015-sqlite-storage-behind-repository-interface.md) (storage)
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) §0 (router/auth/storage); [`01-architecture.md`](../../00-guides/01-architecture.md) §4
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-001.md`](../../../../ISSUES/epics/EPIC-001.md)
 
 ## 1. Purpose
 
@@ -252,4 +252,4 @@ intact. Any temptation to "just add one Set- call" belongs to EPIC-006.
 - [`../../00-guides/06-remediation.md`](../../00-guides/06-remediation.md) — the boundary this epic must not cross
 - [`../EPIC-002-tenants-onboarding/SPEC.md`](../EPIC-002-tenants-onboarding/SPEC.md) — tenant + credential CRUD
 - [`../EPIC-003-assessment-runs/SPEC.md`](../EPIC-003-assessment-runs/SPEC.md) — the user-facing run UX
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-001.md`](../../../../ISSUES/epics/EPIC-001.md) — epic ticket

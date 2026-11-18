@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-042, EPIC-007, EPIC-032
 - **CIPP provenance:** none (net-new)
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-043.md`](../../../../ISSUES/epics/EPIC-043.md)
 
 ## 1. Purpose
 
@@ -132,4 +132,4 @@ None. Remediations (EPIC-006) call the capture interface before and after apply.
 
 - [`../EPIC-042-compliance-frameworks-console/SPEC.md`](../EPIC-042-compliance-frameworks-console/SPEC.md) — control model
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — remediation
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-043.md`](../../../../ISSUES/epics/EPIC-043.md) — epic ticket

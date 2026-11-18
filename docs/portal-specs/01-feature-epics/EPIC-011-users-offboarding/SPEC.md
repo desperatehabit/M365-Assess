@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #22,#25,#28,#54; [`cipp-ui-patterns.md`](../../99-reference/cipp-ui-patterns.md) §4,#8; [`cipp-ui-inventory.md`](../../99-reference/cipp-ui-inventory.md) §3
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-011.md`](../../../../ISSUES/epics/EPIC-011.md)
 
 ## 1. Purpose
 
@@ -203,4 +203,4 @@ device) require explicit confirmation.
 - [`../EPIC-012-mfa-auth-methods/SPEC.md`](../EPIC-012-mfa-auth-methods/SPEC.md) — MFA actions
 - [`../EPIC-014-groups/SPEC.md`](../EPIC-014-groups/SPEC.md) — group membership
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-011.md`](../../../../ISSUES/epics/EPIC-011.md) — epic ticket

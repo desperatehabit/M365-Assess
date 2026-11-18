@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-001, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #49; [`cipp-ui-patterns.md`](../../99-reference/cipp-ui-patterns.md) §5 (queue trackers); [`01-architecture.md`](../../00-guides/01-architecture.md) §3
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-003.md`](../../../../ISSUES/epics/EPIC-003.md)
 
 ## 1. Purpose
 
@@ -207,4 +207,4 @@ this epic performs no writes.
 - [`../EPIC-001-platform-foundation/SPEC.md`](../EPIC-001-platform-foundation/SPEC.md) — execution plumbing
 - [`../EPIC-004-dashboard-widgets/SPEC.md`](../EPIC-004-dashboard-widgets/SPEC.md) — consumes findings
 - [`../EPIC-007-scheduler-custom-scripts/SPEC.md`](../EPIC-007-scheduler-custom-scripts/SPEC.md) — scheduled runs
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-003.md`](../../../../ISSUES/epics/EPIC-003.md) — epic ticket

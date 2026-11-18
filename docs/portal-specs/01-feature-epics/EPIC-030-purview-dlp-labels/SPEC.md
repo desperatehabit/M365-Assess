@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #44,#45; CIPP `HTTP Functions/Security/Compliance-*/`, `Safe-Links-Policy/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-030.md`](../../../../ISSUES/epics/EPIC-030.md)
 
 ## 1. Purpose
 
@@ -159,4 +159,4 @@ warning and requires confirmation; before/after captured; audited.
 - [`../EPIC-002-tenants-onboarding/SPEC.md`](../EPIC-002-tenants-onboarding/SPEC.md) — tenants
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — compliance standards
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-030.md`](../../../../ISSUES/epics/EPIC-030.md) — epic ticket
