@@ -116,4 +116,65 @@ describe("GroupForm (T-0264)", () => {
       }));
     });
   });
+
+  it("sends hiddenFromAddressListsEnabled, requireSenderAuthenticationEnabled, and grantSendOnBehalfTo on create (T-0900)", async () => {
+    const createSpy = vi.spyOn(groupsApi, "createGroup")
+      .mockResolvedValueOnce({
+        action: "create",
+        targetName: "Mail Finance",
+        diff: ["Create m365 group 'Mail Finance'", "Hide group from Global Address List (GAL)"],
+        valid: true,
+        dryRun: true,
+        requiresConfirmation: false,
+      })
+      .mockResolvedValueOnce({
+        success: true,
+        plan: {
+          action: "create",
+          targetName: "Mail Finance",
+          diff: [],
+          valid: true,
+          dryRun: false,
+          requiresConfirmation: false,
+        },
+        result: { id: "grp-new-2", displayName: "Mail Finance" },
+      });
+
+    const onSuccess = vi.fn();
+    render(<GroupForm tenantId="tenant-test" mode="create" onSuccess={onSuccess} />);
+
+    fireEvent.change(screen.getByTestId("input-group-type"), { target: { value: "m365" } });
+    fireEvent.change(screen.getByTestId("input-group-name"), { target: { value: "Mail Finance" } });
+    fireEvent.click(screen.getByTestId("input-hidden-gal"));
+    fireEvent.click(screen.getByTestId("input-delivery-mgmt"));
+    fireEvent.change(screen.getByTestId("input-send-on-behalf"), {
+      target: { value: "delegate@example.invalid" },
+    });
+    fireEvent.click(screen.getByTestId("btn-add-send-on-behalf"));
+
+    fireEvent.click(screen.getByTestId("btn-preview-plan"));
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalledWith("tenant-test", expect.objectContaining({
+        displayName: "Mail Finance",
+        groupType: "m365",
+        hiddenFromAddressListsEnabled: true,
+        requireSenderAuthenticationEnabled: true,
+        grantSendOnBehalfTo: ["delegate@example.invalid"],
+        preview: true,
+      }));
+    });
+
+    fireEvent.click(screen.getByTestId("btn-confirm-apply"));
+    await waitFor(() => {
+      expect(createSpy).toHaveBeenCalledWith("tenant-test", expect.objectContaining({
+        displayName: "Mail Finance",
+        groupType: "m365",
+        hiddenFromAddressListsEnabled: true,
+        requireSenderAuthenticationEnabled: true,
+        grantSendOnBehalfTo: ["delegate@example.invalid"],
+        preview: false,
+      }));
+      expect(onSuccess).toHaveBeenCalled();
+    });
+  });
 });

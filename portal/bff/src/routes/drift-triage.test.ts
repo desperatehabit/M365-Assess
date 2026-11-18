@@ -1,9 +1,17 @@
 // T-0165 — drift accept and customer-specific override triage.
 import { describe, expect, it } from "vitest";
 import { AppError } from "../errors.js";
-import { ALL_TENANTS } from "../rbac/scope.js";
+import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import { RbacErrorCodes, type Caller } from "../rbac/authorize.js";
 import type { RequestContext } from "../server.js";
+import {
+  DRIFT_DENY_OPENAPI,
+  DRIFT_DENY_PERMISSIONS,
+  DRIFT_REMEDIATE_PATH,
+  createDriftDenyRoutes,
+  type DriftDenyStore,
+} from "./drift-deny.js";
+import { createDriftDeletionPort } from "../adapters/drift.js";
 import {
   DRIFT_ACCEPT_PATH,
   DRIFT_OVERRIDE_PATH,
@@ -251,5 +259,190 @@ describe("drift-triage domain (T-0165)", () => {
     expect(() => parseAcceptInput({ reason: "", expiresOn: "x" })).toThrow(DriftTriageInputError);
     expect(() => parseOverrideInput({})).toThrow(DriftTriageInputError);
     expect(parseOverrideInput({ overrideValue: { a: 1 } })).toEqual({ overrideValue: { a: 1 }, reason: null });
+  });
+});
+
+describe("POST /v1/drift/deviations/:deviationId/remediate (T-0878)", () => {
+  const TENANT_2 = "22222222-2222-2222-2222-222222222222";
+  const NOW = new Date("2026-01-01T00:00:00.000Z");
+
+  class RemediateStore extends TriageStore implements DriftDenyStore {
+    async getDeviationById(deviationId: string): Promise<DriftDeviationRecord | undefined> {
+      return this.row?.id === deviationId ? this.row : undefined;
+    }
+  }
+
+  function remediateRoute(
+    store: DriftDenyStore,
+    overrides: Record<string, unknown> = {},
+  ) {
+    const route = createDriftDenyRoutes({
+      store,
+      remediation: {
+        async queueDeletion() {
+          return "del-job-1";
+        },
+        async queueRemediation() {
+          return "rem-job-1";
+        },
+      },
+      resolveCaller: () => adminCaller(),
+      authorize: allowAll,
+      now: () => NOW,
+      ...overrides,
+    }).find((r) => r.method === "POST" && r.path === DRIFT_REMEDIATE_PATH);
+    if (!route) throw new Error("remediate route not found");
+    return route;
+  }
+
+  it("returns 401 when unauthenticated", async () => {
+    const store = new RemediateStore();
+    const route = remediateRoute(store, { resolveCaller: () => undefined });
+    await expect(
+      route.handler(ctx("POST", DRIFT_REMEDIATE_PATH, { params: { deviationId: "dev-1" } })),
+    ).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("returns 403 without Remediation.Apply and does not mutate", async () => {
+    const store = new RemediateStore();
+    const route = remediateRoute(store, { authorize: denyAll });
+    await expect(
+      route.handler(
+        ctx("POST", DRIFT_REMEDIATE_PATH, {
+          params: { deviationId: "dev-1" },
+          body: { reason: "fix now" },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(store.row?.state).toBe("open");
+  });
+
+  it("returns 403 when the deviation belongs to an out-of-scope tenant", async () => {
+    const store = new RemediateStore(deviation({ tenantId: TENANT_1 }));
+    const route = remediateRoute(store, {
+      resolveCaller: () => ({ roles: ["admin"], tenantScope: tenantScope([TENANT_2]) }),
+    });
+    await expect(
+      route.handler(ctx("POST", DRIFT_REMEDIATE_PATH, { params: { deviationId: "dev-1" } })),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(store.row?.state).toBe("open");
+  });
+
+  it("returns 404 for an unknown deviation id", async () => {
+    const route = remediateRoute(new RemediateStore());
+    await expect(
+      route.handler(ctx("POST", DRIFT_REMEDIATE_PATH, { params: { deviationId: "missing" } })),
+    ).rejects.toMatchObject({ status: 404 });
+  });
+
+  it("returns 400 when reason is provided and not a string", async () => {
+    const store = new RemediateStore();
+    const route = remediateRoute(store);
+    await expect(
+      route.handler(
+        ctx("POST", DRIFT_REMEDIATE_PATH, {
+          params: { deviationId: "dev-1" },
+          body: { reason: 42 },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+    expect(store.row?.state).toBe("open");
+  });
+
+  it("queues remediation via queueRemediation, records audit, and returns 202", async () => {
+    const store = new RemediateStore();
+    const enqueued: unknown[] = [];
+    const audits: Record<string, unknown>[] = [];
+    const port = createDriftDeletionPort({
+      jobs: {
+        enqueue: async (envelope) => {
+          enqueued.push(envelope);
+          return envelope.jobId;
+        },
+      },
+    });
+    const route = remediateRoute(store, {
+      remediation: port,
+      audit: {
+        record: (event: Record<string, unknown>) => {
+          audits.push(event);
+        },
+      },
+    });
+
+    const res = await route.handler(
+      ctx("POST", DRIFT_REMEDIATE_PATH, {
+        params: { deviationId: "dev-1" },
+        body: { reason: "enforce baseline" },
+      }),
+    );
+
+    expect(res.status).toBe(202);
+    const body = res.body as {
+      deviation: DriftDeviationRecord;
+      remediationQueued: boolean;
+      jobId: string;
+    };
+    expect(body.remediationQueued).toBe(true);
+    expect(body.jobId).toEqual(expect.any(String));
+    expect(body.deviation.state).toBe("denied");
+    expect(body.deviation.reason).toBe("enforce baseline");
+    expect(body.deviation.autoRemediateOnExpiry).toBe(true);
+
+    expect(enqueued).toHaveLength(1);
+    expect(enqueued[0]).toMatchObject({
+      jobId: body.jobId,
+      jobType: "remediation",
+      tenantId: TENANT_1,
+      payload: {
+        operation: "apply",
+        remediateDeviation: {
+          deviationId: "dev-1",
+          tenantId: TENANT_1,
+          standardKey: "CA-REPORTONLY-001",
+          resourceId: "p1",
+          reason: "enforce baseline",
+        },
+      },
+    });
+
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      action: "drift.remediate",
+      deviationId: "dev-1",
+      standardKey: "CA-REPORTONLY-001",
+      resourceId: "p1",
+      reason: "enforce baseline",
+      remediationJobId: body.jobId,
+    });
+  });
+
+  it("supports an omitted body and falls back to queueDeletion when queueRemediation is absent", async () => {
+    const store = new TriageStore();
+    const deletions: unknown[] = [];
+    const route = remediateRoute(store, {
+      remediation: {
+        async queueDeletion(instruction: unknown) {
+          deletions.push(instruction);
+          return "fallback-job-1";
+        },
+      },
+    });
+
+    const res = await route.handler(
+      ctx("POST", DRIFT_REMEDIATE_PATH, { params: { deviationId: "dev-1" } }),
+    );
+    expect(res.status).toBe(202);
+    expect(res.body).toMatchObject({
+      remediationQueued: true,
+      jobId: "fallback-job-1",
+      deviation: { reason: null },
+    });
+    expect(deletions).toHaveLength(1);
+  });
+
+  it("publishes the remediate permission in DRIFT_DENY_OPENAPI", () => {
+    const op = DRIFT_DENY_OPENAPI["/v1/drift/deviations/{deviationId}/remediate"].post;
+    expect(op.permission).toBe(DRIFT_DENY_PERMISSIONS.remediate);
   });
 });

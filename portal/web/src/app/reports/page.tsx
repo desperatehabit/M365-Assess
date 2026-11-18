@@ -5,6 +5,7 @@
 // - Templates: list with Edit, Clone, Delete, and Generate row actions.
 
 import { useEffect, useState, useCallback } from "react";
+import { downloadReportBundle } from "../../components/reports/PdfPreviewDialog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -61,6 +62,8 @@ function GeneratedReportsTab() {
   const [reports, setReports] = useState<GeneratedReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [bundlingId, setBundlingId] = useState<string | null>(null);
+  const [bundleError, setBundleError] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -76,6 +79,18 @@ function GeneratedReportsTab() {
     return () => { cancelled = true; };
   }, []);
 
+  async function handleDownloadBundle(id: string) {
+    setBundlingId(id);
+    setBundleError("");
+    try {
+      await downloadReportBundle(id);
+    } catch (e: unknown) {
+      setBundleError(e instanceof Error ? e.message : "Failed to download bundle.");
+    } finally {
+      setBundlingId(null);
+    }
+  }
+
   if (loading) {
     return <p data-testid="generated-loading" style={{ color: "var(--muted)" }}>Loading reports…</p>;
   }
@@ -87,49 +102,74 @@ function GeneratedReportsTab() {
   }
 
   return (
-    <table
-      data-testid="generated-table"
-      style={{ width: "100%", borderCollapse: "collapse", color: "var(--text)" }}
-    >
-      <thead>
-        <tr>
-          {["Status", "Tenant", "Template", "Created", "Download"].map((h) => (
-            <th
-              key={h}
-              style={{ textAlign: "left", padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "var(--muted)" }}
-            >
-              {h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {reports.map((r) => (
-          <tr key={r.id} data-testid={`generated-row-${r.id}`}>
-            <td style={{ padding: "8px 12px" }}>
-              <StatusBadge status={r.status} />
-            </td>
-            <td style={{ padding: "8px 12px" }}>{r.tenantId ?? "—"}</td>
-            <td style={{ padding: "8px 12px" }}>{r.templateId ?? "—"}</td>
-            <td style={{ padding: "8px 12px" }}>{new Date(r.createdAt).toLocaleString()}</td>
-            <td style={{ padding: "8px 12px" }}>
-              {r.status === "succeeded" ? (
-                <a
-                  data-testid={`download-${r.id}`}
-                  href={`/v1/reports/${r.id}/download`}
-                  download
-                  style={{ color: "var(--accent)", textDecoration: "underline" }}
-                >
-                  Download
-                </a>
-              ) : (
-                <span style={{ color: "var(--muted)" }}>—</span>
-              )}
-            </td>
+    <>
+      {bundleError ? (
+        <p role="alert" data-testid="generated-bundle-error" style={{ color: "var(--error)" }}>
+          {bundleError}
+        </p>
+      ) : null}
+      <table
+        data-testid="generated-table"
+        style={{ width: "100%", borderCollapse: "collapse", color: "var(--text)" }}
+      >
+        <thead>
+          <tr>
+            {["Status", "Tenant", "Template", "Created", "Download"].map((h) => (
+              <th
+                key={h}
+                style={{ textAlign: "left", padding: "8px 12px", borderBottom: "1px solid var(--border)", color: "var(--muted)" }}
+              >
+                {h}
+              </th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {reports.map((r) => (
+            <tr key={r.id} data-testid={`generated-row-${r.id}`}>
+              <td style={{ padding: "8px 12px" }}>
+                <StatusBadge status={r.status} />
+              </td>
+              <td style={{ padding: "8px 12px" }}>{r.tenantId ?? "—"}</td>
+              <td style={{ padding: "8px 12px" }}>{r.templateId ?? "—"}</td>
+              <td style={{ padding: "8px 12px" }}>{new Date(r.createdAt).toLocaleString()}</td>
+              <td style={{ padding: "8px 12px" }}>
+                {r.status === "succeeded" ? (
+                  <span style={{ display: "inline-flex", gap: "12px", alignItems: "center" }}>
+                    <a
+                      data-testid={`download-${r.id}`}
+                      href={`/v1/reports/${r.id}/download`}
+                      download
+                      style={{ color: "var(--accent)", textDecoration: "underline" }}
+                    >
+                      Download
+                    </a>
+                    <button
+                      type="button"
+                      data-testid={`bundle-${r.id}`}
+                      disabled={bundlingId === r.id}
+                      onClick={() => { void handleDownloadBundle(r.id); }}
+                      style={{
+                        background: "none",
+                        border: "none",
+                        color: "var(--accent)",
+                        cursor: bundlingId === r.id ? "not-allowed" : "pointer",
+                        padding: 0,
+                        textDecoration: "underline",
+                      }}
+                    >
+                      {bundlingId === r.id ? "Bundling…" : "Download Bundle"}
+                    </button>
+                  </span>
+                ) : (
+                  <span style={{ color: "var(--muted)" }}>—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </>
   );
 }
 

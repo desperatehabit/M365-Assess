@@ -1,7 +1,9 @@
 "use client";
-// PdfPreviewDialog — inline PDF preview with download action for a generated
-// report (EPIC-005 SPEC.md §3.1, §4.1). Download is audited server-side via
-// the T-0084 download endpoint.
+// PdfPreviewDialog — inline PDF preview with download and bundle actions for a
+// generated report (EPIC-005 SPEC.md §3.1, §3.4, §4.1). Download is audited
+// server-side via the T-0084 download and bundle endpoints.
+
+import { useState } from "react";
 
 export interface PdfPreviewDialogProps {
   readonly reportId: string | null;
@@ -9,6 +11,48 @@ export interface PdfPreviewDialogProps {
   readonly error: string;
   readonly tenantId: string;
   readonly onClose: () => void;
+  /** Override the fetch implementation for tests. */
+  readonly fetcher?: typeof fetch;
+}
+
+interface ReportBundleResponse {
+  readonly fileName?: string;
+  readonly contentType?: string;
+  readonly bundleBase64?: string;
+}
+
+export async function downloadReportBundle(
+  reportId: string,
+  fetcher?: typeof fetch,
+): Promise<void> {
+  const doFetch = fetcher ?? fetch;
+  const res = await doFetch(`/v1/reports/${encodeURIComponent(reportId)}/bundle`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  if (!res.ok) {
+    throw new Error(`Bundle download failed: ${res.status}`);
+  }
+  const data = (await res.json()) as ReportBundleResponse;
+  if (typeof data.bundleBase64 !== "string") {
+    throw new Error("Bundle response is missing archive data.");
+  }
+  const binary = atob(data.bundleBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: data.contentType ?? "application/zip" });
+  const url = URL.createObjectURL(blob);
+  try {
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = data.fileName ?? `report-${reportId}-bundle.zip`;
+    anchor.click();
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 const DOWNLOAD_URL_BASE = "/v1/reports";
@@ -18,8 +62,24 @@ export default function PdfPreviewDialog({
   artifactRef,
   error,
   onClose,
+  fetcher,
 }: PdfPreviewDialogProps) {
+  const [bundleBusy, setBundleBusy] = useState(false);
+  const [bundleError, setBundleError] = useState("");
   const downloadHref = reportId ? `${DOWNLOAD_URL_BASE}/${reportId}/download` : null;
+
+  async function handleDownloadBundle() {
+    if (!reportId) return;
+    setBundleBusy(true);
+    setBundleError("");
+    try {
+      await downloadReportBundle(reportId, fetcher);
+    } catch (cause) {
+      setBundleError(cause instanceof Error ? cause.message : "Bundle download failed.");
+    } finally {
+      setBundleBusy(false);
+    }
+  }
 
   return (
     <div
@@ -86,16 +146,40 @@ export default function PdfPreviewDialog({
           />
         ) : null}
 
-        <footer style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+        {bundleError ? (
+          <p role="alert" data-testid="pdf-bundle-error" style={{ color: "var(--error)" }}>
+            {bundleError}
+          </p>
+        ) : null}
+
+        <footer style={{ display: "flex", gap: "8px", justifyContent: "flex-end", alignItems: "center" }}>
           {downloadHref && artifactRef ? (
-            <a
-              data-testid="pdf-download"
-              href={downloadHref}
-              download="executive-report.pdf"
-              style={{ color: "var(--accent)", textDecoration: "underline" }}
-            >
-              Download PDF
-            </a>
+            <>
+              <a
+                data-testid="pdf-download"
+                href={downloadHref}
+                download="executive-report.pdf"
+                style={{ color: "var(--accent)", textDecoration: "underline" }}
+              >
+                Download PDF
+              </a>
+              <button
+                type="button"
+                data-testid="pdf-download-bundle"
+                disabled={bundleBusy}
+                onClick={() => { void handleDownloadBundle(); }}
+                style={{
+                  background: "var(--surface-raised, var(--surface))",
+                  border: "1px solid var(--border)",
+                  borderRadius: "6px",
+                  padding: "6px 14px",
+                  color: "var(--accent)",
+                  cursor: bundleBusy ? "not-allowed" : "pointer",
+                }}
+              >
+                {bundleBusy ? "Bundling…" : "Download Bundle"}
+              </button>
+            </>
           ) : null}
           <button
             type="button"

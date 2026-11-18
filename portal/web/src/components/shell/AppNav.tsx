@@ -142,6 +142,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     label: "Collaboration",
     items: [
       { href: "/sharepoint/sites", label: "SharePoint sites" },
+      { href: "/sharepoint/templates", label: "SharePoint templates" },
       { href: "/sharepoint/recycle-bin", label: "Recycle bin" },
       { href: "/onedrive", label: "OneDrive" },
       { href: "/teams", label: "Teams" },

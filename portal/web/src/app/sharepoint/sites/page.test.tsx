@@ -58,6 +58,22 @@ function installFetch(): void {
     if (method === "GET" && url.startsWith("/v1/tenants/t-a/sharepoint/sites?")) {
       return jsonResponse({ tenantId: "t-a", totalCount: 1, items: [SITE], nextCursor: null });
     }
+    if (method === "GET" && url === "/v1/sharepoint/templates") {
+      return jsonResponse({
+        items: [
+          {
+            id: "tpl-1",
+            name: "Standard Team Site",
+            siteType: "team",
+            settings: { sharing: "disabled" },
+            variables: {},
+            createdAt: "2026-01-01T00:00:00Z",
+            updatedAt: "2026-01-01T00:00:00Z",
+            deletedAt: null,
+          },
+        ],
+      });
+    }
     if (method === "GET" && url === "/v1/tenants/t-a/sharepoint/recyclebin") {
       return jsonResponse({ tenantId: "t-a", totalCount: 1, items: [DELETED], nextCursor: null });
     }
@@ -120,6 +136,18 @@ describe("SharePoint sites page wiring (T-0855)", () => {
     expect(screen.queryByTestId("add-site-wizard")).toBeNull();
     fireEvent.click(screen.getByTestId("add-site-button"));
     expect(screen.getByTestId("add-site-wizard")).toBeTruthy();
+  });
+
+  it("loads SharePoint templates for AddSiteWizard", async () => {
+    render(<SharePointSitesPage />);
+    await screen.findByText("Team Alpha");
+    await waitFor(() =>
+      expect(calls.some((call) => call.method === "GET" && call.url === "/v1/sharepoint/templates")).toBe(true),
+    );
+    fireEvent.click(screen.getByTestId("add-site-button"));
+    const select = screen.getByTestId("add-site-template-select") as HTMLSelectElement;
+    const optionTexts = Array.from(select.options).map((opt) => opt.textContent);
+    expect(optionTexts).toContain("Standard Team Site");
   });
 
   it("deletes a site through the confirmation dialog, naming the site", async () => {

@@ -18,6 +18,7 @@ import {
   QUARANTINE_NOT_FOUND,
   QUARANTINE_PATH,
   QUARANTINE_READ_PERMISSION,
+  QUARANTINE_SUBMIT_PATH,
   QUARANTINE_ACT_PERMISSION,
   REMEDIATION_APPLY_PERMISSION,
   createQuarantineRoutes,
@@ -143,6 +144,7 @@ describe("Quarantine routes (T-0424)", () => {
     expect(routes.map((route) => `${route.method} ${route.path}`)).toEqual([
       `GET ${QUARANTINE_PATH}`,
       `GET ${QUARANTINE_ITEM_PATH}`,
+      `POST ${QUARANTINE_SUBMIT_PATH}`,
       `POST ${QUARANTINE_ACTION_PATH}`,
     ]);
   });

@@ -53,4 +53,4 @@ replication target and per-record restore granularity remain deferred (SPEC §11
 
 Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
 
-- T-0865 — `open`
+- T-0865 — `fixed-unverified`

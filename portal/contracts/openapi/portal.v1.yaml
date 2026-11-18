@@ -438,6 +438,214 @@ paths:
       x-permission: Endpoint.Autopilot.ReadWrite
       security:
         - bearerAuth: []
+  /backup-settings:
+    get:
+      operationId: getBackupSettings
+      summary: Read the backup retention and replication settings.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The instance-global BackupConfig singleton.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Backup.Read.
+      x-permission: Tenant.Backup.Read
+    put:
+      operationId: putBackupSettings
+      summary: Update the backup retention and replication settings.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - retentionDays
+              properties:
+                retentionDays:
+                  type: integer
+                  minimum: 0
+                replicationTarget:
+                  type:
+                    - string
+                    - "null"
+                scheduleId:
+                  type:
+                    - string
+                    - "null"
+      responses:
+        "200":
+          description: The saved BackupConfig singleton.
+        "400":
+          description: retentionDays or a target/schedule value is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Backup.ReadWrite.
+      x-permission: Tenant.Backup.ReadWrite
+  /backups:
+    get:
+      operationId: listBackups
+      summary: List backups, cursor-paginated and tenant-scoped to the caller.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+        - name: tenantId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - instance
+              - tenant
+      responses:
+        "200":
+          description: Cursor-paginated backups visible to the caller.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Backup.Read or the tenant is out of scope.
+      x-permission: Tenant.Backup.Read
+    post:
+      operationId: createBackup
+      summary: Create an instance or tenant configuration backup.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - type
+              properties:
+                type:
+                  type: string
+                  enum:
+                    - instance
+                    - tenant
+                tenantId:
+                  type: string
+      responses:
+        "201":
+          description: The created backup.
+        "400":
+          description: The backup input is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Backup.ReadWrite or the tenant is out of scope.
+      x-permission: Tenant.Backup.ReadWrite
+  /backups/{id}:
+    delete:
+      operationId: deleteBackup
+      summary: Delete a backup's artifact and row.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The backup was deleted.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Backup.ReadWrite or the tenant is out of scope.
+        "404":
+          description: The backup was not found.
+      x-permission: Tenant.Backup.ReadWrite
+  /backups/{id}/download:
+    get:
+      operationId: downloadBackup
+      summary: Stream a backup archive artifact.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The backup archive, streamed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Backup.Read or the tenant is out of scope.
+        "404":
+          description: The backup or its artifact was not found.
+      x-permission: Tenant.Backup.Read
+  /backups/{id}/restore:
+    post:
+      operationId: restoreBackup
+      summary: "Apply a backup restore: pre-restore backup, per-table transaction, rollback on failure."
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+                - confirm
+              properties:
+                confirm:
+                  type: boolean
+                tables:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: The restore outcome; `replayed` is true when the Idempotency-Key was already applied.
+        "400":
+          description: Missing confirmation, missing Idempotency-Key, or an invalid table scope.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks the CIPP.Admin.* scope or the tenant is out of scope.
+        "404":
+          description: The backup or its archive artifact was not found.
+        "409":
+          description: The backup schema version does not match the instance.
+      x-permission: CIPP.Admin.BackupRestore
   /baselines:
     get:
       operationId: getBaselines
@@ -1008,6 +1216,181 @@ paths:
         "422":
           description: Every target failed; per-target results are returned.
       x-permission: Exchange.Transport.ReadWrite
+  /contact-templates:
+    get:
+      operationId: listContactTemplates
+      summary: List persisted contact templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated contact templates.
+        "403":
+          description: The caller lacks Exchange.Contact.Read.
+      x-permission: Exchange.Contact.Read
+    post:
+      operationId: createContactTemplate
+      summary: Persist a contact template (name, properties, deploy variables)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - properties
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                properties:
+                  type: object
+                  additionalProperties: true
+                variables:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: The stored contact template.
+        "400":
+          description: The template failed shape validation.
+        "403":
+          description: The caller lacks Exchange.Contact.ReadWrite.
+      x-permission: Exchange.Contact.ReadWrite
+  /contact-templates/{id}:
+    get:
+      operationId: getContactTemplate
+      summary: Read one contact template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The contact template.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Contact.Read
+    patch:
+      operationId: updateContactTemplate
+      summary: Update a contact template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                properties:
+                  type: object
+                  additionalProperties: true
+                variables:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: The updated contact template.
+        "400":
+          description: The update failed shape validation.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Contact.ReadWrite
+    delete:
+      operationId: deleteContactTemplate
+      summary: Soft-delete a contact template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The template was soft-deleted.
+        "404":
+          description: No live template has that id.
+      x-permission: Exchange.Contact.ReadWrite
+  /contact-templates/{id}/deploy:
+    post:
+      operationId: deployContactTemplate
+      summary: Resolve a contact template against per-target variables and deploy it
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targets:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - tenantId
+                    properties:
+                      tenantId:
+                        type: string
+                      variables:
+                        type: object
+                        additionalProperties: true
+                tenantId:
+                  type: string
+                variables:
+                  type: object
+                  additionalProperties: true
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Plan preview, or every target deployed.
+        "207":
+          description: Some targets deployed and some failed.
+        "403":
+          description: The caller lacks Exchange.Contact.ReadWrite / Remediation.Apply or the tenant is out of scope.
+        "404":
+          description: No live template has that id.
+        "422":
+          description: Every target failed.
+      x-permission: Exchange.Contact.ReadWrite
   /custom-tests:
     get:
       tags:
@@ -1363,6 +1746,16 @@ paths:
       x-permission: Tenant.Drift.ReadWrite
       security:
         - bearerAuth: []
+  /drift/deviations/{deviationId}/remediate:
+    post:
+      operationId: postDriftDeviationsDeviationIdRemediate
+      summary: POST /drift/deviations/{deviationId}/remediate
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Remediation.Apply
+      security:
+        - bearerAuth: []
   /drift/{tenantId}:
     get:
       operationId: getDriftTenantId
@@ -1475,6 +1868,149 @@ paths:
         "403":
           description: Requires CIPP.AppSettings.ReadWrite.
       x-permission: CIPP.AppSettings.ReadWrite
+  /filter-templates:
+    get:
+      operationId: listFilterTemplates
+      summary: List filter templates (spam/anti-phish/malware/connection)
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Filter templates with name, filterType, variables, and source.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.Read.
+      x-permission: Exchange.SpamFilter.Read
+    post:
+      operationId: createFilterTemplate
+      summary: Create a filter template; it persists with a local source
+      security:
+        - bearerAuth: []
+      responses:
+        "201":
+          description: The created filter template.
+        "400":
+          description: name, filterType, or policyJson failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite.
+      x-permission: Exchange.SpamFilter.ReadWrite
+  /filter-templates/{templateId}:
+    get:
+      operationId: getFilterTemplate
+      summary: Filter template detail
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The filter template.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.Read.
+        "404":
+          description: Filter template not found.
+      x-permission: Exchange.SpamFilter.Read
+    patch:
+      operationId: updateFilterTemplate
+      summary: Update a filter template's name, filterType, policyJson, or variables
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The updated filter template.
+        "400":
+          description: No editable field was supplied, or a field failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite.
+        "404":
+          description: Filter template not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
+    delete:
+      operationId: deleteFilterTemplate
+      summary: Soft-delete a filter template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Removed; no body.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite.
+        "404":
+          description: Filter template not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
+  /filter-templates/{templateId}/clone:
+    post:
+      operationId: cloneFilterTemplate
+      summary: Clone a filter template with a fresh id and a local source
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: The cloned filter template.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite.
+        "404":
+          description: Filter template not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
+  /filter-templates/{templateId}/deploy:
+    post:
+      operationId: deployFilterTemplate
+      summary: "Deploy a filter template: resolves %name% variables (domains, IPs, action overrides) and applies the policy through the EPIC-006 gate with before/after and an AuditEvent"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: "Plan preview of the deploy (preview: true)."
+        "202":
+          description: The deploy was queued through the EPIC-006 gated path.
+        "400":
+          description: A required variable is missing, or the change is security-impacting without confirm.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Filter template not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
   /gdap/sync:
     post:
       operationId: postGdapSync
@@ -2856,6 +3392,233 @@ paths:
         "403":
           description: Requires CIPP.AppSettings.ReadWrite.
       x-permission: CIPP.AppSettings.ReadWrite
+  /sharepoint/templates:
+    get:
+      operationId: listSharePointTemplates
+      summary: List persisted SharePoint site templates
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated SharePoint templates.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks SharePoint.Site.Read.
+      x-permission: SharePoint.Site.Read
+    post:
+      operationId: createSharePointTemplate
+      summary: Create a SharePoint site template
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - siteType
+              properties:
+                id:
+                  type: string
+                name:
+                  type: string
+                siteType:
+                  type: string
+                  enum:
+                    - team
+                    - communication
+                settings:
+                  type: object
+                  additionalProperties: true
+                variables:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "201":
+          description: The persisted SharePoint template.
+        "400":
+          description: The template failed shape validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks SharePoint.Site.ReadWrite.
+      x-permission: SharePoint.Site.ReadWrite
+  /sharepoint/templates/{id}:
+    get:
+      operationId: getSharePointTemplate
+      summary: Read a SharePoint site template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The SharePoint template.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks SharePoint.Site.Read.
+        "404":
+          description: No live SharePoint template has that id.
+      x-permission: SharePoint.Site.Read
+    patch:
+      operationId: updateSharePointTemplate
+      summary: Update a SharePoint site template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                siteType:
+                  type: string
+                  enum:
+                    - team
+                    - communication
+                settings:
+                  type: object
+                  additionalProperties: true
+                variables:
+                  type: object
+                  additionalProperties: true
+      responses:
+        "200":
+          description: The updated SharePoint template.
+        "400":
+          description: The update failed shape validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks SharePoint.Site.ReadWrite.
+        "404":
+          description: No live SharePoint template has that id.
+      x-permission: SharePoint.Site.ReadWrite
+    delete:
+      operationId: deleteSharePointTemplate
+      summary: Soft-delete a SharePoint site template
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: The SharePoint template was soft-deleted.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks SharePoint.Site.ReadWrite.
+        "404":
+          description: No live SharePoint template has that id.
+      x-permission: SharePoint.Site.ReadWrite
+  /sharepoint/templates/{id}/deploy:
+    post:
+      operationId: deploySharePointTemplate
+      summary: Deploy a SharePoint site template to one or more target tenants (preview with preview:true; apply needs SharePoint.Site.ReadWrite and Remediation.Apply)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targets:
+                  type: array
+                  items:
+                    oneOf:
+                      - type: string
+                      - type: object
+                        required:
+                          - tenantId
+                        properties:
+                          tenantId:
+                            type: string
+                          name:
+                            type: string
+                          alias:
+                            type: string
+                          owners:
+                            type: array
+                            items:
+                              type: string
+                          sharing:
+                            type: string
+                          variables:
+                            type: object
+                            additionalProperties: true
+                tenantId:
+                  type: string
+                name:
+                  type: string
+                alias:
+                  type: string
+                owners:
+                  type: array
+                  items:
+                    type: string
+                sharing:
+                  type: string
+                variables:
+                  type: object
+                  additionalProperties: true
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Preview plans, or all target tenants deployed.
+        "207":
+          description: Some target tenants deployed and some failed.
+        "400":
+          description: Invalid target specification.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks SharePoint.Site.ReadWrite / Remediation.Apply or target tenant is out of scope.
+        "404":
+          description: No live SharePoint template has that id.
+        "422":
+          description: All target tenants failed.
+      x-permission: SharePoint.Site.ReadWrite
   /standards/alignment:
     get:
       operationId: getStandardsAlignment
@@ -3594,6 +4357,132 @@ paths:
         "501":
           description: Alert actions are not wired for this tenant.
       x-permission: Security.Incident.ReadWrite
+  /tenants/{tenantId}/allow-block:
+    get:
+      operationId: listAllowBlockEntries
+      summary: List tenant allow/block entries live from EXO (type, value, action, expires, notes)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Allow/block entries with the §3.4 columns, read live from EXO.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.Read or the tenant is out of scope.
+      x-permission: Exchange.SpamFilter.Read
+    post:
+      operationId: addAllowBlockEntry
+      summary: Add a tenant allow/block entry with optional expiry (plan preview with preview:true; applies through the EPIC-006 gated path)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview of the entry add with the affected entry.
+        "202":
+          description: The add was queued through the EPIC-006 gated path.
+        "400":
+          description: type, value, action, or expiresOn failed validation, or confirm is required.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.SpamFilter.ReadWrite
+    patch:
+      operationId: editAllowBlockEntry
+      summary: Edit a tenant allow/block entry's expiry or notes (plan preview with preview:true; weakening changes require confirmation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Edit plan preview or the applied change with before/after and audit event.
+        "400":
+          description: No editable field was supplied, or confirm is required.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Allow/block entry not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
+    delete:
+      operationId: removeAllowBlockEntry
+      summary: Remove a tenant allow/block entry (removing a block is security-impacting; requires confirmation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Remove plan preview with the affected entry.
+        "202":
+          description: The remove was queued through the EPIC-006 gated path.
+        "400":
+          description: confirm is required to remove a block entry.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Allow/block entry not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
+  /tenants/{tenantId}/allow-block/import:
+    post:
+      operationId: importAllowBlockEntries
+      summary: Bulk-import tenant allow/block entries with per-row results; every valid row routes through the EPIC-006 gate
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rows:
+                  type: array
+                  items:
+                    type: object
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Per-row import results (queued, ready, invalid).
+        "400":
+          description: The request shape or a row failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.SpamFilter.ReadWrite
   /tenants/{tenantId}/apps:
     get:
       operationId: getTenantsTenantIdApps
@@ -4379,6 +5268,225 @@ paths:
       x-permission: CIPP.Admin.Approval
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/contacts:
+    get:
+      operationId: listContacts
+      summary: "List, search, and filter contacts (filter: type/hidden)"
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - mailContact
+              - mailUser
+        - name: hidden
+          in: query
+          required: false
+          schema:
+            type: boolean
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated contacts with the §3.1 columns.
+        "400":
+          description: An unsupported filter value was supplied.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Contact.Read or the tenant is out of scope.
+      x-permission: Exchange.Contact.Read
+    post:
+      operationId: createContact
+      summary: Create a contact or preview the change
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - displayName
+                - externalAddress
+              properties:
+                displayName:
+                  type: string
+                externalAddress:
+                  type: string
+                type:
+                  type: string
+                  enum:
+                    - mailContact
+                    - mailUser
+                hiddenFromGal:
+                  type: boolean
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Plan preview of the contact create.
+        "201":
+          description: The contact was created.
+        "400":
+          description: A required field is missing or invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Contact.ReadWrite
+  /tenants/{tenantId}/contacts/import:
+    post:
+      operationId: importContacts
+      summary: Bulk-import contacts from CSV with per-row results and duplicate detection
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                csv:
+                  type: string
+                rows:
+                  type: array
+                  items:
+                    type: object
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Per-row import results (created, skipped-duplicate, invalid, failed).
+        "400":
+          description: The request shape or CSV is invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Contact.ReadWrite
+  /tenants/{tenantId}/contacts/{contactId}:
+    patch:
+      operationId: editContact
+      summary: Edit a contact, hide it from the GAL, or preview the change
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - edit
+                    - hideFromGal
+                displayName:
+                  type: string
+                externalAddress:
+                  type: string
+                hiddenFromGal:
+                  type: boolean
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: The contact was updated, or a plan preview when preview is set.
+        "400":
+          description: A required field is missing or invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Contact.ReadWrite
+    delete:
+      operationId: deleteContact
+      summary: Delete a contact with an explicit confirmation flag
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: contactId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirm
+              properties:
+                confirm:
+                  type: boolean
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: The contact was deleted, or a plan preview when preview is set.
+        "400":
+          description: The confirm flag is required for deletion.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Contact.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Contact.ReadWrite
   /tenants/{tenantId}/defender/cve-exceptions:
     get:
       operationId: getTenantsTenantIdDefenderCveExceptions
@@ -5095,7 +6203,174 @@ paths:
       x-permission: Endpoint.Autopilot.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/filters/{filterType}:
+    get:
+      operationId: getFilters
+      summary: Filter policies (spam/antiphish/malware/connection) with name, priority, state, key settings summary, last modified
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filterType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - spam
+              - antiphish
+              - malware
+              - connection
+      responses:
+        "200":
+          description: Filter policies with the §3.1 columns, read live from EXO.
+        "400":
+          description: An unknown filter type was supplied.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.Read or the tenant is out of scope.
+      x-permission: Exchange.SpamFilter.Read
+    post:
+      operationId: createFilter
+      summary: Create a filter policy (plan preview with preview:true; applies through the EPIC-006 gated path)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filterType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - spam
+              - antiphish
+              - malware
+              - connection
+      responses:
+        "200":
+          description: Plan preview of the filter create.
+        "202":
+          description: The create was queued through the EPIC-006 gated path.
+        "400":
+          description: name or settings failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.SpamFilter.ReadWrite
+  /tenants/{tenantId}/filters/{filterType}/{policyName}:
+    patch:
+      operationId: editFilter
+      summary: Edit, enable, or disable a filter policy (plan preview with preview:true; security-impacting changes require confirmation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filterType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - spam
+              - antiphish
+              - malware
+              - connection
+        - name: policyName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Edit plan preview or the applied change with before/after and audit event.
+        "400":
+          description: No editable field was supplied, or confirm is required for a security-impacting change.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Filter policy not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
+    delete:
+      operationId: deleteFilter
+      summary: Delete a filter policy (security-impacting; requires confirmation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: filterType
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - spam
+              - antiphish
+              - malware
+              - connection
+        - name: policyName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete plan preview.
+        "202":
+          description: The delete was queued through the EPIC-006 gated path.
+        "400":
+          description: confirm is required to delete a filter policy.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.SpamFilter.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Filter policy not found.
+      x-permission: Exchange.SpamFilter.ReadWrite
   /tenants/{tenantId}/groups:
+    post:
+      operationId: postTenantsTenantIdGroups
+      summary: Create a group or preview create plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview of the group creation.
+        "201":
+          description: Created group with plan and audit event.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Missing permission or tenant out of scope.
+      x-permission: Identity.Group.ReadWrite
     get:
       operationId: getTenantsTenantIdGroups
       summary: GET /tenants/{tenantId}/groups
@@ -5103,15 +6378,6 @@ paths:
         "200":
           description: Successful response.
       x-permission: Identity.Group.Read
-      security:
-        - bearerAuth: []
-    post:
-      operationId: postTenantsTenantIdGroups
-      summary: POST /tenants/{tenantId}/groups
-      responses:
-        "200":
-          description: Successful response.
-      x-permission: Identity.Group.ReadWrite
       security:
         - bearerAuth: []
   /tenants/{tenantId}/groups/usage:
@@ -5127,22 +6393,114 @@ paths:
   /tenants/{tenantId}/groups/{groupId}:
     patch:
       operationId: patchTenantsTenantIdGroupsGroupId
-      summary: PATCH /tenants/{tenantId}/groups/{groupId}
-      responses:
-        "200":
-          description: Successful response.
-      x-permission: Identity.Group.ReadWrite
+      summary: Edit a group or preview edit plan
       security:
         - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview or updated group with audit event.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Missing permission or tenant out of scope.
+      x-permission: Identity.Group.ReadWrite
     delete:
       operationId: deleteTenantsTenantIdGroupsGroupId
-      summary: DELETE /tenants/{tenantId}/groups/{groupId}
-      responses:
-        "200":
-          description: Successful response.
-      x-permission: Identity.Group.ReadWrite
+      summary: Delete a group with naming confirmation or preview delete plan
       security:
         - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview or deleted group confirmation with audit event.
+        "400":
+          description: Missing or invalid confirmation name.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Missing permission or tenant out of scope.
+      x-permission: Identity.Group.ReadWrite
+  /tenants/{tenantId}/groups/{groupId}/convert:
+    post:
+      operationId: convertGroup
+      summary: Convert a group type or preview conversion plan
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: groupId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                targetType:
+                  type: string
+                  enum:
+                    - m365
+                    - security
+                    - mailEnabledSecurity
+                    - distribution
+                    - dynamic
+                groupType:
+                  type: string
+                  enum:
+                    - m365
+                    - security
+                    - mailEnabledSecurity
+                    - distribution
+                    - dynamic
+                dynamicRule:
+                  type: string
+                mailNickname:
+                  type: string
+                preview:
+                  type: boolean
+                dryRun:
+                  type: boolean
+      responses:
+        "200":
+          description: Conversion plan preview or applied result with audit event.
+        "400":
+          description: Validation failed.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Missing permission or tenant out of scope.
+      x-permission: Identity.Group.ReadWrite
   /tenants/{tenantId}/groups/{groupId}/delivery:
     post:
       operationId: postTenantsTenantIdGroupsGroupIdDelivery
@@ -6328,6 +7686,330 @@ paths:
       x-permission: Purview.Compliance.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/quarantine:
+    get:
+      operationId: listQuarantineMessages
+      summary: List quarantined messages live from EXO/Graph across the Email, Files, and Teams tabs with the §3.3 columns and reason/direction/date/recipient/state filters
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: tab
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - email
+              - files
+              - teams
+        - name: reason
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: direction
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: recipient
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: dateFrom
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: dateTo
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: The §3.3 quarantine table for the requested tab, read live from EXO/Graph.
+        "400":
+          description: tab or a filter value failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.Read or the tenant is out of scope.
+      x-permission: Exchange.Quarantine.Read
+  /tenants/{tenantId}/quarantine-policies:
+    get:
+      operationId: listQuarantinePolicies
+      summary: List quarantine notification and permission policies live from EXO (name, type, end-user spam notifications, retention, access model, last modified)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Quarantine policies with the §3.5 columns, read live from EXO.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.Read or the tenant is out of scope.
+      x-permission: Exchange.Quarantine.Read
+    post:
+      operationId: createQuarantinePolicy
+      summary: Create a quarantine notification or permission policy (plan preview with preview:true; applies through the EPIC-006 gated path)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Plan preview of the policy create with affected entries.
+        "202":
+          description: The create was queued through the EPIC-006 gated path.
+        "400":
+          description: name, policyType, or settings failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Quarantine.ReadWrite
+  /tenants/{tenantId}/quarantine-policies/{policyName}:
+    patch:
+      operationId: editQuarantinePolicy
+      summary: Edit a quarantine notification or permission policy (plan preview with preview:true shows affected entries; weakening changes require confirmation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: policyName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Edit plan preview or the applied change with before/after and audit event.
+        "400":
+          description: policyType or settings failed validation, or confirm is required for a security-impacting change.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Quarantine policy not found.
+      x-permission: Exchange.Quarantine.ReadWrite
+    delete:
+      operationId: deleteQuarantinePolicy
+      summary: Delete a quarantine policy (security-impacting; requires confirmation)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: policyName
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Delete plan preview with affected entries.
+        "202":
+          description: The delete was queued through the EPIC-006 gated path.
+        "400":
+          description: confirm is required to delete a quarantine policy.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.ReadWrite or the tenant is out of scope.
+        "404":
+          description: Quarantine policy not found.
+      x-permission: Exchange.Quarantine.ReadWrite
+  /tenants/{tenantId}/quarantine/bulk:
+    post:
+      operationId: bulkActOnQuarantineMessages
+      summary: Release (to recipient or all) or delete a capped selection of quarantined messages with an explicit confirmation count; applies through the EPIC-006 gated path and writes a QuarantineAction plus an AuditEvent per item
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - action
+                - messageIds
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - release
+                    - releaseAll
+                    - delete
+                messageIds:
+                  type: array
+                  items:
+                    type: string
+                confirm:
+                  type: boolean
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Confirmation count model and per-item plan; nothing is released or deleted.
+        "202":
+          description: The batch was queued through the EPIC-006 gated path with one QuarantineAction and AuditEvent per item.
+        "400":
+          description: Selection is empty, malformed, over the configured cap, or confirm is required.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: A selected quarantined message was not found.
+      x-permission: Exchange.Quarantine.ReadWrite
+  /tenants/{tenantId}/quarantine/{messageId}:
+    get:
+      operationId: previewQuarantineMessage
+      summary: Preview a quarantined message; uses the EXO quarantine cmdlet where it supports the preview and falls back to Graph metadata only
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The message metadata plus a preview whose source is exo or graph.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.Read or the tenant is out of scope.
+        "404":
+          description: The quarantined message was not found.
+      x-permission: Exchange.Quarantine.Read
+  /tenants/{tenantId}/quarantine/{messageId}/submit:
+    post:
+      operationId: submitQuarantineMessageForReview
+      summary: Submit a quarantined message to Microsoft for review through the EPIC-006 gated path and return the tracked submission status; with refresh:true, read the live review state back so the tracked status is never stale
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh:
+                  type: boolean
+                  description: Read the current review state instead of submitting again; the tracked QuarantineAction is updated to match.
+      responses:
+        "200":
+          description: The live tracked review state read back from Microsoft; nothing new was submitted.
+        "202":
+          description: The message was queued for review through the EPIC-006 gated path with a QuarantineAction and an AuditEvent.
+        "400":
+          description: The request body failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The quarantined message, or its tracked submission, was not found.
+      x-permission: Exchange.Quarantine.ReadWrite
+  /tenants/{tenantId}/quarantine/{messageId}/{action}:
+    post:
+      operationId: actOnQuarantineMessage
+      summary: Release (to recipient or all), delete, or block the sender of a quarantined message (plan preview with preview:true; applies through the EPIC-006 gated path and writes a QuarantineAction plus an AuditEvent)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - release
+              - releaseAll
+              - delete
+              - block
+      responses:
+        "200":
+          description: Plan preview of the action with the affected message; nothing is released, deleted, or blocked.
+        "202":
+          description: The action was queued through the EPIC-006 gated path with a QuarantineAction and an AuditEvent.
+        "400":
+          description: action failed validation or confirm is required for release/delete.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Quarantine.ReadWrite or Remediation.Apply, or the tenant is out of scope.
+        "404":
+          description: The quarantined message was not found.
+      x-permission: Exchange.Quarantine.ReadWrite
   /tenants/{tenantId}/registration-campaign:
     get:
       operationId: getTenantsTenantIdRegistrationCampaign
@@ -6347,6 +8029,220 @@ paths:
       x-permission: Identity.AuthMethodsPolicy.ReadWrite
       security:
         - bearerAuth: []
+  /tenants/{tenantId}/resources/{kind}:
+    get:
+      operationId: listResources
+      summary: List resource mailboxes (rooms, equipment, room lists) with the §3.3 columns
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - rooms
+              - equipment
+              - roomlists
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Cursor-paginated resources with the §3.3 columns; room lists include membership.
+        "400":
+          description: The kind is unknown or a parameter failed validation.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Resource.Read or Exchange.Contact.Read, or the tenant is out of scope.
+      x-permission: Exchange.Resource.Read
+    post:
+      operationId: createResource
+      summary: Create a room or equipment resource, or preview the change
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - rooms
+              - equipment
+              - roomlists
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - displayName
+              properties:
+                displayName:
+                  type: string
+                capacity:
+                  type:
+                    - integer
+                    - "null"
+                location:
+                  type:
+                    - string
+                    - "null"
+                hidden:
+                  type: boolean
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: Plan preview of the resource create.
+        "201":
+          description: The resource was created.
+        "400":
+          description: A required field is missing or invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Resource.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Resource.ReadWrite
+  /tenants/{tenantId}/resources/{kind}/{resourceId}:
+    patch:
+      operationId: editResource
+      summary: Edit a resource, add or remove room-list membership, or preview the change
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - rooms
+              - equipment
+              - roomlists
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum:
+                    - edit
+                    - addMember
+                    - removeMember
+                displayName:
+                  type: string
+                capacity:
+                  type:
+                    - integer
+                    - "null"
+                location:
+                  type:
+                    - string
+                    - "null"
+                hidden:
+                  type: boolean
+                memberId:
+                  type: string
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: The resource was updated, membership changed, or a plan preview when preview is set.
+        "400":
+          description: A required field is missing or invalid.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Resource.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Resource.ReadWrite
+    delete:
+      operationId: deleteResource
+      summary: Delete a resource with an explicit confirmation flag
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: kind
+          in: path
+          required: true
+          schema:
+            type: string
+            enum:
+              - rooms
+              - equipment
+              - roomlists
+        - name: resourceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirm
+              properties:
+                confirm:
+                  type: boolean
+                preview:
+                  type: boolean
+      responses:
+        "200":
+          description: The resource was deleted, or a plan preview when preview is set.
+        "400":
+          description: The confirm flag is required for deletion.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Exchange.Resource.ReadWrite or the tenant is out of scope.
+      x-permission: Exchange.Resource.ReadWrite
   /tenants/{tenantId}/retention/assign:
     post:
       operationId: postTenantsTenantIdRetentionAssign
@@ -6581,6 +8477,15 @@ paths:
       security:
         - bearerAuth: []
   /tenants/{tenantId}/sharepoint/sites/{siteId}:
+    patch:
+      operationId: patchTenantsTenantIdSharepointSitesSiteId
+      summary: PATCH /tenants/{tenantId}/sharepoint/sites/{siteId}
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: SharePoint.Site.ReadWrite
+      security:
+        - bearerAuth: []
     delete:
       operationId: deleteTenantsTenantIdSharepointSitesSiteId
       summary: DELETE /tenants/{tenantId}/sharepoint/sites/{siteId}

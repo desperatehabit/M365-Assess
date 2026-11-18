@@ -219,4 +219,60 @@ describe("GalDeliveryDialog (T-0269)", () => {
     fireEvent.click(screen.getByTestId("btn-remove-alice@contoso.com"));
     expect(screen.queryByTestId("tag-send-on-behalf-alice@contoso.com")).toBeNull();
   });
+
+  it("syncs initial requireSenderAuthenticationEnabled and grantSendOnBehalfTo when target group changes (T-0900)", async () => {
+    const mockFetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        auditEvent: { action: "group.delivery" },
+      }),
+    });
+
+    const { rerender } = render(
+      <DeliveryManagementDialog
+        isOpen={true}
+        tenantId="tenant-1"
+        groupId="grp-1"
+        initialRequireSenderAuthenticationEnabled={false}
+        initialGrantSendOnBehalfTo={["alice@example.invalid"]}
+        onClose={vi.fn()}
+        fetcher={mockFetcher as any}
+      />,
+    );
+
+    expect((screen.getByTestId("input-require-sender-auth") as HTMLInputElement).checked).toBe(false);
+    expect(screen.getByTestId("tag-send-on-behalf-alice@example.invalid")).toBeTruthy();
+
+    rerender(
+      <DeliveryManagementDialog
+        isOpen={true}
+        tenantId="tenant-1"
+        groupId="grp-2"
+        initialRequireSenderAuthenticationEnabled={true}
+        initialGrantSendOnBehalfTo={["bob@example.invalid"]}
+        onClose={vi.fn()}
+        fetcher={mockFetcher as any}
+      />,
+    );
+
+    expect((screen.getByTestId("input-require-sender-auth") as HTMLInputElement).checked).toBe(true);
+    expect(screen.queryByTestId("tag-send-on-behalf-alice@example.invalid")).toBeNull();
+    expect(screen.getByTestId("tag-send-on-behalf-bob@example.invalid")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("btn-apply"));
+    await waitFor(() => {
+      expect(mockFetcher).toHaveBeenCalledWith(
+        "/v1/tenants/tenant-1/groups/grp-2/delivery",
+        expect.objectContaining({
+          method: "POST",
+          body: JSON.stringify({
+            requireSenderAuthenticationEnabled: true,
+            grantSendOnBehalfTo: ["bob@example.invalid"],
+            preview: false,
+          }),
+        }),
+      );
+    });
+  });
 });

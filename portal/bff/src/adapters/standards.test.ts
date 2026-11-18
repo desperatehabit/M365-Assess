@@ -12,6 +12,7 @@ import {
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import {
+  E5_SERVICE_PLANS,
   STANDARDS_COMPARE_ARTIFACT,
   TENANT_LICENSES_UNAVAILABLE,
   createStandardsAlignmentStore,
@@ -20,6 +21,10 @@ import {
   createStandardsRunStore,
   createStandardsTemplateStore,
   createStandardsVariableResolver,
+  createTenantLicenseResolver,
+  loadLicensingOverlay,
+  loadLicensingOverlaySync,
+  resolveControlsRoot,
   unavailableTenantLicenses,
   withStandardsIngestion,
 } from "./standards.js";
@@ -277,5 +282,160 @@ describe("standards run queue, variable resolution, and ingestion (T-0841)", () 
     } finally {
       rmSync(storageRoot, { recursive: true, force: true });
     }
+  });
+});
+
+describe("licensing overlay and tenant license resolver (T-0877)", () => {
+  function setupInventoryRepo() {
+    const db = new Database(":memory:");
+    const version = runMigrations(db, loadMigrations());
+    return new SqliteRepository(db, version, "memory");
+  }
+
+  async function seedTenant(repo: SqliteRepository, tenantId: string) {
+    await repo.upsertTenant({
+      id: tenantId,
+      displayName: null,
+      defaultDomain: null,
+      initialDomain: null,
+      source: "direct",
+      status: "active",
+      excluded: false,
+      lastRunAt: null,
+      errorCount: 0,
+    });
+  }
+
+  it("loads licensing-overlay.json from the controls root and falls back when absent", async () => {
+    const overlay = await loadLicensingOverlay();
+    expect(overlay.checks["CA-SIGNINRISK-001"]).toEqual(["AAD_PREMIUM_P2"]);
+    expect(overlay.checks["DEFENDER-ANTIPHISH-001"]).toEqual(["ATP_ENTERPRISE"]);
+    expect(loadLicensingOverlaySync().checks["EXO-LOCKBOX-001"]).toEqual(["LOCKBOX_ENTERPRISE"]);
+
+    const missingDir = mkdtempSync(path.join(tmpdir(), "missing-controls-"));
+    try {
+      expect(resolveControlsRoot(missingDir)).toBe(path.resolve(missingDir));
+      expect(await loadLicensingOverlay(missingDir)).toEqual({ checks: {} });
+      expect(loadLicensingOverlaySync(missingDir)).toEqual({ checks: {} });
+    } finally {
+      rmSync(missingDir, { recursive: true, force: true });
+    }
+  });
+
+  it("maps E5 SKUs to preset E5 and standard E5 service plans", async () => {
+    const repo = setupInventoryRepo();
+    await seedTenant(repo, "t-e5");
+    await repo.upsertTenantLicenseInventory({
+      tenantId: "t-e5",
+      skuId: "sku-e5",
+      skuPartNumber: "SPE_E5",
+      enabledUnits: 10,
+      consumedUnits: 5,
+      lastSynced: "2026-10-01T00:00:00.000Z",
+    });
+
+    const resolve = createTenantLicenseResolver(repo);
+    const result = await resolve("t-e5");
+    expect(result.preset).toBe("E5");
+    expect(result.servicePlans).toContain("SPE_E5");
+    for (const plan of E5_SERVICE_PLANS) {
+      expect(result.servicePlans).toContain(plan);
+    }
+  });
+
+  it("maps E3 and Business Premium SKUs to preset E3 unless E5 is held", async () => {
+    const repo = setupInventoryRepo();
+    await seedTenant(repo, "t-e3");
+    await seedTenant(repo, "t-bp");
+    await repo.upsertTenantLicenseInventory({
+      tenantId: "t-e3",
+      skuId: "sku-e3",
+      skuPartNumber: "ENTERPRISEPACK",
+      enabledUnits: 20,
+      consumedUnits: 10,
+      lastSynced: "2026-10-01T00:00:00.000Z",
+    });
+    await repo.upsertTenantLicenseInventory({
+      tenantId: "t-bp",
+      skuId: "sku-bp",
+      skuPartNumber: "SPB",
+      enabledUnits: 15,
+      consumedUnits: 4,
+      lastSynced: "2026-10-01T00:00:00.000Z",
+    });
+
+    const resolve = createTenantLicenseResolver(repo);
+    expect(await resolve("t-e3")).toEqual({
+      preset: "E3",
+      servicePlans: ["ENTERPRISEPACK"],
+    });
+    expect(await resolve("t-bp")).toEqual({
+      preset: "E3",
+      servicePlans: ["SPB"],
+    });
+  });
+
+  it("ignores zero-unit SKUs, treats null enabledUnits as active, and resolves add-ons", async () => {
+    const resolve = createTenantLicenseResolver({
+      listTenantLicenseInventory: async () => [
+        {
+          tenantId: "t-partial",
+          skuId: "sku-inactive",
+          skuPartNumber: "SPE_E5",
+          enabledUnits: 0,
+          consumedUnits: 0,
+          lastSynced: "2026-10-01T00:00:00.000Z",
+          createdAt: "",
+          updatedAt: "",
+        },
+        {
+          tenantId: "t-partial",
+          skuId: "sku-e3",
+          skuPartNumber: "spe_e3",
+          enabledUnits: null as unknown as number,
+          consumedUnits: 0,
+          lastSynced: "2026-10-01T00:00:00.000Z",
+          createdAt: "",
+          updatedAt: "",
+        },
+        {
+          tenantId: "t-partial",
+          skuId: "sku-ems",
+          skuPartNumber: "ems_e5",
+          enabledUnits: 5,
+          consumedUnits: 1,
+          lastSynced: "2026-10-01T00:00:00.000Z",
+          createdAt: "",
+          updatedAt: "",
+        },
+        {
+          tenantId: "t-partial",
+          skuId: "sku-atp",
+          skuPartNumber: "THREAT_INTELLIGENCE",
+          enabledUnits: 5,
+          consumedUnits: 1,
+          lastSynced: "2026-10-01T00:00:00.000Z",
+          createdAt: "",
+          updatedAt: "",
+        },
+      ],
+    });
+
+    const result = await resolve("t-partial");
+    expect(result.preset).toBe("E3");
+    expect(result.servicePlans).toContain("SPE_E3");
+    expect(result.servicePlans).toContain("EMS_E5");
+    expect(result.servicePlans).toContain("AAD_PREMIUM_P2");
+    expect(result.servicePlans).toContain("THREAT_INTELLIGENCE");
+    expect(result.servicePlans).toContain("ATP_ENTERPRISE");
+    expect(result.servicePlans).not.toContain("LOCKBOX_ENTERPRISE");
+    expect(result.servicePlans).not.toContain("SPE_E5");
+  });
+
+  it("returns preset null and empty servicePlans when no active licenses exist", async () => {
+    const repo = setupInventoryRepo();
+    await seedTenant(repo, "t-empty");
+    const resolve = createTenantLicenseResolver(repo);
+    expect(await resolve("t-empty")).toEqual({ preset: null, servicePlans: [] });
   });
 });

@@ -13,7 +13,7 @@ import type { JobQueue, RunWorkerFn } from "../jobs/queue.js";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DriftBulkStore } from "../routes/drift-bulk.js";
-import type { DriftRefresh, DriftStore } from "../routes/drift.js";
+import type { DriftDeviationRecord, DriftRefresh, DriftStore } from "../routes/drift.js";
 import type { DriftRemediationPort } from "../routes/drift-deny.js";
 import type { DriftDeleteInstruction } from "../domain/drift-delete-queue.js";
 
@@ -128,6 +128,38 @@ export function createDriftDeletionPort(options: {
           artifactRefs: [],
           operation: "apply",
           deleteInstruction: instruction,
+        },
+      });
+      return jobId;
+    },
+    async queueRemediation(deviation: DriftDeviationRecord, reason: string | null) {
+      const jobId = randomUUID();
+      await jobs.enqueue({
+        schemaVersion: "v1",
+        jobId,
+        jobType: "remediation",
+        tenantId: deviation.tenantId,
+        runId: jobId,
+        requestId: jobId,
+        correlationId: jobId,
+        createdAt: new Date().toISOString(),
+        payload: {
+          contextRef: `drift/${deviation.tenantId}/${jobId}/job.json`,
+          outputRef: `drift/${deviation.tenantId}/${jobId}`,
+          credentialRef: `tenants/${deviation.tenantId}/credential`,
+          sectionRefs: [],
+          artifactRefs: [],
+          operation: "apply",
+          remediateDeviation: {
+            deviationId: deviation.id,
+            tenantId: deviation.tenantId,
+            standardKey: deviation.standardKey,
+            resourceId: deviation.resourceId,
+            kind: deviation.kind,
+            current: deviation.current,
+            expected: deviation.expected,
+            reason,
+          },
         },
       });
       return jobId;

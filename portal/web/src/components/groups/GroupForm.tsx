@@ -108,10 +108,44 @@ export function GroupForm({
   const [isRuleValid, setIsRuleValid] = useState(true);
   const [hiddenFromGal, setHiddenFromGal] = useState(initialGroup?.hiddenFromAddressListsEnabled ?? false);
   const [deliveryMgmt, setDeliveryMgmt] = useState(initialGroup?.deliveryManagementEnabled ?? false);
+  const [sendOnBehalfList, setSendOnBehalfList] = useState<string[]>(
+    initialGroup?.grantSendOnBehalfTo ? [...initialGroup.grantSendOnBehalfTo] : [],
+  );
+  const [sendOnBehalfInput, setSendOnBehalfInput] = useState("");
 
   const [plan, setPlan] = useState<GroupPlan | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const handleAddSendOnBehalf = () => {
+    const trimmed = sendOnBehalfInput.trim();
+    if (!trimmed) return;
+    if (sendOnBehalfList.includes(trimmed)) {
+      setError(`"${trimmed}" is already in the send-on-behalf list.`);
+      return;
+    }
+    setError(null);
+    setSendOnBehalfList([...sendOnBehalfList, trimmed]);
+    setSendOnBehalfInput("");
+    setPlan(null);
+  };
+
+  const handleRemoveSendOnBehalf = (entry: string) => {
+    setSendOnBehalfList(sendOnBehalfList.filter((item) => item !== entry));
+    setPlan(null);
+  };
+
+  const buildCreatePayload = (preview: boolean) => ({
+    displayName,
+    description,
+    groupType,
+    mailNickname: mailNickname || undefined,
+    dynamicRule: groupType === "dynamic" ? dynamicRule : undefined,
+    hiddenFromAddressListsEnabled: hiddenFromGal,
+    requireSenderAuthenticationEnabled: deliveryMgmt,
+    grantSendOnBehalfTo: sendOnBehalfList,
+    preview,
+  });
 
   const handlePreview = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,14 +163,7 @@ export function GroupForm({
       setError(null);
 
       if (mode === "create") {
-        const res = await createGroup(tenantId, {
-          displayName,
-          description,
-          groupType,
-          mailNickname: mailNickname || undefined,
-          dynamicRule: groupType === "dynamic" ? dynamicRule : undefined,
-          preview: true,
-        });
+        const res = await createGroup(tenantId, buildCreatePayload(true));
         setPlan((res as any).plan ?? res);
       } else if (initialGroup) {
         const res = await editGroup(tenantId, initialGroup.id, {
@@ -161,14 +188,7 @@ export function GroupForm({
 
       let res: any;
       if (mode === "create") {
-        res = await createGroup(tenantId, {
-          displayName,
-          description,
-          groupType,
-          mailNickname: mailNickname || undefined,
-          dynamicRule: groupType === "dynamic" ? dynamicRule : undefined,
-          preview: false,
-        });
+        res = await createGroup(tenantId, buildCreatePayload(false));
       } else if (initialGroup) {
         res = await editGroup(tenantId, initialGroup.id, {
           displayName,
@@ -217,6 +237,7 @@ export function GroupForm({
           <option value="security">Security</option>
           <option value="m365">Microsoft 365</option>
           <option value="distribution">Distribution</option>
+          <option value="mailEnabledSecurity">Mail-enabled Security</option>
           <option value="dynamic">Dynamic Security</option>
         </select>
       </div>
@@ -257,7 +278,7 @@ export function GroupForm({
       </div>
 
       {/* Mail Nickname (if applicable) */}
-      {(groupType === "m365" || groupType === "distribution") && mode === "create" && (
+      {(groupType === "m365" || groupType === "distribution" || groupType === "mailEnabledSecurity") && mode === "create" && (
         <div style={fieldStyle}>
           <label style={labelStyle} htmlFor="group-mail-nickname">Mail Nickname</label>
           <input
@@ -295,7 +316,10 @@ export function GroupForm({
           <input
             type="checkbox"
             checked={hiddenFromGal}
-            onChange={(e) => setHiddenFromGal(e.target.checked)}
+            onChange={(e) => {
+              setHiddenFromGal(e.target.checked);
+              setPlan(null);
+            }}
             data-testid="input-hidden-gal"
           />
           <span style={{ fontSize: "14px" }}>Hide group from Global Address List (GAL)</span>
@@ -305,11 +329,75 @@ export function GroupForm({
           <input
             type="checkbox"
             checked={deliveryMgmt}
-            onChange={(e) => setDeliveryMgmt(e.target.checked)}
+            onChange={(e) => {
+              setDeliveryMgmt(e.target.checked);
+              setPlan(null);
+            }}
             data-testid="input-delivery-mgmt"
           />
           <span style={{ fontSize: "14px" }}>Enable delivery management (restrict external senders)</span>
         </label>
+
+        <div style={fieldStyle}>
+          <label style={labelStyle} htmlFor="group-send-on-behalf-input">
+            Grant Send-On-Behalf Permissions (optional)
+          </label>
+          <div style={{ display: "flex", gap: "8px" }}>
+            <input
+              id="group-send-on-behalf-input"
+              type="text"
+              placeholder="delegate@example.com"
+              value={sendOnBehalfInput}
+              onChange={(e) => setSendOnBehalfInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  handleAddSendOnBehalf();
+                }
+              }}
+              style={{ ...inputStyle, flex: 1 }}
+              data-testid="input-send-on-behalf"
+            />
+            <button
+              type="button"
+              style={secondaryButtonStyle}
+              onClick={handleAddSendOnBehalf}
+              data-testid="btn-add-send-on-behalf"
+            >
+              Add
+            </button>
+          </div>
+          {sendOnBehalfList.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }} data-testid="create-send-on-behalf-list">
+              {sendOnBehalfList.map((entry) => (
+                <span
+                  key={entry}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    padding: "4px 8px",
+                    borderRadius: "4px",
+                    border: "1px solid var(--border, #d1d5db)",
+                    background: "var(--surface, #f3f4f6)",
+                    fontSize: "12px",
+                  }}
+                  data-testid={`tag-send-on-behalf-${entry}`}
+                >
+                  <span>{entry}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveSendOnBehalf(entry)}
+                    aria-label={`Remove ${entry}`}
+                    style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0, fontWeight: "bold" }}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       )}
 

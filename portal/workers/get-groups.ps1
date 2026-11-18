@@ -50,9 +50,18 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path -Path $PSScriptRoot -ChildPath 'M365Portal.Workers/Connect-WorkerTenant.ps1')
 
 # Sign in to the job's tenant (T-0826). Direct-parameter runs manage their own session.
+# Attempt ExchangeOnline (which also connects Graph) so mail-enabled groups receive
+# RequireSenderAuthenticationEnabled and GrantSendOnBehalfTo; fall back to Graph-only
+# when ExchangeOnline auth or module is unavailable.
 $tenantSession = $null
 if ($JobFile) {
-    $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service Graph
+    try {
+        $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service ExchangeOnline
+    }
+    catch {
+        Write-Verbose "Exchange Online connection unavailable for Get-Groups; falling back to Graph only: $($_.Exception.Message)"
+        $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service Graph
+    }
 }
 try {
     if ($PSCmdlet.ParameterSetName -eq 'ByJobFile') {

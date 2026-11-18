@@ -7,7 +7,9 @@ import {
   SHAREPOINT_RECYCLE_BIN_PATH,
   SHAREPOINT_SITE_CONFIRM_REQUIRED,
   SHAREPOINT_SITE_DELETE_PATH,
+  SHAREPOINT_SITE_EDIT_PATH,
   SHAREPOINT_SITE_LIFECYCLE_OPENAPI,
+  SHAREPOINT_SITE_NOT_FOUND,
   SHAREPOINT_SITE_NOT_SOFT_DELETED,
   SHAREPOINT_SITE_RESTORE_PATH,
   SHAREPOINT_WRITE_PERMISSION,
@@ -18,6 +20,7 @@ import {
   type SharePointRecycleBinFilter,
   type SharePointRecycleBinPage,
   type SharePointSiteAuditEvent,
+  type SharePointSiteEditInput,
   type SharePointSiteLifecycleCaller,
   type SharePointSiteLifecycleInput,
   type SharePointSiteLifecyclePlan,
@@ -94,6 +97,12 @@ const RESTORE_RESULT: SharePointSiteOperationResult = {
 };
 
 class FakeLifecycleProvider implements SharePointSiteLifecycleProvider {
+  readonly editCalls: Array<{
+    tenantId: string;
+    siteId: string;
+    input: SharePointSiteEditInput;
+    preview: boolean;
+  }> = [];
   readonly deleteCalls: Array<{
     tenantId: string;
     siteId: string;
@@ -112,8 +121,63 @@ class FakeLifecycleProvider implements SharePointSiteLifecycleProvider {
     input: SharePointRecycleBinActionInput;
     preview: boolean;
   }> = [];
+  editError: unknown = undefined;
   deleteError: unknown = undefined;
   restoreError: unknown = undefined;
+
+  async editSite(
+    tenantId: string,
+    siteId: string,
+    input: SharePointSiteEditInput,
+    preview: boolean,
+  ): Promise<SharePointSiteOperationResult | SharePointSiteLifecyclePlan> {
+    this.editCalls.push({ tenantId, siteId, input, preview });
+    if (this.editError !== undefined) {
+      throw this.editError;
+    }
+    const targetName = input.displayName ?? "Project Alpha";
+    const before = { id: siteId, displayName: "Project Alpha", sharing: "disabled", lockState: "Unlock" };
+    const after = {
+      id: siteId,
+      displayName: targetName,
+      sharing: input.sharing ?? "disabled",
+      lockState: input.lockState ?? "Unlock",
+    };
+    if (preview) {
+      return {
+        action: "edit",
+        siteId,
+        targetName,
+        before,
+        after,
+        diff: [`Set displayName to '${targetName}'`],
+        valid: true,
+        dryRun: true,
+        requiresConfirmation: false,
+      };
+    }
+    return {
+      success: true,
+      state: "succeeded",
+      operation: "edit",
+      siteId,
+      targetName,
+      before,
+      after,
+      error: null,
+      auditEvent: {
+        id: "audit-edit-1",
+        tenantId,
+        action: "sharepoint.site.edit",
+        targetId: siteId,
+        targetName,
+        timestamp: "2026-09-28T00:00:00.000Z",
+        result: "success",
+        before,
+        after,
+      },
+    };
+  }
 
   async deleteSite(
     tenantId: string,
@@ -319,9 +383,10 @@ const WRITE_CALLER = callerFor([TENANT], [
 ]);
 
 describe("SharePoint site lifecycle routes (T-0485)", () => {
-  it("exposes delete, restore, and recycle-bin paths", () => {
+  it("exposes edit, delete, restore, and recycle-bin paths", () => {
     const { routes } = harness(WRITE_CALLER);
     expect(routes.map((route) => `${route.method} ${route.path}`)).toEqual([
+      `PATCH ${SHAREPOINT_SITE_EDIT_PATH}`,
       `DELETE ${SHAREPOINT_SITE_DELETE_PATH}`,
       `POST ${SHAREPOINT_SITE_RESTORE_PATH}`,
       `GET ${SHAREPOINT_RECYCLE_BIN_PATH}`,
@@ -329,9 +394,12 @@ describe("SharePoint site lifecycle routes (T-0485)", () => {
     ]);
   });
 
-  it("publishes the delete, restore, and recycle-bin OpenAPI path items", () => {
+  it("publishes the edit, delete, restore, and recycle-bin OpenAPI path items", () => {
     const paths = Object.keys(SHAREPOINT_SITE_LIFECYCLE_OPENAPI.paths);
     expect(paths).toContain("/tenants/{tenantId}/sharepoint/sites/{siteId}");
+    expect(SHAREPOINT_SITE_LIFECYCLE_OPENAPI.paths["/tenants/{tenantId}/sharepoint/sites/{siteId}"].patch.permission).toBe(
+      SHAREPOINT_WRITE_PERMISSION,
+    );
     expect(paths).toContain("/tenants/{tenantId}/sharepoint/sites/{siteId}/restore");
     expect(paths).toContain("/tenants/{tenantId}/sharepoint/recyclebin");
   });
@@ -537,5 +605,135 @@ describe("SharePoint site lifecycle routes (T-0485)", () => {
       ),
     ).rejects.toMatchObject({ status: 400 });
     expect(provider.recycleCalls).toHaveLength(0);
+  });
+
+  it("previews site property edits without writing or recording audit", async () => {
+    const { provider, store, audits, routes } = harness(WRITE_CALLER);
+    const route = routes.find((r) => r.method === "PATCH" && r.path === SHAREPOINT_SITE_EDIT_PATH)!;
+    const response = await route.handler(
+      contextFor(
+        "PATCH",
+        SHAREPOINT_SITE_EDIT_PATH,
+        { displayName: "Project Beta", sharing: "externalUserSharingOnly", lockState: "ReadOnly", preview: true },
+        { tenantId: TENANT, siteId: SITE },
+      ),
+    );
+    expect(response.status).toBe(200);
+    const plan = response.body as SharePointSiteLifecyclePlan;
+    expect(plan.action).toBe("edit");
+    expect(plan.dryRun).toBe(true);
+    expect(provider.editCalls[0]?.preview).toBe(true);
+    expect(provider.editCalls[0]?.input).toMatchObject({
+      displayName: "Project Beta",
+      sharing: "externalUserSharingOnly",
+      lockState: "ReadOnly",
+    });
+    expect(store.created).toHaveLength(0);
+    expect(audits).toHaveLength(0);
+  });
+
+  it("applies site property edits and records a SiteOperation plus an audit event", async () => {
+    const { provider, store, audits, routes } = harness(WRITE_CALLER);
+    const route = routes.find((r) => r.method === "PATCH" && r.path === SHAREPOINT_SITE_EDIT_PATH)!;
+    const response = await route.handler(
+      contextFor(
+        "PATCH",
+        SHAREPOINT_SITE_EDIT_PATH,
+        {
+          displayName: "Project Beta",
+          sharing: "externalUserAndGuestSharing",
+          owners: ["owner2@example.invalid"],
+          lockState: "Unlock",
+        },
+        { tenantId: TENANT, siteId: SITE },
+      ),
+    );
+    expect(response.status).toBe(200);
+    const body = response.body as SharePointSiteOperationResult;
+    expect(body.operation).toBe("edit");
+    expect(body.state).toBe("succeeded");
+    expect(body.after).toMatchObject({
+      displayName: "Project Beta",
+      sharing: "externalUserAndGuestSharing",
+      lockState: "Unlock",
+    });
+    expect(provider.editCalls[0]?.preview).toBe(false);
+    expect(store.created).toEqual([{ id: "op-1", operation: "edit", state: "running" }]);
+    expect(store.updates[0]?.state).toBe("succeeded");
+    expect(audits[0]?.action).toBe("sharepoint.site.edit");
+  });
+
+  it("rejects invalid site edit payloads before dispatch and maps missing site to 404", async () => {
+    const { provider, routes } = harness(WRITE_CALLER);
+    const route = routes.find((r) => r.method === "PATCH" && r.path === SHAREPOINT_SITE_EDIT_PATH)!;
+
+    await expect(
+      route.handler(
+        contextFor("PATCH", SHAREPOINT_SITE_EDIT_PATH, {}, { tenantId: TENANT, siteId: SITE }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    await expect(
+      route.handler(
+        contextFor(
+          "PATCH",
+          SHAREPOINT_SITE_EDIT_PATH,
+          { sharing: "everyone" },
+          { tenantId: TENANT, siteId: SITE },
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    await expect(
+      route.handler(
+        contextFor(
+          "PATCH",
+          SHAREPOINT_SITE_EDIT_PATH,
+          { lockState: "Frozen" },
+          { tenantId: TENANT, siteId: SITE },
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    await expect(
+      route.handler(
+        contextFor(
+          "PATCH",
+          SHAREPOINT_SITE_EDIT_PATH,
+          { owners: ["not-an-email"] },
+          { tenantId: TENANT, siteId: SITE },
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    expect(provider.editCalls).toHaveLength(0);
+
+    provider.editError = new Error("NotFound: site 'site-1' was not found");
+    await expect(
+      route.handler(
+        contextFor(
+          "PATCH",
+          SHAREPOINT_SITE_EDIT_PATH,
+          { displayName: "Renamed" },
+          { tenantId: TENANT, siteId: SITE },
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 404, code: SHAREPOINT_SITE_NOT_FOUND });
+  });
+
+  it("requires Remediation.Apply to apply site edits", async () => {
+    const { provider, routes } = harness(callerFor([TENANT], [SHAREPOINT_WRITE_PERMISSION]));
+    const route = routes.find((r) => r.method === "PATCH" && r.path === SHAREPOINT_SITE_EDIT_PATH)!;
+    await expect(
+      route.handler(
+        contextFor(
+          "PATCH",
+          SHAREPOINT_SITE_EDIT_PATH,
+          { displayName: "Renamed" },
+          { tenantId: TENANT, siteId: SITE },
+        ),
+      ),
+    ).rejects.toMatchObject({ status: 403 });
+    expect(provider.editCalls).toHaveLength(0);
   });
 });

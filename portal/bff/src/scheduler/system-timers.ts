@@ -73,6 +73,14 @@ export const SYSTEM_TIMERS: readonly SystemTimer[] = Object.freeze(
         timezone: "UTC",
         command: "Invoke-PortalCleanup",
       },
+      {
+        name: "credential-expiry",
+        cron: "0 0 4 * * *",
+        type: "report",
+        jobType: "maintenance",
+        timezone: "UTC",
+        command: "Invoke-CredentialExpiryScan",
+      },
     ] satisfies SystemTimer[]
   ).map((timer) => Object.freeze(timer)),
 );

@@ -54,4 +54,4 @@ by design.
 
 Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
 
-- T-0853 — `open`
+- T-0853 — `fixed-unverified`

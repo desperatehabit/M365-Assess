@@ -24,6 +24,7 @@ import {
   fetchDrift,
   overrideDeviation,
   refreshDrift,
+  remediateDeviation,
   type AcceptDeviationInput,
   type BulkTriageInput,
   type DenyDeviationInput,
@@ -247,6 +248,20 @@ export default function DriftPage({ fetcher, tenantId = "", templateId = "" }: D
     }
   };
 
+  const handleRemediate = async (deviation: DriftDeviation): Promise<void> => {
+    try {
+      const result = await remediateDeviation(deviation.id, {}, doFetch);
+      setNotice(
+        result.jobId
+          ? `Remediation queued (job ${result.jobId}).`
+          : "Remediation queued.",
+      );
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const submitBulk = async (input: BulkTriageInput): Promise<void> => {
     try {
       const result = await bulkTriageDrift(input, doFetch);
@@ -315,6 +330,7 @@ export default function DriftPage({ fetcher, tenantId = "", templateId = "" }: D
         onAccept={(deviation) => openRowDialog("accept", deviation)}
         onOverride={(deviation) => openRowDialog("override", deviation)}
         onDeny={(deviation) => openRowDialog("deny", deviation)}
+        onRemediate={(deviation) => void handleRemediate(deviation)}
         onBulk={(action, ids) => {
           const target = requireTenant();
           if (!target) return;

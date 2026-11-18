@@ -52,4 +52,4 @@ real `scope:` paths can be named.
 
 Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
 
-- T-0878 — `open`
+- T-0878 — `fixed-unverified`

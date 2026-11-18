@@ -1,17 +1,18 @@
-// Drift deny (queued deletion) API (EPIC-009 SPEC.md §3.2, §4.2, §6, §8; T-0166).
+// Drift deny (queued deletion) and immediate remediate API (EPIC-009 SPEC.md §3.2, §4.2, §6, §8; T-0166, T-0878).
 //
 //   POST /v1/drift/deviations/{deviationId}/deny
+//   POST /v1/drift/deviations/{deviationId}/remediate
 //
 // Deny is destructive: the deviation is marked denied, then queued for deletion
 // (`deletePending`) and DELETED from the tenant on the next remediation run. It is
 // never deleted synchronously. The request must set `confirm: true`; an optional
-// `delayDays` grace window defers deletion. The actual delete is handed to the
-// EPIC-006 remediation contract through an injected seam — there is no drift-
-// specific executor. Requires `Remediation.Apply`.
+// `delayDays` grace window defers deletion. Remediate queues immediate remediation
+// through the EPIC-006 remediation contract through the injected seam. Both require
+// `Remediation.Apply`.
 
 import { AppError, ErrorCodes } from "../errors.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
-import { requirePermission, type Caller } from "../rbac/authorize.js";
+import { requirePermission, requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { Permission } from "../rbac/roles.js";
 import type { DriftDeviationRecord } from "./drift.js";
 import {
@@ -26,6 +27,7 @@ import {
 } from "../domain/drift-delete-queue.js";
 
 export const DRIFT_DENY_PATH = "/v1/drift/deviations/:deviationId/deny";
+export const DRIFT_REMEDIATE_PATH = "/v1/drift/deviations/:deviationId/remediate";
 
 export const DRIFT_DENY_PERMISSIONS = {
   triage: "Remediation.Apply",
@@ -35,15 +37,17 @@ export const DRIFT_DENY_UNAUTHENTICATED = "request.unauthenticated";
 export const DRIFT_DEVIATION_NOT_FOUND = "drift.deviation_not_found";
 
 export interface DriftDenyStore {
+  getDeviationById?(deviationId: string): Promise<DriftDeviationRecord | undefined>;
   applyTriageByDeviationId(
     deviationId: string,
     patch: DriftTriagePatchLike,
   ): Promise<DriftDeviationRecord | undefined>;
 }
 
-/** Hands the delete to the EPIC-006 contract; returns a job reference. */
+/** Hands the delete or remediation to the EPIC-006 contract; returns a job reference. */
 export interface DriftRemediationPort {
   queueDeletion(instruction: DriftDeleteInstruction): Promise<string>;
+  queueRemediation?(deviation: DriftDeviationRecord, reason: string | null): Promise<string>;
 }
 
 export interface DriftDenyAuditPort {
@@ -100,6 +104,24 @@ function toInputError(error: unknown): AppError {
     ]);
   }
   throw error;
+}
+
+function parseRemediateReason(body: unknown): string | null {
+  if (body === undefined || body === null) return null;
+  if (typeof body !== "object" || Array.isArray(body)) {
+    throw new AppError(ErrorCodes.validationFailed, "Request body must be a JSON object", 400, [
+      { field: "body", reason: "invalid" },
+    ]);
+  }
+  const rawReason = (body as Record<string, unknown>)["reason"];
+  if (rawReason === undefined || rawReason === null) return null;
+  if (typeof rawReason !== "string") {
+    throw new AppError(ErrorCodes.validationFailed, "Field 'reason' must be a string", 400, [
+      { field: "reason", reason: "invalid" },
+    ]);
+  }
+  const trimmed = rawReason.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 export function createDriftDenyRoutes(options: DriftDenyOptions): Route[] {
@@ -185,7 +207,68 @@ export function createDriftDenyRoutes(options: DriftDenyOptions): Route[] {
     };
   }
 
-  return [{ method: "POST", path: DRIFT_DENY_PATH, handler: handleDeny }];
+  async function handleRemediate(ctx: DriftDenyRequest): Promise<RouteResponse> {
+    const caller = requireCaller(options, ctx);
+    await ensureAuthorized(options, caller, DRIFT_DENY_PERMISSIONS.remediate);
+
+    const deviationId = requireParam(ctx, "deviationId");
+    const reason = parseRemediateReason(ctx.body);
+    const at = now();
+
+    if (options.store.getDeviationById) {
+      const existing = await options.store.getDeviationById(deviationId);
+      if (!existing) {
+        throw new AppError(DRIFT_DEVIATION_NOT_FOUND, `Drift deviation ${deviationId} not found`, 404);
+      }
+      requireTenantInScope(caller, existing.tenantId);
+    }
+
+    const deviation = await options.store.applyTriageByDeviationId(deviationId, {
+      state: "denied",
+      reason,
+      expiresOn: at.toISOString(),
+      autoRemediateOnExpiry: true,
+      overrideValue: null,
+    });
+    if (!deviation) {
+      throw new AppError(DRIFT_DEVIATION_NOT_FOUND, `Drift deviation ${deviationId} not found`, 404);
+    }
+    requireTenantInScope(caller, deviation.tenantId);
+
+    const jobId = options.remediation.queueRemediation
+      ? await options.remediation.queueRemediation(deviation, reason)
+      : await options.remediation.queueDeletion({
+          kind: "drift-deny-delete",
+          tenantId: deviation.tenantId,
+          standardKey: deviation.standardKey,
+          resourceId: deviation.resourceId,
+          reason,
+          notBefore: at.toISOString(),
+        });
+
+    if (options.audit) {
+      await options.audit.record({
+        action: "drift.remediate",
+        tenantId: deviation.tenantId,
+        deviationId,
+        standardKey: deviation.standardKey,
+        resourceId: deviation.resourceId,
+        reason,
+        remediationJobId: jobId,
+        correlationId: ctx.correlationId,
+      });
+    }
+
+    return {
+      status: 202,
+      body: { deviation, remediationQueued: true, jobId },
+    };
+  }
+
+  return [
+    { method: "POST", path: DRIFT_DENY_PATH, handler: handleDeny },
+    { method: "POST", path: DRIFT_REMEDIATE_PATH, handler: handleRemediate },
+  ];
 }
 
 // ─── OpenAPI fragment (§6) ───────────────────────────────────────────────────
@@ -205,6 +288,23 @@ export const DRIFT_DENY_OPENAPI = {
         "403": { description: "Forbidden.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "409": { description: "Confirmation required.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      },
+    },
+  },
+  "/v1/drift/deviations/{deviationId}/remediate": {
+    post: {
+      tags: ["Drift"],
+      operationId: "remediateDriftDeviation",
+      summary: "Queue immediate remediation for a drift deviation (gated).",
+      permission: DRIFT_DENY_PERMISSIONS.remediate,
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: "deviationId", in: "path", required: true, schema: { type: "string" } }],
+      responses: {
+        "202": { description: "Remediation queued.", content: { "application/json": { schema: { $ref: "#/components/schemas/DriftDeviationResponse" } } } },
+        "400": { description: "Invalid body.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "401": { description: "Unauthenticated.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "403": { description: "Forbidden or tenant out of scope.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
       },
     },
   },

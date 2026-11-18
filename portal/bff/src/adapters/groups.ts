@@ -132,6 +132,15 @@ export function createGroupProviders(run: WorkerRunner, credentials: CredentialS
           ...(input.mailNickname ? { mailNickname: input.mailNickname } : {}),
           ...(input.description ? { description: input.description } : {}),
           ...(input.dynamicRule ? { dynamicRule: input.dynamicRule } : {}),
+          ...(input.hiddenFromAddressListsEnabled !== undefined
+            ? { hiddenFromAddressListsEnabled: input.hiddenFromAddressListsEnabled }
+            : {}),
+          ...(input.requireSenderAuthenticationEnabled !== undefined
+            ? { requireSenderAuthenticationEnabled: input.requireSenderAuthenticationEnabled }
+            : {}),
+          ...(input.grantSendOnBehalfTo !== undefined
+            ? { grantSendOnBehalfTo: input.grantSendOnBehalfTo }
+            : {}),
           dryRun: preview,
         }),
       editGroup: (tenantId, groupId, input, preview) =>
@@ -148,6 +157,16 @@ export function createGroupProviders(run: WorkerRunner, credentials: CredentialS
           action: "delete",
           groupId,
           confirmName,
+          dryRun: preview,
+        }),
+      convertGroup: (tenantId, groupId, input, preview) =>
+        call<GroupCrudResult | GroupPlan>("set-group.ps1", tenantId, {
+          action: "convert",
+          groupId,
+          targetType: input.targetType,
+          groupType: input.groupType ?? input.targetType,
+          ...(input.mailNickname ? { mailNickname: input.mailNickname } : {}),
+          ...(input.dynamicRule !== undefined ? { dynamicRule: input.dynamicRule } : {}),
           dryRun: preview,
         }),
     },

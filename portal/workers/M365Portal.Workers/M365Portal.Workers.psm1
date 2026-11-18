@@ -1,4 +1,4 @@
-# M365Portal.Workers — reusable per-tenant worker handlers (EPIC-001 SPEC.md §4.2).
+﻿# M365Portal.Workers — reusable per-tenant worker handlers (EPIC-001 SPEC.md §4.2).
 # The child entrypoint (run-tenant.ps1) stays thin; every reusable behavior lives here
 # so the supervisor and Pester can exercise it without spawning a process.
 
@@ -23,6 +23,9 @@ if (-not (Test-Path -LiteralPath $script:TenantCredentialScript -PathType Leaf))
 . (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-Drift.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'Invoke-Baseline.ps1')
 . (Join-Path -Path $PSScriptRoot -ChildPath 'Write-RunProgress.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'Get-Quarantine.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'Get-AllowBlock.ps1')
+. (Join-Path -Path $PSScriptRoot -ChildPath 'Get-QuarantinePolicies.ps1')
 
 function Read-WorkerRunContext {
     <#
@@ -340,5 +343,19 @@ Export-ModuleMember -Function @(
     'Register-RunProgressBridge',
     'Complete-RunProgressBridge',
     'Step-RunSectionProgress',
-    'Get-RunProgressSection'
+    'Get-RunProgressSection',
+    'ConvertTo-QuarantineTab',
+    'ConvertTo-QuarantineRow',
+    'Get-Quarantine',
+    'Read-QuarantineJob',
+    'ConvertTo-AllowBlockType',
+    'ConvertTo-AllowBlockAction',
+    'ConvertTo-ExoAllowBlockListType',
+    'ConvertTo-AllowBlockRow',
+    'Get-AllowBlock',
+    'Read-AllowBlockJob',
+    'ConvertTo-QuarantinePolicyType',
+    'ConvertTo-QuarantinePolicyRow',
+    'Get-QuarantinePolicies',
+    'Read-QuarantinePoliciesJob'
 )

@@ -23,6 +23,7 @@ children:
   - T-0628
   - T-0629
   - T-0862
+  - T-0905
 scope_kind: "epic"
 scope_note: "Rollup for Audit Logs & Webhooks. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -54,3 +55,4 @@ code. Children are authored into `ISSUES/` and listed in `children:` below.
 Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
 
 - T-0862 — `fixed-unverified`
+- T-0905 — `open`

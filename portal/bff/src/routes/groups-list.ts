@@ -25,6 +25,7 @@ export interface GroupItem {
   readonly ownerCount: number;
   readonly hiddenFromAddressListsEnabled: boolean;
   readonly deliveryManagementEnabled: boolean;
+  readonly grantSendOnBehalfTo?: readonly string[];
   readonly dynamicRule: string;
   readonly isDynamic: boolean;
   readonly mail?: string;

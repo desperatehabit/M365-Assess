@@ -18,17 +18,224 @@ import {
 import { AppError } from "../errors.js";
 import type { JobQueue } from "../jobs/queue.js";
 import type { RunWorkerFn } from "../jobs/queue.js";
-import type { TenantLicenseSet } from "../domain/standards-license.js";
+import type { LicensePreset, TenantLicenseSet } from "../domain/standards-license.js";
 import type { AlignmentStore } from "../routes/standards-alignment.js";
 import type { StandardsCatalogStore } from "../routes/standards-catalog.js";
 import type { StandardsRunQueue, StandardsRunStore } from "../routes/standards-run.js";
 import type { StandardsTemplateStore } from "../routes/standards-templates.js";
 import type { TenantVariableStore } from "../routes/tenant-variables.js";
 import type { VariableEntry, VariableScopes } from "../domain/variable-substitution.js";
+import { readFileSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 export const TENANT_LICENSES_UNAVAILABLE = "standards.tenant_licenses_unavailable";
+
+export const DEFAULT_CONTROLS_ROOT = fileURLToPath(
+  new URL("../../../../src/M365-Assess/controls", import.meta.url),
+);
+
+export interface LicensingOverlay {
+  readonly description?: string;
+  readonly version?: string;
+  readonly checks: Readonly<Record<string, readonly string[]>>;
+}
+
+export function resolveControlsRoot(controlsRoot?: string): string {
+  return controlsRoot && controlsRoot.trim().length > 0
+    ? path.resolve(controlsRoot)
+    : DEFAULT_CONTROLS_ROOT;
+}
+
+function parseLicensingOverlay(raw: string): LicensingOverlay {
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return { checks: {} };
+  }
+  const record = parsed as Record<string, unknown>;
+  const rawChecks = record["checks"];
+  const checks: Record<string, readonly string[]> = {};
+  if (typeof rawChecks === "object" && rawChecks !== null && !Array.isArray(rawChecks)) {
+    for (const [check, plans] of Object.entries(rawChecks as Record<string, unknown>)) {
+      if (Array.isArray(plans)) {
+        checks[check] = plans.filter((plan): plan is string => typeof plan === "string");
+      }
+    }
+  }
+  return {
+    ...(typeof record["description"] === "string" ? { description: record["description"] } : {}),
+    ...(typeof record["version"] === "string" ? { version: record["version"] } : {}),
+    checks,
+  };
+}
+
+export async function loadLicensingOverlay(controlsRoot?: string): Promise<LicensingOverlay> {
+  const overlayPath = path.join(resolveControlsRoot(controlsRoot), "licensing-overlay.json");
+  try {
+    return parseLicensingOverlay(await readFile(overlayPath, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return { checks: {} };
+    }
+    throw error;
+  }
+}
+
+export function loadLicensingOverlaySync(controlsRoot?: string): LicensingOverlay {
+  const overlayPath = path.join(resolveControlsRoot(controlsRoot), "licensing-overlay.json");
+  try {
+    return parseLicensingOverlay(readFileSync(overlayPath, "utf8"));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
+      return { checks: {} };
+    }
+    throw error;
+  }
+}
+
+export const E5_SERVICE_PLANS: readonly string[] = [
+  "AAD_PREMIUM_P2",
+  "ATP_ENTERPRISE",
+  "LOCKBOX_ENTERPRISE",
+  "INFORMATION_PROTECTION_COMPLIANCE",
+  "COMMUNICATIONS_DLP",
+  "AIP_PREMIUM_P2",
+  "RMS_S_PREMIUM2",
+  "MIP_S_CLP2",
+  "COMMUNICATIONS_COMPLIANCE",
+  "MICROSOFT_COMMUNICATION_COMPLIANCE",
+];
+
+const E5_SUITE_SKUS = new Set([
+  "SPE_E5",
+  "ENTERPRISEPREMIUM",
+  "M365_E5",
+  "DEVELOPERPACK_E5",
+  "A5",
+  "G5",
+]);
+
+const E3_SUITE_SKUS = new Set([
+  "SPE_E3",
+  "ENTERPRISEPACK",
+  "M365_E3",
+  "SPB",
+  "O365_BUSINESS_PREMIUM",
+]);
+
+const ADDON_SKU_SERVICE_PLANS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ["AAD_PREMIUM_P2", ["AAD_PREMIUM_P2"]],
+  ["IDENTITY_GOVERNANCE", ["AAD_PREMIUM_P2"]],
+  ["EMSPREMIUM", ["AAD_PREMIUM_P2", "AIP_PREMIUM_P2", "RMS_S_PREMIUM2", "MIP_S_CLP2"]],
+  ["EMS_E5", ["AAD_PREMIUM_P2", "AIP_PREMIUM_P2", "RMS_S_PREMIUM2", "MIP_S_CLP2"]],
+  ["ATP_ENTERPRISE", ["ATP_ENTERPRISE"]],
+  ["THREAT_INTELLIGENCE", ["ATP_ENTERPRISE"]],
+  ["LOCKBOX_ENTERPRISE", ["LOCKBOX_ENTERPRISE"]],
+  [
+    "INFORMATION_PROTECTION_COMPLIANCE",
+    [
+      "INFORMATION_PROTECTION_COMPLIANCE",
+      "COMMUNICATIONS_DLP",
+      "AIP_PREMIUM_P2",
+      "RMS_S_PREMIUM2",
+      "MIP_S_CLP2",
+      "COMMUNICATIONS_COMPLIANCE",
+      "MICROSOFT_COMMUNICATION_COMPLIANCE",
+    ],
+  ],
+  ["COMMUNICATIONS_DLP", ["COMMUNICATIONS_DLP"]],
+  ["AIP_PREMIUM_P2", ["AIP_PREMIUM_P2", "RMS_S_PREMIUM2", "MIP_S_CLP2"]],
+  ["RMS_S_PREMIUM2", ["RMS_S_PREMIUM2"]],
+  ["MIP_S_CLP2", ["MIP_S_CLP2"]],
+  [
+    "COMMUNICATIONS_COMPLIANCE",
+    ["COMMUNICATIONS_COMPLIANCE", "MICROSOFT_COMMUNICATION_COMPLIANCE"],
+  ],
+  [
+    "MICROSOFT_COMMUNICATION_COMPLIANCE",
+    ["COMMUNICATIONS_COMPLIANCE", "MICROSOFT_COMMUNICATION_COMPLIANCE"],
+  ],
+  ["M365_E5_SECURITY", ["AAD_PREMIUM_P2", "ATP_ENTERPRISE"]],
+  [
+    "M365_E5_COMPLIANCE",
+    [
+      "INFORMATION_PROTECTION_COMPLIANCE",
+      "COMMUNICATIONS_DLP",
+      "AIP_PREMIUM_P2",
+      "RMS_S_PREMIUM2",
+      "MIP_S_CLP2",
+      "COMMUNICATIONS_COMPLIANCE",
+      "MICROSOFT_COMMUNICATION_COMPLIANCE",
+    ],
+  ],
+];
+
+function resolveAddonServicePlans(skuKey: string): readonly string[] | undefined {
+  for (const [token, plans] of ADDON_SKU_SERVICE_PLANS) {
+    if (skuKey === token || skuKey.startsWith(`${token}_`)) {
+      return plans;
+    }
+  }
+  return undefined;
+}
+
+function isE5SuiteSku(skuKey: string): boolean {
+  if (E5_SUITE_SKUS.has(skuKey)) return true;
+  if (resolveAddonServicePlans(skuKey) !== undefined) return false;
+  return (
+    skuKey.includes("E5") ||
+    skuKey.includes("ENTERPRISEPREMIUM") ||
+    /(?:^|_)([AG]5)(?:_|$)/.test(skuKey)
+  );
+}
+
+function isE3SuiteSku(skuKey: string): boolean {
+  if (E3_SUITE_SKUS.has(skuKey)) return true;
+  return skuKey.includes("E3") || skuKey.includes("ENTERPRISEPACK");
+}
+
+/**
+ * Resolves a tenant's active license inventory rows into the coarse E3/E5 preset
+ * and service plans consumed by the standards catalog classifier.
+ */
+export function createTenantLicenseResolver(
+  repo: Pick<SqliteRepository, "listTenantLicenseInventory">,
+): (tenantId: string) => Promise<TenantLicenseSet> {
+  return async (tenantId: string): Promise<TenantLicenseSet> => {
+    const rows = await repo.listTenantLicenseInventory(tenantId);
+    let preset: LicensePreset | null = null;
+    const servicePlans = new Set<string>();
+
+    for (const row of rows) {
+      const units = row.enabledUnits as number | null | undefined;
+      if (units !== null && units !== undefined && units <= 0) {
+        continue;
+      }
+      const part = (row.skuPartNumber ?? "").trim().toUpperCase();
+      const skuKey = part || row.skuId.trim().toUpperCase();
+      if (!skuKey) continue;
+
+      if (part.length > 0) {
+        servicePlans.add(part);
+      }
+
+      const addonPlans = resolveAddonServicePlans(skuKey);
+      if (addonPlans) {
+        for (const plan of addonPlans) servicePlans.add(plan);
+      }
+
+      if (isE5SuiteSku(skuKey)) {
+        preset = "E5";
+        for (const plan of E5_SERVICE_PLANS) servicePlans.add(plan);
+      } else if (isE3SuiteSku(skuKey) && preset !== "E5") {
+        preset = "E3";
+      }
+    }
+
+    return { preset, servicePlans: [...servicePlans] };
+  };
+}
 
 /** Registry definitions, curated overrides applied, with the check reference renamed. */
 export function createStandardsCatalogStore(repo: SqliteStandardsRepository): StandardsCatalogStore {

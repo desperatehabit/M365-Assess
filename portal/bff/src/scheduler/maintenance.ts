@@ -14,11 +14,16 @@ import path from "node:path";
 import type Database from "better-sqlite3";
 import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
 import type { TenantWorkerCall } from "../adapters/workers.js";
+import {
+  scanCredentialExpiry,
+  type CredentialExpiryScanDeps,
+} from "../credentials/expiry.js";
 import type { RunWorkerFn } from "../jobs/queue.js";
 import type { TenantRecord, TenantStore } from "../routes/tenants.js";
 
 export const WEBHOOK_RENEWAL_COMMAND = "Invoke-WebhookRenewal";
 export const PORTAL_CLEANUP_COMMAND = "Invoke-PortalCleanup";
+export const CREDENTIAL_EXPIRY_COMMAND = "Invoke-CredentialExpiryScan";
 
 export const MAINTENANCE_COMMAND_MISSING = "maintenance.command_missing";
 export const MAINTENANCE_COMMAND_UNKNOWN = "maintenance.command_unknown";
@@ -421,5 +426,46 @@ export function createCleanupPorts(db: Database.Database, artifactRoot: string):
         .run(cutoff.toISOString());
       return info.changes;
     },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Credential expiry scan (T-0874)
+// ---------------------------------------------------------------------------
+
+/**
+ * The `Invoke-CredentialExpiryScan` timer. Scans included tenants' credentials
+ * via `scanCredentialExpiry`, raising deduplicated EPIC-029 alert events when
+ * credentials enter the 30-day expiry warning window or expire.
+ */
+export function createCredentialExpiryCommand(
+  deps: CredentialExpiryScanDeps,
+): MaintenanceCommandHandler {
+  return async (_envelope, signal) => {
+    if (signal.aborted) {
+      return {
+        status: "failed",
+        exitCode: 1,
+        message: "the credential expiry scan job was cancelled",
+      };
+    }
+    let result;
+    try {
+      result = await scanCredentialExpiry(deps, signal);
+    } catch (error) {
+      return { status: "failed", exitCode: 1, message: errorMessage(error) };
+    }
+    if (signal.aborted) {
+      return {
+        status: "failed",
+        exitCode: 1,
+        message: "the credential expiry scan job was cancelled",
+      };
+    }
+    return {
+      status: "succeeded",
+      exitCode: 0,
+      message: `scanned ${result.scannedCount} tenant(s): ${result.expiringCount} expiring, ${result.expiredCount} expired, ${result.alertsRaised} alert(s) raised`,
+    };
   };
 }

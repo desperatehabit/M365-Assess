@@ -251,7 +251,12 @@ import { CA_POLICIES_BASE_PATH, CA_POLICIES_ITEM_PATH } from "../routes/ca-polic
 import { CA_REPORT_ONLY_PATH } from "../routes/ca-report-only.js";
 import { CA_DEPLOY_PERMISSION, CA_TEMPLATE_DEPLOY_PATH } from "../routes/ca-templates-deploy.js";
 import { GROUP_TEMPLATE_DEPLOY_PATH } from "../routes/group-templates-deploy.js";
-import { GROUPS_BASE_PATH, GROUPS_ITEM_PATH, GROUPS_WRITE_PERMISSION } from "../routes/groups-crud.js";
+import {
+  GROUPS_BASE_PATH,
+  GROUPS_CONVERT_PATH,
+  GROUPS_ITEM_PATH,
+  GROUPS_WRITE_PERMISSION,
+} from "../routes/groups-crud.js";
 import { GROUP_DELIVERY_PATH, GROUP_GAL_PATH } from "../routes/groups-gal.js";
 import { GROUPS_READ_PERMISSION } from "../routes/groups-list.js";
 import { GROUP_MEMBERS_BULK_PATH, GROUP_OWNERS_BULK_PATH } from "../routes/groups-members.js";
@@ -394,6 +399,30 @@ import {
 } from "../tools/breach-lookup-routes.js";
 import { APPROVAL_ADMIN_SCOPE, CONSENT_REQUESTS_PATH } from "../tools/app-approval-routes.js";
 import { GEOIP_OPENAPI, DOMAIN_CHECK_OPENAPI } from "../tools/geoip-routes.js";
+// EPIC-023 Contacts & Resources (T-0853).
+import { CONTACTS_OPENAPI } from "../routes/contacts.js";
+import { CONTACTS_CRUD_OPENAPI } from "../routes/contacts-crud.js";
+import { CONTACTS_IMPORT_OPENAPI } from "../routes/contacts-import.js";
+import { CONTACT_TEMPLATES_OPENAPI } from "../routes/contact-templates.js";
+import { CONTACT_TEMPLATE_DEPLOY_OPENAPI } from "../routes/contact-templates-deploy.js";
+import { RESOURCES_OPENAPI } from "../routes/resources.js";
+import { RESOURCES_CRUD_OPENAPI } from "../routes/resources-crud.js";
+// EPIC-035 Backup & Restore (T-0865).
+import { BACKUPS_OPENAPI } from "../routes/backups.js";
+import { BACKUP_SETTINGS_OPENAPI } from "../routes/backup-settings.js";
+import {
+  BACKUP_RESTORE_PATH,
+  BACKUP_RESTORE_PERMISSION,
+} from "../routes/backups-restore.js";
+// EPIC-025 SharePoint Templates (T-0896).
+import { SHAREPOINT_TEMPLATES_OPENAPI } from "../routes/sharepoint-templates.js";
+// EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+import { QUARANTINE_OPENAPI } from "../routes/quarantine.js";
+import { QUARANTINE_BULK_OPENAPI } from "../routes/quarantine-bulk.js";
+import { QUARANTINE_POLICIES_OPENAPI } from "../routes/quarantine-policies.js";
+import { ALLOW_BLOCK_OPENAPI } from "../routes/allow-block.js";
+import { FILTERS_OPENAPI } from "../routes/filters.js";
+import { FILTER_TEMPLATES_OPENAPI } from "../routes/filter-templates.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -935,6 +964,7 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "POST", path: GROUPS_BASE_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "PATCH", path: GROUPS_ITEM_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "DELETE", path: GROUPS_ITEM_PATH, permission: GROUPS_WRITE_PERMISSION },
+  { method: "POST", path: GROUPS_CONVERT_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "POST", path: GROUP_GAL_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "POST", path: GROUP_DELIVERY_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "POST", path: GROUP_MEMBERS_BULK_PATH, permission: GROUPS_WRITE_PERMISSION },
@@ -1109,6 +1139,28 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "GET", path: CONSENT_REQUESTS_PATH, permission: APPROVAL_ADMIN_SCOPE },
   { method: "POST", path: CONSENT_REQUESTS_PATH, permission: APPROVAL_ADMIN_SCOPE },
   { method: "POST", path: BREACH_LOOKUP_PATH, permission: BREACH_ADMIN_SCOPE },
+  // EPIC-023 Contacts & Resources (T-0853).
+  ...registryEntriesFromOpenApi(CONTACTS_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACTS_CRUD_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACTS_IMPORT_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACT_TEMPLATES_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACT_TEMPLATE_DEPLOY_OPENAPI),
+  ...registryEntriesFromOpenApi(RESOURCES_OPENAPI),
+  ...registryEntriesFromOpenApi(RESOURCES_CRUD_OPENAPI),
+  // EPIC-035 Backup & Restore (T-0865). Restore's OpenAPI fragment carries the
+  // wildcard scope (`CIPP.Admin.*`), so register its concrete taxonomy token here.
+  ...registryEntriesFromOpenApi(BACKUPS_OPENAPI),
+  ...registryEntriesFromOpenApi(BACKUP_SETTINGS_OPENAPI),
+  { method: "POST", path: BACKUP_RESTORE_PATH, permission: BACKUP_RESTORE_PERMISSION },
+  // EPIC-025 SharePoint Templates (T-0896).
+  ...registryEntriesFromOpenApi(SHAREPOINT_TEMPLATES_OPENAPI),
+  // EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+  ...registryEntriesFromOpenApi(QUARANTINE_BULK_OPENAPI),
+  ...registryEntriesFromOpenApi(QUARANTINE_OPENAPI),
+  ...registryEntriesFromOpenApi(QUARANTINE_POLICIES_OPENAPI),
+  ...registryEntriesFromOpenApi(ALLOW_BLOCK_OPENAPI),
+  ...registryEntriesFromOpenApi(FILTERS_OPENAPI),
+  ...registryEntriesFromOpenApi(FILTER_TEMPLATES_OPENAPI),
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three
