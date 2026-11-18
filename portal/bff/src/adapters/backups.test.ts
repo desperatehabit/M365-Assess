@@ -837,8 +837,9 @@ describe("createBackupMaintenanceCommand", () => {
   });
 
   it("falls back to default retention and skips replication when config is missing or target is null", async () => {
-    const { db, store, artifacts, schemaVersion } = createHarness();
-    db.prepare("DELETE FROM backup_config").run();
+    const { store: baseStore, artifacts, schemaVersion } = createHarness();
+    // Simulate a missing config through the store, not raw SQL: backup SQL lives only in portal/db (ADR-0015).
+    const store = { ...baseStore, getBackupConfig: async () => undefined };
 
     await artifacts.write("backups/bk-old.zip", Buffer.from("old"));
     await store.createBackup({

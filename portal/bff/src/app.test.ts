@@ -986,7 +986,8 @@ describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", 
     const catalog = await admin.get("/v1/standards/catalog");
     expect(catalog.status).toBe(200);
     expect(((await catalog.json()) as { items: unknown[] }).items.length).toBeGreaterThan(0);
-    expect((await admin.get("/v1/standards/catalog?tenantId=t-a")).status).toBe(501);
+    // T-0877: tenant licence classification is wired, so a tenant-scoped catalog read succeeds.
+    expect((await admin.get("/v1/standards/catalog?tenantId=t-a")).status).toBe(200);
     expect((await admin.get("/v1/standards/compare/t-a")).status).toBe(200);
 
     const run = await admin.post(`/v1/standards/templates/${template.id}/run`, { tenantId: "t-a" });

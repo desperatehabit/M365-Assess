@@ -181,7 +181,7 @@ function ConvertTo-AllowBlockRow {
             $expiresOn = ([datetime]$expiresRaw).ToUniversalTime().ToString('o')
         }
         elseif ($expiresRaw -is [datetimeoffset]) {
-            $expiresOn = ([datetimeoffset]$expiresRaw).ToUniversalTime().ToString('o')
+            $expiresOn = ([datetimeoffset]$expiresRaw).UtcDateTime.ToString('o')
         }
         else {
             $expText = [string]$expiresRaw
@@ -189,7 +189,7 @@ function ConvertTo-AllowBlockRow {
                 $parsedExp = [datetimeoffset]::MinValue
                 $styles = [System.Globalization.DateTimeStyles]::AssumeUniversal -bor [System.Globalization.DateTimeStyles]::AdjustToUniversal
                 if ([datetimeoffset]::TryParse($expText.Trim(), [System.Globalization.CultureInfo]::InvariantCulture, $styles, [ref]$parsedExp)) {
-                    $expiresOn = $parsedExp.ToUniversalTime().ToString('o')
+                    $expiresOn = $parsedExp.UtcDateTime.ToString('o')
                 }
                 else {
                     $expiresOn = $expText.Trim()

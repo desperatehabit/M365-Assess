@@ -78,7 +78,7 @@ function ConvertTo-QuarantineTimestamp {
         return ([datetime]$Value).ToUniversalTime().ToString('o')
     }
     if ($Value -is [datetimeoffset]) {
-        return ([datetimeoffset]$Value).ToUniversalTime().ToString('o')
+        return ([datetimeoffset]$Value).UtcDateTime.ToString('o')
     }
     $text = [string]$Value
     if ([string]::IsNullOrWhiteSpace($text)) {
@@ -205,7 +205,7 @@ function ConvertTo-QuarantineRow {
     $subject = if ($null -ne $subjectRaw) { [string]$subjectRaw } else { '' }
 
     $senderRaw = Get-QuarantineMessageField -Record $Message -Names @('SenderAddress', 'sender', 'Sender')
-    $sender = if ($null -ne $senderRaw) { [string]$senderRaw } else { '' }
+    $senderAddress = if ($null -ne $senderRaw) { [string]$senderRaw } else { '' }
 
     $recipientRaw = Get-QuarantineMessageField -Record $Message -Names @('RecipientAddress', 'recipient', 'Recipient')
     $recipient = ''
@@ -282,7 +282,7 @@ function ConvertTo-QuarantineRow {
         tab        = $resolvedTab
         received   = $received
         subject    = $subject
-        sender     = $sender
+        sender     = $senderAddress
         recipient  = $recipient
         reason     = $reason
         policy     = $policy
@@ -411,10 +411,10 @@ function Test-QuarantineRowFilter {
             return $false
         }
         $receivedUtc = $receivedDt.ToUniversalTime()
-        if ($null -ne $DateFromUtc -and $receivedUtc -lt $DateFromUtc.Value) {
+        if ($null -ne $DateFromUtc -and $receivedUtc -lt $DateFromUtc) {
             return $false
         }
-        if ($null -ne $DateToUtc -and $receivedUtc -gt $DateToUtc.Value) {
+        if ($null -ne $DateToUtc -and $receivedUtc -gt $DateToUtc) {
             return $false
         }
     }

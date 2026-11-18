@@ -370,7 +370,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.plan.after.sharing | Should -Be 'externalUserSharingOnly'
             $result.plan.after.lockState | Should -Be 'ReadOnly'
             $result.auditEvent.action | Should -Be 'sharepoint.site.edit'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'PATCH' -and $Uri -eq '/v1.0/sites/site-1' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'PATCH' -and $Uri -eq '/v1.0/sites/site-1' }
         }
     }
 }
