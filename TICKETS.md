@@ -8,8 +8,8 @@ its row and the counts below in the same commit. The ticket file is the source o
 | Status | Count |
 |---|---|
 | epic | 39 |
-| fixed-unverified | 39 |
-| open | 9 |
+| fixed-unverified | 40 |
+| open | 8 |
 | closed | 9 |
 
 ## Open
@@ -47,7 +47,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0859](ISSUES/T-0859.md) | high | fixed-unverified | 12 | Mount EPIC-029 alerting routes and persist alerting entities |
 | [T-0876](ISSUES/T-0876.md) | high | fixed-unverified | 9 | Custom-script schedules and system timers enqueue job types with no runner |
 | [T-0899](ISSUES/T-0899.md) | high | fixed-unverified | 3 | /v1/api-clients CRUD and rotate-secret perform no authorization check |
-| [T-0913](ISSUES/T-0913.md) | high | open | 1 | CI does not build or test the portal |
+| [T-0913](ISSUES/T-0913.md) | high | fixed-unverified | 1 | CI does not build or test the portal |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
 | [EPIC-017](ISSUES/epics/EPIC-017.md) | medium | closed | 0 | Intune Apps & Autopilot |
