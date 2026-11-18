@@ -77,7 +77,8 @@ describe("WebhooksTable", () => {
             id: "sub-1",
             resource: "users",
             tenantId: "contoso",
-            expirationDateTime: "2099-01-01T00:00:00Z",
+            // Mid-year, so the local date is in 2099 in every UTC offset.
+            expirationDateTime: "2099-06-15T12:00:00Z",
           }),
         ]}
         onRenew={onRenew}
@@ -95,7 +96,7 @@ describe("WebhooksTable", () => {
     const row = screen.getByTestId("webhook-row-sub-1");
     expect(row.textContent).toContain("users");
     expect(row.textContent).toContain("contoso");
-    expect(screen.getByTestId("webhook-expires-sub-1").textContent).toContain("2098");
+    expect(screen.getByTestId("webhook-expires-sub-1").textContent).toContain("2099");
 
     fireEvent.click(screen.getByTestId("webhook-renew-sub-1"));
     expect(onRenew).toHaveBeenCalledWith(
