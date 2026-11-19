@@ -1,15 +1,15 @@
 # M365-Assess — ticket register
 
-_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17). When a ticket's `status` changes, update
+_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17; T-0914 to T-0916 added 2026-11-18; T-0917 to T-0939 added 2026-11-19). When a ticket's `status` changes, update
 its row and the counts below in the same commit. The ticket file is the source of truth._
 
-**96 open · 456 closed**
+**121 open · 457 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
 | fixed-unverified | 44 |
-| open | 4 |
+| open | 29 |
 | closed | 9 |
 
 ## Open
@@ -102,6 +102,27 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0909](ISSUES/T-0909.md) | medium | fixed-unverified | 4 | Backup restore wizard calls an unmounted preview endpoint |
 | [T-0911](ISSUES/T-0911.md) | medium | fixed-unverified | 3 | GDAP page always shows "disabled" because it probes a route that does not exist |
 | [T-0912](ISSUES/T-0912.md) | medium | fixed-unverified | 3 | Parked EPIC-041 pages are in the nav with no backend |
+| [T-0915](ISSUES/T-0915.md) | medium | open | 3 | Onboarding reports a missing PowerShell module only after the operator starts it |
+| [T-0916](ISSUES/T-0916.md) | medium | open | 4 | In-portal onboarding needs someone at the BFF machine's desktop |
+| [T-0917](ISSUES/T-0917.md) | high | open | 4 | Onboarding grants read-only access, so every portal write fails |
+| [T-0918](ISSUES/T-0918.md) | medium | open | 3 | Runs list shows the tenant ID instead of the tenant's name |
+| [T-0919](ISSUES/T-0919.md) | high | open | 4 | Each run appears twice in the Runs list, and only one copy has findings |
+| [T-0920](ISSUES/T-0920.md) | medium | open | 2 | The sidebar lists about 120 pages with no collapsing, so it takes four screens t |
+| [T-0922](ISSUES/T-0922.md) | medium | open | 6 | There are no pre-defined assessment templates when starting a run |
+| [T-0923](ISSUES/T-0923.md) | medium | open | 6 | Report builder has no styling, few block types and no ready-made components |
+| [T-0924](ISSUES/T-0924.md) | medium | open | 7 | Built-in standards, baselines and other templates can be edited in place |
+| [T-0925](ISSUES/T-0925.md) | medium | open | 7 | Findings can't be remediated from the run screen; remediation is a separate page |
+| [T-0926](ISSUES/T-0926.md) | critical | open | 3 | Exchange Online and Purview connections pass the tenant GUID as `-Organization`, |
+| [T-0927](ISSUES/T-0927.md) | high | open | 2 | Run options chosen in the portal never reach the assessment |
+| [T-0928](ISSUES/T-0928.md) | high | open | 2 | Remediation jobs overwrite the assessment run's status and timestamps |
+| [T-0929](ISSUES/T-0929.md) | high | open | 3 | A run with failed sections reports `succeeded`, and the portal never shows its i |
+| [T-0930](ISSUES/T-0930.md) | medium | open | 3 | Sentinel rows with no CheckId are dropped from the HTML, JSON, XLSX and portal |
+| [T-0931](ISSUES/T-0931.md) | medium | open | 3 | Portal summary counts drop Info findings, so the buckets don't add up to the tot |
+| [T-0932](ISSUES/T-0932.md) | medium | open | 1 | Forms checks read property names the API doesn't return (one false Fail, one pos |
+| [T-0933](ISSUES/T-0933.md) | medium | open | 2 | SharePoint collector reads wrong property names and reports "could not verify" a |
+| [T-0935](ISSUES/T-0935.md) | medium | open | 4 | Licence gating doesn't reach finding status, so unlicensed checks report Fail |
+| [T-0936](ISSUES/T-0936.md) | medium | open | 1 | All 11 Power BI checks are Review after a 404, and the message blames the wrong |
+| [T-0937](ISSUES/T-0937.md) | medium | open | 4 | Collectors that skipped or failed are logged as `Complete` |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |
@@ -112,6 +133,10 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0907](ISSUES/T-0907.md) | low | open | 5 | Fix pre-existing PowerShell lint findings in Invoke-DomainAction and Linux-only tests |
 | [T-0908](ISSUES/T-0908.md) | low | open | 1 | Resolve macos-latest CI smoke job runner-quota cancellations |
 | [T-0910](ISSUES/T-0910.md) | low | fixed-unverified | 1 | Tenant detail Variables and History tabs call routes that do not exist |
+| [T-0921](ISSUES/T-0921.md) | low | open | 3 | Nav items do not say what their pages do (for example Drift and Standards alignm |
+| [T-0934](ISSUES/T-0934.md) | low | open | 1 | SPO-ACCESS-001 reports zero CA policies as "CA policies unavailable" |
+| [T-0938](ISSUES/T-0938.md) | low | open | 1 | XLSX pass rates use three different formulas |
+| [T-0939](ISSUES/T-0939.md) | low | open | 6 | Small check-logic and label problems in Entra and CA findings |
 
 ## Closed
 
@@ -573,3 +598,4 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0895](ISSUES_CLOSED/T-0895.md) | 2026-10-05 | Mailbox rule recipients are mangled and the Mailboxes list ignores paging |
 | [T-0897](ISSUES_CLOSED/T-0897.md) | 2026-10-05 | Workers use an invalid `$Var?` string interpolation in Graph URLs |
 | [T-0898](ISSUES_CLOSED/T-0898.md) | 2026-10-05 | Test runs write generated files into portal/bff/data/artifacts and one report is |
+| [T-0914](ISSUES_CLOSED/T-0914.md) | 2026-11-18 | In-portal tenant onboarding fails on Windows |
