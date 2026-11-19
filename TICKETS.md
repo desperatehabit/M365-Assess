@@ -102,7 +102,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0909](ISSUES/T-0909.md) | medium | fixed-unverified | 4 | Backup restore wizard calls an unmounted preview endpoint |
 | [T-0911](ISSUES/T-0911.md) | medium | fixed-unverified | 3 | GDAP page always shows "disabled" because it probes a route that does not exist |
 | [T-0912](ISSUES/T-0912.md) | medium | fixed-unverified | 3 | Parked EPIC-041 pages are in the nav with no backend |
-| [T-0915](ISSUES/T-0915.md) | medium | open | 2 | Onboarding reports a missing PowerShell module only after the operator starts it |
+| [T-0915](ISSUES/T-0915.md) | medium | open | 3 | Onboarding reports a missing PowerShell module only after the operator starts it |
 | [T-0916](ISSUES/T-0916.md) | medium | open | 4 | In-portal onboarding needs someone at the BFF machine's desktop |
 | [T-0917](ISSUES/T-0917.md) | high | open | 4 | Onboarding grants read-only access, so every portal write fails |
 | [T-0918](ISSUES/T-0918.md) | medium | open | 3 | Runs list shows the tenant ID instead of the tenant's name |
