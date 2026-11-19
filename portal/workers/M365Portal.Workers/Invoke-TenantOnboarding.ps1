@@ -40,6 +40,116 @@ if (-not $script:WorkerDirectory) {
     $script:WorkerDirectory = Split-Path -Parent $MyInvocation.MyCommand.Path
 }
 
+function Test-WorkerHasConsoleWindow {
+    <#
+    .SYNOPSIS
+        Returns $true unless this is a Windows process with no console window.
+    .DESCRIPTION
+        The BFF spawns workers hidden (windowsHide), so on Windows a worker has no console
+        window. Microsoft.Graph.Authentication 2.34.0 and later always sign in through WAM on
+        Windows (MSAL_ALLOW_WAM and Set-MgGraphOption -DisableLoginByWAM are ignored), and WAM
+        needs the console window as the parent of its prompt; without one the sign-in fails
+        with "A window handle must be configured".
+    .EXAMPLE
+        if (-not (Test-WorkerHasConsoleWindow)) { 'needs a sign-in window' }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+
+    if (-not $IsWindows) { return $true }
+    if (-not ('M365Portal.OnboardingConsole' -as [type])) {
+        Add-Type -Namespace 'M365Portal' -Name 'OnboardingConsole' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll")]
+public static extern System.IntPtr GetConsoleWindow();
+'@
+    }
+    return [M365Portal.OnboardingConsole]::GetConsoleWindow() -ne [System.IntPtr]::Zero
+}
+
+function Invoke-ConsentInSignInWindow {
+    <#
+    .SYNOPSIS
+        Runs Grant-M365AssessConsent in a new, visible PowerShell window and returns its result.
+    .DESCRIPTION
+        Used when the worker has no console window (see Test-WorkerHasConsoleWindow). The new
+        window has its own console from the start, as a terminal session does, so the WAM
+        sign-in prompts for Graph and Exchange Online have a parent window. Parameters go in,
+        and the result comes back, through JSON files in a private temp folder; the files are
+        removed afterwards. Throws with the child's error when the consent run fails.
+    .PARAMETER CmdletScript
+        Path to Grant-M365AssessConsent.ps1.
+    .PARAMETER ConsentParameters
+        The parameters for Grant-M365AssessConsent.
+    .PARAMETER StartProcess
+        Test seam: replaces Start-Process. Receives the Start-Process parameters.
+    .EXAMPLE
+        $result = Invoke-ConsentInSignInWindow -CmdletScript $path -ConsentParameters $splat
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$CmdletScript,
+
+        [Parameter(Mandatory)]
+        [hashtable]$ConsentParameters,
+
+        [Parameter()]
+        [scriptblock]$StartProcess
+    )
+
+    $workDir = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("m365-onboard-" + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path $workDir -Force | Out-Null
+    try {
+        $paramsFile = Join-Path -Path $workDir -ChildPath 'params.json'
+        $resultFile = Join-Path -Path $workDir -ChildPath 'result.json'
+        $runnerFile = Join-Path -Path $workDir -ChildPath 'run-consent.ps1'
+
+        $ConsentParameters | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $paramsFile -Encoding utf8
+        Set-Content -LiteralPath $runnerFile -Encoding utf8 -Value @'
+param([string]$CmdletScript, [string]$ParamsFile, [string]$ResultFile)
+$ErrorActionPreference = 'Stop'
+$Host.UI.RawUI.WindowTitle = 'M365-Assess tenant onboarding - sign in when prompted (do not close)'
+try {
+    $params = @{}
+    (Get-Content -LiteralPath $ParamsFile -Raw | ConvertFrom-Json).PSObject.Properties | ForEach-Object { $params[$_.Name] = $_.Value }
+    . $CmdletScript
+    $result = Grant-M365AssessConsent @params
+    @{ ok = $true; result = $result } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $ResultFile -Encoding utf8
+}
+catch {
+    @{ ok = $false; error = $_.Exception.Message } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ResultFile -Encoding utf8
+    Write-Host "Onboarding failed: $($_.Exception.Message)" -ForegroundColor Red
+    Start-Sleep -Seconds 10
+}
+'@
+
+        $pwshPath = (Get-Process -Id $PID).Path
+        $startParams = @{
+            FilePath     = $pwshPath
+            ArgumentList = @(
+                '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$runnerFile`"",
+                '-CmdletScript', "`"$CmdletScript`"", '-ParamsFile', "`"$paramsFile`"", '-ResultFile', "`"$resultFile`""
+            )
+            WindowStyle  = 'Normal'
+            Wait         = $true
+        }
+        if ($StartProcess) { & $StartProcess $startParams } else { Start-Process @startParams }
+
+        if (-not (Test-Path -LiteralPath $resultFile -PathType Leaf)) {
+            throw 'The onboarding sign-in window closed before onboarding finished'
+        }
+        $outcome = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+        if (-not $outcome.ok) { throw [string]$outcome.error }
+        return $outcome.result
+    }
+    finally {
+        Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-TenantOnboarding {
     <#
     .SYNOPSIS
@@ -109,8 +219,14 @@ function Invoke-TenantOnboarding {
             $rawResult = & $CmdletHandler @splat
         }
         elseif ($CmdletScript -and (Test-Path -LiteralPath $CmdletScript -PathType Leaf)) {
-            . $CmdletScript
-            $rawResult = Grant-M365AssessConsent @splat
+            if (Test-WorkerHasConsoleWindow) {
+                . $CmdletScript
+                $rawResult = Grant-M365AssessConsent @splat
+            }
+            else {
+                # Hidden worker on Windows: WAM sign-in needs a visible console window.
+                $rawResult = Invoke-ConsentInSignInWindow -CmdletScript $CmdletScript -ConsentParameters $splat
+            }
         }
         else {
             throw "Grant-M365AssessConsent cmdlet script not found at: $CmdletScript"

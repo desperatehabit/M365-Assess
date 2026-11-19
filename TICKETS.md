@@ -1,15 +1,15 @@
 # M365-Assess — ticket register
 
-_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17). When a ticket's `status` changes, update
+_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17; T-0914 to T-0916 added 2026-11-18). When a ticket's `status` changes, update
 its row and the counts below in the same commit. The ticket file is the source of truth._
 
-**96 open · 456 closed**
+**98 open · 457 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
 | fixed-unverified | 44 |
-| open | 4 |
+| open | 6 |
 | closed | 9 |
 
 ## Open
@@ -102,6 +102,8 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0909](ISSUES/T-0909.md) | medium | fixed-unverified | 4 | Backup restore wizard calls an unmounted preview endpoint |
 | [T-0911](ISSUES/T-0911.md) | medium | fixed-unverified | 3 | GDAP page always shows "disabled" because it probes a route that does not exist |
 | [T-0912](ISSUES/T-0912.md) | medium | fixed-unverified | 3 | Parked EPIC-041 pages are in the nav with no backend |
+| [T-0915](ISSUES/T-0915.md) | medium | open | 2 | Onboarding reports a missing PowerShell module only after the operator starts it |
+| [T-0916](ISSUES/T-0916.md) | medium | open | 4 | In-portal onboarding needs someone at the BFF machine's desktop |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |
@@ -573,3 +575,4 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0895](ISSUES_CLOSED/T-0895.md) | 2026-10-05 | Mailbox rule recipients are mangled and the Mailboxes list ignores paging |
 | [T-0897](ISSUES_CLOSED/T-0897.md) | 2026-10-05 | Workers use an invalid `$Var?` string interpolation in Graph URLs |
 | [T-0898](ISSUES_CLOSED/T-0898.md) | 2026-10-05 | Test runs write generated files into portal/bff/data/artifacts and one report is |
+| [T-0914](ISSUES_CLOSED/T-0914.md) | 2026-11-18 | In-portal tenant onboarding fails on Windows |

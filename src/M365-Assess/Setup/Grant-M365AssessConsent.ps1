@@ -353,7 +353,11 @@ function Grant-M365AssessConsent {
         if ($existingApps.Count -gt 0) {
             $existingId = $existingApps[0].AppId
             $resumable = $null
-            if (-not $IsWindows) {
+            if ($IsWindows) {
+                # The bootstrap stores the key in Cert:\CurrentUser\My on Windows.
+                $resumable = Find-M365AssessStoreCertificate -AppKeys @($existingApps[0].KeyCredentials) -Subject "CN=M365-Assess-$TenantId"
+            }
+            else {
                 $findParams = @{
                     AppKeys        = @($existingApps[0].KeyCredentials)
                     Directory      = $certDirectory
@@ -369,7 +373,8 @@ function Grant-M365AssessConsent {
                 $certificatePath = $resumable.CertificatePath
                 $cerPath = $resumable.CerPath
                 Write-OK "Resuming existing app '$AppDisplayName' (AppId: $ClientId)"
-                Write-OK "Using the private key already on this machine: $certificatePath"
+                $keyLocation = if ($certificatePath) { $certificatePath } else { "Cert:\CurrentUser\My\$CertificateThumbprint" }
+                Write-OK "Using the private key already on this machine: $keyLocation"
             }
             else {
                 Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
@@ -985,6 +990,9 @@ function Grant-M365AssessConsent {
         $profileHelper = Join-Path $PSScriptRoot 'Save-M365ConnectionProfile.ps1'
         if (Test-Path -Path $profileHelper) {
             . $profileHelper
+            # Get-M365ConnectionProfile lives in its own file. The module loads both, but a
+            # standalone dot-source of this script (the portal onboarding worker) does not.
+            . (Join-Path $PSScriptRoot 'Get-M365ConnectionProfile.ps1')
 
             # Derive tenant prefix for naming
             $tenantPrefix = if ($TenantId -match '^([^.]+)\.onmicrosoft\.(com|us)$') {

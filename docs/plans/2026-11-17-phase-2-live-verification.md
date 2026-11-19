@@ -43,12 +43,17 @@ Against the working tree, using `npm run dev` (BFF on :8080, web on :3000):
 
 ## 2. Stand up against the test tenant
 
-1. App registration and consent: run `src/M365-Assess/Setup/Grant-M365AssessConsent.ps1`
-   (or use the wizard's *Create app registration* path). Use a **certificate**, because
-   Exchange Online and Purview reject client secrets (`worker.credential_*`).
-2. `cd portal && npm run dev`. Open http://localhost:3000.
-3. **Tenants → Add tenant**. Enter the client ID and certificate thumbprint, then run *Test
-   connection* in step 5.
+1. Prerequisites on the BFF machine: `Microsoft.Graph.Authentication`,
+   `Microsoft.Graph.Applications`, `Microsoft.Graph.Identity.Governance` (all the same version)
+   and `ExchangeOnlineManagement` below 3.8.0. Onboarding fails part-way without them (T-0915).
+2. `cd portal && npm run dev`. Open http://localhost:3000. If `npm ci` fails with `EPERM`, a
+   previous `npm run dev` is still running: stop it first.
+3. **Tenants → Add tenant**, *Create app registration* path. On Windows a PowerShell window
+   titled "M365-Assess tenant onboarding" opens; sign in when Windows prompts (Graph, then
+   Exchange; check the taskbar if a prompt is hidden) and leave the window open until it closes
+   itself (T-0914). The app uses a **certificate**, because Exchange Online and Purview reject
+   client secrets (`worker.credential_*`). A retry after a partial run resumes the existing app.
+   Then run *Test connection*.
 4. Pick the tenant in the tenant bar. Run one assessment from **Runs** and confirm it
    completes. This proves that the worker launch, the credential, and the Graph, EXO and
    SharePoint connections all work, and every other check depends on it.

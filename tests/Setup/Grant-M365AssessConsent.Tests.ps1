@@ -126,6 +126,19 @@ Describe 'Grant-M365AssessConsent' {
     }
 }
 
+Describe 'Standalone load (portal onboarding worker)' {
+    # The portal worker dot-sources this script on its own, outside the module, so every
+    # helper the script calls must be loaded by the script itself.
+    It 'loads Get-M365ConnectionProfile before the profile step uses it' {
+        $source = Get-Content "$PSScriptRoot/../../src/M365-Assess/Setup/Grant-M365AssessConsent.ps1" -Raw
+        $source | Should -Match "\.\s+\(Join-Path \`$PSScriptRoot 'Get-M365ConnectionProfile\.ps1'\)"
+        $loadAt = $source.IndexOf("'Get-M365ConnectionProfile.ps1'")
+        $callAt = $source.IndexOf('Get-M365ConnectionProfile -ErrorAction')
+        $loadAt | Should -BeGreaterThan 0
+        $loadAt | Should -BeLessThan $callAt
+    }
+}
+
 Describe 'PermissionDefinitions.ps1 - Data Tables' {
     # PermissionDefinitions.ps1 is dot-sourced by Grant-M365AssessConsent.ps1
     # The script variables are in function scope, so verify the definitions via reflection
