@@ -1,15 +1,15 @@
 # M365-Assess — ticket register
 
-_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17; T-0914 to T-0916 added 2026-11-18). When a ticket's `status` changes, update
+_Maintained by hand (last regenerated 2026-11-16; T-0909 to T-0913 added 2026-11-17; T-0914 to T-0916 added 2026-11-18; T-0917 added 2026-11-19). When a ticket's `status` changes, update
 its row and the counts below in the same commit. The ticket file is the source of truth._
 
-**98 open · 457 closed**
+**99 open · 457 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
 | fixed-unverified | 44 |
-| open | 6 |
+| open | 7 |
 | closed | 9 |
 
 ## Open
@@ -104,6 +104,7 @@ its row and the counts below in the same commit. The ticket file is the source o
 | [T-0912](ISSUES/T-0912.md) | medium | fixed-unverified | 3 | Parked EPIC-041 pages are in the nav with no backend |
 | [T-0915](ISSUES/T-0915.md) | medium | open | 2 | Onboarding reports a missing PowerShell module only after the operator starts it |
 | [T-0916](ISSUES/T-0916.md) | medium | open | 4 | In-portal onboarding needs someone at the BFF machine's desktop |
+| [T-0917](ISSUES/T-0917.md) | high | open | 4 | Onboarding grants read-only access, so every portal write fails |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |

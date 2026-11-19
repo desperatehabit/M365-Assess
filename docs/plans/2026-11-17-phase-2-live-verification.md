@@ -68,14 +68,14 @@ Open every nav section once with the test tenant selected. For each page:
 - **Fail** — error banner, spinner that never ends, blank page (open dev tools; a blank page
   is a React render error), or data that is plainly wrong.
 
-File each failure as a new ticket (next free ID: **T-0914**), with the page, the request that
+File each failure as a new ticket (next free ID: **T-0918**), with the page, the request that
 failed (Network tab), the response `code` and `correlationId`, and the matching dev-log lines.
 No tenant names, domains or UPNs in tickets.
 
 ## 4. Ticket checks
 
 **R** = read-only. **W** = writes to the tenant; use test objects you create and remove
-afterwards.
+afterwards. The onboarded app is read-only: grant the write permissions in **T-0917** before any W check.
 
 ### Security and auth
 | Ticket | Mode | Live check |
