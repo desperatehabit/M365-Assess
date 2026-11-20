@@ -55,8 +55,46 @@ export interface NewRunFormData {
     readonly skipPurview?: boolean;
     readonly redact?: boolean;
     readonly evidence?: boolean;
+    readonly templateId?: string;
+    readonly templateName?: string;
+    readonly templateChanged?: boolean;
   };
 }
+
+/** The template fields a saved run preset can carry (T-0922). */
+export interface RunTemplateOption {
+  readonly id: string;
+  readonly name: string;
+  readonly description?: string | null;
+  readonly sections: readonly string[];
+  readonly options?: {
+    readonly quickScan?: boolean;
+    readonly skipPurview?: boolean;
+    readonly redact?: boolean;
+    readonly evidence?: boolean;
+    readonly autoBaseline?: boolean;
+  };
+  readonly framework?: string | null;
+  readonly autoBaseline?: boolean;
+  readonly builtIn?: boolean;
+}
+
+/** What "Save as new template" sends to POST /v1/run-templates. */
+export interface SaveRunTemplateInput {
+  readonly name: string;
+  readonly sections: readonly string[];
+  readonly options: {
+    readonly quickScan: boolean;
+    readonly skipPurview: boolean;
+    readonly redact: boolean;
+    readonly evidence: boolean;
+    readonly autoBaseline: boolean;
+  };
+  readonly framework: string | null;
+}
+
+/** What editing a saved template sends to PATCH /v1/run-templates/{id}. */
+export type UpdateRunTemplateInput = Omit<SaveRunTemplateInput, "name">;
 
 export interface NewRunDialogProps {
   readonly open?: boolean;
@@ -67,6 +105,20 @@ export interface NewRunDialogProps {
   readonly groups?: readonly TenantGroupOption[];
   readonly allowedTenantIds?: readonly string[];
   readonly loading?: boolean;
+  /** Built-in and saved starting points for step 1 (T-0922). */
+  readonly templates?: readonly RunTemplateOption[];
+  readonly templatesLoading?: boolean;
+  /** Persist the current selection as an operator template. */
+  readonly onSaveAsTemplate?: (input: SaveRunTemplateInput) => void | Promise<void>;
+  /** Save the current selection over an existing operator template. */
+  readonly onUpdateTemplate?: (
+    template: RunTemplateOption,
+    input: UpdateRunTemplateInput,
+  ) => void | Promise<void>;
+  /** `POST /v1/run-templates/{id}/copy`; the copy becomes editable. */
+  readonly onCopyTemplate?: (template: RunTemplateOption) => void | Promise<void>;
+  readonly onRenameTemplate?: (template: RunTemplateOption, name: string) => void | Promise<void>;
+  readonly onDeleteTemplate?: (template: RunTemplateOption) => void | Promise<void>;
 }
 
 const overlayStyle: CSSProperties = {
@@ -181,6 +233,64 @@ const optionItemStyle: CSSProperties = {
   borderRadius: "6px",
 };
 
+// ─── Template picker (T-0922) ─────────────────────────────────────────────────
+
+const templateGroupStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+  gap: "8px",
+  marginTop: "6px",
+};
+
+const templateCardStyle = (selected: boolean): CSSProperties => ({
+  position: "relative",
+  display: "flex",
+  flexDirection: "column",
+  gap: "4px",
+  padding: "10px 12px",
+  borderRadius: "6px",
+  background: selected ? "var(--accent-soft)" : "var(--surface)",
+  border: selected ? "1px solid var(--accent)" : "1px solid var(--border)",
+  cursor: "pointer",
+  textAlign: "left",
+  color: "var(--text)",
+  fontFamily: "inherit",
+  fontSize: "13px",
+});
+
+const lockBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  padding: "1px 6px",
+  borderRadius: "999px",
+  border: "1px solid var(--border)",
+  background: "var(--bg-elev)",
+  color: "var(--text-soft)",
+  fontSize: "11px",
+  fontWeight: 500,
+};
+
+const smallLinkStyle: CSSProperties = {
+  padding: "2px 6px",
+  borderRadius: "4px",
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
+  color: "var(--text)",
+  fontSize: "11px",
+  cursor: "pointer",
+};
+
+const templateNameInputStyle: CSSProperties = {
+  flex: 1,
+  padding: "8px 12px",
+  borderRadius: "6px",
+  border: "1px solid var(--border)",
+  background: "var(--surface)",
+  color: "var(--text)",
+  fontSize: "14px",
+};
+
 export function NewRunDialog({
   open = true,
   onClose,
@@ -190,6 +300,13 @@ export function NewRunDialog({
   groups = [],
   allowedTenantIds,
   loading = false,
+  templates = [],
+  templatesLoading = false,
+  onSaveAsTemplate,
+  onUpdateTemplate,
+  onCopyTemplate,
+  onRenameTemplate,
+  onDeleteTemplate,
 }: NewRunDialogProps): ReactElement | null {
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
@@ -206,7 +323,112 @@ export function NewRunDialog({
   const [trigger, setTrigger] = useState<"manual" | "schedule" | "api">("manual");
   const [submitting, setSubmitting] = useState(false);
 
+  // Template picker state (T-0922). Picking a template copies its sections and
+  // options into the form; the built-in itself is never mutated.
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const selectedTemplate = useMemo(
+    () => templates.find((template) => template.id === selectedTemplateId) ?? null,
+    [templates, selectedTemplateId],
+  );
+
   if (!open) return null;
+
+  const applyTemplate = (template: RunTemplateOption): void => {
+    setSelectedTemplateId(template.id);
+    setSelectedSections([...template.sections]);
+    setQuickScan(template.options?.quickScan === true);
+    setSkipPurview(template.options?.skipPurview === true);
+    setRedact(template.options?.redact === true);
+    setEvidence(template.options?.evidence === true);
+    setNewTemplateName("");
+  };
+
+  const selectCustom = (): void => {
+    setSelectedTemplateId(null);
+    setSelectedSections([...CLI_DEFAULT_SECTIONS]);
+    setQuickScan(false);
+    setSkipPurview(false);
+    setRedact(false);
+    setEvidence(false);
+  };
+
+  // Whether the operator changed the template's sections/options for this run.
+  const templateChanged = useMemo(() => {
+    if (!selectedTemplate) return false;
+    const templateSections = selectedTemplate.sections;
+    const sectionsDiffer =
+      selectedSections.length !== templateSections.length ||
+      selectedSections.some((section) => !templateSections.includes(section));
+    return (
+      sectionsDiffer ||
+      quickScan !== (selectedTemplate.options?.quickScan === true) ||
+      skipPurview !== (selectedTemplate.options?.skipPurview === true) ||
+      redact !== (selectedTemplate.options?.redact === true) ||
+      evidence !== (selectedTemplate.options?.evidence === true)
+    );
+  }, [selectedTemplate, selectedSections, quickScan, skipPurview, redact, evidence]);
+
+  const buildFormData = (): NewRunFormData => ({
+    tenantIds: selectedTenantIds,
+    groupIds: selectedGroupIds,
+    sections: selectedSections,
+    trigger,
+    options: {
+      quickScan,
+      skipPurview,
+      redact,
+      evidence,
+      ...(selectedTemplate
+        ? {
+            templateId: selectedTemplate.id,
+            templateName: selectedTemplate.name,
+            templateChanged,
+          }
+        : {}),
+    },
+  });
+
+  const buildTemplateSelection = (): UpdateRunTemplateInput => ({
+    sections: selectedSections,
+    options: {
+      quickScan,
+      skipPurview,
+      redact,
+      evidence,
+      autoBaseline:
+        selectedTemplate?.options?.autoBaseline === true ||
+        selectedTemplate?.autoBaseline === true,
+    },
+    framework: selectedTemplate?.framework ?? null,
+  });
+
+  const handleSaveAsTemplate = async (): Promise<void> => {
+    if (!onSaveAsTemplate || savingTemplate) return;
+    const name = newTemplateName.trim();
+    if (!name) return;
+    setSavingTemplate(true);
+    try {
+      await onSaveAsTemplate({ name, ...buildTemplateSelection() });
+      setNewTemplateName("");
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
+  const handleUpdateTemplate = async (): Promise<void> => {
+    if (!onUpdateTemplate || !selectedTemplate || savingTemplate) return;
+    setSavingTemplate(true);
+    try {
+      await onUpdateTemplate(selectedTemplate, buildTemplateSelection());
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
 
   // Toggle single section
   const handleToggleSection = (section: string): void => {
@@ -249,22 +471,133 @@ export function NewRunDialog({
   const canProceedStep1 = selectedTenantIds.length > 0 || selectedGroupIds.length > 0;
   const canProceedStep2 = selectedSections.length > 0;
 
+  const builtInTemplates = templates.filter((template) => template.builtIn === true);
+  const savedTemplates = templates.filter((template) => template.builtIn !== true);
+
+  const renderTemplateCard = (template: RunTemplateOption): ReactElement => {
+    const selected = selectedTemplateId === template.id;
+    const builtIn = template.builtIn === true;
+    return (
+      <div
+        key={template.id}
+        style={templateCardStyle(selected)}
+        data-testid={`template-option-${template.id}`}
+        data-selected={selected ? "true" : "false"}
+        role="button"
+        tabIndex={0}
+        aria-pressed={selected}
+        onClick={() => applyTemplate(template)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            applyTemplate(template);
+          }
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "6px" }}>
+          <span style={{ fontWeight: 600 }}>{template.name}</span>
+          {builtIn && (
+            <span style={lockBadgeStyle} data-testid={`template-lock-${template.id}`}>
+              Locked
+            </span>
+          )}
+        </div>
+        {template.description && (
+          <span style={{ color: "var(--text-soft)", fontSize: "12px" }}>{template.description}</span>
+        )}
+        <span style={{ color: "var(--text-soft)", fontSize: "11px" }}>
+          {template.sections.length} {template.sections.length === 1 ? "section" : "sections"}
+          {template.framework ? ` · ${template.framework}` : ""}
+          {template.options?.autoBaseline || template.autoBaseline ? " · AutoBaseline" : ""}
+        </span>
+        <div style={{ display: "flex", gap: "6px", marginTop: "4px", flexWrap: "wrap" }}>
+          {builtIn && (
+            <button
+              type="button"
+              style={smallLinkStyle}
+              data-testid={`template-copy-${template.id}`}
+              disabled={!onCopyTemplate}
+              onClick={(event) => {
+                event.stopPropagation();
+                void onCopyTemplate?.(template);
+              }}
+            >
+              Make a copy
+            </button>
+          )}
+          {!builtIn && renamingId !== template.id && (
+            <button
+              type="button"
+              style={smallLinkStyle}
+              data-testid={`template-rename-${template.id}`}
+              disabled={!onRenameTemplate}
+              onClick={(event) => {
+                event.stopPropagation();
+                setRenamingId(template.id);
+                setRenameValue(template.name);
+              }}
+            >
+              Rename
+            </button>
+          )}
+          {!builtIn && (
+            <button
+              type="button"
+              style={smallLinkStyle}
+              data-testid={`template-delete-${template.id}`}
+              disabled={!onDeleteTemplate}
+              onClick={(event) => {
+                event.stopPropagation();
+                void onDeleteTemplate?.(template);
+              }}
+            >
+              Delete
+            </button>
+          )}
+        </div>
+        {!builtIn && renamingId === template.id && (
+          <div
+            style={{ display: "flex", gap: "6px", marginTop: "4px" }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <input
+              style={templateNameInputStyle}
+              value={renameValue}
+              onChange={(event) => setRenameValue(event.target.value)}
+              data-testid={`template-rename-input-${template.id}`}
+              aria-label={`New name for ${template.name}`}
+            />
+            <button
+              type="button"
+              style={smallLinkStyle}
+              data-testid={`template-rename-save-${template.id}`}
+              onClick={() => {
+                if (!onRenameTemplate || !renameValue.trim()) return;
+                void onRenameTemplate(template, renameValue.trim());
+                setRenamingId(null);
+              }}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              style={smallLinkStyle}
+              data-testid={`template-rename-cancel-${template.id}`}
+              onClick={() => setRenamingId(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const handleSubmit = async (): Promise<void> => {
     if (!onSubmit || submitting) return;
     setSubmitting(true);
     try {
-      await onSubmit({
-        tenantIds: selectedTenantIds,
-        groupIds: selectedGroupIds,
-        sections: selectedSections,
-        trigger,
-        options: {
-          quickScan,
-          skipPurview,
-          redact,
-          evidence,
-        },
-      });
+      await onSubmit(buildFormData());
       onClose?.();
     } finally {
       setSubmitting(false);
@@ -280,7 +613,7 @@ export function NewRunDialog({
             <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>New Assessment Run</h2>
             <div style={{ display: "flex", gap: "16px", marginTop: "8px" }}>
               <span style={stepIndicatorStyle(step === 1, step > 1)} data-testid="step-indicator-1">
-                1. Tenants
+                1. Template &amp; targets
               </span>
               <span style={stepIndicatorStyle(step === 2, step > 2)} data-testid="step-indicator-2">
                 2. Sections
@@ -310,7 +643,70 @@ export function NewRunDialog({
           {/* STEP 1: Tenants */}
           {step === 1 && (
             <div data-testid="step-1-content">
-              <h3 style={{ margin: "0 0 8px 0", fontSize: "15px", fontWeight: 600 }}>
+              <div data-testid="template-picker">
+                <h3 style={{ margin: "0 0 4px 0", fontSize: "15px", fontWeight: 600 }}>
+                  Start from a template
+                </h3>
+                <p style={{ margin: "0 0 10px 0", color: "var(--text-soft)", fontSize: "13px" }}>
+                  A template fills in the sections and options below. You can still change them for
+                  this run; built-ins always stay intact.
+                </p>
+
+                <button
+                  type="button"
+                  style={templateCardStyle(selectedTemplateId === null)}
+                  data-testid="template-option-custom"
+                  aria-pressed={selectedTemplateId === null}
+                  onClick={selectCustom}
+                >
+                  <span style={{ fontWeight: 600 }}>Custom</span>
+                  <span style={{ color: "var(--text-soft)", fontSize: "12px" }}>
+                    Start with the default CLI sections and no template.
+                  </span>
+                </button>
+
+                <div style={{ marginTop: "14px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-soft)" }}>
+                    Built-in
+                  </div>
+                  {templatesLoading ? (
+                    <div style={{ fontSize: "12px", color: "var(--text-soft)", marginTop: "6px" }}>
+                      Loading templates…
+                    </div>
+                  ) : builtInTemplates.length === 0 ? (
+                    <div
+                      style={{ fontSize: "12px", color: "var(--text-soft)", marginTop: "6px" }}
+                      data-testid="template-builtin-empty"
+                    >
+                      No built-in templates are available.
+                    </div>
+                  ) : (
+                    <div style={templateGroupStyle} data-testid="template-builtin-group">
+                      {builtInTemplates.map(renderTemplateCard)}
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ marginTop: "14px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-soft)" }}>
+                    Saved
+                  </div>
+                  {savedTemplates.length === 0 ? (
+                    <div
+                      style={{ fontSize: "12px", color: "var(--text-soft)", marginTop: "6px" }}
+                      data-testid="template-saved-empty"
+                    >
+                      No saved templates yet. Finish a selection and save it on the review step.
+                    </div>
+                  ) : (
+                    <div style={templateGroupStyle} data-testid="template-saved-group">
+                      {savedTemplates.map(renderTemplateCard)}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <h3 style={{ margin: "20px 0 8px 0", fontSize: "15px", fontWeight: 600 }}>
                 Select target tenants or tenant groups
               </h3>
               <p style={{ margin: "0 0 16px 0", color: "var(--text-soft)", fontSize: "13px" }}>
@@ -526,10 +922,90 @@ export function NewRunDialog({
                 </div>
 
                 <div style={{ display: "flex", justifyContent: "space-between" }}>
+                  <span style={{ color: "var(--text-soft)" }}>Template:</span>
+                  <span style={{ fontWeight: 500 }} data-testid="review-template">
+                    {selectedTemplate
+                      ? `${selectedTemplate.name}${selectedTemplate.builtIn ? " (built-in)" : ""}${
+                          templateChanged ? " · changed for this run" : ""
+                        }`
+                      : "Custom"}
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "space-between" }}>
                   <span style={{ color: "var(--text-soft)" }}>Trigger:</span>
                   <span style={{ fontWeight: 500, textTransform: "capitalize" }}>{trigger}</span>
                 </div>
               </div>
+
+              {selectedTemplate && !selectedTemplate.builtIn && onUpdateTemplate && (
+                <div
+                  style={{
+                    borderTop: "1px solid var(--border)",
+                    paddingTop: "12px",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "8px",
+                  }}
+                  data-testid="update-template-section"
+                >
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 600 }}>Edit saved template</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-soft)" }}>
+                      Saves these sections and options over "{selectedTemplate.name}".
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    style={buttonStyle}
+                    disabled={savingTemplate}
+                    onClick={() => void handleUpdateTemplate()}
+                    data-testid="update-template-button"
+                  >
+                    Update template
+                  </button>
+                </div>
+              )}
+
+              {onSaveAsTemplate && (
+                <div
+                  style={{
+                    borderTop: "1px solid var(--border)",
+                    paddingTop: "12px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: "8px",
+                  }}
+                  data-testid="save-template-section"
+                >
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: 600 }}>Save as new template</div>
+                    <div style={{ fontSize: "12px", color: "var(--text-soft)" }}>
+                      Stores this selection as an editable operator template.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <input
+                      style={templateNameInputStyle}
+                      value={newTemplateName}
+                      onChange={(event) => setNewTemplateName(event.target.value)}
+                      placeholder="Template name"
+                      aria-label="New template name"
+                      data-testid="save-template-name"
+                    />
+                    <button
+                      type="button"
+                      style={buttonStyle}
+                      disabled={!newTemplateName.trim() || savingTemplate}
+                      onClick={() => void handleSaveAsTemplate()}
+                      data-testid="save-as-template-button"
+                    >
+                      {savingTemplate ? "Saving..." : "Save as new template"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

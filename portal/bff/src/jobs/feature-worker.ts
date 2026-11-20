@@ -36,6 +36,12 @@ export interface RunFeatureWorkerOptions {
   readonly tempRoot?: string;
   /** Identifies the job in errors and logs; defaults to a random id. */
   readonly jobId?: string;
+  /**
+   * Called with each complete stdout line as it arrives. Workers share stdout between
+   * diagnostics, progress events, and the final result line (T-0916 onboarding codes),
+   * so callers that need live progress filter for their own event shape.
+   */
+  readonly onProgressLine?: (line: string) => void;
 }
 
 export type FeatureWorkerErrorCode = "worker.failed" | "worker.bad_output" | "worker.invalid_entrypoint";
@@ -75,6 +81,23 @@ export function buildFeatureWorkerArgs(entrypointPath: string, jobFile: string):
   return ["-NoProfile", "-NonInteractive", "-File", entrypointPath, "-JobFile", jobFile];
 }
 
+/** Splits streamed stdout into lines and hands each complete one to `onLine`. */
+function forwardCompleteLines(
+  chunk: unknown,
+  carried: { text: string },
+  onLine: (line: string) => void,
+): void {
+  carried.text += String(chunk);
+  const lines = carried.text.split(/\r?\n/);
+  carried.text = lines.pop() ?? "";
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0) {
+      onLine(trimmed);
+    }
+  }
+}
+
 /**
  * Run `entrypoint` (a file name in `workersDir`, e.g. "deploy-intune-template.ps1") with
  * `job` and return its parsed JSON result.
@@ -95,6 +118,7 @@ export async function runFeatureWorker<T = unknown>(
     const jobFile = path.join(dir, "job.json");
     await writeFile(jobFile, JSON.stringify({ jobId, ...job }), { mode: 0o600 });
 
+    const carried = { text: "" };
     const exit = await runSupervisedProcess(
       buildFeatureWorkerArgs(path.join(options.workersDir, entrypoint), jobFile),
       {
@@ -104,6 +128,12 @@ export async function runFeatureWorker<T = unknown>(
         ...(options.pwshPath !== undefined ? { pwshPath: options.pwshPath } : {}),
         ...(options.signal !== undefined ? { signal: options.signal } : {}),
         ...(options.spawnImpl !== undefined ? { spawnImpl: options.spawnImpl } : {}),
+        ...(options.onProgressLine !== undefined
+          ? {
+              onStdout: (chunk: unknown) =>
+                forwardCompleteLines(chunk, carried, options.onProgressLine!),
+            }
+          : {}),
       },
     );
 

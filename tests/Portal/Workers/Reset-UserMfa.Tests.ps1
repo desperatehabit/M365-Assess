@@ -145,3 +145,7 @@ Describe 'Reset-UserMfa worker (T-0222)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

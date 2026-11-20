@@ -81,7 +81,7 @@ function New-DomainActionAudit {
         add, verify, remove, or setDefault.
     .PARAMETER Result
         success or failure.
-    .PARAMETER Error
+    .PARAMETER ErrorDetail
         Failure message; null on success.
     .PARAMETER Before
         State before the write, or null when there was none.
@@ -117,7 +117,7 @@ function New-DomainActionAudit {
 
         [Parameter()]
         [AllowNull()]
-        [string]$Error = $null,
+        [string]$ErrorDetail = $null,
 
         [Parameter()]
         $Before = $null,
@@ -141,7 +141,7 @@ function New-DomainActionAudit {
         targetType    = 'domain'
         targetId      = $Domain
         result        = $Result
-        error         = $Error
+        error         = $ErrorDetail
         before        = $Before
         after         = $After
         actor         = $Actor
@@ -172,7 +172,7 @@ function New-DomainActionResult {
         The DNS records Graph returned for add; null for every other action.
     .PARAMETER Code
         Structured failure code; null unless the action failed.
-    .PARAMETER Error
+    .PARAMETER ErrorDetail
         Failure message; null unless the action failed.
     .PARAMETER AuditEvent
         The AuditEvent for a non-dry-run outcome; null for a plan.
@@ -205,7 +205,7 @@ function New-DomainActionResult {
         [string]$Code = $null,
 
         [Parameter()]
-        [string]$Error = $null,
+        [string]$ErrorDetail = $null,
 
         [Parameter()]
         $AuditEvent = $null
@@ -218,7 +218,7 @@ function New-DomainActionResult {
         status              = $Status
         verificationRecords = $VerificationRecords
         code                = $Code
-        error               = $Error
+        error               = $ErrorDetail
         auditEvent          = $AuditEvent
     }
 }
@@ -230,7 +230,7 @@ function Add-Domain {
     .DESCRIPTION
         POSTs the domain to Graph and returns the verification records (TXT/MX)
         so the UI can present the publish steps; the domain is left unverified
-        until Verify-Domain succeeds. An existing domain is refused with code
+        until Confirm-Domain succeeds. An existing domain is refused with code
         domain_already_exists and no POST is issued. -DryRun reports the
         intended add with no Graph write. Apply requires -Confirmed.
     .PARAMETER TenantId
@@ -293,11 +293,11 @@ function Add-Domain {
     $existing = Get-DomainState -Domain $Domain
     if ($null -ne $existing) {
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'add' -Result 'failure' `
-            -Error "domain '$Domain' already exists" -Before $existing -After $null -Actor $Actor `
+            -ErrorDetail "domain '$Domain' already exists" -Before $existing -After $null -Actor $Actor `
             -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'add' -Status 'failed' `
-            -Code 'domain_already_exists' -Error "domain '$Domain' already exists" -AuditEvent $audit
+            -Code 'domain_already_exists' -ErrorDetail "domain '$Domain' already exists" -AuditEvent $audit
     }
 
     try {
@@ -307,10 +307,10 @@ function Add-Domain {
     catch {
         $message = $_.Exception.Message
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'add' -Result 'failure' `
-            -Error $message -Before $null -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
+            -ErrorDetail $message -Before $null -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'add' -Status 'failed' `
-            -Error $message -AuditEvent $audit
+            -ErrorDetail $message -AuditEvent $audit
     }
 
     $records = @()
@@ -330,7 +330,7 @@ function Add-Domain {
         -VerificationRecords $records -AuditEvent $audit
 }
 
-function Verify-Domain {
+function Confirm-Domain {
     <#
     .SYNOPSIS
         Triggers Graph verification for an unverified domain.
@@ -355,7 +355,7 @@ function Verify-Domain {
     .PARAMETER WriteAudit
         Seam: scriptblock (event) -> void. Defaults to a no-op.
     .EXAMPLE
-        Verify-Domain -TenantId 'tenant-a' -Domain 'contoso.com' -Confirmed
+        Confirm-Domain -TenantId 'tenant-a' -Domain 'contoso.com' -Confirmed
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -398,11 +398,11 @@ function Verify-Domain {
     $before = Get-DomainState -Domain $Domain
     if ($null -eq $before) {
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'verify' -Result 'failure' `
-            -Error "domain '$Domain' was not found" -Before $null -After $null -Actor $Actor `
+            -ErrorDetail "domain '$Domain' was not found" -Before $null -After $null -Actor $Actor `
             -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'verify' -Status 'failed' `
-            -Code 'domain_not_found' -Error "domain '$Domain' was not found" -AuditEvent $audit
+            -Code 'domain_not_found' -ErrorDetail "domain '$Domain' was not found" -AuditEvent $audit
     }
 
     try {
@@ -411,10 +411,10 @@ function Verify-Domain {
     catch {
         $message = $_.Exception.Message
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'verify' -Result 'failure' `
-            -Error $message -Before $before -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
+            -ErrorDetail $message -Before $before -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'verify' -Status 'failed' `
-            -Error $message -AuditEvent $audit
+            -ErrorDetail $message -AuditEvent $audit
     }
 
     $after = [pscustomobject]@{
@@ -496,11 +496,11 @@ function Remove-Domain {
     $before = Get-DomainState -Domain $Domain
     if ($null -eq $before) {
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'remove' -Result 'failure' `
-            -Error "domain '$Domain' was not found" -Before $null -After $null -Actor $Actor `
+            -ErrorDetail "domain '$Domain' was not found" -Before $null -After $null -Actor $Actor `
             -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'remove' -Status 'failed' `
-            -Code 'domain_not_found' -Error "domain '$Domain' was not found" -AuditEvent $audit
+            -Code 'domain_not_found' -ErrorDetail "domain '$Domain' was not found" -AuditEvent $audit
     }
 
     try {
@@ -509,10 +509,10 @@ function Remove-Domain {
     catch {
         $message = $_.Exception.Message
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'remove' -Result 'failure' `
-            -Error $message -Before $before -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
+            -ErrorDetail $message -Before $before -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'remove' -Status 'failed' `
-            -Error $message -AuditEvent $audit
+            -ErrorDetail $message -AuditEvent $audit
     }
 
     $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'remove' -Result 'success' `
@@ -589,11 +589,11 @@ function Set-DomainDefault {
     $before = Get-DomainState -Domain $Domain
     if ($null -eq $before) {
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'setDefault' -Result 'failure' `
-            -Error "domain '$Domain' was not found" -Before $null -After $null -Actor $Actor `
+            -ErrorDetail "domain '$Domain' was not found" -Before $null -After $null -Actor $Actor `
             -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'setDefault' -Status 'failed' `
-            -Code 'domain_not_found' -Error "domain '$Domain' was not found" -AuditEvent $audit
+            -Code 'domain_not_found' -ErrorDetail "domain '$Domain' was not found" -AuditEvent $audit
     }
 
     try {
@@ -603,10 +603,10 @@ function Set-DomainDefault {
     catch {
         $message = $_.Exception.Message
         $audit = New-DomainActionAudit -TenantId $TenantId -Domain $Domain -Action 'setDefault' -Result 'failure' `
-            -Error $message -Before $before -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
+            -ErrorDetail $message -Before $before -After $null -Actor $Actor -CorrelationId $CorrelationId -Reason $Reason
         $null = & $WriteAudit $audit
         return New-DomainActionResult -TenantId $TenantId -Domain $Domain -Action 'setDefault' -Status 'failed' `
-            -Error $message -AuditEvent $audit
+            -ErrorDetail $message -AuditEvent $audit
     }
 
     $after = [pscustomobject]@{
@@ -709,7 +709,7 @@ function Invoke-DomainAction {
             return Add-Domain @base
         }
         'verify' {
-            return Verify-Domain @base
+            return Confirm-Domain @base
         }
         'remove' {
             return Remove-Domain @base

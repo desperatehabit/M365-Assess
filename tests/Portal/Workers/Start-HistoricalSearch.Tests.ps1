@@ -331,3 +331,10 @@ Describe 'Start-HistoricalSearch worker (T-0465)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\New-ComplianceSearch' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Start-ComplianceSearch' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-ComplianceSearch' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-ComplianceSearch' -ErrorAction SilentlyContinue
+}

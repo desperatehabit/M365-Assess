@@ -42,6 +42,7 @@ import { DEFENDER_STATUS_OPENAPI } from "./defender-status.js";
 import { DEFENDER_DEPLOY_OPENAPI } from "./defender-deploy.js";
 import { DEFENDER_VULNERABILITIES_OPENAPI } from "./defender-vulnerabilities.js";
 import { MDE_ONBOARDING_OPENAPI } from "./defender-mde-onboarding.js";
+import { ONBOARDING_PREFLIGHT_OPENAPI } from "./onboarding-preflight.js";
 // EPIC-021 Transport & Connectors (T-0851).
 import { TRANSPORT_RULES_OPENAPI } from "./transport-rules.js";
 import { CONNECTORS_OPENAPI } from "./connectors.js";
@@ -76,6 +77,7 @@ import { AUDIT_SEARCHES_OPENAPI } from "./audit-searches.js";
 import { AUDIT_COVERAGE_OPENAPI } from "./audit-coverage.js";
 import { AUDIT_EXCLUSION_WINDOWS_OPENAPI } from "./audit-exclusion-windows.js";
 import { WEBHOOKS_OPENAPI } from "./webhooks.js";
+import { WEBHOOK_NOTIFY_OPENAPI } from "./webhook-notify.js";
 // EPIC-033 Licensing (T-0863).
 import { LICENSES_OPENAPI } from "./licenses.js";
 import { LICENSE_ASSIGN_OPENAPI } from "./license-assign.js";
@@ -128,6 +130,8 @@ import { QUARANTINE_POLICIES_OPENAPI } from "./quarantine-policies.js";
 import { ALLOW_BLOCK_OPENAPI } from "./allow-block.js";
 import { FILTERS_OPENAPI } from "./filters.js";
 import { FILTER_TEMPLATES_OPENAPI } from "./filter-templates.js";
+// EPIC-003 run starting points (T-0922).
+import { RUN_TEMPLATES_OPENAPI } from "./run-templates.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -207,6 +211,8 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   DEFENDER_DEPLOY_OPENAPI as unknown as OpenApiFragment,
   DEFENDER_VULNERABILITIES_OPENAPI as unknown as OpenApiFragment,
   MDE_ONBOARDING_OPENAPI as unknown as OpenApiFragment,
+  // Onboarding prerequisites preflight (T-0915).
+  ONBOARDING_PREFLIGHT_OPENAPI as unknown as OpenApiFragment,
   // EPIC-021 Transport & Connectors (T-0851).
   TRANSPORT_RULES_OPENAPI as unknown as OpenApiFragment,
   CONNECTORS_OPENAPI as unknown as OpenApiFragment,
@@ -241,6 +247,7 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   AUDIT_COVERAGE_OPENAPI as unknown as OpenApiFragment,
   AUDIT_EXCLUSION_WINDOWS_OPENAPI as unknown as OpenApiFragment,
   WEBHOOKS_OPENAPI as unknown as OpenApiFragment,
+  WEBHOOK_NOTIFY_OPENAPI as unknown as OpenApiFragment,
   // EPIC-033 Licensing (T-0863).
   LICENSES_OPENAPI as unknown as OpenApiFragment,
   LICENSE_ASSIGN_OPENAPI as unknown as OpenApiFragment,
@@ -294,6 +301,8 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   ALLOW_BLOCK_OPENAPI as unknown as OpenApiFragment,
   FILTERS_OPENAPI as unknown as OpenApiFragment,
   FILTER_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-003 run starting points (T-0922).
+  { paths: RUN_TEMPLATES_OPENAPI } as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an

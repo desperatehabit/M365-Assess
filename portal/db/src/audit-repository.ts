@@ -6,7 +6,7 @@
 // is a single upserted cache row per tenant with no delete path. No Graph calls
 // and no route code belong here.
 import Database from "better-sqlite3";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   SchemaVersionError,
   type AuditCoverage,
@@ -45,6 +45,11 @@ function asNullableString(value: unknown): string | null {
 
 function asBool(value: unknown): boolean {
   return Number(value) === 1;
+}
+
+/** SHA-256 hex of a Graph clientState; the plaintext is never stored (T-0905). */
+export function hashClientState(clientState: string): string {
+  return createHash("sha256").update(clientState).digest("hex");
 }
 
 function parseJson(value: unknown): Record<string, unknown> {
@@ -100,6 +105,13 @@ export interface AuditRepository {
     tenantId: string,
     subscriptionId: string,
   ): Promise<WebhookSubscription | undefined>;
+  /**
+   * Resolves a subscription by Graph subscription id alone (T-0905). The
+   * notification receiver knows only the id, not the tenant it belongs to.
+   */
+  getWebhookSubscriptionById(
+    subscriptionId: string,
+  ): Promise<WebhookSubscription | undefined>;
   listWebhookSubscriptions(tenantId: string): Promise<WebhookSubscription[]>;
   listWebhookSubscriptionsExpiringBetween(
     tenantId: string,
@@ -144,7 +156,10 @@ export interface AuditRepository {
 /** The mutable webhook subscription fields the renewal lifecycle updates. */
 export type WebhookSubscriptionUpdate = Partial<
   Pick<WebhookSubscription, "resource" | "expiresOn" | "state" | "notificationUrl">
->;
+> & {
+  /** Plaintext clientState from a create/recreate result; hashed at rest. */
+  clientState?: string;
+};
 
 function snapshot(value: unknown): Record<string, unknown> | null {
   return value === null || value === undefined
@@ -201,6 +216,7 @@ export class SqliteAuditRepository implements AuditRepository {
       expiresOn: asNullableString(row["expiresOn"]),
       state: asString(row["state"]),
       notificationUrl: asString(row["notificationUrl"]),
+      clientStateHash: asNullableString(row["clientStateHash"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -431,6 +447,10 @@ export class SqliteAuditRepository implements AuditRepository {
     input: WebhookSubscriptionInput,
   ): Promise<WebhookSubscription> {
     const createdAt = input.createdAt ?? nowIso();
+    const clientStateHash =
+      input.clientState !== undefined && input.clientState.length > 0
+        ? hashClientState(input.clientState)
+        : null;
     const subscription: WebhookSubscription = {
       id: input.id,
       tenantId: input.tenantId,
@@ -438,6 +458,7 @@ export class SqliteAuditRepository implements AuditRepository {
       expiresOn: input.expiresOn ?? null,
       state: input.state,
       notificationUrl: input.notificationUrl,
+      clientStateHash,
       createdAt,
       updatedAt: input.updatedAt ?? createdAt,
     };
@@ -445,8 +466,8 @@ export class SqliteAuditRepository implements AuditRepository {
       this.db
         .prepare(
           `INSERT INTO webhook_subscriptions
-             (id, tenantId, resource, expiresOn, state, notificationUrl, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, tenantId, resource, expiresOn, state, notificationUrl, clientStateHash, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           subscription.id,
@@ -455,6 +476,7 @@ export class SqliteAuditRepository implements AuditRepository {
           subscription.expiresOn,
           subscription.state,
           subscription.notificationUrl,
+          subscription.clientStateHash,
           subscription.createdAt,
           subscription.updatedAt,
         );
@@ -487,6 +509,17 @@ export class SqliteAuditRepository implements AuditRepository {
     ).map((row) => this.mapSubscription(row));
   }
 
+  async getWebhookSubscriptionById(
+    subscriptionId: string,
+  ): Promise<WebhookSubscription | undefined> {
+    const row = this.db
+      .prepare(
+        "SELECT * FROM webhook_subscriptions WHERE id = ? AND deletedAt IS NULL",
+      )
+      .get(subscriptionId) as Row | undefined;
+    return row ? this.mapSubscription(row) : undefined;
+  }
+
   async listWebhookSubscriptionsExpiringBetween(
     tenantId: string,
     from: string,
@@ -517,13 +550,17 @@ export class SqliteAuditRepository implements AuditRepository {
       expiresOn: update.expiresOn === undefined ? existing.expiresOn : update.expiresOn,
       state: update.state ?? existing.state,
       notificationUrl: update.notificationUrl ?? existing.notificationUrl,
+      clientStateHash:
+        update.clientState !== undefined && update.clientState.length > 0
+          ? hashClientState(update.clientState)
+          : existing.clientStateHash,
       updatedAt: nowIso(),
     };
     this.db.transaction(() => {
       this.db
         .prepare(
           `UPDATE webhook_subscriptions
-              SET resource = ?, expiresOn = ?, state = ?, notificationUrl = ?, updatedAt = ?
+              SET resource = ?, expiresOn = ?, state = ?, notificationUrl = ?, clientStateHash = ?, updatedAt = ?
             WHERE id = ? AND tenantId = ? AND deletedAt IS NULL`,
         )
         .run(
@@ -531,6 +568,7 @@ export class SqliteAuditRepository implements AuditRepository {
           updated.expiresOn,
           updated.state,
           updated.notificationUrl,
+          updated.clientStateHash,
           updated.updatedAt,
           subscriptionId,
           tenantId,

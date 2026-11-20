@@ -2,6 +2,472 @@
 . "$PSScriptRoot\PermissionDefinitions.ps1"
 . "$PSScriptRoot\New-M365AssessCertificate.ps1"
 
+# ======================================================================
+# DEVICE-CODE SIGN-IN (T-0916)
+#
+# A BFF with no interactive desktop cannot show a sign-in window. In that
+# case the portal worker asks for the device-code flow instead, relays each
+# code and verification URL to the wizard, and the operator signs in from
+# their own browser.
+#
+# Capture:
+#   Microsoft Graph -- Connect-MgGraph -UseDeviceCode writes the prompt
+#     ("open the page <url> and enter the code <code>") to its output
+#     stream, so piping the cmdlet captures the code while it waits.
+#     Microsoft.Graph.Authentication 2.41.2 has no device-code callback.
+#   Exchange Online -- ExchangeOnlineManagement 3.7.2 -Device has no
+#     callback and writes the prompt only to the process console, which a
+#     PowerShell pipeline cannot read. The supported equivalent is the
+#     device-code flow in the MSAL library the module already loads, whose
+#     callback hands us the code and URL, followed by
+#     Connect-ExchangeOnline -AccessToken (the documented non-interactive
+#     parameter).
+# ======================================================================
+
+function Write-M365DeviceCodePrompt {
+    <#
+    .SYNOPSIS
+        Relays one pending device code, or prints it when no relay is attached.
+    .PARAMETER Prompt
+        Device-code prompt with Kind, Stage, Provider, Code, VerificationUrl and ExpiresOn.
+    .PARAMETER Callback
+        Optional relay (the portal onboarding worker). Without it the prompt is printed.
+    .EXAMPLE
+        Write-M365DeviceCodePrompt -Prompt $prompt -Callback $SignInProgressCallback
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [psobject]$Prompt,
+
+        [Parameter()]
+        [scriptblock]$Callback
+    )
+
+    if ($Callback) {
+        & $Callback $Prompt
+        return
+    }
+
+    Write-Host ''
+    Write-Host "  To sign in to $($Prompt.Provider), open $($Prompt.VerificationUrl) and enter the code:" -ForegroundColor Yellow
+    Write-Host "      $($Prompt.Code)" -ForegroundColor Cyan
+    if ($Prompt.ExpiresOn) {
+        Write-Host "  The code expires at $(([datetimeoffset]$Prompt.ExpiresOn).ToLocalTime().ToString('HH:mm')) or when used." -ForegroundColor DarkGray
+    }
+    Write-Host ''
+}
+
+function Format-M365DeviceCodeFailure {
+    <#
+    .SYNOPSIS
+        Turns an interactive sign-in failure into a message the operator can act on.
+    .PARAMETER Provider
+        Service being signed in to (Microsoft Graph, Exchange Online).
+    .PARAMETER Stage
+        Onboarding step that was signing in (graph-permissions, exchange-online).
+    .PARAMETER Exception
+        The failure raised by the sign-in library.
+    .EXAMPLE
+        throw (Format-M365DeviceCodeFailure -Provider 'Microsoft Graph' -Stage 'graph-permissions' -Exception $_.Exception)
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Provider,
+
+        [Parameter(Mandatory)]
+        [string]$Stage,
+
+        [Parameter(Mandatory)]
+        [System.Exception]$Exception
+    )
+
+    $detail = $Exception.Message
+    $errorCode = ''
+    if ($Exception.PSObject.Properties['ErrorCode']) {
+        $errorCode = [string]$Exception.ErrorCode
+    }
+    elseif ($Exception.InnerException -and $Exception.InnerException.PSObject.Properties['ErrorCode']) {
+        $errorCode = [string]$Exception.InnerException.ErrorCode
+    }
+
+    if ($errorCode -in @('code_expired', 'expired_token', 'invalid_grant', 'authentication_canceled', 'user_canceled')) {
+        return "The device code for $Provider ($Stage) expired before an operator signed in. Start onboarding again for a fresh code (code: onboard.device_code_expired). $detail"
+    }
+    return "Device-code sign-in to $Provider ($Stage) failed: $detail (code: onboard.device_code_failed)."
+}
+
+function Get-M365DeviceCodeToken {
+    <#
+    .SYNOPSIS
+        Acquires an access token with the MSAL device-code flow, relaying the code first.
+    .DESCRIPTION
+        Used for Exchange Online, whose Connect-ExchangeOnline -Device switch writes the
+        code only to the process console and offers no callback. The callback runs in a
+        small C# helper so the MSAL thread never has to invoke PowerShell, and the main
+        thread relays each prompt through -Callback. The token is then passed to
+        Connect-ExchangeOnline -AccessToken.
+    .PARAMETER Resource
+        graph or exchange; selects the first-party client id and scope set.
+    .PARAMETER TenantId
+        Tenant the operator signs in to.
+    .PARAMETER Scopes
+        Delegated scopes for Graph. Exchange always asks for outlook.office365.com/.default.
+    .PARAMETER Stage
+        Onboarding step name carried on the relayed prompt.
+    .PARAMETER Callback
+        Optional relay for the pending code and verification URL.
+    .PARAMETER TimeoutSeconds
+        How long to wait for the operator before failing with a clear message.
+    .PARAMETER Acquirer
+        Test seam: returns a token for the request instead of running MSAL.
+    .EXAMPLE
+        $token = Get-M365DeviceCodeToken -Resource 'exchange' -TenantId 'contoso.onmicrosoft.com' -Stage 'exchange-online' -Callback $relay
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('graph', 'exchange')]
+        [string]$Resource,
+
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantId,
+
+        [Parameter()]
+        [string[]]$Scopes = @(),
+
+        [Parameter()]
+        [string]$Stage = '',
+
+        [Parameter()]
+        [scriptblock]$Callback,
+
+        [Parameter()]
+        [int]$TimeoutSeconds = 600,
+
+        [Parameter()]
+        [scriptblock]$Acquirer
+    )
+
+    $profiles = @{
+        graph = [pscustomobject]@{
+            Provider = 'Microsoft Graph'
+            ClientId = '14d82eec-204b-4c2f-b7e8-296a70dab67e'
+        }
+        exchange = [pscustomobject]@{
+            Provider = 'Exchange Online'
+            ClientId = 'fb78d390-0c51-40cd-8e17-fdbfab77341b'
+        }
+    }
+    $resourceProfile = $profiles[$Resource]
+    if ($Resource -eq 'exchange' -and @($Scopes).Count -eq 0) {
+        $Scopes = @('https://outlook.office365.com/.default')
+    }
+
+    $request = [pscustomobject]@{
+        Resource       = $Resource
+        Provider       = $resourceProfile.Provider
+        ClientId       = $resourceProfile.ClientId
+        TenantId       = $TenantId
+        Scopes         = @($Scopes)
+        Stage          = $Stage
+        TimeoutSeconds = $TimeoutSeconds
+    }
+    if ($Acquirer) {
+        return [string](& $Acquirer $request)
+    }
+
+    # Locate the MSAL build to use. Importing the Graph module loads its MSAL and the
+    # loader that binds its dependencies; the ExchangeOnlineManagement bundle is a
+    # fallback with a self-consistent MSAL set.
+    if (-not ('Microsoft.Identity.Client.PublicClientApplicationBuilder' -as [type])) {
+        try {
+            Import-Module -Name 'Microsoft.Graph.Authentication' -ErrorAction Stop
+        }
+        catch {
+            Write-Verbose "Microsoft.Graph.Authentication was not importable: $($_.Exception.Message)"
+        }
+    }
+
+    $msalPath = $null
+    if ('Microsoft.Identity.Client.PublicClientApplicationBuilder' -as [type]) {
+        $msalPath = [Microsoft.Identity.Client.PublicClientApplicationBuilder].Assembly.Location
+    }
+    else {
+        $exoModule = Get-Module -ListAvailable -Name 'ExchangeOnlineManagement' |
+            Sort-Object -Property Version -Descending |
+            Select-Object -First 1
+        if ($exoModule) {
+            $bundle = if ($PSEdition -eq 'Desktop') { 'netFramework' } else { 'netCore' }
+            $bundleDirectory = Join-Path -Path $exoModule.ModuleBase -ChildPath $bundle
+            $candidate = Join-Path -Path $bundleDirectory -ChildPath 'Microsoft.Identity.Client.dll'
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                Get-ChildItem -Path (Join-Path -Path $bundleDirectory -ChildPath 'Microsoft.Identity*.dll') -File -ErrorAction SilentlyContinue |
+                    ForEach-Object {
+                        try {
+                            [System.Reflection.Assembly]::LoadFrom($_.FullName) | Out-Null
+                        }
+                        catch {
+                            Write-Verbose "Skipped MSAL dependency $($_.Name): $($_.Exception.Message)"
+                        }
+                    }
+                Add-Type -Path $candidate
+                $msalPath = $candidate
+            }
+        }
+    }
+    if (-not $msalPath) {
+        throw "Device-code sign-in to $($resourceProfile.Provider) needs Microsoft.Identity.Client, which ships with Microsoft.Graph.Authentication and ExchangeOnlineManagement. Install one of those modules (code: consent.device_code_msal_missing)."
+    }
+    if (-not ('M365Assess.DeviceCode.DeviceCodeCapture' -as [type])) {
+        $captureSource = @'
+using System;
+using System.Collections.Concurrent;
+using System.Threading.Tasks;
+using Microsoft.Identity.Client;
+
+namespace M365Assess.DeviceCode
+{
+    // Holds device codes for the PowerShell thread. MSAL raises the callback on a
+    // worker thread that has no PowerShell runspace, so the callback only queues the
+    // code; the caller relays it.
+    public sealed class DeviceCodeCapture
+    {
+        private readonly BlockingCollection<DeviceCodeResult> _codes =
+            new BlockingCollection<DeviceCodeResult>(new ConcurrentQueue<DeviceCodeResult>());
+
+        public Task Capture(DeviceCodeResult result)
+        {
+            if (result != null) { _codes.Add(result); }
+            return Task.CompletedTask;
+        }
+
+        public DeviceCodeResult WaitForCode(int millisecondsTimeout)
+        {
+            DeviceCodeResult result;
+            return _codes.TryTake(out result, millisecondsTimeout) ? result : null;
+        }
+    }
+}
+'@
+        Add-Type -TypeDefinition $captureSource -ReferencedAssemblies @(
+            $msalPath
+            'netstandard'
+            'System.Collections.Concurrent'
+            'System.Runtime'
+            'System.Threading.Tasks'
+        ) -CompilerOptions '/nowarn:1701,1702'
+    }
+
+    $authority = "https://login.microsoftonline.com/$TenantId"
+    $app = [Microsoft.Identity.Client.PublicClientApplicationBuilder]::Create($resourceProfile.ClientId).
+        WithAuthority($authority).
+        WithDefaultRedirectUri().
+        Build()
+
+    $capture = [M365Assess.DeviceCode.DeviceCodeCapture]::new()
+    $delegateType = [System.Func[Microsoft.Identity.Client.DeviceCodeResult, System.Threading.Tasks.Task]]
+    $handler = [System.Delegate]::CreateDelegate($delegateType, $capture, 'Capture')
+
+    $tokenTask = $app.AcquireTokenWithDeviceCode([string[]]$Scopes, $handler).ExecuteAsync()
+    $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+
+    while (-not $tokenTask.IsCompleted) {
+        $deviceCode = $capture.WaitForCode(250)
+        if ($deviceCode) {
+            $prompt = [pscustomobject]@{
+                Kind            = 'device-code'
+                Stage           = $Stage
+                Provider        = $resourceProfile.Provider
+                Code            = $deviceCode.UserCode
+                VerificationUrl = $deviceCode.VerificationUrl
+                ExpiresOn       = $deviceCode.ExpiresOn
+                Message         = $deviceCode.Message
+            }
+            Write-M365DeviceCodePrompt -Prompt $prompt -Callback $Callback
+        }
+        if ([DateTime]::UtcNow -ge $deadline) {
+            $waitText = if ($TimeoutSeconds -ge 60) {
+                "$([int]($TimeoutSeconds / 60)) minutes"
+            }
+            else {
+                "$TimeoutSeconds seconds"
+            }
+            throw "No operator signed in to $($resourceProfile.Provider) ($Stage) within $waitText. Start onboarding again for a fresh device code (code: onboard.device_code_timeout)."
+        }
+    }
+
+    if ($tokenTask.IsFaulted) {
+        $inner = $tokenTask.Exception.GetBaseException()
+        throw (Format-M365DeviceCodeFailure -Provider $resourceProfile.Provider -Stage $Stage -Exception $inner)
+    }
+    if ($tokenTask.IsCanceled) {
+        throw "Device-code sign-in to $($resourceProfile.Provider) ($Stage) was cancelled before an operator signed in (code: onboard.device_code_cancelled)."
+    }
+
+    return [string]$tokenTask.GetAwaiter().GetResult().AccessToken
+}
+
+function Connect-M365AssessGraphSession {
+    <#
+    .SYNOPSIS
+        Connects a delegated Microsoft Graph session, using the device-code flow in headless mode.
+    .DESCRIPTION
+        Desktop mode keeps the existing Connect-MgGraph browser/WAM sign-in. Device-code
+        mode passes -UseDeviceCode and reads the prompt from the cmdlet's output stream as
+        it is written, relaying the code and verification URL before the cmdlet waits for
+        the operator.
+    .PARAMETER TenantId
+        Tenant to sign in to.
+    .PARAMETER Scopes
+        Delegated Graph scopes.
+    .PARAMETER UseDeviceCode
+        Use the device-code flow instead of the interactive window.
+    .PARAMETER SignInProgressCallback
+        Optional relay for prompt and completion events.
+    .PARAMETER Stage
+        Onboarding step name carried on the relayed events.
+    .PARAMETER DeviceCodeLifetimeMinutes
+        Lifetime shown for the Graph prompt; the service expires the code itself.
+    .EXAMPLE
+        Connect-M365AssessGraphSession -TenantId 'contoso.onmicrosoft.com' -Scopes 'Application.ReadWrite.All' -UseDeviceCode -Stage 'graph-bootstrap' -SignInProgressCallback $relay
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantId,
+
+        [Parameter()]
+        [string[]]$Scopes = @(),
+
+        [Parameter()]
+        [switch]$UseDeviceCode,
+
+        [Parameter()]
+        [scriptblock]$SignInProgressCallback,
+
+        [Parameter()]
+        [string]$Stage = 'graph',
+
+        [Parameter()]
+        [int]$DeviceCodeLifetimeMinutes = 15
+    )
+
+    if (-not $UseDeviceCode) {
+        Connect-MgGraph -TenantId $TenantId -Scopes $Scopes -NoWelcome -ErrorAction Stop
+        return
+    }
+
+    $promptState = @{ Seen = $false }
+    Connect-MgGraph -TenantId $TenantId -Scopes $Scopes -UseDeviceCode -NoWelcome -ErrorAction Stop |
+        ForEach-Object {
+            $line = [string]$_
+            if ($line -match '(?i)open the page\s+(?<url>https?://\S+)\s+and enter the code\s+(?<code>[A-Za-z0-9\-]+)') {
+                $prompt = [pscustomobject]@{
+                    Kind            = 'device-code'
+                    Stage           = $Stage
+                    Provider        = 'Microsoft Graph'
+                    Code            = $Matches['code']
+                    VerificationUrl = $Matches['url']
+                    ExpiresOn       = (Get-Date).ToUniversalTime().AddMinutes($DeviceCodeLifetimeMinutes)
+                    Message         = $line
+                }
+                Write-M365DeviceCodePrompt -Prompt $prompt -Callback $SignInProgressCallback
+                $promptState.Seen = $true
+            }
+            elseif ($line.Trim()) {
+                Write-Verbose $line
+            }
+        }
+
+    if (-not $promptState.Seen) {
+        Write-Warning 'Connect-MgGraph -UseDeviceCode did not print a device code. If the sign-in prompt appeared elsewhere, complete it there.'
+    }
+    if ($SignInProgressCallback) {
+        & $SignInProgressCallback ([pscustomobject]@{
+            Kind     = 'sign-in-complete'
+            Stage    = $Stage
+            Provider = 'Microsoft Graph'
+            Account  = [string](Get-MgContext).Account
+        })
+    }
+}
+
+function Connect-M365AssessExchangeSession {
+    <#
+    .SYNOPSIS
+        Connects a delegated Exchange Online session, using the device-code flow in headless mode.
+    .DESCRIPTION
+        Desktop mode keeps Connect-ExchangeOnline -UserPrincipalName. Headless mode acquires
+        an Exchange Online token with the MSAL device-code flow (which gives us the code and
+        URL) and connects with -AccessToken. ExchangeOnlineManagement -Device writes its code
+        only to the process console and cannot be captured by a pipeline.
+    .PARAMETER TenantId
+        Tenant to sign in to; also passed as -Organization.
+    .PARAMETER AdminUpn
+        Admin account for the desktop sign-in.
+    .PARAMETER UseDeviceCode
+        Use the device-code flow instead of the interactive window.
+    .PARAMETER SignInProgressCallback
+        Optional relay for prompt and completion events.
+    .PARAMETER TimeoutSeconds
+        How long to wait for the operator before failing with a clear message.
+    .PARAMETER DeviceCodeTokenAcquirer
+        Test seam forwarded to Get-M365DeviceCodeToken.
+    .EXAMPLE
+        Connect-M365AssessExchangeSession -TenantId 'contoso.onmicrosoft.com' -AdminUpn 'admin@contoso.onmicrosoft.com' -UseDeviceCode -SignInProgressCallback $relay
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$TenantId,
+
+        [Parameter()]
+        [string]$AdminUpn,
+
+        [Parameter()]
+        [switch]$UseDeviceCode,
+
+        [Parameter()]
+        [scriptblock]$SignInProgressCallback,
+
+        [Parameter()]
+        [int]$TimeoutSeconds = 600,
+
+        [Parameter()]
+        [scriptblock]$DeviceCodeTokenAcquirer
+    )
+
+    if (-not $UseDeviceCode) {
+        Connect-ExchangeOnline -UserPrincipalName $AdminUpn -ShowBanner:$false -ErrorAction Stop
+        return
+    }
+
+    $token = Get-M365DeviceCodeToken -Resource 'exchange' `
+        -TenantId $TenantId `
+        -Stage 'exchange-online' `
+        -Callback $SignInProgressCallback `
+        -TimeoutSeconds $TimeoutSeconds `
+        -Acquirer $DeviceCodeTokenAcquirer
+
+    Connect-ExchangeOnline -AccessToken $token -Organization $TenantId -ShowBanner:$false -ErrorAction Stop
+
+    if ($SignInProgressCallback) {
+        & $SignInProgressCallback ([pscustomobject]@{
+            Kind     = 'sign-in-complete'
+            Stage    = 'exchange-online'
+            Provider = 'Exchange Online'
+            Account  = [string]$AdminUpn
+        })
+    }
+}
+
 function Grant-M365AssessConsent {
     <#
     .SYNOPSIS
@@ -31,6 +497,15 @@ function Grant-M365AssessConsent {
         Supports creating a new app registration from scratch (-CreateNew) or configuring
         an existing one. Saves credentials to .m365assess.json for automatic detection
         by the assessment.
+
+        OPT-IN WRITE ACCESS (T-0917): the assessment app stays read-only. Passing
+        -IncludeWritePermissions additionally creates or updates a second app
+        registration, 'M365-Assess-Operator', and grants only the write groups named
+        in -WritePermissionGroups. The reader app's permissions are identical whether
+        or not the switch is passed. Exchange Online role groups and the
+        Exchange/Purview/Teams directory roles are assigned only when the 'exchange'
+        group is selected. Dangerous grants (PIM role assignment, device wipe,
+        Sites.FullControl.All) additionally require -ConfirmDangerous.
 
         Requires Global Administrator or Application Administrator rights.
 
@@ -88,11 +563,47 @@ function Grant-M365AssessConsent {
         Skip the Exchange Online role group assignment step.
     .PARAMETER SkipComplianceRoles
         Skip the Purview/Compliance Entra directory role assignment step.
+    .PARAMETER IncludeWritePermissions
+        Opt in to the operator app registration ('M365-Assess-Operator') and the
+        write permission groups selected with -WritePermissionGroups. The reader
+        app registration configured by the normal run is never granted a write
+        permission.
+    .PARAMETER WritePermissionGroups
+        Write groups to grant to the operator app: identity, security, intune,
+        sharepoint, exchange. Required with -IncludeWritePermissions. Definitions
+        live in PermissionDefinitions.ps1 and mirror the T-0917 matrix.
+    .PARAMETER OperatorAppDisplayName
+        Display name of the opt-in operator app registration. Default:
+        'M365-Assess-Operator'. Only used with -IncludeWritePermissions.
+    .PARAMETER ConfirmDangerous
+        Required when a selected group contains a dangerous grant (PIM role
+        assignment, DeviceManagementManagedDevices.PrivilegedOperations.All, or
+        Sites.FullControl.All). Without it the cmdlet refuses before changing the
+        tenant and names the dangerous grants.
     .PARAMETER Force
         Bypass the high-impact ShouldProcess confirmation prompt. Without -Force,
         the cmdlet prompts before any tenant-mutating action (ConfirmImpact='High').
         Use only in scripted scenarios where confirmation is consented out of band
         (CI/CD, deployment scripts that gate on operator approval upstream).
+    .PARAMETER UseDeviceCode
+        Sign in with the device-code flow instead of the interactive desktop window.
+        Use when there is no interactive desktop to show a prompt on (a portal worker,
+        a service, a container, a non-Windows host). Each pending code and verification
+        URL is passed to -SignInProgressCallback so the operator can sign in from their
+        own browser.
+    .PARAMETER SignInProgressCallback
+        Scriptblock invoked for each sign-in event. Device-code prompts carry Kind
+        'device-code' plus Stage, Provider, Code, VerificationUrl and ExpiresOn; a
+        completed sign-in carries Kind 'sign-in-complete' plus Stage, Provider and
+        Account.
+    .PARAMETER DeviceCodeTimeoutSeconds
+        How long to wait for the operator to enter each device code. Default: 600 (ten
+        minutes). On expiry the cmdlet throws onboard.device_code_expired or
+        onboard.device_code_timeout so the caller can show a clear message.
+    .PARAMETER DeviceCodeTokenAcquirer
+        Test seam for the Exchange Online device-code token. Receives the request
+        (Resource, Provider, ClientId, TenantId, Scopes, Stage, TimeoutSeconds) and
+        returns an access token instead of running MSAL.
     .EXAMPLE
         Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' -AdminUpn 'admin@contoso.onmicrosoft.com' -CreateNew
 
@@ -107,6 +618,12 @@ function Grant-M365AssessConsent {
         Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' -ClientId '00000000-0000-0000-0000-000000000000' -CertificateThumbprint 'ABC123DEF456' -SkipExchangeRbac -SkipComplianceRoles
 
         Graph permissions only -- no AdminUpn required.
+    .EXAMPLE
+        Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' -AdminUpn 'admin@contoso.onmicrosoft.com' -CreateNew -IncludeWritePermissions -WritePermissionGroups 'identity','security','exchange' -ConfirmDangerous
+
+        Also creates 'M365-Assess-Operator' with only the identity, security, and
+        exchange write groups. Identity includes PIM role assignment, so
+        -ConfirmDangerous is required. The reader app stays read-only.
     .NOTES
         Required modules:
             Install-Module Microsoft.Graph.Authentication    -Scope CurrentUser
@@ -151,7 +668,33 @@ function Grant-M365AssessConsent {
         [switch]$SkipComplianceRoles,
 
         [Parameter()]
+        [switch]$IncludeWritePermissions,
+
+        [Parameter()]
+        [ValidateSet('identity', 'security', 'intune', 'sharepoint', 'exchange')]
+        [string[]]$WritePermissionGroups,
+
+        [Parameter()]
+        [string]$OperatorAppDisplayName = 'M365-Assess-Operator',
+
+        [Parameter()]
+        [switch]$ConfirmDangerous,
+
+        [Parameter()]
         [switch]$Force,
+
+        [Parameter()]
+        [switch]$UseDeviceCode,
+
+        [Parameter()]
+        [scriptblock]$SignInProgressCallback,
+
+        [Parameter()]
+        [ValidateRange(1, 60)]
+        [int]$DeviceCodeTimeoutSeconds = 600,
+
+        [Parameter()]
+        [scriptblock]$DeviceCodeTokenAcquirer,
 
         [Parameter()]
         [string]$ProfileName
@@ -172,8 +715,12 @@ function Grant-M365AssessConsent {
             "Configure existing app registration (ClientId '$ClientId') with M365-Assess permissions"
         }
         if (-not $PSCmdlet.ShouldProcess($shouldProcessTarget, $shouldProcessAction)) {
-            Write-Host "  Cancelled by user. No tenant changes were made." -ForegroundColor Yellow
-            return
+            # -WhatIf falls through to the plan output below; a declined confirmation
+            # stops here without changing the tenant.
+            if (-not $WhatIfPreference) {
+                Write-Host "  Cancelled by user. No tenant changes were made." -ForegroundColor Yellow
+                return
+            }
         }
     }
     else {
@@ -181,6 +728,28 @@ function Grant-M365AssessConsent {
         # every later ShouldProcess call in the function would prompt again at ConfirmImpact High,
         # which throws in non-interactive hosts such as portal workers.
         $ConfirmPreference = 'None'
+    }
+
+    # ------------------------------------------------------------------
+    # Opt-in write access: resolve the operator selection before any
+    # mutation, so an unknown group or an unconfirmed dangerous grant
+    # cannot leave the reader app half-configured.
+    # ------------------------------------------------------------------
+    $operatorSelection = $null
+    if ($IncludeWritePermissions) {
+        if (-not $WritePermissionGroups -or @($WritePermissionGroups).Count -eq 0) {
+            throw 'IncludeWritePermissions requires -WritePermissionGroups (identity, security, intune, sharepoint, exchange) (code: consent.write_groups_required).'
+        }
+        $operatorSelection = Get-M365AssessOperatorWriteSelection -Groups $WritePermissionGroups
+
+        if (@($operatorSelection.DangerousPermissions).Count -gt 0 -and -not $ConfirmDangerous) {
+            $dangerous = @($operatorSelection.DangerousPermissions) -join ', '
+            throw "Refusing dangerous write permissions without -ConfirmDangerous: $dangerous (code: consent.dangerous_requires_confirmation)."
+        }
+
+        if (-not $WhatIfPreference -and -not $AdminUpn) {
+            throw 'Provisioning the operator app registration requires -AdminUpn for the delegated Graph session (code: consent.admin_upn_required).'
+        }
     }
 
     # ==================================================================
@@ -239,6 +808,42 @@ function Grant-M365AssessConsent {
     if ($WhatIfPreference) {
         Write-Host '  *** WHATIF MODE - no changes will be made ***' -ForegroundColor Yellow
         Write-Host ''
+
+        $readerAction = if ($PSCmdlet.ParameterSetName -eq 'CreateNew') {
+            "Create reader app '$AppDisplayName' and grant $($script:RequiredGraphPermissions.Count) read-only Graph permissions, $($script:RequiredComplianceRoles.Count) directory roles, and $($script:RequiredExoRoleGroups.Count) EXO role groups."
+        }
+        else {
+            "Configure existing reader app '$ClientId' with the read-only permission set (unchanged)."
+        }
+        Write-Host "  Reader app : $readerAction" -ForegroundColor White
+
+        if ($IncludeWritePermissions) {
+            Write-Host "  Operator app: Create or update '$OperatorAppDisplayName' with groups: $(@($operatorSelection.Groups) -join ', ')" -ForegroundColor White
+            foreach ($permission in @($operatorSelection.GraphPermissions)) {
+                Write-Host "    - Graph permission: $permission" -ForegroundColor DarkYellow
+            }
+            foreach ($role in @($operatorSelection.ExchangeAppRoles)) {
+                Write-Host "    - Exchange app role: $role" -ForegroundColor DarkYellow
+            }
+            foreach ($role in @($operatorSelection.DirectoryRoles)) {
+                Write-Host "    - Directory role: $role" -ForegroundColor DarkYellow
+            }
+            foreach ($rg in @($operatorSelection.ExoRoleGroups)) {
+                Write-Host "    - EXO role group: $rg" -ForegroundColor DarkYellow
+            }
+            Write-Host '  The reader app is not granted any write permission.' -ForegroundColor DarkGray
+        }
+
+        Write-Host ''
+        Write-Host '  Re-run without -WhatIf to apply the plan.' -ForegroundColor DarkGray
+        Write-Host ''
+        return
+    }
+
+    # Device-code sign-in runs unattended: there is no console to answer Read-Host
+    # prompts, so require the delegated admin UPN up front and fail with a clear code.
+    if ($UseDeviceCode -and -not $AdminUpn -and (-not $SkipExchangeRbac -or -not $SkipComplianceRoles)) {
+        throw 'Device-code sign-in requires -AdminUpn for the delegated Exchange Online and directory-role steps (code: consent.admin_upn_required).'
     }
 
     if (-not $SkipExchangeRbac -and -not $AdminUpn) {
@@ -323,7 +928,12 @@ function Grant-M365AssessConsent {
 
     if ($PSCmdlet.ParameterSetName -eq 'CreateNew') {
         Write-Step "Bootstrapping new app registration '$AppDisplayName'..."
-        Write-Info 'This requires a one-time delegated login (browser) to create the app.'
+        if ($UseDeviceCode) {
+            Write-Info 'This requires a one-time delegated device-code sign-in to create the app.'
+        }
+        else {
+            Write-Info 'This requires a one-time delegated login (browser) to create the app.'
+        }
 
         # --- Connect delegated for bootstrap ---
         # MSAL_ALLOW_WAM = '0' workaround is critical -- without it,
@@ -332,7 +942,11 @@ function Grant-M365AssessConsent {
         $prevWam = $env:MSAL_ALLOW_WAM
         $env:MSAL_ALLOW_WAM = '0'
         try {
-            Connect-MgGraph -TenantId $TenantId -Scopes 'Application.ReadWrite.All' -NoWelcome -ErrorAction Stop
+            Connect-M365AssessGraphSession -TenantId $TenantId `
+                -Scopes @('Application.ReadWrite.All') `
+                -UseDeviceCode:$UseDeviceCode `
+                -SignInProgressCallback $SignInProgressCallback `
+                -Stage 'graph-bootstrap'
             $bootstrapCtx = Get-MgContext
             Write-OK "Connected (delegated) as: $($bootstrapCtx.Account)"
         }
@@ -476,6 +1090,9 @@ function Grant-M365AssessConsent {
             Write-Host ''
             Write-Host '  [WhatIf] Would create app registration, certificate, and service principal,' -ForegroundColor DarkYellow
             Write-Host '           then proceed with permission assignment (Graph, Compliance, EXO).'    -ForegroundColor DarkYellow
+            if ($IncludeWritePermissions) {
+                Write-Host "  [WhatIf] Would also create operator app '$OperatorAppDisplayName' and grant: $(@($operatorSelection.Groups) -join ', ')." -ForegroundColor DarkYellow
+            }
             Write-Host '  [WhatIf] Re-run without -WhatIf to execute.' -ForegroundColor DarkYellow
             return
         }
@@ -522,7 +1139,11 @@ function Grant-M365AssessConsent {
                 'RoleManagement.ReadWrite.Directory'
                 'Directory.Read.All'
             )
-            Connect-MgGraph -TenantId $TenantId -Scopes $graphScopes -NoWelcome -ErrorAction Stop
+            Connect-M365AssessGraphSession -TenantId $TenantId `
+                -Scopes $graphScopes `
+                -UseDeviceCode:$UseDeviceCode `
+                -SignInProgressCallback $SignInProgressCallback `
+                -Stage 'graph-permissions'
             $ctx = Get-MgContext
             Write-OK "Connected (delegated) as: $($ctx.Account)"
         }
@@ -836,12 +1457,23 @@ function Grant-M365AssessConsent {
 
         $exoConnected = $false
         try {
-            Connect-ExchangeOnline -UserPrincipalName $AdminUpn -ShowBanner:$false -ErrorAction Stop
+            Connect-M365AssessExchangeSession -TenantId $TenantId `
+                -AdminUpn $AdminUpn `
+                -UseDeviceCode:$UseDeviceCode `
+                -SignInProgressCallback $SignInProgressCallback `
+                -TimeoutSeconds $DeviceCodeTimeoutSeconds `
+                -DeviceCodeTokenAcquirer $DeviceCodeTokenAcquirer
             Write-OK 'Connected to Exchange Online'
             $exoConnected = $true
         }
         catch {
-            Write-Fail "Connection failed: $($_.Exception.Message)"
+            $connectionError = $_.Exception.Message
+            Write-Fail "Connection failed: $connectionError"
+            # A device code that expired or timed out is an operator-visible failure, not a
+            # connectivity problem to skip past: report it and stop so the wizard can say so.
+            if ($UseDeviceCode -and $connectionError -match 'onboard\.device_code_') {
+                throw
+            }
             Write-Warn 'Exchange Online RBAC step skipped. Resolve connectivity and re-run.'
         }
 
@@ -930,6 +1562,379 @@ function Grant-M365AssessConsent {
     }
 
     # ==================================================================
+    # STEP 6 - OPERATOR APP REGISTRATION (OPT-IN WRITE ACCESS, T-0917)
+    #
+    # The reader app configured above is never granted a write permission.
+    # When -IncludeWritePermissions is passed, a second app registration
+    # (default 'M365-Assess-Operator') is created or updated with the same
+    # certificate and only the selected write groups. Directory roles and
+    # EXO role groups are assigned only when the 'exchange' group is selected.
+    # ==================================================================
+
+    $operatorGraphResults = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $operatorDirectoryResults = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $operatorExoResults = [System.Collections.Generic.List[PSCustomObject]]::new()
+    $operatorClientId = $null
+    $operatorCertificateThumbprint = $null
+    $operatorCertificatePath = $null
+    $operatorCreated = $false
+    $operatorSp = $null
+
+    if ($IncludeWritePermissions) {
+        $certSubject = "CN=M365-Assess-$TenantId"
+        $operatorKeyCredential = @{
+            Type          = 'AsymmetricX509Cert'
+            Usage         = 'Verify'
+            Key           = $cert.RawData
+            DisplayName   = $certSubject
+            StartDateTime = $cert.NotBefore.ToUniversalTime().ToString('o')
+            EndDateTime   = $cert.NotAfter.ToUniversalTime().ToString('o')
+        }
+
+        if ($WhatIfPreference) {
+            Write-Step "[WhatIf] Would create or update operator app registration '$OperatorAppDisplayName'"
+            Write-Host "    [WhatIf] Groups: $(@($operatorSelection.Groups) -join ', ')" -ForegroundColor DarkYellow
+            foreach ($permission in @($operatorSelection.GraphPermissions)) {
+                Write-Host "    [WhatIf] Would add Graph permission: $permission" -ForegroundColor DarkYellow
+            }
+            foreach ($role in @($operatorSelection.ExchangeAppRoles)) {
+                Write-Host "    [WhatIf] Would add Exchange app role: $role" -ForegroundColor DarkYellow
+            }
+            foreach ($role in @($operatorSelection.DirectoryRoles)) {
+                Write-Host "    [WhatIf] Would assign directory role: $role" -ForegroundColor DarkYellow
+            }
+            foreach ($rg in @($operatorSelection.ExoRoleGroups)) {
+                Write-Host "    [WhatIf] Would add operator service principal to EXO role group: $rg" -ForegroundColor DarkYellow
+            }
+            $operatorClientId = '<planned>'
+            $operatorCertificateThumbprint = $CertificateThumbprint
+            $operatorCertificatePath = $certificatePath
+        }
+        else {
+            Write-Step "Provisioning operator app registration '$OperatorAppDisplayName'..."
+            Write-Info 'The operator app reuses the certificate generated or selected for the reader app.'
+
+            $prevWam = $env:MSAL_ALLOW_WAM
+            $env:MSAL_ALLOW_WAM = '0'
+            try {
+                Connect-M365AssessGraphSession -TenantId $TenantId `
+                    -Scopes @(
+                        'Application.ReadWrite.All'
+                        'AppRoleAssignment.ReadWrite.All'
+                        'RoleManagement.ReadWrite.Directory'
+                        'Directory.Read.All'
+                    ) `
+                    -UseDeviceCode:$UseDeviceCode `
+                    -SignInProgressCallback $SignInProgressCallback `
+                    -Stage 'graph-operator'
+                $operatorCtx = Get-MgContext
+                Write-OK "Connected (delegated) as: $($operatorCtx.Account)"
+            }
+            catch {
+                throw "Delegated Graph connection failed while provisioning the operator app: $($_.Exception.Message)"
+            }
+            finally {
+                $env:MSAL_ALLOW_WAM = $prevWam
+            }
+
+            $existingOperator = @(Get-MgApplication -Filter "displayName eq '$OperatorAppDisplayName'" -ErrorAction Stop) |
+                Select-Object -First 1
+            if (-not $existingOperator) {
+                if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, 'Create operator app registration')) {
+                    $newOperatorApp = New-MgApplication -DisplayName $OperatorAppDisplayName -SignInAudience 'AzureADMyOrg' -KeyCredentials @($operatorKeyCredential) -ErrorAction Stop
+                    $operatorClientId = $newOperatorApp.AppId
+                    $operatorCreated = $true
+                    Write-OK "Operator app created: $OperatorAppDisplayName"
+                    Write-OK "Operator client id: $operatorClientId"
+                    $operatorSp = New-MgServicePrincipal -AppId $operatorClientId -ErrorAction Stop
+                    Write-OK "Operator service principal created (ObjectId: $($operatorSp.Id))"
+                }
+            }
+            else {
+                $operatorClientId = $existingOperator.AppId
+                Write-Skip "Operator app already exists: $OperatorAppDisplayName ($operatorClientId)"
+                $hasOperatorKey = @($existingOperator.KeyCredentials | Where-Object { $_.DisplayName -eq $certSubject }).Count -gt 0
+                if (-not $hasOperatorKey) {
+                    if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, 'Upload the reader certificate to the operator app')) {
+                        $existingKeys = @($existingOperator.KeyCredentials | Where-Object { $_ })
+                        $mergedKeys = $existingKeys + @($operatorKeyCredential)
+                        Update-MgApplication -ApplicationId $existingOperator.Id -KeyCredentials $mergedKeys -ErrorAction Stop
+                        Write-OK "Uploaded certificate $CertificateThumbprint to the operator app"
+                    }
+                }
+                else {
+                    Write-Skip "Operator app already trusts certificate $CertificateThumbprint"
+                }
+                $operatorSp = Get-MgServicePrincipal -Filter "appId eq '$operatorClientId'" -ErrorAction Stop
+                if (-not $operatorSp) {
+                    if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, 'Create operator service principal')) {
+                        $operatorSp = New-MgServicePrincipal -AppId $operatorClientId -ErrorAction Stop
+                        Write-OK "Operator service principal created (ObjectId: $($operatorSp.Id))"
+                    }
+                }
+            }
+
+            if (-not $operatorSp) {
+                throw "Operator service principal could not be resolved for app id '$operatorClientId' (code: consent.operator_sp_missing)."
+            }
+
+            $operatorCertificateThumbprint = $CertificateThumbprint
+            $operatorCertificatePath = $certificatePath
+
+            # --- Selected Graph application permissions ---
+            if ($SkipGraph) {
+                Write-Step 'Operator Graph permissions - SKIPPED (-SkipGraph specified)'
+            }
+            elseif (@($operatorSelection.GraphPermissions).Count -gt 0) {
+                Write-Step "Adding operator Graph permissions ($(@($operatorSelection.GraphPermissions).Count))..."
+                $graphSp = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'" -ErrorAction Stop
+                $roleLookup = @{}
+                foreach ($role in $graphSp.AppRoles) { $roleLookup[$role.Value] = $role.Id }
+                $existingOperatorGraphIds = @(
+                    Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -ErrorAction SilentlyContinue |
+                        Where-Object { $_.ResourceId -eq $graphSp.Id } |
+                        Select-Object -ExpandProperty AppRoleId
+                )
+                foreach ($permission in @($operatorSelection.GraphPermissions)) {
+                    if (-not $roleLookup.ContainsKey($permission)) {
+                        Write-Fail "$permission - not found in Microsoft Graph app roles"
+                        $operatorGraphResults.Add([PSCustomObject]@{ Permission = $permission; Status = 'NotFound' })
+                        continue
+                    }
+                    $roleId = $roleLookup[$permission]
+                    if ($existingOperatorGraphIds -contains $roleId) {
+                        Write-Skip "$permission - already assigned"
+                        $operatorGraphResults.Add([PSCustomObject]@{ Permission = $permission; Status = 'AlreadyPresent' })
+                        continue
+                    }
+                    if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, "Add Graph permission: $permission")) {
+                        try {
+                            New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -BodyParameter @{
+                                PrincipalId = $operatorSp.Id
+                                ResourceId  = $graphSp.Id
+                                AppRoleId   = $roleId
+                            } | Out-Null
+                            Write-OK $permission
+                            $operatorGraphResults.Add([PSCustomObject]@{ Permission = $permission; Status = 'Added' })
+                        }
+                        catch {
+                            Write-Fail "$permission - $($_.Exception.Message)"
+                            $operatorGraphResults.Add([PSCustomObject]@{ Permission = $permission; Status = 'Failed'; Error = $_.Exception.Message })
+                        }
+                    }
+                    else {
+                        Write-Host "    [WhatIf] Would add: $permission" -ForegroundColor DarkYellow
+                        $operatorGraphResults.Add([PSCustomObject]@{ Permission = $permission; Status = 'WhatIf' })
+                    }
+                }
+            }
+
+            # --- Exchange Online app roles (Exchange.ManageAsApp etc.) ---
+            if (@($operatorSelection.ExchangeAppRoles).Count -gt 0) {
+                Write-Step 'Adding Exchange app roles to the operator app...'
+                try {
+                    $exoResourceAppId = '00000002-0000-0ff1-ce00-000000000000'
+                    $exoSp = Get-MgServicePrincipal -Filter "appId eq '$exoResourceAppId'" -ErrorAction Stop
+                    $existingOperatorExo = @(Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -ErrorAction SilentlyContinue)
+                    foreach ($roleName in @($operatorSelection.ExchangeAppRoles)) {
+                        $role = $exoSp.AppRoles | Where-Object { $_.Value -eq $roleName }
+                        if (-not $role) {
+                            Write-Warn "$roleName role not found on the Exchange service principal"
+                            continue
+                        }
+                        $already = $existingOperatorExo | Where-Object { $_.AppRoleId -eq $role.Id -and $_.ResourceId -eq $exoSp.Id }
+                        if ($already) {
+                            Write-Skip "$roleName - already assigned"
+                            continue
+                        }
+                        if ($PSCmdlet.ShouldProcess($roleName, 'Grant Exchange app role to operator app')) {
+                            New-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -BodyParameter @{
+                                PrincipalId = $operatorSp.Id
+                                ResourceId  = $exoSp.Id
+                                AppRoleId   = $role.Id
+                            } | Out-Null
+                            Write-OK $roleName
+                        }
+                    }
+                }
+                catch {
+                    Write-Warn "Could not assign Exchange app roles to the operator app: $_"
+                }
+            }
+
+            # --- Exchange / Purview / Teams directory roles (exchange group only) ---
+            foreach ($roleName in @($operatorSelection.DirectoryRoles)) {
+                $templateId = $script:OperatorDirectoryRoleTemplates[$roleName]
+                if (-not $templateId) {
+                    Write-Warn "No built-in role template is known for '$roleName'"
+                    $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'NotFound' })
+                    continue
+                }
+                $dirRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$templateId'" -ErrorAction SilentlyContinue
+                if (-not $dirRole) {
+                    if ($PSCmdlet.ShouldProcess($roleName, 'Activate directory role in tenant')) {
+                        try {
+                            $dirRole = New-MgDirectoryRole -BodyParameter @{ roleTemplateId = $templateId } -ErrorAction Stop
+                            Write-Info "$roleName - activated in tenant"
+                        }
+                        catch {
+                            Write-Fail "$roleName - could not activate role: $($_.Exception.Message)"
+                            $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Error = $_.Exception.Message })
+                            continue
+                        }
+                    }
+                    else {
+                        Write-Host "    [WhatIf] Would activate directory role: $roleName" -ForegroundColor DarkYellow
+                        $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'WhatIf' })
+                        continue
+                    }
+                }
+
+                $existingMembers = @(
+                    Get-MgDirectoryRoleMemberAsServicePrincipal -DirectoryRoleId $dirRole.Id -All -ErrorAction SilentlyContinue |
+                        Select-Object -ExpandProperty Id
+                )
+                if ($existingMembers -contains $operatorSp.Id) {
+                    Write-Skip "$roleName - already assigned to the operator app"
+                    $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'AlreadyPresent' })
+                    continue
+                }
+
+                if ($PSCmdlet.ShouldProcess($roleName, "Assign to $OperatorAppDisplayName")) {
+                    try {
+                        $graphBase = switch ((Get-MgContext).Environment) {
+                            'USGov'    { 'https://graph.microsoft.us' }
+                            'USGovDoD' { 'https://dod-graph.microsoft.us' }
+                            default    { 'https://graph.microsoft.com' }
+                        }
+                        New-MgDirectoryRoleMemberByRef -DirectoryRoleId $dirRole.Id -BodyParameter @{
+                            '@odata.id' = "$graphBase/v1.0/directoryObjects/$($operatorSp.Id)"
+                        } -ErrorAction Stop
+                        Write-OK "$roleName (operator app)"
+                        $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Added' })
+                    }
+                    catch {
+                        if ($_.Exception.Message -match 'already exist') {
+                            Write-Skip "$roleName - already assigned (confirmed via error)"
+                            $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'AlreadyPresent' })
+                        }
+                        else {
+                            Write-Fail "$roleName - $($_.Exception.Message)"
+                            $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Error = $_.Exception.Message })
+                        }
+                    }
+                }
+                else {
+                    Write-Host "    [WhatIf] Would assign directory role: $roleName" -ForegroundColor DarkYellow
+                    $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'WhatIf' })
+                }
+            }
+
+            Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
+
+            # --- Exchange Online role groups (exchange group only) ---
+            if (@($operatorSelection.ExoRoleGroups).Count -gt 0) {
+                if ($SkipExchangeRbac) {
+                    Write-Step 'Operator Exchange Online RBAC - SKIPPED (-SkipExchangeRbac specified)'
+                    foreach ($rg in @($operatorSelection.ExoRoleGroups)) {
+                        $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Skipped' })
+                    }
+                }
+                else {
+                    Write-Step "Adding the operator app to Exchange Online role groups..."
+                    $operatorExoConnected = $false
+                    try {
+                        Connect-M365AssessExchangeSession -TenantId $TenantId `
+                            -AdminUpn $AdminUpn `
+                            -UseDeviceCode:$UseDeviceCode `
+                            -SignInProgressCallback $SignInProgressCallback `
+                            -TimeoutSeconds $DeviceCodeTimeoutSeconds `
+                            -DeviceCodeTokenAcquirer $DeviceCodeTokenAcquirer
+                        $operatorExoConnected = $true
+                    }
+                    catch {
+                        $operatorConnectionError = $_.Exception.Message
+                        Write-Fail "Connection failed: $operatorConnectionError"
+                        if ($UseDeviceCode -and $operatorConnectionError -match 'onboard\.device_code_') {
+                            throw
+                        }
+                    }
+
+                    if ($operatorExoConnected) {
+                        try {
+                            $exoSp = Get-ServicePrincipal -Identity $operatorSp.Id -ErrorAction Stop
+                        }
+                        catch {
+                            $exoSp = $null
+                        }
+                        if (-not $exoSp -and $PSCmdlet.ShouldProcess($OperatorAppDisplayName, 'Register service principal in Exchange Online')) {
+                            try {
+                                New-ServicePrincipal -AppId $operatorClientId -ObjectId $operatorSp.Id -DisplayName $OperatorAppDisplayName -ErrorAction Stop | Out-Null
+                                Write-OK "Registered '$OperatorAppDisplayName' as an Exchange Online service principal"
+                            }
+                            catch {
+                                Write-Warn "Could not register the operator service principal in Exchange Online: $($_.Exception.Message)"
+                            }
+                        }
+
+                        foreach ($rg in @($operatorSelection.ExoRoleGroups)) {
+                            $alreadyMember = $false
+                            try {
+                                $members = @(Get-RoleGroupMember -Identity $rg -ErrorAction Stop | Select-Object -ExpandProperty Name)
+                                if ($members -contains $OperatorAppDisplayName) { $alreadyMember = $true }
+                            }
+                            catch {
+                                Write-Warn "$rg - could not query members: $($_.Exception.Message)"
+                            }
+                            if ($alreadyMember) {
+                                Write-Skip "$rg - already a member"
+                                $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'AlreadyPresent' })
+                                continue
+                            }
+                            if ($PSCmdlet.ShouldProcess($rg, "Add '$OperatorAppDisplayName'")) {
+                                try {
+                                    $added = $false
+                                    for ($attempt = 1; -not $added; $attempt++) {
+                                        $member = if ($attempt % 2 -eq 1) { $OperatorAppDisplayName } else { $operatorSp.Id }
+                                        try {
+                                            Add-RoleGroupMember -Identity $rg -Member $member -ErrorAction Stop
+                                            $added = $true
+                                        }
+                                        catch {
+                                            if ($attempt -ge 6 -or $_.Exception.Message -notmatch "Couldn't find object|could not be found|not found") { throw }
+                                            Write-Info "$rg - operator service principal not visible to Exchange yet; retrying in 15s ($attempt/5)"
+                                            Start-Sleep -Seconds 15
+                                        }
+                                    }
+                                    Write-OK "$rg (operator app)"
+                                    $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Added' })
+                                }
+                                catch {
+                                    if ($_.Exception.Message -match 'already a member') {
+                                        Write-Skip "$rg - already a member (confirmed via error)"
+                                        $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'AlreadyPresent' })
+                                    }
+                                    else {
+                                        Write-Fail "$rg - $($_.Exception.Message)"
+                                        $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Error = $_.Exception.Message })
+                                    }
+                                }
+                            }
+                            else {
+                                Write-Host "    [WhatIf] Would add the operator app to EXO role group: $rg" -ForegroundColor DarkYellow
+                                $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'WhatIf' })
+                            }
+                        }
+
+                        Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+                        Write-Info 'Disconnected from Exchange Online'
+                    }
+                }
+            }
+        }
+    }
+
+    # ==================================================================
     # FINAL SUMMARY
     # ==================================================================
 
@@ -944,10 +1949,29 @@ function Grant-M365AssessConsent {
     if (-not $SkipComplianceRoles) { Write-StepSummary -Label 'Entra ID Compliance / Security Roles' -Results $complianceResults -ItemField 'Role'       }
     if (-not $SkipExchangeRbac)    { Write-StepSummary -Label 'Exchange Online RBAC Role Groups'     -Results $exoResults        -ItemField 'RoleGroup'  }
 
+    if ($IncludeWritePermissions) {
+        Write-Host "  Operator App     : $OperatorAppDisplayName"  -ForegroundColor White
+        Write-Host "  Operator AppId   : $operatorClientId"         -ForegroundColor White
+        Write-Host "  Write Groups     : $(@($operatorSelection.Groups) -join ', ')" -ForegroundColor White
+        Write-Host ''
+        if (-not $SkipGraph) {
+            Write-StepSummary -Label 'Operator Graph API Permissions' -Results $operatorGraphResults -ItemField 'Permission'
+        }
+        if (@($operatorDirectoryResults).Count -gt 0) {
+            Write-StepSummary -Label 'Operator Directory Roles' -Results $operatorDirectoryResults -ItemField 'Role'
+        }
+        if (@($operatorExoResults).Count -gt 0) {
+            Write-StepSummary -Label 'Operator Exchange Online RBAC Role Groups' -Results $operatorExoResults -ItemField 'RoleGroup'
+        }
+    }
+
     $totalFailed = (
         @($graphResults      | Where-Object { $_.Status -in 'Failed', 'NotFound' }).Count +
         @($complianceResults | Where-Object { $_.Status -eq 'Failed' }).Count +
-        @($exoResults        | Where-Object { $_.Status -eq 'Failed' }).Count
+        @($exoResults        | Where-Object { $_.Status -eq 'Failed' }).Count +
+        @($operatorGraphResults | Where-Object { $_.Status -in 'Failed', 'NotFound' }).Count +
+        @($operatorDirectoryResults | Where-Object { $_.Status -eq 'Failed' }).Count +
+        @($operatorExoResults | Where-Object { $_.Status -eq 'Failed' }).Count
     )
 
     if ($WhatIfPreference) {
@@ -1055,5 +2079,14 @@ function Grant-M365AssessConsent {
         ComplianceRoles       = $complianceResults
         ExoRoleGroups         = $exoResults
         TotalFailed           = $totalFailed
+        OperatorAppDisplayName        = if ($IncludeWritePermissions) { $OperatorAppDisplayName } else { $null }
+        OperatorClientId              = $operatorClientId
+        OperatorCertificateThumbprint = $operatorCertificateThumbprint
+        OperatorCertificatePath       = $operatorCertificatePath
+        OperatorCreated               = $operatorCreated
+        WritePermissionGroups         = if ($IncludeWritePermissions) { @($operatorSelection.Groups) } else { @() }
+        OperatorGraphPermissions      = $operatorGraphResults
+        OperatorDirectoryRoles        = $operatorDirectoryResults
+        OperatorExoRoleGroups         = $operatorExoResults
     }
 }

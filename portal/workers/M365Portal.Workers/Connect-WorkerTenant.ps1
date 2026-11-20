@@ -44,10 +44,15 @@ function Read-WorkerCredentialBlock {
     if (-not $credential -or -not $credential.credentialRef -or -not $credential.record) {
         throw "job envelope for tenant '$tenantId' carries no credential block; the worker will not run unauthenticated (code: worker.credential_missing)"
     }
+    $purpose = [string]$credential.purpose
+    if (-not $purpose -and $credential.record.purpose) {
+        $purpose = [string]$credential.record.purpose
+    }
     return @{
         TenantId      = $tenantId
         CredentialRef = [string]$credential.credentialRef
         Record        = $credential.record
+        Purpose       = $purpose
     }
 }
 
@@ -95,6 +100,7 @@ function Connect-WorkerTenant {
         # that needs Exchange Online, so it trips the same client-secret rejection.
         Sections         = @(if ($Service -contains 'ExchangeOnline') { 'Email' })
     }
+    if ($block.Purpose) { $resolveParams['Purpose'] = [string]$block.Purpose }
     if ($CredentialStore) { $resolveParams['CredentialStore'] = $CredentialStore }
     $auth = Resolve-TenantCredential @resolveParams
 

@@ -166,17 +166,22 @@ export function createIncidentProviders(
 
     actions: {
       executeAction(tenantId, incidentId, action, options): Promise<ProviderIncidentActionResult> {
-        return envelope<ProviderIncidentActionResult>("invoke-incident-action.ps1", tenantId, {
-          incidentId,
-          action,
-          value: options.value,
-          comment: options.comment,
-          reason: options.reason,
-          dryRun: false,
-          // The route gates bulk and resolve before it calls the provider, so the
-          // worker always receives an explicit confirmation for a real write.
-          confirm: true,
-        });
+        return envelope<ProviderIncidentActionResult>(
+          "invoke-incident-action.ps1",
+          tenantId,
+          {
+            incidentId,
+            action,
+            value: options.value,
+            comment: options.comment,
+            reason: options.reason,
+            dryRun: false,
+            // The route gates bulk and resolve before it calls the provider, so the
+            // worker always receives an explicit confirmation for a real write.
+            confirm: true,
+          },
+          { purpose: "operator" },
+        );
       },
     },
 
@@ -198,15 +203,20 @@ export function createIncidentProviders(
     alertActions: {
       async executeAction(tenantId, alertId, action, options): Promise<ProviderAlertActionResult> {
         try {
-          return await envelope<ProviderAlertActionResult>("invoke-alert-action.ps1", tenantId, {
-            alertId,
-            action,
-            value: options.value,
-            comment: options.comment,
-            reason: options.reason,
-            dryRun: false,
-            confirm: true,
-          });
+          return await envelope<ProviderAlertActionResult>(
+            "invoke-alert-action.ps1",
+            tenantId,
+            {
+              alertId,
+              action,
+              value: options.value,
+              comment: options.comment,
+              reason: options.reason,
+              dryRun: false,
+              confirm: true,
+            },
+            { purpose: "operator" },
+          );
         } catch (error) {
           // The worker throws alerts.unsupported_action for create-incident on a
           // source that cannot promote; the route expects that as a value so it can

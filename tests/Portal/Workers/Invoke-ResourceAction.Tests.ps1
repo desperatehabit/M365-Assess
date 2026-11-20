@@ -490,3 +490,16 @@ Describe 'Invoke-ResourceAction worker (T-0449)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DistributionGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DistributionGroupMember' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-DistributionGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-DistributionGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-DistributionGroupMember' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-DistributionGroupMember' -ErrorAction SilentlyContinue
+}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ProgressEventHub,
+  type RunProgressRecord,
   type RunProgressStore,
   type RunSectionInput,
 } from "./hub.js";
@@ -25,6 +26,9 @@ class FakeRunProgressStore implements RunProgressStore {
 
   readonly sections: RunSectionInput[] = [];
 
+  /** Latest run state after applying each update, so tests can assert the stored run. */
+  readonly runs = new Map<string, RunProgressRecord>();
+
   async updateRun(
     tenantId: string,
     runId: string,
@@ -36,6 +40,17 @@ class FakeRunProgressStore implements RunProgressStore {
     },
   ): Promise<unknown> {
     this.runUpdates.push({ tenantId, runId, update });
+    const base: RunProgressRecord = this.runs.get(runId) ?? {
+      id: runId,
+      tenantId,
+      status: "queued",
+    };
+    this.runs.set(runId, {
+      ...base,
+      status: update.status ?? base.status,
+      startedAt: update.startedAt !== undefined ? update.startedAt : base.startedAt,
+      finishedAt: update.finishedAt !== undefined ? update.finishedAt : base.finishedAt,
+    });
     return update;
   }
 
@@ -252,6 +267,120 @@ describe("ProgressEventHub", () => {
         finishedAt: "2026-06-01T10:05:00.000Z",
       },
     });
+  });
+
+  it("keeps a completed run's status and times when a remediation job fails (T-0928)", async () => {
+    const store = new FakeRunProgressStore();
+    const hub = new ProgressEventHub({ store });
+
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: JOB_ID,
+      state: "running",
+      at: "2026-06-01T10:00:00.000Z",
+    });
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: JOB_ID,
+      state: "succeeded",
+      at: "2026-06-01T10:05:00.000Z",
+    });
+
+    const assessmentUpdates = store.runUpdates.length;
+    expect(store.runs.get(RUN_ID)).toMatchObject({
+      status: "succeeded",
+      startedAt: "2026-06-01T10:00:00.000Z",
+      finishedAt: "2026-06-01T10:05:00.000Z",
+    });
+
+    // The remediation job links to the same run, runs minutes later, and fails.
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: "job-remediation-1",
+      jobType: "remediation",
+      state: "running",
+      at: "2026-06-01T10:10:00.000Z",
+    });
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: "job-remediation-1",
+      jobType: "remediation",
+      state: "failed",
+      at: "2026-06-01T10:11:00.000Z",
+    });
+
+    expect(store.runUpdates).toHaveLength(assessmentUpdates);
+    expect(store.runs.get(RUN_ID)).toMatchObject({
+      status: "succeeded",
+      startedAt: "2026-06-01T10:00:00.000Z",
+      finishedAt: "2026-06-01T10:05:00.000Z",
+    });
+    expect(hub.isTerminal(RUN_ID)).toBe(true);
+  });
+
+  it("does not flip a finished run back to running when a remediation job starts (T-0928)", async () => {
+    const store = new FakeRunProgressStore();
+    const hub = new ProgressEventHub({ store });
+
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: JOB_ID,
+      state: "running",
+      at: "2026-06-01T10:00:00.000Z",
+    });
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: JOB_ID,
+      state: "succeeded",
+      at: "2026-06-01T10:05:00.000Z",
+    });
+
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: "job-remediation-2",
+      jobType: "remediation",
+      state: "running",
+      // Even a section name on a remediation event must not write run section state.
+      section: "ExchangeOnline",
+      sectionState: "running",
+      at: "2026-06-01T10:10:00.000Z",
+    });
+
+    expect(store.runUpdates).toHaveLength(2);
+    expect(store.runs.get(RUN_ID)?.status).toBe("succeeded");
+    expect(store.sections).toHaveLength(0);
+  });
+
+  it("does not treat a remediation job's terminal event as the run's terminal state (T-0928)", async () => {
+    const store = new FakeRunProgressStore();
+    const hub = new ProgressEventHub({ store });
+
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: "job-remediation-3",
+      jobType: "remediation",
+      state: "running",
+      at: "2026-06-01T10:10:00.000Z",
+    });
+    await hub.publish({
+      runId: RUN_ID,
+      tenantId: TENANT_ID,
+      jobId: "job-remediation-3",
+      jobType: "remediation",
+      state: "failed",
+      at: "2026-06-01T10:11:00.000Z",
+    });
+
+    expect(store.runUpdates).toHaveLength(0);
+    expect(hub.isTerminal(RUN_ID)).toBe(false);
   });
 
   it("sanitizes secrets and tenant PII from events", async () => {

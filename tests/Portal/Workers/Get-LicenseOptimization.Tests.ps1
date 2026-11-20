@@ -168,3 +168,7 @@ Describe 'Get-LicenseOptimization worker (T-0643)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

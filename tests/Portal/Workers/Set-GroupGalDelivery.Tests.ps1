@@ -75,3 +75,10 @@ Describe 'Set-GroupGalDelivery worker (T-0269)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-UnifiedGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-UnifiedGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DistributionGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-DistributionGroup' -ErrorAction SilentlyContinue
+}

@@ -193,14 +193,19 @@ export function createDomainsProviders(
     },
     actions: {
       async run(tenantId: string, request: DomainActionRequest): Promise<DomainActionOutcome> {
-        const result = await tenantCall<unknown>(DOMAIN_ACTION_WORKER, tenantId, {
-          domain: request.domain,
-          action: request.action,
-          dryRun: request.dryRun,
-          confirmed: request.confirmed,
-          actor: request.actor,
-          reason: request.reason,
-        });
+        const result = await tenantCall<unknown>(
+          DOMAIN_ACTION_WORKER,
+          tenantId,
+          {
+            domain: request.domain,
+            action: request.action,
+            dryRun: request.dryRun,
+            confirmed: request.confirmed,
+            actor: request.actor,
+            reason: request.reason,
+          },
+          request.dryRun ? undefined : { purpose: "operator" },
+        );
         raiseWorkerError(result);
         return mapDomainActionOutcome(result, tenantId, request);
       },

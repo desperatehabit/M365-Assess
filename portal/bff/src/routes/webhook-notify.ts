@@ -1,17 +1,20 @@
 // Graph webhook notification receiver (EPIC-032 SPEC.md §3.5, §4.3, §6, §11.2;
-// T-0625).
+// T-0625, T-0905).
 //
 // Unauthenticated endpoint that receives Graph change notifications for the
 // tenant's webhook subscriptions. Graph cannot carry portal credentials, so the
 // clientState issued at subscribe time is the authentication: every notification
 // value must carry the clientState its subscription was created with, or the
-// whole request is rejected with 401. Valid notifications are matched to their
-// resource, recorded by reference, and dispatched to the alert/cache seam
-// (EPIC-029). Content-bundle processing is deferred (SPEC §11.2): an encrypted
-// content payload is acknowledged and stored by reference only — this route
-// never reads, decrypts, or downloads notification content. The route also
-// answers Graph's subscription-validation handshake (validationToken), which the
-// create action needs to succeed.
+// whole request is rejected with 401. Only the SHA-256 hash of the clientState
+// is stored (migration 0131), so the receiver hashes each incoming value and
+// compares; the plaintext never reaches storage or the dispatch seam. Valid
+// notifications are matched to their resource, recorded by reference, and
+// dispatched to the alert/cache seam (EPIC-029). Content-bundle processing is
+// deferred (SPEC §11.2): an encrypted content payload is acknowledged and stored
+// by reference only — this route never reads, decrypts, or downloads
+// notification content. The route also answers Graph's subscription-validation
+// handshake (validationToken), which the create action needs to succeed.
+import { createHash, timingSafeEqual } from "node:crypto";
 import { AppError, ErrorCodes } from "../errors.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
@@ -25,7 +28,8 @@ export type WebhookSubscriptionState = "active" | "expiring" | "expired";
 
 export interface WebhookNotifySubscriptionRecord {
   readonly tenantId: string;
-  readonly clientState: string;
+  /** SHA-256 hex of the clientState persisted at subscribe time. */
+  readonly clientStateHash: string;
   readonly resource?: string;
   readonly state?: WebhookSubscriptionState;
 }
@@ -43,7 +47,6 @@ export interface WebhookDispatchedNotification {
   readonly tenantId: string;
   readonly resource: string;
   readonly changeType: string;
-  readonly clientState: string;
   readonly receivedAt: string;
 }
 
@@ -80,6 +83,17 @@ function invalidClientStateError(): AppError {
     "notification clientState does not match the subscription",
     401,
   );
+}
+
+/** SHA-256 hex; must match SqliteAuditRepository.hashClientState (migration 0131). */
+export function hashClientState(clientState: string): string {
+  return createHash("sha256").update(clientState).digest("hex");
+}
+
+function clientStateMatches(provided: string, expectedHash: string): boolean {
+  const actual = Buffer.from(hashClientState(provided), "hex");
+  const expected = Buffer.from(expectedHash, "hex");
+  return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
 
 function readJsonBody(
@@ -159,12 +173,19 @@ export async function handleWebhookNotify(
   const references: WebhookNotificationReference[] = [];
   for (const value of values) {
     const subscriptionId = requireString(value["subscriptionId"], "subscriptionId");
-    const clientState = requireString(value["clientState"], "clientState");
+    const clientState = value["clientState"];
+    if (typeof clientState !== "string" || clientState.length === 0) {
+      throw invalidClientStateError();
+    }
     const resource = requireString(value["resource"], "resource");
     const changeType = requireString(value["changeType"], "changeType");
 
     const record = await options.store.getSubscription(subscriptionId);
-    if (record === undefined || record.clientState !== clientState) {
+    if (
+      record === undefined ||
+      record.clientStateHash.length === 0 ||
+      !clientStateMatches(clientState, record.clientStateHash)
+    ) {
       throw invalidClientStateError();
     }
 
@@ -181,7 +202,6 @@ export async function handleWebhookNotify(
       tenantId: record.tenantId,
       resource,
       changeType,
-      clientState,
       receivedAt,
     });
     references.push(reference);
@@ -215,6 +235,16 @@ export const WEBHOOK_NOTIFY_OPENAPI = {
         operationId: "receiveWebhookNotification",
         summary: "Receive Graph change notifications; clientState is the authentication",
         security: [],
+        parameters: [
+          {
+            name: "validationToken",
+            in: "query",
+            required: false,
+            schema: { type: "string" },
+            description:
+              "Graph's subscription-validation handshake; echoed verbatim as text/plain with no authentication.",
+          },
+        ],
         requestBody: {
           required: true,
           content: {
@@ -242,9 +272,9 @@ export const WEBHOOK_NOTIFY_OPENAPI = {
           },
         },
         responses: {
-          "200": { description: "The notifications were accepted and dispatched." },
+          "200": { description: "The notifications were accepted and dispatched, or the validation token was echoed." },
           "400": { description: "The body is not a valid notification batch." },
-          "401": { description: "A notification carried an invalid clientState." },
+          "401": { description: "A notification was missing a clientState or carried one that does not match its subscription." },
         },
       },
     },

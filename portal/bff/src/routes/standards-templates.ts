@@ -17,12 +17,18 @@ import {
 } from "../rbac/authorize.js";
 import type { Permission } from "../rbac/roles.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
+import {
+  builtinLockedError,
+  copyTemplateName,
+  isBuiltInTemplate,
+} from "./template-builtin.js";
 
 // ─── Paths, permissions, error codes ─────────────────────────────────────────
 
 export const STANDARDS_TEMPLATES_PATH = "/v1/standards/templates";
 export const STANDARDS_TEMPLATE_DETAIL_PATH = "/v1/standards/templates/:templateId";
 export const STANDARDS_TEMPLATE_CLONE_PATH = "/v1/standards/templates/:templateId/clone";
+export const STANDARDS_TEMPLATE_COPY_PATH = "/v1/standards/templates/:templateId/copy";
 
 export const STANDARDS_PERMISSIONS = {
   read: "Tenant.Standards.Read",
@@ -58,6 +64,69 @@ export interface StandardTemplateRecord {
   readonly autoRemediate: boolean;
   readonly settings: readonly StandardTemplateSetting[];
   readonly scheduleId: string | null;
+  /** True for pre-defined templates; they are read-only and can only be copied. */
+  readonly builtIn?: boolean;
+}
+
+// ─── Built-in starting points (T-0924) ───────────────────────────────────────
+
+/**
+ * Standards templates that ship with the portal. They mirror the shipped
+ * baseline catalog and are served from the route module (like T-0923's report
+ * templates) so an upgrade refreshes them without ever touching an operator
+ * copy stored in the repository.
+ */
+export const BUILT_IN_STANDARD_TEMPLATES: readonly StandardTemplateRecord[] = [
+  {
+    id: "builtin-standard-identity",
+    name: "Identity baseline",
+    kind: "standards",
+    actions: { report: true, alert: true, remediate: false },
+    autoRemediate: false,
+    settings: [
+      { key: "ENTRA-SECDEFAULT-001", value: { state: "enabled" } },
+      { key: "CA-MFA-ALL-001", value: { state: "enabled" } },
+      { key: "CA-PHISHRES-001", value: { state: "enabled" } },
+      { key: "CA-MFA-ADMIN-001", value: { state: "enabled" } },
+    ],
+    scheduleId: null,
+    builtIn: true,
+  },
+  {
+    id: "builtin-standard-conditional-access",
+    name: "Conditional Access baseline",
+    kind: "standards",
+    actions: { report: true, alert: true, remediate: false },
+    autoRemediate: false,
+    settings: [
+      { key: "CA-REPORTONLY-001", value: { state: "enabled" } },
+      { key: "CA-MFA-ADMIN-001", value: { state: "enabled" } },
+    ],
+    scheduleId: null,
+    builtIn: true,
+  },
+  {
+    id: "builtin-standard-sharing",
+    name: "Sharing baseline",
+    kind: "standards",
+    actions: { report: true, alert: true, remediate: false },
+    autoRemediate: false,
+    settings: [{ key: "EXO-SHARING-001", value: { state: "disabled" } }],
+    scheduleId: null,
+    builtIn: true,
+  },
+];
+
+const BUILT_IN_BY_ID = new Map(
+  BUILT_IN_STANDARD_TEMPLATES.map((template) => [template.id, template]),
+);
+
+export function builtInStandardTemplate(id: string): StandardTemplateRecord | undefined {
+  return BUILT_IN_BY_ID.get(id);
+}
+
+export function isBuiltInStandardTemplate(id: string): boolean {
+  return BUILT_IN_BY_ID.has(id);
 }
 
 export interface TemplateAssignmentRecord {
@@ -315,6 +384,7 @@ function mapTemplate(template: StandardTemplateRecord): Record<string, unknown> 
     autoRemediate: template.autoRemediate,
     settings: template.settings,
     scheduleId: template.scheduleId,
+    builtIn: template.builtIn === true,
   };
 }
 
@@ -331,7 +401,10 @@ export function createStandardsTemplateRoutes(options: StandardsRouteOptions): R
     enforceTenantScope(caller, tenantId);
     const kind = ctx.query.get("kind");
 
-    let items = await options.store.listStandardTemplates();
+    const builtIns = BUILT_IN_STANDARD_TEMPLATES.filter(
+      (template) => !kind || template.kind === kind,
+    );
+    let items = [...builtIns, ...(await options.store.listStandardTemplates())];
     if (kind) {
       const parsed = parseKind(kind);
       items = items.filter((template) => template.kind === parsed);
@@ -363,7 +436,9 @@ export function createStandardsTemplateRoutes(options: StandardsRouteOptions): R
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, STANDARDS_PERMISSIONS.read);
     const templateId = requireParam(ctx, "templateId");
-    const template = await options.store.getStandardTemplate(templateId);
+    const template =
+      builtInStandardTemplate(templateId) ??
+      (await options.store.getStandardTemplate(templateId));
     if (!template) {
       throw new AppError(STANDARDS_TEMPLATE_NOT_FOUND, `Standard template ${templateId} not found`, 404);
     }
@@ -375,12 +450,18 @@ export function createStandardsTemplateRoutes(options: StandardsRouteOptions): R
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, STANDARDS_PERMISSIONS.write);
     const templateId = requireParam(ctx, "templateId");
+    if (isBuiltInStandardTemplate(templateId)) {
+      throw builtinLockedError("standards template", templateId);
+    }
     const body = requireBodyRecord(ctx.body);
     enforceTenantScope(caller, optionalString(body, "tenantId"));
 
     const existing = await options.store.getStandardTemplate(templateId);
     if (!existing) {
       throw new AppError(STANDARDS_TEMPLATE_NOT_FOUND, `Standard template ${templateId} not found`, 404);
+    }
+    if (isBuiltInTemplate(existing)) {
+      throw builtinLockedError("standards template", templateId);
     }
 
     const patch: UpdateTemplatePatch = {};
@@ -422,6 +503,13 @@ export function createStandardsTemplateRoutes(options: StandardsRouteOptions): R
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, STANDARDS_PERMISSIONS.write);
     const templateId = requireParam(ctx, "templateId");
+    if (isBuiltInStandardTemplate(templateId)) {
+      throw builtinLockedError("standards template", templateId);
+    }
+    const existing = await options.store.getStandardTemplate(templateId);
+    if (existing && isBuiltInTemplate(existing)) {
+      throw builtinLockedError("standards template", templateId);
+    }
     const deleted = await options.store.deleteStandardTemplate(templateId);
     if (!deleted) {
       throw new AppError(STANDARDS_TEMPLATE_NOT_FOUND, `Standard template ${templateId} not found`, 404);
@@ -437,15 +525,22 @@ export function createStandardsTemplateRoutes(options: StandardsRouteOptions): R
     const body = optionalBodyRecord(ctx.body);
     enforceTenantScope(caller, optionalString(body, "tenantId"));
 
-    const source = await options.store.getStandardTemplate(templateId);
+    const source =
+      builtInStandardTemplate(templateId) ??
+      (await options.store.getStandardTemplate(templateId));
     if (!source) {
       throw new AppError(STANDARDS_TEMPLATE_NOT_FOUND, `Standard template ${templateId} not found`, 404);
     }
 
     const newId = idGenerator();
+    const requestedName = optionalString(body, "name");
+    const existingNames = [
+      ...BUILT_IN_STANDARD_TEMPLATES.map((template) => template.name),
+      ...(await options.store.listStandardTemplates()).map((template) => template.name),
+    ];
     const clone = await options.store.createStandardTemplate({
       id: newId,
-      name: optionalString(body, "name") ?? `${source.name} (copy)`,
+      name: requestedName ?? copyTemplateName(source.name, existingNames),
       kind: source.kind,
       actions: source.actions,
       autoRemediate: source.autoRemediate,
@@ -476,6 +571,7 @@ export function createStandardsTemplateRoutes(options: StandardsRouteOptions): R
     { method: "PATCH", path: STANDARDS_TEMPLATE_DETAIL_PATH, handler: handlePatch },
     { method: "DELETE", path: STANDARDS_TEMPLATE_DETAIL_PATH, handler: handleDelete },
     { method: "POST", path: STANDARDS_TEMPLATE_CLONE_PATH, handler: handleClone },
+    { method: "POST", path: STANDARDS_TEMPLATE_COPY_PATH, handler: handleClone },
   ];
 }
 
@@ -536,6 +632,7 @@ export const STANDARDS_TEMPLATES_OPENAPI = {
       parameters: [{ name: "templateId", in: "path", required: true, schema: { type: "string" } }],
       responses: {
         "200": { description: "Updated.", content: { "application/json": { schema: { $ref: "#/components/schemas/StandardTemplateResponse" } } } },
+        "403": { description: "Built-in template is locked.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "422": { description: "Invalid kind conversion.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
       },
@@ -549,6 +646,7 @@ export const STANDARDS_TEMPLATES_OPENAPI = {
       parameters: [{ name: "templateId", in: "path", required: true, schema: { type: "string" } }],
       responses: {
         "204": { description: "Deleted." },
+        "403": { description: "Built-in template is locked.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
       },
     },
@@ -563,6 +661,20 @@ export const STANDARDS_TEMPLATES_OPENAPI = {
       parameters: [{ name: "templateId", in: "path", required: true, schema: { type: "string" } }],
       responses: {
         "201": { description: "Cloned.", content: { "application/json": { schema: { $ref: "#/components/schemas/StandardTemplateResponse" } } } },
+        "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      },
+    },
+  },
+  "/v1/standards/templates/{templateId}/copy": {
+    post: {
+      tags: ["Standards"],
+      operationId: "copyStandardTemplate",
+      summary: "Make an editable operator copy of a template, including a built-in.",
+      permission: STANDARDS_PERMISSIONS.write,
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: "templateId", in: "path", required: true, schema: { type: "string" } }],
+      responses: {
+        "201": { description: "Copied.", content: { "application/json": { schema: { $ref: "#/components/schemas/StandardTemplateResponse" } } } },
         "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
       },
     },

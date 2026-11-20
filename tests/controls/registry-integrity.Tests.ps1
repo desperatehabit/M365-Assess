@@ -67,6 +67,19 @@ Describe 'Control Registry Integrity' {
         }
     }
 
+    It 'Licensing overlay entries reference real checks and gate P2-only checks' {
+        # T-0935: the overlay must not drift from the registry, and a check that
+        # needs Entra ID P2 (PIM) must be gated even when upstream says E3.
+        $overlayPath = "$PSScriptRoot/../../src/M365-Assess/controls/licensing-overlay.json"
+        $overlay = Get-Content -Path $overlayPath -Raw | ConvertFrom-Json
+        $registryIds = @($checks | ForEach-Object { $_.checkId })
+        foreach ($property in $overlay.checks.PSObject.Properties) {
+            $registryIds | Should -Contain $property.Name `
+                -Because "licensing-overlay.json entries must point at a registered check"
+        }
+        $overlay.checks.'ENTRA-PRIVREMOTE-001' | Should -Contain 'AAD_PREMIUM_P2'
+    }
+
     It 'Contains only checks within the M365 collector scope (sync-scope.json)' {
         # The upstream CheckID registry also carries WIN-* (Windows endpoint) and
         # AZ-* (Azure subscription) checks that no collector in this module emits.

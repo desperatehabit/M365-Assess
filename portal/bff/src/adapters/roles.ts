@@ -79,6 +79,7 @@ export function createRoleProviders(call: TenantWorkerCall): RoleProviders {
             ...(input.ticketNumber ? { ticketNumber: input.ticketNumber } : {}),
             ...(input.newEndsAt ? { newEndsAt: input.newEndsAt } : {}),
           },
+          { purpose: "operator" },
         );
         return {
           ...(out.id ? { id: out.id } : {}),
@@ -111,12 +112,17 @@ export function createRoleProviders(call: TenantWorkerCall): RoleProviders {
 
     applySettings: {
       async applySettings(tenantId, roleId, settings, options) {
-        const out = await call<Partial<PimSettingsApplyOutcome>>("set-pim-role-settings.ps1", tenantId, {
-          action: "apply",
-          roleId,
-          settings,
-          dryRun: options.dryRun,
-        });
+        const out = await call<Partial<PimSettingsApplyOutcome>>(
+          "set-pim-role-settings.ps1",
+          tenantId,
+          {
+            action: "apply",
+            roleId,
+            settings,
+            dryRun: options.dryRun,
+          },
+          options.dryRun ? undefined : { purpose: "operator" },
+        );
         return {
           applied: out.applied ?? out.after ?? settings,
           ...(out.before ? { before: out.before } : {}),
@@ -127,39 +133,54 @@ export function createRoleProviders(call: TenantWorkerCall): RoleProviders {
 
     jit: {
       async grantRole(tenantId, grant) {
-        const out = await call<{ id: string; startsAt: string; endsAt: string }>("new-jit-grant.ps1", tenantId, {
-          action: "grant",
-          userId: grant.userId,
-          roleId: grant.roleId,
-          assignmentType: grant.assignmentType,
-          durationHours: grant.durationHours,
-          maxDurationHours: grant.maxDurationHours,
-          ...(grant.justification ? { justification: grant.justification } : {}),
-        });
+        const out = await call<{ id: string; startsAt: string; endsAt: string }>(
+          "new-jit-grant.ps1",
+          tenantId,
+          {
+            action: "grant",
+            userId: grant.userId,
+            roleId: grant.roleId,
+            assignmentType: grant.assignmentType,
+            durationHours: grant.durationHours,
+            maxDurationHours: grant.maxDurationHours,
+            ...(grant.justification ? { justification: grant.justification } : {}),
+          },
+          { purpose: "operator" },
+        );
         return { grantId: out.id, startsAt: out.startsAt, endsAt: out.endsAt };
       },
       async revokeRole(tenantId, grant) {
-        await call("new-jit-grant.ps1", tenantId, {
-          action: "revoke",
-          userId: grant.userId,
-          roleId: grant.roleId,
-          assignmentType: grant.assignmentType,
-        });
+        await call(
+          "new-jit-grant.ps1",
+          tenantId,
+          {
+            action: "revoke",
+            userId: grant.userId,
+            roleId: grant.roleId,
+            assignmentType: grant.assignmentType,
+          },
+          { purpose: "operator" },
+        );
       },
       // The route has already checked the new end against the grant's maximum; the
       // worker re-checks it and extends to exactly `newEndsAt`.
       async extendRole(tenantId, grant, newEndsAt) {
         const additionalHours = Math.round((Date.parse(newEndsAt) - Date.parse(grant.endsAt)) / HOUR_MS);
-        await call("new-jit-grant.ps1", tenantId, {
-          action: "extend",
-          userId: grant.userId,
-          roleId: grant.roleId,
-          assignmentType: grant.assignmentType,
-          durationHours: grant.durationHours,
-          maxDurationHours: grant.maxDurationHours,
-          additionalHours,
-          newEndsAt,
-        });
+        await call(
+          "new-jit-grant.ps1",
+          tenantId,
+          {
+            action: "extend",
+            userId: grant.userId,
+            roleId: grant.roleId,
+            assignmentType: grant.assignmentType,
+            durationHours: grant.durationHours,
+            maxDurationHours: grant.maxDurationHours,
+            additionalHours,
+            newEndsAt,
+          },
+          { purpose: "operator" },
+        );
       },
     },
   };

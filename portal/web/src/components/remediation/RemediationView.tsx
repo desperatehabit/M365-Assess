@@ -71,6 +71,12 @@ const toolbarStyle: CSSProperties = {
   flexWrap: "wrap",
 };
 
+const linkStyle: CSSProperties = {
+  fontSize: "13px",
+  fontWeight: 600,
+  color: "var(--accent-text)",
+};
+
 export interface RemediationViewProps {
   readonly tenantId?: string;
   readonly planId?: string;
@@ -139,6 +145,15 @@ export function RemediationView({
             Review gated remediation actions, apply automated fixes, and follow manual
             instructions. Applying requires <code>remediation.apply</code>.
           </p>
+          {plan?.plan?.runId && (
+            <a
+              data-testid="open-in-run-link"
+              href={`/runs/${encodeURIComponent(plan.plan.runId)}?planId=${encodeURIComponent(plan.plan.id)}`}
+              style={linkStyle}
+            >
+              Open in run
+            </a>
+          )}
         </div>
 
         <div style={toolbarStyle}>

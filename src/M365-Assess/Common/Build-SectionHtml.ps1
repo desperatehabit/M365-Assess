@@ -81,7 +81,9 @@ $sectionData = @{
 $allCisFindings = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 foreach ($c in $summary) {
-    if ($c.Status -ne 'Complete' -or [int]$c.Items -eq 0) { continue }
+    # T-0937: Partial/Failed collectors still produced findings; only Skipped
+    # (or an empty CSV) has nothing to render.
+    if ($c.Status -notin @('Complete', 'Partial', 'Failed') -or [int]$c.Items -eq 0) { continue }
     $csvFile = Join-Path -Path $AssessmentFolder -ChildPath $c.FileName
     if (-not (Test-Path -Path $csvFile)) { continue }
 
@@ -92,6 +94,9 @@ foreach ($c in $summary) {
     if ($columns -notcontains 'CheckId') { continue }
 
     foreach ($row in $data) {
+        # Rows without a CheckId cannot be keyed in the report or the portal, so
+        # collectors must give failure sentinels a real check id (T-0930). The
+        # Power BI collector uses POWERBI-COLLECTOR-000 for this reason.
         if (-not $row.CheckId -or $row.CheckId -eq '') { continue }
         $baseCheckId = $row.CheckId -replace '\.\d+$', ''
         $entry = if ($controlRegistry.ContainsKey($baseCheckId)) { $controlRegistry[$baseCheckId] } else { $null }

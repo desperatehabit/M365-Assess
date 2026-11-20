@@ -165,3 +165,7 @@ Describe 'Get-MdeOnboarding worker (T-0370)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

@@ -26,6 +26,15 @@ export function isTerminalRunState(state: RunState): boolean {
   return TERMINAL_RUN_STATES.has(state);
 }
 
+/**
+ * Only a run's own assessment job owns its lifecycle. Remediation (plan/apply/verify)
+ * and other job types carry the run id as a link back to the assessment that produced
+ * their input; their lifecycle must never move the run's status or timing (T-0928).
+ */
+function ownsRunLifecycle(event: Pick<ProgressEvent, "jobType">): boolean {
+  return event.jobType === "assessment";
+}
+
 export interface RunProgressRecord {
   readonly id: string;
   readonly tenantId: string;
@@ -219,7 +228,9 @@ export class ProgressEventHub {
     // Update store state if store provided
     await this.updateStore(event);
 
-    const terminal = isTerminalRunState(event.state);
+    // Only the run's assessment job can complete the run; a remediation job's
+    // terminal event must not close the assessment run's stream or mark it terminal.
+    const terminal = ownsRunLifecycle(event) && isTerminalRunState(event.state);
     if (terminal) {
       this.terminalRuns.add(runId);
     }
@@ -364,6 +375,11 @@ export class ProgressEventHub {
 
   private async updateStore(event: ProgressEvent): Promise<void> {
     if (!this.store) return;
+
+    // Remediation (plan/apply/verify) and other job types share the run id only as a
+    // link to the assessment that produced their input; they update their plan or
+    // history record instead of the run, so return before touching run or section state.
+    if (!ownsRunLifecycle(event)) return;
 
     try {
       const previousState = this.runStates.get(event.runId);

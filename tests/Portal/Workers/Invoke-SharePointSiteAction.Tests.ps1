@@ -387,5 +387,5 @@ Describe 'Invoke-SharePointSiteAction worker (T-0485)' {
 }
 
 AfterAll {
-    Remove-Item -Path 'Function:\global:Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

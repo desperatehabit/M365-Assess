@@ -247,3 +247,8 @@ Describe 'Submit-QuarantineReview worker (T-0426)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Export-QuarantineMessage' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

@@ -331,3 +331,10 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MailboxAutoReplyConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailboxAutoReplyConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
+}

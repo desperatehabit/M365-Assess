@@ -186,7 +186,8 @@ function Initialize-CheckProgress {
     Write-Host "$([char]0x2717) Fail  " -ForegroundColor Red -NoNewline
     Write-Host '! Warning  ' -ForegroundColor Yellow -NoNewline
     Write-Host '? Review  ' -ForegroundColor Cyan -NoNewline
-    Write-Host 'i Info' -ForegroundColor DarkGray
+    Write-Host 'i Info  ' -ForegroundColor DarkGray -NoNewline
+    Write-Host '- Not licensed' -ForegroundColor DarkYellow
 
     # Print a compact summary of what's queued
     Write-Host ''
@@ -205,7 +206,7 @@ function Initialize-CheckProgress {
             'INTUNE_A'                          = 'Microsoft Intune'
             'INFORMATION_PROTECTION_COMPLIANCE' = 'Microsoft 365 compliance (requires Teams license)'
         }
-        Write-Host "  $($licenseSkipped.Count) checks skipped (tenant lacks required license):" -ForegroundColor DarkYellow
+        Write-Host "  $($licenseSkipped.Count) checks not licensed (excluded from the pass rate):" -ForegroundColor DarkYellow
         foreach ($skipEntry in $licenseSkipped.GetEnumerator()) {
             $skipInfo = $skipEntry.Value
             $planList = ($skipInfo.RequiredPlans | ForEach-Object {
@@ -272,6 +273,7 @@ function global:Update-CheckProgress {
         'Warning' { '!' }
         'Review'  { '?' }
         'Info'    { 'i' }
+        'NotLicensed' { '-' }
         default   { [char]0x2713 }
     }
     $color = switch ($Status) {
@@ -280,6 +282,7 @@ function global:Update-CheckProgress {
         'Warning' { 'Yellow' }
         'Review'  { 'Cyan' }
         'Info'    { 'DarkGray' }
+        'NotLicensed' { 'DarkYellow' }
         default   { 'White' }
     }
 
@@ -330,6 +333,9 @@ function Complete-CheckProgress {
         Write-Progress -Activity 'M365 Security Assessment' -Completed
         Write-Host ''
         Write-Host "  $([char]0x2713) All $($state.Total) security checks complete" -ForegroundColor Green
+        if ($state.ContainsKey('LicenseSkipped') -and $state.LicenseSkipped.Count -gt 0) {
+            Write-Host "  - $($state.LicenseSkipped.Count) checks not licensed (excluded from the pass rate)" -ForegroundColor DarkYellow
+        }
         Write-Host ''
     }
 

@@ -257,3 +257,7 @@ Describe 'Get-SharePointSites worker (T-0482)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

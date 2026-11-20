@@ -192,3 +192,7 @@ Describe 'Get-TvmVulnerabilities worker (T-0366)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

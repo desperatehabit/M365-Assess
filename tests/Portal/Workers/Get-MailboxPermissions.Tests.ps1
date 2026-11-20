@@ -278,3 +278,10 @@ Describe 'Get-MailboxPermissions worker (T-0529)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-EXOMailboxFolderPermission' -ErrorAction SilentlyContinue
+}

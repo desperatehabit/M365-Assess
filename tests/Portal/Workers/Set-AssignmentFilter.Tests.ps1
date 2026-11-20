@@ -149,3 +149,7 @@ Describe 'Set-AssignmentFilter worker (T-0309)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

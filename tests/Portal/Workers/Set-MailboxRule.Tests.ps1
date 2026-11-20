@@ -503,3 +503,10 @@ Describe 'Set-MailboxRule recipient lists (T-0895)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-InboxRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-InboxRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-InboxRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-InboxRule' -ErrorAction SilentlyContinue
+}

@@ -327,3 +327,14 @@ Describe 'Import-Contacts worker (T-0444)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MailUser' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-MailUser' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailUser' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MailUser' -ErrorAction SilentlyContinue
+}

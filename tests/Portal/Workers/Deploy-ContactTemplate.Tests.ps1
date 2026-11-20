@@ -306,3 +306,10 @@ Describe 'Deploy-ContactTemplate worker (T-0447)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MailUser' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-MailUser' -ErrorAction SilentlyContinue
+}

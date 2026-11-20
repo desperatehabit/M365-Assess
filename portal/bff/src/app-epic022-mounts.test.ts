@@ -78,10 +78,11 @@ async function invoke(
 describe("EPIC-022 Spam, Quarantine & Allow/Block routes are mounted (T-0852)", () => {
   it("mounts all 6 EPIC-022 route groups without 404 and persists filter templates + quarantine actions", async () => {
     const workerScripts: string[] = [];
+    const db = new Database(":memory:");
     const app = createApp(
       { ...loadConfig({}), devIdentityRole: "admin" },
       {
-        db: new Database(":memory:"),
+        db,
         schedulerIntervalMs: 60_000,
         workerRunner: (async (entrypoint: string, job: { payload?: Record<string, unknown> }) => {
           workerScripts.push(entrypoint);
@@ -200,6 +201,27 @@ describe("EPIC-022 Spam, Quarantine & Allow/Block routes are mounted (T-0852)", 
       thumbprint: "ABCDEF1234567890",
     });
     expect(cred.status).toBe(201);
+
+    // A queued quarantine submission runs as the opt-in operator write app (T-0940).
+    const now = new Date().toISOString();
+    db.prepare(
+      `INSERT INTO tenant_credentials
+         (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, createdAt, updatedAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      "tenant-probe-operator",
+      "tenant-probe",
+      "certificate-thumbprint",
+      "operator-app",
+      "thumbprint://ABCDEF1234567890",
+      "ABCDEF1234567890",
+      "commercial",
+      null,
+      null,
+      "operator",
+      now,
+      now,
+    );
 
     const qList = await invoke(app, "GET", `${T}/quarantine?tab=email`);
     expect(qList.status).toBe(200);

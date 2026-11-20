@@ -73,4 +73,45 @@ describe("remediation page", () => {
     render(<RemediationPage />);
     expect(screen.getByText(/Remediation Plan — t-b/)).toBeTruthy();
   });
+
+  it("opens the same plan a run links to and links back to that run", async () => {
+    query = new URLSearchParams({ tenantId: "t-a", planId: "plan-1" });
+    const plan = {
+      plan: {
+        id: "plan-1",
+        tenantId: "t-a",
+        runId: "run-1",
+        findingIds: ["f-1"],
+        mode: "automated",
+        createdAt: "2026-11-20T10:00:00.000Z",
+        createdBy: "operator",
+      },
+      actions: [
+        {
+          id: "act-1",
+          check: "ENTRA-MFA-001",
+          command: "Set-MfaState -Enabled",
+          target: null,
+          mode: "auto",
+          classification: "automated",
+          state: "applied",
+          finding: "Ensure MFA is enabled",
+          severity: "High",
+        },
+      ],
+    };
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/v1/me") return jsonResponse({ roles: [], permissions: [] });
+      if (url === "/v1/remediation/plans/plan-1") return jsonResponse(plan);
+      return jsonResponse({}, 404);
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    render(<RemediationPage />);
+
+    await waitFor(() => expect(screen.getByTestId("plan-row-act-1")).toBeTruthy());
+    expect(screen.getByTestId("state-act-1").textContent).toBe("applied");
+    const link = screen.getByTestId("open-in-run-link") as HTMLAnchorElement;
+    expect(link.getAttribute("href")).toBe("/runs/run-1?planId=plan-1");
+  });
 });

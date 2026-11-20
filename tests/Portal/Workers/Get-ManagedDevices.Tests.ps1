@@ -196,3 +196,7 @@ Describe 'Get-ManagedDevices worker (T-0341)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

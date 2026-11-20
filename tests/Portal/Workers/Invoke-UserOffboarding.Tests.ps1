@@ -344,3 +344,7 @@ Describe 'Invoke-UserOffboarding Graph URIs (T-0897)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

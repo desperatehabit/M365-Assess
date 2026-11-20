@@ -14,9 +14,48 @@ export const BLOCK_TYPES = [
   "section-divider",
   "page-break",
   "rich-text",
+  // Data-bound blocks (T-0923). Appended so stored v1 documents keep parsing.
+  "findings-table",
+  "framework-coverage",
+  "secure-score-trend",
+  "top-risks",
+  "remediation-progress",
+  "tenant-summary",
+  "run-comparison",
 ] as const;
 
 export type BlockType = (typeof BLOCK_TYPES)[number];
+
+// Filters used by the data-bound blocks. Values are the lowercase forms the
+// portal stores and renders; the renderer normalises finding status/severity.
+export const FINDING_STATUS_FILTERS = [
+  "pass",
+  "fail",
+  "warning",
+  "review",
+  "info",
+  "skipped",
+] as const;
+
+export type FindingStatusFilter = (typeof FINDING_STATUS_FILTERS)[number];
+
+export const FINDING_SEVERITIES = [
+  "critical",
+  "high",
+  "medium",
+  "low",
+  "info",
+] as const;
+
+export type FindingSeverity = (typeof FINDING_SEVERITIES)[number];
+
+export const REMEDIATION_GROUPINGS = ["status", "severity", "section"] as const;
+
+export type RemediationGrouping = (typeof REMEDIATION_GROUPINGS)[number];
+
+export const RUN_COMPARISON_MODES = ["comparison", "drift"] as const;
+
+export type RunComparisonMode = (typeof RUN_COMPARISON_MODES)[number];
 
 // A live block may only bind to the five entities resolved by the worker
 // (§11.3): anything else is rejected rather than silently rendering empty.
@@ -75,6 +114,50 @@ export interface RichTextBlockSettings {
   body: string;
 }
 
+/** Filterable findings table: status/severity/section narrow the run's findings. */
+export interface FindingsTableBlockSettings {
+  statuses?: FindingStatusFilter[];
+  severities?: FindingSeverity[];
+  sections?: string[];
+  limit?: number;
+}
+
+/** Per-framework pass/fail coverage, optionally limited to named frameworks. */
+export interface FrameworkCoverageBlockSettings {
+  frameworks?: string[];
+  showGaps?: boolean;
+}
+
+/** Secure score over time; `points` caps the number of rendered snapshots. */
+export interface SecureScoreTrendBlockSettings {
+  points?: number;
+  includeTarget?: boolean;
+}
+
+/** The highest-severity failed findings, capped by `limit`. */
+export interface TopRisksBlockSettings {
+  limit?: number;
+  minSeverity?: FindingSeverity;
+}
+
+/** Remediation progress grouped by status, severity or section. */
+export interface RemediationProgressBlockSettings {
+  groupBy?: RemediationGrouping;
+  showPercentages?: boolean;
+}
+
+/** Tenant and run identity facts. */
+export interface TenantSummaryBlockSettings {
+  fields?: string[];
+}
+
+/** Current run vs. a baseline run (drift): counts and signed deltas. */
+export interface RunComparisonBlockSettings {
+  baselineRunId?: string;
+  mode?: RunComparisonMode;
+  showUnchanged?: boolean;
+}
+
 export interface BaseReportBlock {
   id: string;
   title: string;
@@ -112,13 +195,55 @@ export interface RichTextBlock extends BaseReportBlock {
   settings: RichTextBlockSettings;
 }
 
+export interface FindingsTableBlock extends BaseReportBlock {
+  type: "findings-table";
+  settings: FindingsTableBlockSettings;
+}
+
+export interface FrameworkCoverageBlock extends BaseReportBlock {
+  type: "framework-coverage";
+  settings: FrameworkCoverageBlockSettings;
+}
+
+export interface SecureScoreTrendBlock extends BaseReportBlock {
+  type: "secure-score-trend";
+  settings: SecureScoreTrendBlockSettings;
+}
+
+export interface TopRisksBlock extends BaseReportBlock {
+  type: "top-risks";
+  settings: TopRisksBlockSettings;
+}
+
+export interface RemediationProgressBlock extends BaseReportBlock {
+  type: "remediation-progress";
+  settings: RemediationProgressBlockSettings;
+}
+
+export interface TenantSummaryBlock extends BaseReportBlock {
+  type: "tenant-summary";
+  settings: TenantSummaryBlockSettings;
+}
+
+export interface RunComparisonBlock extends BaseReportBlock {
+  type: "run-comparison";
+  settings: RunComparisonBlockSettings;
+}
+
 export type ReportBlock =
   | ChartBlock
   | ScoreCardsBlock
   | ProgressBarsBlock
   | SectionDividerBlock
   | PageBreakBlock
-  | RichTextBlock;
+  | RichTextBlock
+  | FindingsTableBlock
+  | FrameworkCoverageBlock
+  | SecureScoreTrendBlock
+  | TopRisksBlock
+  | RemediationProgressBlock
+  | TenantSummaryBlock
+  | RunComparisonBlock;
 
 export interface ReportSettings {
   title: string;
@@ -273,6 +398,142 @@ function assertBlockSettings(
     case "section-divider":
     case "page-break":
       return;
+    case "findings-table":
+      assertOptionalStringArray(settings, "statuses", path);
+      assertOptionalEnumArray(settings, "statuses", FINDING_STATUS_FILTERS, path);
+      assertOptionalStringArray(settings, "severities", path);
+      assertOptionalEnumArray(settings, "severities", FINDING_SEVERITIES, path);
+      assertOptionalStringArray(settings, "sections", path);
+      assertOptionalLimit(settings, "limit", path);
+      return;
+    case "framework-coverage":
+      assertOptionalStringArray(settings, "frameworks", path);
+      assertOptionalBoolean(settings, "showGaps", path);
+      return;
+    case "secure-score-trend":
+      assertOptionalLimit(settings, "points", path);
+      assertOptionalBoolean(settings, "includeTarget", path);
+      return;
+    case "top-risks":
+      assertOptionalLimit(settings, "limit", path);
+      assertOptionalEnum(settings, "minSeverity", FINDING_SEVERITIES, path);
+      return;
+    case "remediation-progress":
+      assertOptionalEnum(settings, "groupBy", REMEDIATION_GROUPINGS, path);
+      assertOptionalBoolean(settings, "showPercentages", path);
+      return;
+    case "tenant-summary":
+      assertOptionalStringArray(settings, "fields", path);
+      return;
+    case "run-comparison":
+      assertOptionalString(settings, "baselineRunId", path);
+      assertOptionalEnum(settings, "mode", RUN_COMPARISON_MODES, path);
+      assertOptionalBoolean(settings, "showUnchanged", path);
+      return;
+  }
+}
+
+function assertOptionalString(
+  settings: UnknownRecord,
+  field: string,
+  path: string,
+): void {
+  if (settings[field] === undefined) return;
+  if (typeof settings[field] !== "string") {
+    throw new ReportValidationError(
+      "report.invalid_settings",
+      `Field '${field}' must be a string`,
+      `${path}.${field}`,
+    );
+  }
+}
+
+function assertOptionalStringArray(
+  settings: UnknownRecord,
+  field: string,
+  path: string,
+): void {
+  if (settings[field] === undefined) return;
+  if (
+    !Array.isArray(settings[field]) ||
+    (settings[field] as unknown[]).some((item) => typeof item !== "string")
+  ) {
+    throw new ReportValidationError(
+      "report.invalid_settings",
+      `Field '${field}' must be an array of strings`,
+      `${path}.${field}`,
+    );
+  }
+}
+
+function assertOptionalEnumArray<T extends string>(
+  settings: UnknownRecord,
+  field: string,
+  allowed: readonly T[],
+  path: string,
+): void {
+  if (settings[field] === undefined) return;
+  const values = settings[field];
+  if (
+    !Array.isArray(values) ||
+    values.some(
+      (item) =>
+        typeof item !== "string" || !(allowed as readonly string[]).includes(item),
+    )
+  ) {
+    throw new ReportValidationError(
+      "report.invalid_settings",
+      `Field '${field}' must only contain ${allowed.join(", ")}`,
+      `${path}.${field}`,
+    );
+  }
+}
+
+function assertOptionalEnum<T extends string>(
+  settings: UnknownRecord,
+  field: string,
+  allowed: readonly T[],
+  path: string,
+): void {
+  if (settings[field] === undefined) return;
+  const value = settings[field];
+  if (typeof value !== "string" || !(allowed as readonly string[]).includes(value)) {
+    throw new ReportValidationError(
+      "report.invalid_settings",
+      `Field '${field}' must be one of ${allowed.join(", ")}; got ${JSON.stringify(value)}`,
+      `${path}.${field}`,
+    );
+  }
+}
+
+function assertOptionalBoolean(
+  settings: UnknownRecord,
+  field: string,
+  path: string,
+): void {
+  if (settings[field] === undefined) return;
+  if (typeof settings[field] !== "boolean") {
+    throw new ReportValidationError(
+      "report.invalid_settings",
+      `Field '${field}' must be a boolean`,
+      `${path}.${field}`,
+    );
+  }
+}
+
+function assertOptionalLimit(
+  settings: UnknownRecord,
+  field: string,
+  path: string,
+): void {
+  if (settings[field] === undefined) return;
+  const value = settings[field];
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    throw new ReportValidationError(
+      "report.invalid_settings",
+      `Field '${field}' must be a positive integer`,
+      `${path}.${field}`,
+    );
   }
 }
 

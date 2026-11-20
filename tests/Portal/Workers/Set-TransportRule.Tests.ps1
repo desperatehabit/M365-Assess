@@ -92,3 +92,10 @@ Describe 'Set-TransportRule worker entrypoint (T-0851)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-TransportRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-TransportRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-TransportRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-TransportRule' -ErrorAction SilentlyContinue
+}

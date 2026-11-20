@@ -70,8 +70,8 @@ Describe 'Connect-Service' {
 
         AfterAll {
             # Tear down any global stubs we created so they don't leak into other tests
-            Remove-Item -Path 'function:global:Connect-MgGraph' -ErrorAction SilentlyContinue
-            Remove-Item -Path 'function:global:Connect-PowerBIServiceAccount' -ErrorAction SilentlyContinue
+            Remove-Item -Path 'Function:\Connect-MgGraph' -ErrorAction SilentlyContinue
+            Remove-Item -Path 'Function:\Connect-PowerBIServiceAccount' -ErrorAction SilentlyContinue
         }
 
         It 'Graph client-secret path emits a warning recommending certificate auth' {
@@ -117,7 +117,7 @@ Describe 'Connect-Service' {
         }
 
         AfterAll {
-            Remove-Item -Path 'function:global:Connect-PowerBIServiceAccount' -ErrorAction SilentlyContinue
+            Remove-Item -Path 'Function:\Connect-PowerBIServiceAccount' -ErrorAction SilentlyContinue
         }
 
         It 'routes <Cloud> to the Power BI <PbiEnv> environment' -ForEach @(
@@ -176,9 +176,9 @@ Describe 'Connect-Service' {
         }
 
         AfterAll {
-            Remove-Item -Path 'function:global:Connect-ExchangeOnline' -ErrorAction SilentlyContinue
-            Remove-Item -Path 'function:global:Connect-IPPSSession' -ErrorAction SilentlyContinue
-            Remove-Item -Path 'function:global:Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+            Remove-Item -Path 'Function:\Connect-ExchangeOnline' -ErrorAction SilentlyContinue
+            Remove-Item -Path 'Function:\Connect-IPPSSession' -ErrorAction SilentlyContinue
+            Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
         }
 
         It 'Exchange Online with -Certificate connects with the object + resolved Organization' {
@@ -217,6 +217,30 @@ Describe 'Connect-Service' {
             Should -Not -Invoke Invoke-MgGraphRequest
         }
 
+        It 'resolves the initial domain for <Service> thumbprint auth and never passes the tenant GUID' -Skip:(-not $IsWindows) -ForEach @(
+            @{ Service = 'ExchangeOnline'; Cmdlet = 'Connect-ExchangeOnline' }
+            @{ Service = 'Purview';        Cmdlet = 'Connect-IPPSSession' }
+        ) {
+            & $script:scriptPath -Service $Service -TenantId '00000000-0000-0000-0000-000000000000' `
+                -ClientId 'app-id' -CertificateThumbprint 'AB12CD34EF56' -WarningAction SilentlyContinue
+            Should -Invoke $Cmdlet -ParameterFilter {
+                $Organization -eq 'contoso.onmicrosoft.com' -and
+                $Organization -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-'
+            }
+        }
+
+        It 'never passes a tenant GUID as Organization on the certificate-object path for <Service>' -ForEach @(
+            @{ Service = 'ExchangeOnline'; Cmdlet = 'Connect-ExchangeOnline' }
+            @{ Service = 'Purview';        Cmdlet = 'Connect-IPPSSession' }
+        ) {
+            & $script:scriptPath -Service $Service -TenantId '00000000-0000-0000-0000-000000000000' `
+                -ClientId 'app-id' -Certificate $script:testCert -WarningAction SilentlyContinue
+            Should -Invoke $Cmdlet -ParameterFilter {
+                $Organization -eq 'contoso.onmicrosoft.com' -and
+                $Organization -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-'
+            }
+        }
+
         It 'loads the certificate from -CertificatePath' {
             $certPwd = ConvertTo-SecureString 'p@ss' -AsPlainText -Force
             $pfxBytes = $script:testCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pfx, $certPwd)
@@ -243,5 +267,57 @@ Describe 'Connect-Service' {
                 -ClientId 'app-id' -CertificateThumbprint 'AB12CD34EF56' -ErrorAction Stop } |
                 Should -Throw -ExpectedMessage '*Windows-only*'
         }
+    }
+}
+
+Describe 'Connect-Service -Organization validation (T-0926)' {
+    BeforeAll {
+        $script:scriptPath = "$PSScriptRoot/../../src/M365-Assess/Common/Connect-Service.ps1"
+
+        function global:Connect-ExchangeOnline {
+            param($AppId, $Organization, $Certificate, $CertificateThumbprint,
+                  $ManagedIdentity, $Device, $UserPrincipalName, $ExchangeEnvironmentName)
+        }
+        function global:Connect-IPPSSession {
+            param($AppId, $Organization, $Certificate, $CertificateThumbprint,
+                  $UserPrincipalName, $ConnectionUri, $AzureADAuthorizationEndpointUri)
+        }
+        if (-not (Get-Command -Name Invoke-MgGraphRequest -ErrorAction SilentlyContinue)) {
+            function global:Invoke-MgGraphRequest { param($Method, $Uri) }
+        }
+
+        Mock Get-Module { @{ Name = 'ExchangeOnlineManagement' } }
+        Mock Import-Module { }
+        Mock Connect-ExchangeOnline { }
+        Mock Connect-IPPSSession { }
+        # Graph is unavailable, so no initial domain can be resolved.
+        Mock Invoke-MgGraphRequest { throw 'Not connected to Microsoft Graph' }
+
+        $rsa = [System.Security.Cryptography.RSA]::Create(2048)
+        $req = [System.Security.Cryptography.X509Certificates.CertificateRequest]::new(
+            'CN=M365Assess-Test', $rsa,
+            [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+            [System.Security.Cryptography.RSASignaturePadding]::Pkcs1)
+        $script:testCert = $req.CreateSelfSigned([System.DateTimeOffset]::UtcNow.AddDays(-1), [System.DateTimeOffset]::UtcNow.AddDays(1))
+    }
+
+    AfterAll {
+        Remove-Item -Path 'Function:\Connect-ExchangeOnline' -ErrorAction SilentlyContinue
+        Remove-Item -Path 'Function:\Connect-IPPSSession' -ErrorAction SilentlyContinue
+        Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+    }
+
+    It 'fails early with an actionable message when only a GUID is available' {
+        { & $script:scriptPath -Service 'ExchangeOnline' -TenantId '00000000-0000-0000-0000-000000000000' `
+                -ClientId 'app-id' -Certificate $script:testCert -ErrorAction Stop } |
+            Should -Throw -ExpectedMessage '*initial (*.onmicrosoft.*) domain*tenant GUID*'
+        Should -Not -Invoke Connect-ExchangeOnline
+    }
+
+    It 'fails early when the tenant value is not a domain name' {
+        { & $script:scriptPath -Service 'Purview' -TenantId 'not-a-domain' `
+                -ClientId 'app-id' -Certificate $script:testCert -ErrorAction Stop } |
+            Should -Throw -ExpectedMessage '*Could not resolve a tenant domain*'
+        Should -Not -Invoke Connect-IPPSSession
     }
 }

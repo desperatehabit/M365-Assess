@@ -272,3 +272,7 @@ Describe 'Invoke-VersionCleanup worker (T-0487)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

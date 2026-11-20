@@ -8,7 +8,9 @@ import {
   BASELINES_OPENAPI,
   BASELINES_PATH,
   BASELINE_ASSIGN_PATH,
+  BASELINE_COPY_PATH,
   BASELINE_DETAIL_PATH,
+  BUILT_IN_BASELINES,
   createBaselinesRoutes,
   type BaselineAssignmentRecord,
   type BaselineRecord,
@@ -16,6 +18,7 @@ import {
   type CreateBaselineInput,
   type UpdateBaselinePatch,
 } from "./baselines.js";
+import { TEMPLATE_BUILTIN_LOCKED } from "./template-builtin.js";
 
 const TENANT = "contoso";
 
@@ -155,7 +158,7 @@ describe("baselines CRUD (T-0182)", () => {
     const id = (created.body as { id: string }).id;
 
     const listed = await routeFor(routes, "GET", BASELINES_PATH).handler(ctx());
-    expect((listed.body as { items: unknown[] }).items).toHaveLength(1);
+    expect((listed.body as { items: unknown[] }).items).toHaveLength(BUILT_IN_BASELINES.length + 1);
 
     const detail = await routeFor(routes, "GET", BASELINE_DETAIL_PATH).handler(
       ctx({ params: { baselineId: id } }),
@@ -248,10 +251,90 @@ describe("baselines CRUD (T-0182)", () => {
   });
 });
 
+describe("built-in baselines (T-0924)", () => {
+  const builtIn = BUILT_IN_BASELINES[0]!;
+
+  it("lists and reads built-ins with the builtIn marker", async () => {
+    const store = new MemoryBaselinesStore();
+    const routes = routesFor(store, adminCaller());
+    const listed = await routeFor(routes, "GET", BASELINES_PATH).handler(ctx());
+    const items = (listed.body as { items: BaselineRecord[] }).items;
+    expect(items.find((baseline) => baseline.id === builtIn.id)?.builtIn).toBe(true);
+
+    const detail = await routeFor(routes, "GET", BASELINE_DETAIL_PATH).handler(
+      ctx({ params: { baselineId: builtIn.id } }),
+    );
+    expect((detail.body as BaselineRecord).builtIn).toBe(true);
+    expect((detail.body as { assignments: unknown[] }).assignments).toEqual([]);
+  });
+
+  it("refuses to update, delete, or assign a built-in", async () => {
+    const store = new MemoryBaselinesStore();
+    const routes = routesFor(store, adminCaller());
+    await expect(
+      routeFor(routes, "PATCH", BASELINE_DETAIL_PATH).handler(
+        ctx({ params: { baselineId: builtIn.id }, body: { name: "Changed" } }),
+      ),
+    ).rejects.toMatchObject({ status: 403, code: TEMPLATE_BUILTIN_LOCKED });
+    await expect(
+      routeFor(routes, "DELETE", BASELINE_DETAIL_PATH).handler(
+        ctx({ params: { baselineId: builtIn.id } }),
+      ),
+    ).rejects.toMatchObject({ status: 403, code: TEMPLATE_BUILTIN_LOCKED });
+    await expect(
+      routeFor(routes, "POST", BASELINE_ASSIGN_PATH).handler(
+        ctx({
+          params: { baselineId: builtIn.id },
+          body: { assignments: [{ targetType: "allTenants" }] },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 403, code: TEMPLATE_BUILTIN_LOCKED });
+  });
+
+  it("copies a built-in into an editable operator baseline with a unique name", async () => {
+    const store = new MemoryBaselinesStore();
+    const routes = routesFor(store, adminCaller());
+    const copyRoute = routeFor(routes, "POST", BASELINE_COPY_PATH);
+    const first = await copyRoute.handler(
+      ctx({ params: { baselineId: builtIn.id } }),
+    );
+    expect(first.status).toBe(201);
+    const copyOne = first.body as BaselineRecord & { assignments: unknown[] };
+    expect(copyOne.builtIn).toBe(false);
+    expect(copyOne.name).toBe(`${builtIn.name} (copy)`);
+    expect(copyOne.stages).toEqual(builtIn.stages);
+    expect(copyOne.assignments).toEqual([]);
+
+    const second = await copyRoute.handler(ctx({ params: { baselineId: builtIn.id } }));
+    expect((second.body as BaselineRecord).name).toBe(`${builtIn.name} (copy 2)`);
+
+    // The copy is an ordinary operator baseline: editable and deletable.
+    const updated = await routeFor(routes, "PATCH", BASELINE_DETAIL_PATH).handler(
+      ctx({
+        params: { baselineId: copyOne.id },
+        body: {
+          name: "Edited copy",
+          assignments: [{ targetType: "group", targetId: "g-1" }],
+        },
+      }),
+    );
+    expect((updated.body as BaselineRecord).name).toBe("Edited copy");
+    const deleted = await routeFor(routes, "DELETE", BASELINE_DETAIL_PATH).handler(
+      ctx({ params: { baselineId: copyOne.id } }),
+    );
+    expect(deleted.status).toBe(200);
+  });
+});
+
 describe("baselines OpenAPI (T-0182)", () => {
   it("documents CRUD and assign", () => {
     expect(Object.keys(BASELINES_OPENAPI)).toEqual(
-      expect.arrayContaining(["/v1/baselines", "/v1/baselines/{baselineId}", "/v1/baselines/{baselineId}/assign"]),
+      expect.arrayContaining([
+        "/v1/baselines",
+        "/v1/baselines/{baselineId}",
+        "/v1/baselines/{baselineId}/assign",
+        "/v1/baselines/{baselineId}/copy",
+      ]),
     );
   });
 });

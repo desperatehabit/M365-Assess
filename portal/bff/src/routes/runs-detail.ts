@@ -30,6 +30,7 @@ export interface SummaryCounts {
   readonly fail: number;
   readonly warning: number;
   readonly review: number;
+  readonly info: number;
   readonly skipped: number;
   readonly notLicensed: number;
   readonly total: number;
@@ -37,17 +38,18 @@ export interface SummaryCounts {
 
 export function normalizeSummaryCounts(raw: unknown): SummaryCounts {
   if (typeof raw !== "object" || raw === null) {
-    return { pass: 0, fail: 0, warning: 0, review: 0, skipped: 0, notLicensed: 0, total: 0 };
+    return { pass: 0, fail: 0, warning: 0, review: 0, info: 0, skipped: 0, notLicensed: 0, total: 0 };
   }
   const r = raw as Record<string, unknown>;
   const pass = Number(r["pass"] ?? 0) || 0;
   const fail = Number(r["fail"] ?? 0) || 0;
   const warning = Number(r["warning"] ?? 0) || 0;
   const review = Number(r["review"] ?? 0) || 0;
+  const info = Number(r["info"] ?? 0) || 0;
   const skipped = Number(r["skipped"] ?? 0) || 0;
   const notLicensed = Number(r["notLicensed"] ?? r["not_licensed"] ?? 0) || 0;
-  const total = Number(r["total"] ?? (pass + fail + warning + review + skipped + notLicensed)) || 0;
-  return { pass, fail, warning, review, skipped, notLicensed, total };
+  const total = Number(r["total"] ?? (pass + fail + warning + review + info + skipped + notLicensed)) || 0;
+  return { pass, fail, warning, review, info, skipped, notLicensed, total };
 }
 
 export interface RunSectionRecord {
@@ -112,6 +114,8 @@ export interface RunRecord {
 export interface RunDetailResponse extends Omit<RunRecord, "sections" | "summaryCounts"> {
   readonly sections: readonly RunSectionRecord[];
   readonly summaryCounts: SummaryCounts;
+  /** Number of issue-log entries served on the Issues tab (T-0929). */
+  readonly issueCount: number;
   readonly children?: readonly RunRecord[];
 }
 
@@ -160,6 +164,19 @@ function resolveIssuesFromRun(run: RunRecord): readonly RunIssue[] {
     return fromProvenance as RunIssue[];
   }
   return [];
+}
+
+/** Prefers the store's issue log (parsed at ingestion) and falls back to the run record. */
+async function resolveRunIssues(
+  store: RunsDetailStore,
+  tenantId: string,
+  runId: string,
+  run: RunRecord,
+): Promise<readonly RunIssue[]> {
+  if (store.listRunIssues) {
+    return await store.listRunIssues(tenantId, runId);
+  }
+  return resolveIssuesFromRun(run);
 }
 
 export function createRunsDetailRoute(options: RunsDetailRouteOptions): Route {
@@ -225,6 +242,7 @@ export function createRunsDetailRoute(options: RunsDetailRouteOptions): Route {
           fail: 0,
           warning: 0,
           review: 0,
+          info: 0,
           skipped: 0,
           notLicensed: 0,
           total: 0,
@@ -236,15 +254,21 @@ export function createRunsDetailRoute(options: RunsDetailRouteOptions): Route {
           (aggregated as any).fail += cCounts.fail;
           (aggregated as any).warning += cCounts.warning;
           (aggregated as any).review += cCounts.review;
+          (aggregated as any).info += cCounts.info;
           (aggregated as any).skipped += cCounts.skipped;
           (aggregated as any).notLicensed += cCounts.notLicensed;
           (aggregated as any).total += cCounts.total;
         }
 
+        const childIssues = await Promise.all(
+          visibleChildren.map((c) => resolveRunIssues(options.store, c.tenantId, c.id, c)),
+        );
+
         const body: RunDetailResponse = {
           ...run,
           sections,
           summaryCounts: aggregated,
+          issueCount: childIssues.reduce((count, issues) => count + issues.length, 0),
           children: visibleChildren,
         };
 
@@ -254,11 +278,13 @@ export function createRunsDetailRoute(options: RunsDetailRouteOptions): Route {
       // Single run (child run or standalone run)
       const sections = await options.store.listRunSections(run.tenantId, run.id);
       const summaryCounts = normalizeSummaryCounts(run.summaryCounts);
+      const issues = await resolveRunIssues(options.store, run.tenantId, run.id, run);
 
       const body: RunDetailResponse = {
         ...run,
         sections,
         summaryCounts,
+        issueCount: issues.length,
       };
 
       return { status: 200, body };
@@ -322,21 +348,13 @@ export function createRunsResultsRoute(options: RunsDetailRouteOptions): Route {
         );
         allFindings = childFindingsList.flat();
 
-        if (options.store.listRunIssues) {
-          const childIssuesList = await Promise.all(
-            visibleChildren.map((c) => options.store.listRunIssues!(c.tenantId, c.id)),
-          );
-          issues = childIssuesList.flat();
-        } else {
-          issues = visibleChildren.flatMap(resolveIssuesFromRun);
-        }
+        const childIssuesList = await Promise.all(
+          visibleChildren.map((c) => resolveRunIssues(options.store, c.tenantId, c.id, c)),
+        );
+        issues = childIssuesList.flat();
       } else {
         allFindings = await options.store.listRunFindings(run.tenantId, run.id);
-        if (options.store.listRunIssues) {
-          issues = await options.store.listRunIssues(run.tenantId, run.id);
-        } else {
-          issues = resolveIssuesFromRun(run);
-        }
+        issues = await resolveRunIssues(options.store, run.tenantId, run.id, run);
       }
 
       const pagination = parsePagination(ctx.query);

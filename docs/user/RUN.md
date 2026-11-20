@@ -191,7 +191,7 @@ M365-Assessment/Assessment_YYYYMMDD_HHMMSS_<tenant>/
 | `_Compliance-Matrix_<tenant>.xlsx` | Framework compliance matrix with dynamic columns (requires ImportExcel module) |
 | `_Assessment-Log_<tenant>.txt` | Timestamped execution log with connection details and timing |
 | `_Assessment-Issues_<tenant>.log` | Issue report with recommendations for failed or warning checks |
-| `_Assessment-Summary_<tenant>.csv` | Status of every collector (Success, Warning, Skipped, Failed) |
+| `_Assessment-Summary_<tenant>.csv` | Status of every collector (`Complete`, `Partial`, `Skipped`, `Failed`) and the reason for anything other than Complete |
 | `_<Framework>-Catalog_<tenant>.html` | Per-framework catalog exports (when using `-FrameworkExport`) |
 
 ## Environment Support

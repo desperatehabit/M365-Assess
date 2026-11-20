@@ -1,6 +1,16 @@
 // Runs list API with filters, cursor pagination, and RBAC scoping (EPIC-003 SPEC.md §3.1, §6).
 // Returns parent and child runs addressable as a unit, linked by `parentRunId`.
 // Every query intersects the caller's RBAC tenant scope; runs outside the scope are never returned.
+//
+// The stored model keeps one parent Run plus one child per target tenant (§11.1), but the
+// list is a presentation of *logical* runs (T-0919):
+// - a parent with exactly one child is represented by that child's row, so a single-tenant
+//   run appears once, with its counts and timestamps;
+// - a multi-tenant parent stays one row whose `children` are its per-tenant runs, with the
+//   parent's status, timing, progress and counts rolled up from them;
+// - a child whose parent is not in the result set (RBAC scope, tenant filter) is listed on
+//   its own, so no row is lost.
+// `?parentRunId=` keeps the flat child listing for callers that ask for it.
 
 import { AppError, ErrorCodes } from "../errors.js";
 import { paginate, parsePagination, type CursorPage, type Pagination } from "../pagination.js";
@@ -9,6 +19,7 @@ import { RunPermissions } from "../rbac/roles.js";
 import { isTenantAllowed } from "../rbac/scope.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 import type { RunStatus, RunTrigger } from "../domain/runs/run-lifecycle.js";
+import { rollupRunStatus } from "../domain/runs/run-rollup.js";
 
 export const RUNS_LIST_PATH = "/v1/runs";
 export const RUNS_LIST_PERMISSION = RunPermissions.read;
@@ -18,10 +29,12 @@ export const RUNS_LIST_UNAUTHENTICATED = "request.unauthenticated";
 export interface RunListItem {
   readonly id: string;
   readonly tenantId: string;
+  /** Resolved from the tenant store; absent only when the tenant has been removed (T-0918). */
+  readonly tenantDisplayName?: string | null;
   readonly parentRunId: string | null;
   readonly trigger: RunTrigger;
   readonly sections: readonly string[];
-  readonly status: RunStatus;
+  readonly status: RunStatus | "partial";
   readonly options: Record<string, unknown> | null;
   readonly startedAt: string | null;
   readonly finishedAt: string | null;
@@ -32,6 +45,8 @@ export interface RunListItem {
   readonly provenance: Record<string, unknown> | null;
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** Per-tenant child runs of a multi-tenant parent (T-0919). */
+  readonly children?: readonly RunListItem[];
 }
 
 export interface RunListStore {
@@ -68,6 +83,143 @@ function mapRunListItem(raw: RunListItem): RunListItem {
     ...raw,
     durationMs,
   };
+}
+
+const SUMMARY_COUNT_KEYS = [
+  "pass",
+  "fail",
+  "warning",
+  "review",
+  "info",
+  "skipped",
+  "notLicensed",
+  "total",
+] as const;
+
+/** Sum the children's finding counts so a parent row is never empty. */
+function rollUpSummaryCounts(
+  children: readonly RunListItem[],
+): Record<string, unknown> | null {
+  const counts = children
+    .map((child) => child.summaryCounts)
+    .filter((value): value is Record<string, unknown> => typeof value === "object" && value !== null);
+  if (counts.length === 0) return null;
+  const hasNumbers = counts.some((entry) =>
+    SUMMARY_COUNT_KEYS.some((key) => typeof entry[key] === "number"),
+  );
+  if (!hasNumbers) return null;
+  const totals: Record<string, unknown> = {};
+  for (const key of SUMMARY_COUNT_KEYS) {
+    totals[key] = counts.reduce((sum, entry) => sum + (Number(entry[key]) || 0), 0);
+  }
+  const error = counts.find((entry) => typeof entry["error"] === "string")?.["error"];
+  if (typeof error === "string") totals["error"] = error;
+  return totals;
+}
+
+function rollUpProgress(
+  children: readonly RunListItem[],
+): { completed: number; total: number; percent: number } | null {
+  if (children.length === 0) return null;
+  let completed = 0;
+  let total = 0;
+  for (const child of children) {
+    const progress = child.progress;
+    if (!progress) return null;
+    completed += progress.completed;
+    total += progress.total;
+  }
+  const percent = total > 0 ? Math.min(100, Math.max(0, Math.round((completed / total) * 100))) : 0;
+  return { completed, total, percent };
+}
+
+/** One row for a multi-tenant parent, rolled up from its per-tenant children. */
+function rollUpParentRow(parent: RunListItem, children: readonly RunListItem[]): RunListItem {
+  const rollup = rollupRunStatus(
+    children.map((child) => ({
+      status: child.status,
+      startedAt: child.startedAt,
+      finishedAt: child.finishedAt,
+    })),
+  );
+  const startedAt = rollup.startedAt ?? parent.startedAt;
+  const finishedAt =
+    rollup.status === "queued" || rollup.status === "running"
+      ? null
+      : rollup.finishedAt ?? parent.finishedAt;
+  return {
+    ...parent,
+    // A parent spans several tenants, so no single tenant name applies.
+    tenantDisplayName: null,
+    status: rollup.status,
+    startedAt,
+    finishedAt,
+    durationMs: calculateDuration(startedAt, finishedAt),
+    summaryCounts: rollUpSummaryCounts(children) ?? parent.summaryCounts,
+    progress: rollUpProgress(children) ?? parent.progress,
+    artifactPath: parent.artifactPath ?? children.find((child) => child.artifactPath)?.artifactPath ?? null,
+    children,
+  };
+}
+
+/**
+ * Collapse the stored parent/child runs into the rows the Runs list shows. Parents and
+ * children arrive sorted; the collapsed rows keep that order, taking the parent's slot.
+ */
+function collapseRunRows(runs: readonly RunListItem[]): RunListItem[] {
+  const ids = new Set(runs.map((run) => run.id));
+  const childrenByParent = new Map<string, RunListItem[]>();
+  for (const run of runs) {
+    if (!run.parentRunId || !ids.has(run.parentRunId)) continue;
+    const siblings = childrenByParent.get(run.parentRunId);
+    if (siblings) siblings.push(run);
+    else childrenByParent.set(run.parentRunId, [run]);
+  }
+
+  const collapsed: RunListItem[] = [];
+  for (const run of runs) {
+    // Represented by its parent's row.
+    if (run.parentRunId && ids.has(run.parentRunId)) continue;
+    const children = childrenByParent.get(run.id);
+    if (!children || children.length === 0) {
+      collapsed.push(run);
+      continue;
+    }
+    collapsed.push(children.length === 1 ? children[0]! : rollUpParentRow(run, children));
+  }
+  return collapsed;
+}
+
+interface RunFilters {
+  readonly status?: string | undefined;
+  readonly trigger?: string | undefined;
+  readonly tenant?: string | undefined;
+  readonly section?: string | undefined;
+  readonly exactDate?: string | undefined;
+  readonly fromDate?: string | undefined;
+  readonly toDate?: string | undefined;
+}
+
+function runMatchesFilters(run: RunListItem, filters: RunFilters): boolean {
+  if (filters.status && run.status.toLowerCase() !== filters.status) return false;
+  if (filters.trigger && run.trigger.toLowerCase() !== filters.trigger) return false;
+  if (filters.tenant && run.tenantId !== filters.tenant) return false;
+  if (filters.section && !run.sections.some((s) => s.toLowerCase() === filters.section)) {
+    return false;
+  }
+
+  const runTimestamp = run.startedAt ?? run.createdAt;
+  if (filters.exactDate && !runTimestamp.startsWith(filters.exactDate)) return false;
+  if (filters.fromDate && runTimestamp < filters.fromDate) return false;
+  if (filters.toDate && runTimestamp > filters.toDate) return false;
+
+  return true;
+}
+
+/** A logical row matches when it or any of its per-tenant children matches. */
+function rowMatchesFilters(row: RunListItem, filters: RunFilters): boolean {
+  if (runMatchesFilters(row, filters)) return true;
+  return (row.children ?? []).some((child) => runMatchesFilters(child, filters));
 }
 
 export function createRunsListRoute(options: RunListRouteOptions): Route {
@@ -109,68 +261,38 @@ export function createRunsListRoute(options: RunListRouteOptions): Route {
       });
 
       // 2. Query filters
-      const statusFilter = query.get("status")?.trim().toLowerCase();
-      const triggerFilter = query.get("trigger")?.trim().toLowerCase();
-      const sectionFilter = query.get("section")?.trim().toLowerCase();
+      const filters: RunFilters = {
+        status: query.get("status")?.trim().toLowerCase() || undefined,
+        trigger: query.get("trigger")?.trim().toLowerCase() || undefined,
+        tenant: requestedTenant ?? undefined,
+        section: query.get("section")?.trim().toLowerCase() || undefined,
+        exactDate: query.get("date")?.trim() || undefined,
+        fromDate: (query.get("dateFrom") ?? query.get("from"))?.trim() || undefined,
+        toDate: (query.get("dateTo") ?? query.get("to"))?.trim() || undefined,
+      };
       const parentRunIdFilter = query.get("parentRunId")?.trim();
-      const exactDate = query.get("date")?.trim();
-      const fromDate = (query.get("dateFrom") ?? query.get("from"))?.trim();
-      const toDate = (query.get("dateTo") ?? query.get("to"))?.trim();
-
-      const filtered = scopedRuns.filter((run) => {
-        if (statusFilter && run.status.toLowerCase() !== statusFilter) {
-          return false;
-        }
-
-        if (triggerFilter && run.trigger.toLowerCase() !== triggerFilter) {
-          return false;
-        }
-
-        if (requestedTenant && run.tenantId !== requestedTenant) {
-          return false;
-        }
-
-        if (
-          sectionFilter &&
-          !run.sections.some((s) => s.toLowerCase() === sectionFilter)
-        ) {
-          return false;
-        }
-
-        if (parentRunIdFilter !== undefined && parentRunIdFilter !== null) {
-          if (run.parentRunId !== parentRunIdFilter) {
-            return false;
-          }
-        }
-
-        const runTimestamp = run.startedAt ?? run.createdAt;
-        if (exactDate && !runTimestamp.startsWith(exactDate)) {
-          return false;
-        }
-
-        if (fromDate && runTimestamp < fromDate) {
-          return false;
-        }
-
-        if (toDate && runTimestamp > toDate) {
-          return false;
-        }
-
-        return true;
-      });
 
       // 3. Sort: newest runs first by createdAt descending, tie-breaker id
-      const sorted = [...filtered].sort((a, b) => {
+      const sorted = [...scopedRuns].sort((a, b) => {
         const timeA = new Date(a.createdAt).getTime();
         const timeB = new Date(b.createdAt).getTime();
         if (timeB !== timeA) return timeB - timeA;
         return a.id.localeCompare(b.id);
       });
 
-      // 4. Map presentation fields (e.g. duration)
-      const mapped = sorted.map(mapRunListItem);
+      // 4. Present logical runs (T-0919). An explicit ?parentRunId= asks for the flat
+      // child listing; otherwise parent/child rows collapse into one row per logical run.
+      const rows =
+        parentRunIdFilter !== undefined && parentRunIdFilter !== null
+          ? sorted.filter(
+              (run) => run.parentRunId === parentRunIdFilter && runMatchesFilters(run, filters),
+            )
+          : collapseRunRows(sorted).filter((row) => rowMatchesFilters(row, filters));
 
-      // 5. Cursor pagination
+      // 5. Map presentation fields (e.g. duration)
+      const mapped = rows.map(mapRunListItem);
+
+      // 6. Cursor pagination
       const pagination = parsePagination(query);
       const page = paginate(mapped, pagination);
 

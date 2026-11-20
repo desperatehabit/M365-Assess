@@ -35,12 +35,64 @@ $ErrorActionPreference = 'Continue'
 if (-not (Assert-GraphConnection)) { return }
 $context = Get-MgContext
 
+# Load shared security-config helpers. Loaded before the auth branches because
+# the app-only branch still records a Skipped finding for every Teams check.
+$_scriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { $PSScriptRoot }
+. (Join-Path -Path $_scriptDir -ChildPath '..\Common\SecurityConfigHelper.ps1')
+
 # Detect app-only auth — Teams Graph APIs (/v1.0/teamwork/*) do not support
 # application-only context and return HTTP 412 "not supported in application-only context".
+# T-0937: an app-only run is a skip, not a clean run. The MicrosoftTeams module is
+# not a dependency of this module, so no Teams check can be collected here. Record
+# every check the delegated path would emit as Skipped (with the reason) and report
+# the collector as Skipped, instead of returning nothing and being logged Complete.
 $isAppOnly = $context.AuthType -eq 'AppOnly' -or (-not $context.Account -and $context.AppName)
 if ($isAppOnly) {
-    Write-Warning "Teams Graph APIs do not support app-only (certificate) authentication. Teams security checks require delegated (interactive) auth. Skipping Teams collector."
-    Write-Output @()
+    $appOnlyReason = 'app-only not supported: Teams security checks read Graph /teamwork/* endpoints, which reject application-only (certificate) tokens with HTTP 412, and the MicrosoftTeams module is not available for app-only collection. Re-run with delegated auth, or verify these settings in Teams admin center.'
+    $appOnlyChecks = @(
+        @{ CheckId = 'TEAMS-APPS-001';       Category = 'Teams Apps';          Setting = 'Chat Resource-Specific Consent' }
+        @{ CheckId = 'TEAMS-EXTACCESS-001';  Category = 'External Access';     Setting = 'Communication with Unmanaged Teams Users' }
+        @{ CheckId = 'TEAMS-EXTACCESS-002';  Category = 'External Access';     Setting = 'External Unmanaged Users Can Initiate Conversations' }
+        @{ CheckId = 'TEAMS-CLIENT-001';     Category = 'Client Configuration'; Setting = 'Third-Party Cloud Storage' }
+        @{ CheckId = 'TEAMS-CLIENT-002';     Category = 'Client Configuration'; Setting = 'Email Into Channel' }
+        @{ CheckId = 'TEAMS-EXTACCESS-003';  Category = 'External Access';     Setting = 'External Domain Access' }
+        @{ CheckId = 'TEAMS-EXTACCESS-004';  Category = 'External Access';     Setting = 'Skype for Business/Consumer Interop' }
+        @{ CheckId = 'TEAMS-MEETING-001';    Category = 'Meeting Policy';      Setting = 'Anonymous Users Can Join Meeting' }
+        @{ CheckId = 'TEAMS-MEETING-002';    Category = 'Meeting Policy';      Setting = 'Anonymous Users Can Start Meeting' }
+        @{ CheckId = 'TEAMS-MEETING-003';    Category = 'Meeting Policy';      Setting = 'Auto-Admitted Users (Lobby Bypass)' }
+        @{ CheckId = 'TEAMS-MEETING-004';    Category = 'Meeting Policy';      Setting = 'Dial-in Users Bypass Lobby' }
+        @{ CheckId = 'TEAMS-MEETING-005';    Category = 'Meeting Policy';      Setting = 'External Participants Can Give/Request Control' }
+        @{ CheckId = 'TEAMS-MEETING-006';    Category = 'Meeting Policy';      Setting = 'Meeting Chat for Anonymous Users' }
+        @{ CheckId = 'TEAMS-MEETING-007';    Category = 'Meeting Policy';      Setting = 'Default Presenter Role' }
+        @{ CheckId = 'TEAMS-MEETING-008';    Category = 'Meeting Policy';      Setting = 'External Meeting Chat (Non-Trusted)' }
+        @{ CheckId = 'TEAMS-MEETING-009';    Category = 'Meeting Policy';      Setting = 'Cloud Recording' }
+        @{ CheckId = 'TEAMS-INFO-001';       Category = 'Teams Settings';      Setting = 'Teams Workload Active' }
+        @{ CheckId = 'TEAMS-APPS-002';       Category = 'Teams Apps';          Setting = 'Third-Party App Permission Policies' }
+        @{ CheckId = 'TEAMS-REPORTING-001';  Category = 'Teams Settings';      Setting = 'Report a Security Concern Enabled' }
+    )
+
+    $ctx = Initialize-SecurityConfig
+    $settings = $ctx.Settings
+    foreach ($check in $appOnlyChecks) {
+        $skipParams = @{
+            Category         = $check.Category
+            Setting          = $check.Setting
+            CurrentValue     = 'Not assessed'
+            RecommendedValue = 'n/a'
+            Status           = 'Skipped'
+            CheckId          = $check.CheckId
+            Remediation      = $appOnlyReason
+        }
+        Add-Setting @skipParams
+    }
+
+    Write-Warning "Teams security checks skipped: app-only auth is not supported by the Teams Graph APIs."
+    Export-SecurityConfigReport -Settings $settings -OutputPath $OutputPath -ServiceLabel 'Teams'
+    [PSCustomObject]@{
+        PSTypeName = 'M365Assess.CollectorOutcome'
+        Outcome    = 'Skipped'
+        Reason     = $appOnlyReason
+    }
     return
 }
 
@@ -71,8 +123,13 @@ try {
         if ($hasTeams) { break }
     }
     if (-not $hasTeams) {
+        $noTeamsReason = 'No Teams licenses detected in this tenant; Teams security checks were not run.'
         Write-Warning "No Teams licenses detected in this tenant. Skipping Teams security checks to avoid false errors."
-        Write-Output @()
+        [PSCustomObject]@{
+            PSTypeName = 'M365Assess.CollectorOutcome'
+            Outcome    = 'Skipped'
+            Reason     = $noTeamsReason
+        }
         return
     }
 }
@@ -81,14 +138,15 @@ catch {
     Write-Warning "Could not verify Teams licensing: $($_.Exception.Message). Proceeding with Teams checks."
 }
 
-# Load shared security-config helpers
-$_scriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { $PSScriptRoot }
-. (Join-Path -Path $_scriptDir -ChildPath '..\Common\SecurityConfigHelper.ps1')
-
 # Initialize-SecurityConfig records the active context; the shared Add-Setting from
 # SecurityConfigHelper.ps1 reads it, so no local wrapper is needed (#958).
 $ctx = Initialize-SecurityConfig
 $settings = $ctx.Settings
+
+# T-0937: endpoints that could not be read reduce this collector's coverage, so the
+# collector reports Partial instead of Complete. Each gap already emits Skipped
+# findings for its dependent checks; this list names the endpoints in the reason.
+$endpointGaps = [System.Collections.Generic.List[string]]::new()
 
 # ------------------------------------------------------------------
 # 1. Teams Client Configuration (external access)
@@ -116,6 +174,7 @@ try {
 }
 catch {
     Write-Warning "Could not retrieve Teams app settings: $_"
+    $endpointGaps.Add('/v1.0/teamwork/teamsAppSettings')
 }
 
 # ------------------------------------------------------------------
@@ -220,6 +279,7 @@ try {
 }
 catch {
     Write-Warning "Teams client configuration endpoint unavailable: $($_.Exception.Message)"
+    $endpointGaps.Add('/beta/teamwork/teamsClientConfiguration')
     # The /beta/teamwork/teamsClientConfiguration endpoint is beta-only with no v1.0
     # equivalent and is not served in sovereign clouds (GCC High/DoD), where it 400s.
     # Emit Skipped for the dependent checks so they surface in the report's
@@ -381,6 +441,7 @@ try {
 }
 catch {
     Write-Warning "Teams meeting policy endpoint unavailable: $($_.Exception.Message)"
+    $endpointGaps.Add('/beta/teamwork/teamsMeetingPolicy')
     # /beta/teamwork/teamsMeetingPolicy is beta-only with no v1.0 equivalent and is
     # not served in sovereign clouds (GCC High/DoD), where it 400s. Emit Skipped for
     # the dependent checks so they surface in the report's not-assessed group (#940).
@@ -436,6 +497,7 @@ try {
 }
 catch {
     Write-Warning "Teams settings endpoint unavailable: $($_.Exception.Message)"
+    $endpointGaps.Add('/v1.0/teamwork')
 }
 
 # ------------------------------------------------------------------
@@ -470,3 +532,13 @@ Add-Setting @settingParams
 # Output
 # ------------------------------------------------------------------
 Export-SecurityConfigReport -Settings $settings -OutputPath $OutputPath -ServiceLabel 'Teams'
+
+# T-0937: report the collector outcome. An endpoint gap means some checks were
+# emitted as Skipped, so the collector is Partial -- never Complete with gaps.
+if ($endpointGaps.Count -gt 0) {
+    [PSCustomObject]@{
+        PSTypeName = 'M365Assess.CollectorOutcome'
+        Outcome    = 'Partial'
+        Reason     = "Some Teams endpoints were unavailable, so their checks are Skipped: $($endpointGaps -join ', ')"
+    }
+}

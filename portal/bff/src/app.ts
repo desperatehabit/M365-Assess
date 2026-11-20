@@ -32,6 +32,7 @@ import {
   SqliteReportTemplateRepository,
   SqliteRepository,
   SqliteRoleRequestsRepository,
+  SqliteRunTemplateRepository,
   SqliteScheduleRepository,
   SqliteStandardsRepository,
   SqliteTapRecordRepository,
@@ -265,6 +266,11 @@ import {
 import { createAuditCoverageRoutes } from "./routes/audit-coverage.js";
 import { createAuditExclusionWindowRoutes } from "./routes/audit-exclusion-windows.js";
 import { createWebhooksRoutes } from "./routes/webhooks.js";
+import {
+  createWebhookNotifyRoute,
+  type WebhookNotifyDispatcher,
+  type WebhookNotifyStore,
+} from "./routes/webhook-notify.js";
 import { SqliteAuditRepository } from "@m365-assess/db";
 // EPIC-033 Licensing (T-0863).
 import { createLicensingProviders } from "./adapters/licensing.js";
@@ -404,6 +410,10 @@ import { createGdapRoutes } from "./routes/gdap.js";
 import { createMfaRoutes } from "./routes/mfa.js";
 import { createOffboardingRoutes } from "./routes/offboarding.js";
 import { createOnboardRoutes } from "./routes/onboard.js";
+import {
+  createOnboardingPreflightRoutes,
+  type OnboardingPreflightReport,
+} from "./routes/onboarding-preflight.js";
 import { createPimRequestsRoutes } from "./routes/pim-requests.js";
 import { createPimSettingsTemplatesRoutes } from "./routes/pim-settings-templates.js";
 import { createPimAssignmentsRoute } from "./routes/pim.js";
@@ -419,6 +429,7 @@ import { createRoleAssignmentsRoute, createRolesRoutes } from "./routes/roles.js
 import { createRunsActionsRoutes } from "./routes/runs-actions.js";
 import { createRunsArtifactsRoutes } from "./routes/runs-artifacts.js";
 import { createRunsCreateRoute } from "./routes/runs-create.js";
+import { createRunTemplateRoutes } from "./routes/run-templates.js";
 import { createRunsDetailRoutes } from "./routes/runs-detail.js";
 import { createRunsEventsRoute } from "./routes/runs-events.js";
 import { createRunsListRoute } from "./routes/runs-list.js";
@@ -783,6 +794,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // stored before the queue reports it finished.
   const remediationRepo = new SqliteRemediationRepository(db, schemaVersion);
   const runStore = createRunStore(repo, db);
+  // Operator-saved run presets for the New run wizard (T-0922); built-ins live in
+  // the route module and are never stored here.
+  const runTemplates = new SqliteRunTemplateRepository(db, schemaVersion);
   const hub = new ProgressEventHub({ store: runStore });
   const publish = (event: unknown) => void hub.publish(event as Record<string, unknown>);
   const generatedReports = createGeneratedReportStore(
@@ -876,6 +890,49 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const auditRepo = new SqliteAuditRepository(db, schemaVersion);
   const audit = createAuditProviders(run, credentialRows, { webhookStore: auditRepo });
   const webhookNotificationUrl = `${config.workerBaseUrl}/v1/webhooks/notify`;
+  // The notification receiver is unauthenticated by design (SPEC §4.3): Graph
+  // cannot carry a portal session, so the per-subscription clientState is the
+  // credential. Only its SHA-256 hash is stored (migration 0131); the route
+  // hashes each callback and rejects a mismatch with 401. The app therefore
+  // mounts it without resolveCaller/authorize — the explicit seam the route
+  // module documents.
+  const webhookNotifyStore: WebhookNotifyStore = {
+    async getSubscription(subscriptionId: string) {
+      const subscription = await auditRepo.getWebhookSubscriptionById(subscriptionId);
+      if (
+        subscription === undefined ||
+        subscription.clientStateHash === null ||
+        subscription.clientStateHash.length === 0
+      ) {
+        return undefined;
+      }
+      return {
+        tenantId: subscription.tenantId,
+        clientStateHash: subscription.clientStateHash,
+        resource: subscription.resource,
+      };
+    },
+    async recordNotification(reference) {
+      await recordAudit({
+        action: "webhook.notification.received",
+        tenantId: reference.tenantId,
+        targetType: "webhook_subscription",
+        targetId: reference.subscriptionId,
+        after: {
+          resource: reference.resource,
+          changeType: reference.changeType,
+          receivedAt: reference.receivedAt,
+        },
+      });
+    },
+  };
+  // Content bundles are deferred (SPEC §11.2) and alert/cache fan-out is the
+  // EPIC-029 seam, so acceptance is recorded and dispatch stays a no-op here.
+  const webhookNotifyDispatch: WebhookNotifyDispatcher = {
+    async dispatch() {
+      return undefined;
+    },
+  };
 
   // EPIC-033 Licensing (T-0863). Consumption, optimization, gates, and per-user
   // changes run their Graph workers; pricing and the append-only LicenseChange
@@ -1255,6 +1312,10 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createRunsArtifactsRoutes({ store: runStore, artifactRoot: config.artifactPath, ...caller }),
     createRunsEventsRoute({ hub, store: runStore, ...caller }),
 
+    // EPIC-003 run starting points (T-0922). Built-in templates are served locked and
+    // saved templates persist through SQLite; no path overlaps /v1/runs.
+    ...createRunTemplateRoutes({ store: runTemplates, ...caller }),
+
     // EPIC-004 dashboards (T-0823). The layout routes come first: /v1/dashboard/:tenantId
     // would otherwise capture /v1/dashboard/layout.
     ...createDashboardLayoutRoutes({
@@ -1439,6 +1500,11 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
     ...createOnboardRoutes({ tenantStore, credentialStore: credentialRows, secrets: credentialSecrets, runner: createOnboardRunner(run), ...caller }),
+    // Read-only preflight so the wizard reports missing worker modules before onboarding (T-0915).
+    ...createOnboardingPreflightRoutes({
+      runner: () => run<OnboardingPreflightReport>("onboarding-preflight.ps1", { tenantId: "system" }),
+      ...caller,
+    }),
     ...createTestConnectionRoutes({
       tenantStore,
       credentialStore: credentialRows,
@@ -1790,6 +1856,10 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       authorize: authorizeCaller,
       notificationUrl: webhookNotificationUrl,
       readBody,
+    }),
+    ...createWebhookNotifyRoute({
+      store: webhookNotifyStore,
+      dispatch: webhookNotifyDispatch,
     }),
 
     // EPIC-033 Licensing (T-0863). The factories existed but were never mounted

@@ -255,10 +255,17 @@ describe("permission taxonomy", () => {
     const publicEntries = PermissionRegistry.filter((entry) =>
       isPublicPermission(entry.permission),
     );
-    // The OpenAPI contract (served as yaml and as json) and the liveness probe (no tenant
-    // data) are the only open endpoints.
+    // The OpenAPI contract (served as yaml and as json), the liveness probe (no tenant
+    // data), and the Graph notification receiver (Graph cannot carry a session; the
+    // subscription clientState is the credential) are the only open endpoints.
     expect(publicEntries.map((e) => `${e.method} ${e.path}`).sort()).toEqual(
-      ["GET /v1/health", `GET ${OPENAPI_ROUTE}`, "GET /openapi.json", "GET /v1/openapi.json"].sort(),
+      [
+        "GET /v1/health",
+        `GET ${OPENAPI_ROUTE}`,
+        "GET /openapi.json",
+        "GET /v1/openapi.json",
+        "POST /v1/webhooks/notify",
+      ].sort(),
     );
   });
 

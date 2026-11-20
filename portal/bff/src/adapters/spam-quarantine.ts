@@ -255,11 +255,18 @@ export function createSpamQuarantineAdapters(
     correlationId: string,
     payload: Row,
   ): Promise<T> =>
-    call<T>(entrypoint, tenantId, {
-      schemaVersion: "v1",
-      correlationId,
-      payload,
-    });
+    // The queue only ever dispatches write operations (submit, release, block,
+    // policy and filter changes), so it requests the operator credential (T-0940).
+    call<T>(
+      entrypoint,
+      tenantId,
+      {
+        schemaVersion: "v1",
+        correlationId,
+        payload,
+      },
+      { purpose: "operator" },
+    );
 
   const quarantine: QuarantineProvider = {
     async listMessages(tenantId: string, filter: QuarantineFilter): Promise<QuarantinePage> {

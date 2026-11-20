@@ -130,3 +130,7 @@ Describe 'Get-RoleAssignments worker (T-0241)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

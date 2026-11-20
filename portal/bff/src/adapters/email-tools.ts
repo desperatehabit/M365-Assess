@@ -184,13 +184,19 @@ export function createEmailToolsProviders(
     tenantId: string,
     payload: Record<string, unknown>,
     extra: Record<string, unknown> = {},
+    purpose?: "operator",
   ): Promise<T> =>
-    call<T>(entrypoint, tenantId, {
-      schemaVersion: "v1",
-      correlationId: randomUUID(),
-      payload,
-      ...extra,
-    });
+    call<T>(
+      entrypoint,
+      tenantId,
+      {
+        schemaVersion: "v1",
+        correlationId: randomUUID(),
+        payload,
+        ...extra,
+      },
+      purpose === "operator" ? { purpose } : undefined,
+    );
 
   const messageTrace: MessageTraceProvider = {
     async traceMessages(tenantId: string, filter: MessageTraceFilter): Promise<MessageTracePage> {
@@ -216,16 +222,22 @@ export function createEmailToolsProviders(
       createdBy?: string,
     ): Promise<HistoricalSearchJob> {
       const jobId = randomUUID();
-      const result = await envelope<unknown>("start-historical-search.ps1", tenantId, {
-        action: "start",
-        jobId,
-        query: input.query,
-        exchangeLocation: input.mailboxes ?? [],
-        ...(input.startDate ? { startDate: input.startDate } : {}),
-        ...(input.endDate ? { endDate: input.endDate } : {}),
-        ...(input.top !== undefined ? { top: input.top } : {}),
-        ...(createdBy ? { createdBy } : {}),
-      });
+      const result = await envelope<unknown>(
+        "start-historical-search.ps1",
+        tenantId,
+        {
+          action: "start",
+          jobId,
+          query: input.query,
+          exchangeLocation: input.mailboxes ?? [],
+          ...(input.startDate ? { startDate: input.startDate } : {}),
+          ...(input.endDate ? { endDate: input.endDate } : {}),
+          ...(input.top !== undefined ? { top: input.top } : {}),
+          ...(createdBy ? { createdBy } : {}),
+        },
+        {},
+        "operator",
+      );
       raiseWorkerError(result);
       return mapHistoricalSearchJob(result, tenantId);
     },
@@ -240,10 +252,16 @@ export function createEmailToolsProviders(
     },
 
     async cancelSearch(tenantId: string, jobId: string): Promise<HistoricalSearchJob> {
-      const result = await envelope<unknown>("start-historical-search.ps1", tenantId, {
-        action: "cancel",
-        jobId,
-      });
+      const result = await envelope<unknown>(
+        "start-historical-search.ps1",
+        tenantId,
+        {
+          action: "cancel",
+          jobId,
+        },
+        {},
+        "operator",
+      );
       raiseWorkerError(result);
       return mapHistoricalSearchJob(result, tenantId);
     },
@@ -302,18 +320,24 @@ export function createEmailToolsProviders(
       input: MailRestoreInput,
       createdBy?: string,
     ): Promise<MailRestoreResult> {
-      const result = await envelope<unknown>("start-mailbox-restore.ps1", tenantId, {
-        action: "apply",
-        mailboxId: input.mailboxId,
-        scope: input.scope,
-        ...(input.target ? { target: input.target } : {}),
-        ...(input.query ? { query: input.query } : {}),
-        ...(input.startDate ? { startDate: input.startDate } : {}),
-        ...(input.endDate ? { endDate: input.endDate } : {}),
-        ...(createdBy ? { createdBy } : {}),
-        dryRun: false,
-        confirmed: true,
-      });
+      const result = await envelope<unknown>(
+        "start-mailbox-restore.ps1",
+        tenantId,
+        {
+          action: "apply",
+          mailboxId: input.mailboxId,
+          scope: input.scope,
+          ...(input.target ? { target: input.target } : {}),
+          ...(input.query ? { query: input.query } : {}),
+          ...(input.startDate ? { startDate: input.startDate } : {}),
+          ...(input.endDate ? { endDate: input.endDate } : {}),
+          ...(createdBy ? { createdBy } : {}),
+          dryRun: false,
+          confirmed: true,
+        },
+        {},
+        "operator",
+      );
       raiseWorkerError(result);
       const record = asRecord(result);
       const workerJob = asRecord(record["job"]);
@@ -377,6 +401,7 @@ export function createEmailToolsProviders(
           confirmed: !preview,
         },
         { action: "apply" },
+        preview ? undefined : "operator",
       );
       raiseWorkerError(result);
       if (preview) {

@@ -90,7 +90,7 @@ Describe 'Invoke-DomainAction worker (T-0663)' {
             (Get-Command Invoke-DomainAction -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Read-DomainActionJob -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Add-Domain -CommandType Function) | Should -Not -BeNullOrEmpty
-            (Get-Command Verify-Domain -CommandType Function) | Should -Not -BeNullOrEmpty
+            (Get-Command Confirm-Domain -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Remove-Domain -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Set-DomainDefault -CommandType Function) | Should -Not -BeNullOrEmpty
         }
@@ -211,13 +211,13 @@ Describe 'Invoke-DomainAction worker (T-0663)' {
         }
 
         It 'refuses to verify without confirmation' {
-            { Verify-Domain -TenantId 'tenant-a' -Domain 'contoso.com' } | Should -Throw '*domains.confirm_required*'
+            { Confirm-Domain -TenantId 'tenant-a' -Domain 'contoso.com' } | Should -Throw '*domains.confirm_required*'
             Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -ParameterFilter { $Uri -like '*/verify' }
         }
 
         It 'verifies the domain and writes one success audit event' {
             $seam = script:New-AuditSeam
-            $result = Verify-Domain -TenantId 'tenant-a' -Domain 'contoso.com' -Confirmed -WriteAudit $seam
+            $result = Confirm-Domain -TenantId 'tenant-a' -Domain 'contoso.com' -Confirmed -WriteAudit $seam
             $result.status | Should -Be 'applied'
             $script:domainState['contoso.com'].isVerified | Should -BeTrue
             Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $Uri -like '*/verify' }
@@ -228,7 +228,7 @@ Describe 'Invoke-DomainAction worker (T-0663)' {
 
         It 'refuses a missing domain with domain_not_found and no verify call' {
             $seam = script:New-AuditSeam
-            $result = Verify-Domain -TenantId 'tenant-a' -Domain 'missing.com' -Confirmed -WriteAudit $seam
+            $result = Confirm-Domain -TenantId 'tenant-a' -Domain 'missing.com' -Confirmed -WriteAudit $seam
             $result.status | Should -Be 'failed'
             $result.code | Should -Be 'domain_not_found'
             Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -ParameterFilter { $Uri -like '*/verify' }
@@ -380,4 +380,8 @@ Describe 'Invoke-DomainAction worker (T-0663)' {
             $result.verificationRecords | Should -HaveCount 2
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

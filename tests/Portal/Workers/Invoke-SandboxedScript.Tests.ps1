@@ -129,7 +129,7 @@ $record | ConvertTo-Json -Compress
 
             $elapsed = [DateTime]::UtcNow - $started
             $elapsed.TotalSeconds | Should -BeLessThan 60
-            $lingering = @((& ps -eo args) | Where-Object { $_ -match 'm365-sandbox-.*harness' })
+            $lingering = @((& /bin/ps -eo args) | Where-Object { $_ -match 'm365-sandbox-.*harness' })
             $lingering.Count | Should -Be 0
         }
     }

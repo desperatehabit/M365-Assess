@@ -100,6 +100,7 @@ import {
   type Tenant,
   type TenantCredential,
   type TenantCredentialInput,
+  type TenantCredentialPurpose,
   type TenantGroup,
   type TenantGroupInput,
   type TenantGroupKind,
@@ -417,6 +418,7 @@ export class SqliteRepository implements Repository {
       environment: asString(row["environment"]),
       expiresOn: asNullableString(row["expiresOn"]),
       lastValidated: asNullableString(row["lastValidated"]),
+      purpose: (asNullableString(row["purpose"]) ?? "reader") as TenantCredentialPurpose,
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -864,10 +866,15 @@ export class SqliteRepository implements Repository {
     return row ? this.mapCredential(row) : undefined;
   }
 
-  async getTenantCredential(tenantId: string): Promise<TenantCredential | undefined> {
+  async getTenantCredential(
+    tenantId: string,
+    purpose: TenantCredentialPurpose = "reader",
+  ): Promise<TenantCredential | undefined> {
     const row = this.db
-      .prepare("SELECT * FROM tenant_credentials WHERE tenantId = ? ORDER BY createdAt LIMIT 1")
-      .get(tenantId) as Row | undefined;
+      .prepare(
+        "SELECT * FROM tenant_credentials WHERE tenantId = ? AND purpose = ? ORDER BY createdAt LIMIT 1",
+      )
+      .get(tenantId, purpose) as Row | undefined;
     return row ? this.mapCredential(row) : undefined;
   }
 
@@ -885,9 +892,9 @@ export class SqliteRepository implements Repository {
     this.db
       .prepare(
         `INSERT INTO tenant_credentials
-           (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, createdAt, updatedAt)
+           (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, createdAt, updatedAt)
          VALUES
-           (@id, @tenantId, @authMethod, @clientId, @secretRef, @thumbprint, @environment, @expiresOn, @lastValidated, @createdAt, @updatedAt)
+           (@id, @tenantId, @authMethod, @clientId, @secretRef, @thumbprint, @environment, @expiresOn, @lastValidated, @purpose, @createdAt, @updatedAt)
          ON CONFLICT(id) DO UPDATE SET
            tenantId = excluded.tenantId,
            authMethod = excluded.authMethod,
@@ -897,6 +904,7 @@ export class SqliteRepository implements Repository {
            environment = excluded.environment,
            expiresOn = excluded.expiresOn,
            lastValidated = excluded.lastValidated,
+           purpose = excluded.purpose,
            updatedAt = excluded.updatedAt`,
       )
       .run({
@@ -909,6 +917,7 @@ export class SqliteRepository implements Repository {
         environment: input.environment,
         expiresOn: input.expiresOn ?? null,
         lastValidated: input.lastValidated ?? null,
+        purpose: input.purpose ?? "reader",
         createdAt,
         updatedAt,
       });

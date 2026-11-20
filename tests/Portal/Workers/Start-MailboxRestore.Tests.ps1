@@ -257,3 +257,10 @@ Describe 'Start-MailboxRestore worker (T-0467)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-EXOMailboxStatistics' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Undo-SoftDeletedMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-MailboxRestoreRequest' -ErrorAction SilentlyContinue
+}

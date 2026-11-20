@@ -108,6 +108,7 @@ if (Get-Module -Name 'M365Portal.Workers') {
                     CredentialRecord = $credentialBlock.Record
                     Sections         = @($ctx.Scope.Sections)
                 }
+                if ($credentialBlock.Purpose) { $resolveParams['Purpose'] = [string]$credentialBlock.Purpose }
                 $resolved = Resolve-TenantCredential @resolveParams
                 foreach ($key in @('Method', 'ClientId', 'CertificateThumbprint', 'CertificatePath', 'CertificatePassword', 'ClientSecret', 'M365Environment')) {
                     if ($resolved.ContainsKey($key) -and $null -ne $resolved[$key]) {

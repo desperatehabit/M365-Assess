@@ -17,30 +17,42 @@ Describe 'Get-PowerBISecurityConfig' {
         function Get-PowerBIAccessToken { return @{ 'Authorization' = 'Bearer test-token' } }
         function Invoke-PowerBIRestMethod { param($Url, $Method) }
 
-        # Mock Invoke-PowerBIRestMethod for tenant settings — returns JSON string
-        # matching the real API behaviour of MicrosoftPowerBIMgmt
+        # Mock Invoke-PowerBIRestMethod for tenant settings. Returns the Fabric
+        # admin API shape: { value: [ { settingName; enabled } ] }.
+        $script:requestedUrls = [System.Collections.Generic.List[string]]::new()
         Mock Invoke-PowerBIRestMethod {
             param($Url, $Method)
+            $script:requestedUrls.Add([string]$Url)
             return (@{
-                tenantSettings = @(
-                    @{ settingName = 'AllowExternalDataSharingReceiverWorksWithShare'; isEnabled = $false; title = 'External sharing' }
-                    @{ settingName = 'AllowGuestUserToAccessSharedContent'; isEnabled = $false; title = 'Guest access to content' }
-                    @{ settingName = 'AllowGuestLookup'; isEnabled = $false; title = 'Guest user access' }
-                    @{ settingName = 'ElevatedGuestsTenant'; isEnabled = $false; title = 'External invitations' }
-                    @{ settingName = 'WebDashboardsPublishToWebDisabled'; isEnabled = $true; title = 'Publish to web disabled' }
-                    @{ settingName = 'RScriptVisuals'; isEnabled = $false; title = 'R and Python visuals' }
-                    @{ settingName = 'UseSensitivityLabels'; isEnabled = $true; title = 'Sensitivity labels' }
-                    @{ settingName = 'ShareLinkToEntireOrg'; isEnabled = $false; title = 'Shareable links' }
-                    @{ settingName = 'BlockResourceKeyAuthentication'; isEnabled = $true; title = 'Block ResourceKey Auth' }
-                    @{ settingName = 'ServicePrincipalAccess'; isEnabled = $false; title = 'Service Principal API access' }
-                    @{ settingName = 'CreateServicePrincipalProfile'; isEnabled = $false; title = 'Service Principal profiles' }
+                value = @(
+                    @{ settingName = 'AllowExternalDataSharingReceiverWorksWithShare'; enabled = $false; title = 'External sharing' }
+                    @{ settingName = 'AllowGuestUserToAccessSharedContent'; enabled = $false; title = 'Guest access to content' }
+                    @{ settingName = 'AllowGuestLookup'; enabled = $false; title = 'Guest user access' }
+                    @{ settingName = 'ElevatedGuestsTenant'; enabled = $false; title = 'External invitations' }
+                    @{ settingName = 'WebDashboardsPublishToWebDisabled'; enabled = $true; title = 'Publish to web disabled' }
+                    @{ settingName = 'RScriptVisuals'; enabled = $false; title = 'R and Python visuals' }
+                    @{ settingName = 'UseSensitivityLabels'; enabled = $true; title = 'Sensitivity labels' }
+                    @{ settingName = 'ShareLinkToEntireOrg'; enabled = $false; title = 'Shareable links' }
+                    @{ settingName = 'BlockResourceKeyAuthentication'; enabled = $true; title = 'Block ResourceKey Auth' }
+                    @{ settingName = 'ServicePrincipalAccess'; enabled = $false; title = 'Service Principal API access' }
+                    @{ settingName = 'CreateServicePrincipalProfile'; enabled = $false; title = 'Service Principal profiles' }
                 )
             } | ConvertTo-Json -Depth 5)
         }
 
         # Run the collector by dot-sourcing it
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
-        . "$PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1"
+        $script:collectorOutput = @(. "$PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1")
+    }
+
+    It 'does not report a non-Complete collector outcome when the API succeeds' {
+        @($script:collectorOutput | Where-Object {
+            $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+        }).Count | Should -Be 0
+    }
+
+    It 'queries the Fabric admin tenant-settings endpoint' {
+        $script:requestedUrls | Should -Contain 'https://api.fabric.microsoft.com/v1/admin/tenantsettings'
     }
 
     It 'Returns a non-empty settings list' {
@@ -149,7 +161,7 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
     Context 'when tenant settings API returns empty response' {
         BeforeAll {
             Mock Invoke-PowerBIRestMethod {
-                return (@{ tenantSettings = @() } | ConvertTo-Json -Depth 5)
+                return (@{ value = @() } | ConvertTo-Json -Depth 5)
             }
 
             . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
@@ -168,22 +180,54 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
         }
     }
 
+    Context 'when the Fabric response spans multiple pages' {
+        BeforeAll {
+            $script:pageCalls = 0
+            Mock Invoke-PowerBIRestMethod {
+                param($Url)
+                $script:pageCalls++
+                if ($Url -match 'continuationToken') {
+                    return (@{
+                        value = @(
+                            @{ settingName = 'BlockResourceKeyAuthentication'; enabled = $true; title = 'Block ResourceKey Auth' }
+                        )
+                    } | ConvertTo-Json -Depth 5)
+                }
+                return (@{
+                    value = @(
+                        @{ settingName = 'AllowGuestLookup'; enabled = $false; title = 'Guest user access' }
+                    )
+                    continuationUri = 'https://api.fabric.microsoft.com/v1/admin/tenantsettings?continuationToken=page2'
+                } | ConvertTo-Json -Depth 5)
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1"
+        }
+
+        It 'follows continuationUri and evaluates settings from every page' {
+            $script:pageCalls | Should -Be 2
+            ($settings | Where-Object { $_.CheckId -like 'POWERBI-GUEST-001*' }).Status | Should -Be 'Pass'
+            ($settings | Where-Object { $_.CheckId -like 'POWERBI-AUTH-001*' }).Status | Should -Be 'Pass'
+        }
+    }
+
     Context 'when all settings are insecure' {
         BeforeAll {
             Mock Invoke-PowerBIRestMethod {
                 return (@{
-                    tenantSettings = @(
-                        @{ settingName = 'AllowExternalDataSharingReceiverWorksWithShare'; isEnabled = $true; title = 'External sharing' }
-                        @{ settingName = 'AllowGuestUserToAccessSharedContent'; isEnabled = $true; title = 'Guest access to content' }
-                        @{ settingName = 'AllowGuestLookup'; isEnabled = $true; title = 'Guest user access' }
-                        @{ settingName = 'ElevatedGuestsTenant'; isEnabled = $true; title = 'External invitations' }
-                        @{ settingName = 'WebDashboardsPublishToWebDisabled'; isEnabled = $false; title = 'Publish to web disabled' }
-                        @{ settingName = 'RScriptVisuals'; isEnabled = $true; title = 'R and Python visuals' }
-                        @{ settingName = 'UseSensitivityLabels'; isEnabled = $false; title = 'Sensitivity labels' }
-                        @{ settingName = 'ShareLinkToEntireOrg'; isEnabled = $true; title = 'Shareable links' }
-                        @{ settingName = 'BlockResourceKeyAuthentication'; isEnabled = $false; title = 'Block ResourceKey Auth' }
-                        @{ settingName = 'ServicePrincipalAccess'; isEnabled = $true; title = 'Service Principal API access' }
-                        @{ settingName = 'CreateServicePrincipalProfile'; isEnabled = $true; title = 'Service Principal profiles' }
+                    value = @(
+                        @{ settingName = 'AllowExternalDataSharingReceiverWorksWithShare'; enabled = $true; title = 'External sharing' }
+                        @{ settingName = 'AllowGuestUserToAccessSharedContent'; enabled = $true; title = 'Guest access to content' }
+                        @{ settingName = 'AllowGuestLookup'; enabled = $true; title = 'Guest user access' }
+                        @{ settingName = 'ElevatedGuestsTenant'; enabled = $true; title = 'External invitations' }
+                        @{ settingName = 'WebDashboardsPublishToWebDisabled'; enabled = $false; title = 'Publish to web disabled' }
+                        @{ settingName = 'RScriptVisuals'; enabled = $true; title = 'R and Python visuals' }
+                        @{ settingName = 'UseSensitivityLabels'; enabled = $false; title = 'Sensitivity labels' }
+                        @{ settingName = 'ShareLinkToEntireOrg'; enabled = $true; title = 'Shareable links' }
+                        @{ settingName = 'BlockResourceKeyAuthentication'; enabled = $false; title = 'Block ResourceKey Auth' }
+                        @{ settingName = 'ServicePrincipalAccess'; enabled = $true; title = 'Service Principal API access' }
+                        @{ settingName = 'CreateServicePrincipalProfile'; enabled = $true; title = 'Service Principal profiles' }
                     )
                 } | ConvertTo-Json -Depth 5)
             }
@@ -244,7 +288,7 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
             function global:Invoke-PowerBIRestMethod { throw '403 Forbidden' }
 
             . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
-            . $PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1
+            $script:forbiddenOutput = @(. $PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1)
         }
 
         It 'should produce settings (at least one Warning from API failure)' {
@@ -252,9 +296,49 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
             ($settings | Where-Object { $_.Status -eq 'Warning' }) | Should -Not -BeNullOrEmpty
         }
 
-        It 'should include permission error in Warning sentinel CurrentValue' {
+        It 'reports the collector outcome as Failed, not Complete (T-0937)' {
+            $outcome = @($script:forbiddenOutput | Where-Object {
+                $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+            })
+            $outcome.Count | Should -Be 1
+            $outcome[0].Outcome | Should -Be 'Failed'
+            $outcome[0].Reason | Should -Match '403'
+        }
+
+        It 'should report a permission or role problem, not an endpoint problem' {
             $warnSetting = $settings | Where-Object { $_.Status -eq 'Warning' } | Select-Object -First 1
-            $warnSetting.CurrentValue | Should -Match 'denied|permission|403|unavailable'
+            $warnSetting.CurrentValue | Should -Match 'Access denied'
+            $warnSetting.CurrentValue | Should -Match '403'
+            $warnSetting.CurrentValue | Should -Match 'Fabric Administrator|Tenant\.Read\.All|permission'
+            $warnSetting.CurrentValue | Should -Not -Match 'endpoint not found'
+        }
+
+        AfterAll {
+            Remove-Item -Path Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Import-Module -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Get-PowerBIAccessToken -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Invoke-PowerBIRestMethod -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'when tenant settings API returns 401 Unauthorized' {
+        BeforeAll {
+            Remove-Item -Path Function:\Get-PowerBIAccessToken -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Invoke-PowerBIRestMethod -ErrorAction SilentlyContinue
+            function global:Update-CheckProgress { param($CheckId, $Status) }
+            function global:Import-Module { }
+            function global:Get-PowerBIAccessToken { return @{ 'Authorization' = 'Bearer test' } }
+            function global:Invoke-PowerBIRestMethod { throw '401 Unauthorized' }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . $PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1
+        }
+
+        It 'should report a permission or role problem for 401 as well' {
+            $warnSetting = $settings | Where-Object { $_.Status -eq 'Warning' } | Select-Object -First 1
+            $warnSetting.CurrentValue | Should -Match 'Access denied'
+            $warnSetting.CurrentValue | Should -Match '401'
+            $warnSetting.CurrentValue | Should -Not -Match 'endpoint not found'
         }
 
         AfterAll {
@@ -276,7 +360,7 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
             function global:Invoke-PowerBIRestMethod { throw '404 Not Found' }
 
             . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
-            . $PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1
+            $script:notFoundOutput = @(. $PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1)
         }
 
         It 'should produce settings (at least one Warning from API failure)' {
@@ -284,9 +368,26 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
             ($settings | Where-Object { $_.Status -eq 'Warning' }) | Should -Not -BeNullOrEmpty
         }
 
-        It 'should include admin API message in Warning sentinel CurrentValue' {
+        It 'reports the collector outcome as Failed, not Complete (T-0937)' {
+            $outcome = @($script:notFoundOutput | Where-Object {
+                $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+            })
+            $outcome.Count | Should -Be 1
+            $outcome[0].Outcome | Should -Be 'Failed'
+            $outcome[0].Reason | Should -Match '404'
+        }
+
+        It 'should report an endpoint or API problem, not a role problem' {
             $warnSetting = $settings | Where-Object { $_.Status -eq 'Warning' } | Select-Object -First 1
-            $warnSetting.CurrentValue | Should -Match 'admin API|not available|Administrator|unavailable'
+            $warnSetting.CurrentValue | Should -Match 'endpoint'
+            $warnSetting.CurrentValue | Should -Match 'api\.fabric\.microsoft\.com'
+            $warnSetting.CurrentValue | Should -Match '404'
+            $warnSetting.CurrentValue | Should -Not -Match 'Administrator role|Access denied'
+        }
+
+        It 'should keep the failure sentinel with a real CheckId (T-0930)' {
+            $warnSetting = $settings | Where-Object { $_.Status -eq 'Warning' } | Select-Object -First 1
+            $warnSetting.CheckId | Should -BeLike 'POWERBI-COLLECTOR-000*'
         }
 
         AfterAll {
@@ -320,6 +421,36 @@ Describe 'Get-PowerBISecurityConfig - Edge Cases' {
         It 'does not return only non-Warning/non-Review checks' {
             $unexpected = $script:failResult | Where-Object { $_.Status -ne 'Review' -and $_.Status -ne 'Warning' }
             $unexpected | Should -BeNullOrEmpty
+        }
+
+        AfterAll {
+            Remove-Item -Path Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Import-Module -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Get-PowerBIAccessToken -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Invoke-PowerBIRestMethod -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'when a child-process run writes its CSV output (T-0937)' {
+        BeforeAll {
+            Remove-Item -Path Function:\Get-PowerBIAccessToken -ErrorAction SilentlyContinue
+            Remove-Item -Path Function:\Invoke-PowerBIRestMethod -ErrorAction SilentlyContinue
+            function global:Update-CheckProgress { param($CheckId, $Status) }
+            function global:Import-Module { }
+            function global:Get-PowerBIAccessToken { return @{ 'Authorization' = 'Bearer test' } }
+            function global:Invoke-PowerBIRestMethod { throw '403 Forbidden' }
+
+            $script:childCsv = Join-Path -Path $TestDrive -ChildPath '22-PowerBI-Security-Config.csv'
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . $PSScriptRoot/../../src/M365-Assess/PowerBI/Get-PowerBISecurityConfig.ps1 -OutputPath $script:childCsv
+        }
+
+        It 'writes the collector outcome beside the CSV for the orchestrator to read' {
+            $sidecar = "$script:childCsv.status.json"
+            $sidecar | Should -Exist
+            $outcome = Get-Content -LiteralPath $sidecar -Raw | ConvertFrom-Json
+            $outcome.Outcome | Should -Be 'Failed'
+            $outcome.Reason | Should -Match '403'
         }
 
         AfterAll {

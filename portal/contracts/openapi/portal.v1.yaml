@@ -771,6 +771,16 @@ paths:
       x-permission: Tenant.Baselines.ReadWrite
       security:
         - bearerAuth: []
+  /baselines/{baselineId}/copy:
+    post:
+      operationId: postBaselinesBaselineIdCopy
+      summary: POST /baselines/{baselineId}/copy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Baselines.ReadWrite
+      security:
+        - bearerAuth: []
   /baselines/{baselineId}/migrate-from-standards:
     post:
       operationId: postBaselinesBaselineIdMigrateFromStandards
@@ -2716,6 +2726,20 @@ paths:
       x-permission: Identity.User.ReadWrite
       security:
         - bearerAuth: []
+  /onboarding/preflight:
+    get:
+      operationId: getOnboardingPreflight
+      summary: Read-only report of the PowerShell modules tenant onboarding needs
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Installed onboarding module versions, the missing modules, and their exact install commands.
+        "401":
+          description: Authentication required.
+        "403":
+          description: The caller lacks Tenant.Administration.Read.
+      x-permission: Tenant.Administration.Read
   /openapi.json:
     get:
       operationId: getOpenapiJson
@@ -3122,6 +3146,133 @@ paths:
         "404":
           description: No role with that id.
       x-permission: CIPP.Roles.ReadWrite
+  /run-templates:
+    get:
+      tags:
+        - Runs
+      operationId: listRunTemplates
+      summary: List built-in and saved assessment run templates.
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Built-in templates followed by saved templates.
+        "401":
+          description: Unauthenticated.
+          content: &a1
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Forbidden.
+          content: *a1
+      x-permission: Tenant.Runs.Read
+    post:
+      tags:
+        - Runs
+      operationId: createRunTemplate
+      summary: Save a run template.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        "201":
+          description: Created.
+        "400":
+          description: Invalid body.
+          content: *a1
+        "401":
+          description: Unauthenticated.
+          content: *a1
+        "403":
+          description: Forbidden.
+          content: *a1
+      x-permission: Tenant.Runs.ReadWrite
+  /run-templates/{templateId}:
+    get:
+      tags:
+        - Runs
+      operationId: getRunTemplate
+      summary: Read a run template.
+      security:
+        - bearerAuth: []
+      parameters:
+        - &a2
+          name: templateId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Template.
+        "404":
+          description: Not found.
+          content: *a1
+      x-permission: Tenant.Runs.Read
+    patch:
+      tags:
+        - Runs
+      operationId: updateRunTemplate
+      summary: Update a saved run template. Built-ins are locked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a2
+      responses:
+        "200":
+          description: Updated.
+        "400":
+          description: Invalid body.
+          content: *a1
+        "403":
+          description: Built-in template is locked.
+          content: *a1
+        "404":
+          description: Not found.
+          content: *a1
+      x-permission: Tenant.Runs.ReadWrite
+    delete:
+      tags:
+        - Runs
+      operationId: deleteRunTemplate
+      summary: Delete a saved run template. Built-ins are locked.
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a2
+      responses:
+        "204":
+          description: Deleted.
+        "403":
+          description: Built-in template is locked.
+          content: *a1
+        "404":
+          description: Not found.
+          content: *a1
+      x-permission: Tenant.Runs.ReadWrite
+  /run-templates/{templateId}/copy:
+    post:
+      tags:
+        - Runs
+      operationId: copyRunTemplate
+      summary: Make an editable operator copy of a template, including a built-in.
+      security:
+        - bearerAuth: []
+      parameters:
+        - *a2
+      responses:
+        "201":
+          description: Copied.
+        "404":
+          description: Not found.
+          content: *a1
+      x-permission: Tenant.Runs.ReadWrite
   /runs:
     get:
       operationId: getRuns
@@ -3754,6 +3905,16 @@ paths:
       x-permission: Tenant.Standards.ReadWrite
       security:
         - bearerAuth: []
+  /standards/templates/{templateId}/copy:
+    post:
+      operationId: postStandardsTemplatesTemplateIdCopy
+      summary: POST /standards/templates/{templateId}/copy
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Standards.ReadWrite
+      security:
+        - bearerAuth: []
   /standards/templates/{templateId}/run:
     post:
       operationId: postStandardsTemplatesTemplateIdRun
@@ -4261,6 +4422,16 @@ paths:
     post:
       operationId: postTenantsIdOnboard
       summary: POST /tenants/{id}/onboard
+      responses:
+        "200":
+          description: Successful response.
+      x-permission: Tenant.Administration.ReadWrite
+      security:
+        - bearerAuth: []
+  /tenants/{id}/onboard/progress/{progressId}:
+    get:
+      operationId: getTenantsIdOnboardProgressProgressId
+      summary: GET /tenants/{id}/onboard/progress/{progressId}
       responses:
         "200":
           description: Successful response.
@@ -5913,13 +6084,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - &a4
+        - &a6
           name: tenantId
           in: path
           required: true
           schema:
             type: string
-        - &a5
+        - &a7
           name: Idempotency-Key
           in: header
           required: true
@@ -5941,13 +6112,13 @@ paths:
                 domain:
                   type: string
                   description: The domain name to add.
-                confirm: &a20
+                confirm: &a22
                   type: boolean
                   description: Required unless dryRun is true; the EPIC-006 apply confirmation.
-                dryRun: &a21
+                dryRun: &a23
                   type: boolean
                   description: Plans the write with no tenant change. Defaults to true.
-                reason: &a22
+                reason: &a24
                   type: string
                   description: Caller-supplied reason recorded on the audit event.
       responses:
@@ -5957,19 +6128,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DomainActionOutcome"
-        "400": &a6
+        "400": &a8
           description: Missing Idempotency-Key, confirmation, or invalid body.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401": &a7
+        "401": &a9
           description: Unauthenticated.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403": &a8
+        "403": &a10
           description: Forbidden or tenant out of scope.
           content:
             application/json:
@@ -5985,7 +6156,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - &a1
+        - &a3
           name: tenantId
           in: path
           required: true
@@ -5994,9 +6165,9 @@ paths:
       responses:
         "200":
           description: The domain analysis schedule, or null.
-        "401": &a2
+        "401": &a4
           description: Authentication required.
-        "403": &a3
+        "403": &a5
           description: The caller lacks Tenant.Domains.Read/Tenant.Domains.ReadWrite or the tenant is out of scope.
       x-permission: Tenant.Domains.Read
     post:
@@ -6007,7 +6178,7 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a1
+        - *a3
       requestBody:
         required: true
         content:
@@ -6033,8 +6204,8 @@ paths:
           description: The created or updated domain analysis schedule.
         "400":
           description: Invalid cron, timezone, or body.
-        "401": *a2
-        "403": *a3
+        "401": *a4
+        "403": *a5
         "404":
           description: The referenced schedule was not found.
       x-permission: Tenant.Domains.ReadWrite
@@ -6047,14 +6218,14 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a4
-        - &a9
+        - *a6
+        - &a11
           name: domain
           in: path
           required: true
           schema:
             type: string
-        - *a5
+        - *a7
       requestBody:
         required: true
         content:
@@ -6068,9 +6239,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DomainActionOutcome"
-        "400": *a6
-        "401": *a7
-        "403": *a8
+        "400": *a8
+        "401": *a9
+        "403": *a10
       x-permission: Tenant.Domains.ReadWrite
   /tenants/{tenantId}/domains/{domain}/check-dns:
     post:
@@ -6081,13 +6252,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - &a10
+        - &a12
           name: tenantId
           in: path
           required: true
           schema:
             type: string
-        - &a11
+        - &a13
           name: domain
           in: path
           required: true
@@ -6096,9 +6267,9 @@ paths:
       responses:
         "200":
           description: The persisted DNS analysis, or the cached result inside the TTL.
-        "401": &a12
+        "401": &a14
           description: Authentication required.
-        "403": &a13
+        "403": &a15
           description: The caller lacks Tenant.Domains.Read or the tenant is out of scope.
       x-permission: Tenant.Domains.Read
   /tenants/{tenantId}/domains/{domain}/default:
@@ -6110,9 +6281,9 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a4
-        - *a9
-        - *a5
+        - *a6
+        - *a11
+        - *a7
       requestBody:
         required: true
         content:
@@ -6126,9 +6297,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DomainActionOutcome"
-        "400": *a6
-        "401": *a7
-        "403": *a8
+        "400": *a8
+        "401": *a9
+        "403": *a10
       x-permission: Tenant.Domains.ReadWrite
   /tenants/{tenantId}/domains/{domain}/history:
     get:
@@ -6139,13 +6310,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a10
-        - *a11
+        - *a12
+        - *a13
       responses:
         "200":
           description: The domain's stored checks ordered by time.
-        "401": *a12
-        "403": *a13
+        "401": *a14
+        "403": *a15
       x-permission: Tenant.Domains.Read
   /tenants/{tenantId}/domains/{domain}/recommendations:
     get:
@@ -6183,9 +6354,9 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a4
-        - *a9
-        - *a5
+        - *a6
+        - *a11
+        - *a7
       requestBody:
         required: true
         content:
@@ -6199,9 +6370,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/DomainActionOutcome"
-        "400": *a6
-        "401": *a7
-        "403": *a8
+        "400": *a8
+        "401": *a9
+        "403": *a10
       x-permission: Tenant.Domains.ReadWrite
   /tenants/{tenantId}/enrollment-profiles:
     get:
@@ -6926,13 +7097,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - &a14
+        - &a16
           name: tenantId
           in: path
           required: true
           schema:
             type: string
-        - &a15
+        - &a17
           name: Idempotency-Key
           in: header
           required: true
@@ -6944,7 +7115,7 @@ paths:
         required: true
         content:
           application/json:
-            schema: &a16
+            schema: &a18
               type: object
               additionalProperties: false
               required:
@@ -6983,19 +7154,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseChangeOutcome"
-        "400": &a17
+        "400": &a19
           description: Missing Idempotency-Key, confirmation, plan preview, or invalid body.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "401": &a18
+        "401": &a20
           description: Unauthenticated.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "403": &a19
+        "403": &a21
           description: Forbidden or tenant out of scope.
           content:
             application/json:
@@ -7052,13 +7223,13 @@ paths:
       security:
         - bearerAuth: []
       parameters:
-        - *a14
-        - *a15
+        - *a16
+        - *a17
       requestBody:
         required: true
         content:
           application/json:
-            schema: *a16
+            schema: *a18
       responses:
         "200":
           description: The plan preview (dry run) or the per-row results (applied).
@@ -7066,9 +7237,9 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LicenseChangeOutcome"
-        "400": *a17
-        "401": *a18
-        "403": *a19
+        "400": *a19
+        "401": *a20
+        "403": *a21
       x-permission: Tenant.Licenses.ReadWrite
   /tenants/{tenantId}/mail/encryption:
     get:
@@ -10224,6 +10395,53 @@ paths:
         "404":
           description: No portal user has that id.
       x-permission: CIPP.Admin.Users
+  /webhooks/notify:
+    post:
+      operationId: receiveWebhookNotification
+      summary: Receive Graph change notifications; clientState is the authentication
+      security: []
+      parameters:
+        - name: validationToken
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Graph's subscription-validation handshake; echoed verbatim as text/plain with no authentication.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - value
+              properties:
+                value:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - subscriptionId
+                      - clientState
+                      - resource
+                      - changeType
+                    properties:
+                      subscriptionId:
+                        type: string
+                      clientState:
+                        type: string
+                      resource:
+                        type: string
+                      changeType:
+                        type: string
+      responses:
+        "200":
+          description: The notifications were accepted and dispatched, or the validation token was echoed.
+        "400":
+          description: The body is not a valid notification batch.
+        "401":
+          description: A notification was missing a clientState or carried one that does not match its subscription.
+      x-permission: Public
 components:
   securitySchemes:
     bearerAuth:
@@ -10635,9 +10853,9 @@ components:
       required:
         - confirm
       properties:
-        confirm: *a20
-        dryRun: *a21
-        reason: *a22
+        confirm: *a22
+        dryRun: *a23
+        reason: *a24
     DomainActionOutcome:
       type: object
       additionalProperties: false

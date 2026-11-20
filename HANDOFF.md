@@ -1,31 +1,39 @@
 # Handoff — M365-Assess portal
 
-_Last updated: 2026-11-09, after the EPIC-039/040 mount batch._
+_Last updated: 2026-11-20, after the Phase 2 ticket batch._
 
 ## State
 
-- Branch: `main`.
-- T-0869 mounted EPIC-039 Template Library & Catalog: library/repo/clone/package
-  routes bind to `SqliteTemplateRepository`, save-to-GitHub rides the EPIC-041
-  GitHub adapter (409 until enabled), and the Template Package Manager page
-  imports/exports/lists live data.
-- T-0870 mounted EPIC-040 Graph Explorer & Admin Tools: Graph Explorer runs the
-  new `invoke-graph-request.ps1` worker; presets persist through the existing
-  SQLite store; `ConsentDecision` moved to migration `0130_consent_decisions.sql`
-  and `SqliteConsentDecisionRepository`; tenant lookup, consent requests, GeoIP,
-  and the individual domain check are mounted; breach lookup stays fail-closed
-  until EPIC-041 registers a provider; Breach Lookup and Tenant Breach Lookup
-  pages were added.
-- Tickets **T-0869** and **T-0870** are `fixed-unverified`; `TICKETS.md`
-  reflects the new counts (open 9, fixed-unverified 29).
-- Full portal test suites are green:
-  - BFF: `372 files / 4288 tests`
-  - Web: `156 files / 1329 tests`
-  - DB: `45 files / 306 tests`
-  - `npm run typecheck` at `portal/` is clean.
-- The EPIC-032 notification receiver (`POST /v1/webhooks/notify`) is deliberately
-  **not mounted**: the repository does not yet store the subscription
-  `clientState` it validates, and content-bundle handling is deferred by SPEC §11.2.
+- Branch: `fix/phase2-ticket-batch`, based on `main`.
+- 123 active tickets: 73 `fixed-unverified`, 2 `open` (T-0917, T-0941),
+  39 epics, 9 closed epics.
+- Batch highlights:
+  - **Run validity:** EXO/Purview `-Organization` resolves to the initial domain;
+    run options reach the worker and are validated; `partial` runs and
+    `_Assessment-Issues` are served; Info is in every summary roll-up; duplicate
+    single-tenant runs are collapsed; the Runs list shows tenant names.
+  - **Collectors:** SharePoint/Forms read the documented and legacy property names
+    and return Review when a property is unverifiable; Power BI uses the Fabric admin
+    endpoint and a real sentinel id; licence gating records `NotLicensed`; collectors
+    report `Complete | Partial | Skipped | Failed`; XLSX uses one strict pass rate;
+    the Entra/CA spot-check items are fixed.
+  - **Portal:** collapsible nav with per-item descriptions; styled report builder
+    with data-bound blocks and built-in templates; run-screen remediation drawer,
+    bulk apply and remediation tab; run templates and locked built-in templates;
+    webhook `clientState` storage plus `POST /v1/webhooks/notify`.
+  - **Onboarding:** module preflight before the wizard starts; `Agreement.Read.All`
+    in the read set; device-code sign-in for a headless BFF; opt-in
+    `M365-Assess-Operator` app with purpose-aware credentials. Remaining write
+    adapters are T-0940; live runbook verification is T-0941.
+- Verification (2026-11-20):
+  - `npm run typecheck` at `portal/`: clean.
+  - BFF: `385 files / 4501 tests` passed.
+  - Web: `163 files / 1567 tests` passed.
+  - DB: `46 files / 310 tests` passed.
+  - Pester: 5811 passed, 2 failed (pre-existing Windows `chmod` limitation in
+    `Invoke-ReportRender`), 14 skipped.
+- T-0917 stays `open` until T-0941 verifies the runbook W rows on a live tenant.
+  Every other ticket in the batch is `fixed-unverified`.
 
 ## Verification commands
 
@@ -39,30 +47,11 @@ npm test --workspace @m365-assess/web
 
 ## Next issues up to bat
 
-Register order (severity, then id) after T-0870:
-
-| Ticket | Sev | Title |
-|---|---|---|
-| T-0852 | high | Mount and deliver EPIC-022 Spam, Quarantine & Allow/Block (reopened 2026-11-16) |
-| T-0874 | medium | No scheduled credential-expiry check |
-| T-0875 | medium | Report bundle is not assembled; executive report renders empty sections |
-| T-0877 | medium | Standards catalog tenant license classification returns 501 |
-| T-0878 | medium | Drift deviation remediate endpoint is missing |
-| T-0892 | medium | Add a system-wide demo dataset and explicit demo mode |
-| T-0896 | medium | SharePoint Templates page and in-portal site property editing have no backend |
-| T-0900 | medium | Groups: Convert has no endpoint; GAL/delivery options are decorative |
-| T-0853 | low | Mount EPIC-023 Contacts & Resources routes |
-| T-0865 | low | Mount EPIC-035 Backup routes and invoke retention/replication |
-
-**T-0852 was reopened on 2026-11-16.** It had been marked `fixed-unverified` and
-was missing from `TICKETS.md`, but its cited fleet commit (`fa46b848`) is not in
-the repository: the EPIC-022 route modules (`quarantine*`, `allow-block`,
-`filters`, `filter-templates`) are not imported by `app.ts`, and
-`get-quarantine.ps1`, `get-allow-block.ps1`, and `get-quarantine-policies.ps1`
-do not exist. Register counts are now open 10, fixed-unverified 29.
-
-**Recommended next batch:** T-0852 (the only open high), then T-0874, T-0877,
-T-0878 as small targeted fixes before the next larger mount.
+- **T-0941** - run the Phase 2 runbook W rows with the operator app; add the
+  Security & Compliance and MicrosoftTeams connection paths or document the blockers.
+- **T-0917** - close once T-0941 passes.
+- Phase 2 live verification of the `fixed-unverified` batch, starting with the
+  high-severity run-validity and write-path tickets.
 
 ## Compliance-console epics (drafted 2026-11-16)
 

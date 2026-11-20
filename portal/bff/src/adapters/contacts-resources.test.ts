@@ -641,7 +641,7 @@ describe("EPIC-023 Contacts & Resources adapters (T-0853)", () => {
           displayName: null,
           externalAddress: null,
           contactId: null,
-          error: expect.stringContaining("no credential"),
+          error: expect.stringMatching(/no (operator )?credential/),
           auditEvent: null,
         },
       ]);

@@ -69,10 +69,12 @@ export function createUserProviders(call: EnvelopeWorkerCall): UserProviders {
 
     create: {
       async createUsers(tenantId, users, options) {
+        // A dry run reads; a real create mutates the directory (T-0940).
         const rows = await call<ProviderCreateRowResult | ProviderCreateRowResult[] | undefined>(
           "new-tenant-user.ps1",
           tenantId,
           { users, dryRun: options.dryRun },
+          options.dryRun ? undefined : { purpose: "operator" },
         );
         return asArray(rows);
       },
@@ -81,13 +83,18 @@ export function createUserProviders(call: EnvelopeWorkerCall): UserProviders {
     // The route has already required `confirm: true` for the actions that need it.
     execute: {
       executeAction: (tenantId, userId, action, options) =>
-        call<ProviderActionResult>("invoke-user-action.ps1", tenantId, {
-          userId,
-          action,
-          ...(options.password ? { password: options.password } : {}),
-          dryRun: options.dryRun,
-          confirm: true,
-        }),
+        call<ProviderActionResult>(
+          "invoke-user-action.ps1",
+          tenantId,
+          {
+            userId,
+            action,
+            ...(options.password ? { password: options.password } : {}),
+            dryRun: options.dryRun,
+            confirm: true,
+          },
+          options.dryRun ? undefined : { purpose: "operator" },
+        ),
     },
 
     patch: {
@@ -96,6 +103,7 @@ export function createUserProviders(call: EnvelopeWorkerCall): UserProviders {
           "set-tenant-user-properties.ps1",
           tenantId,
           { users: patches, preview: options.preview },
+          options.preview ? undefined : { purpose: "operator" },
         );
         return asArray(rows);
       },
@@ -143,13 +151,19 @@ export function createBecProviders(call: EnvelopeWorkerCall): {
         const befores: (Record<string, unknown> | null)[] = [];
         let after: Record<string, unknown> | null = null;
         for (const target of targets) {
-          const outcome = await call<BecRemediationOutput>("invoke-bec-check.ps1", tenantId, {
-            userId,
-            check: finding.check,
-            action,
-            ...(target ? { target } : {}),
-            confirm: true,
-          });
+          // A remediation is always a tenant write (T-0940).
+          const outcome = await call<BecRemediationOutput>(
+            "invoke-bec-check.ps1",
+            tenantId,
+            {
+              userId,
+              check: finding.check,
+              action,
+              ...(target ? { target } : {}),
+              confirm: true,
+            },
+            { purpose: "operator" },
+          );
           if (outcome.status !== "remediated") {
             const done = befores.length > 0 ? ` after ${befores.length} of ${targets.length} succeeded` : "";
             throw new AppError(BEC_REMEDIATION_FAILED, `${action} failed${done}: ${outcome.error ?? "unknown error"}`, 502);
@@ -260,6 +274,7 @@ export function createOffboardingRunner(call: EnvelopeWorkerCall, repo: Offboard
           actor: job.createdBy,
           ...(rerunOrder !== undefined ? { rerunOrder } : {}),
         },
+        { purpose: "operator" },
       );
       await record(job.id, rerunOrder !== undefined ? [output as WorkerStepRecord] : asArray((output as { steps?: WorkerStepRecord[] }).steps));
     } catch (error) {

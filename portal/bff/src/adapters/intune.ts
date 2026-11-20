@@ -111,20 +111,35 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
 
     crud: {
       createPolicy: (tenantId, kind, input, preview) =>
-        call<IntuneCrudResult | IntunePlan>("set-intune-policy.ps1", tenantId, crudJob(kind, "create", input, preview)),
+        call<IntuneCrudResult | IntunePlan>(
+          "set-intune-policy.ps1",
+          tenantId,
+          crudJob(kind, "create", input, preview),
+          preview ? undefined : { purpose: "operator" },
+        ),
       editPolicy: (tenantId, kind, policyId, input, preview) =>
-        call<IntuneCrudResult | IntunePlan>("set-intune-policy.ps1", tenantId, {
-          ...crudJob(kind, "edit", input, preview),
-          policyId,
-        }),
+        call<IntuneCrudResult | IntunePlan>(
+          "set-intune-policy.ps1",
+          tenantId,
+          {
+            ...crudJob(kind, "edit", input, preview),
+            policyId,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       deletePolicy: (tenantId, kind, policyId, confirmName, preview) =>
-        call<IntuneCrudResult | IntunePlan>("set-intune-policy.ps1", tenantId, {
-          kind,
-          action: "delete",
-          policyId,
-          confirmName,
-          dryRun: preview,
-        }),
+        call<IntuneCrudResult | IntunePlan>(
+          "set-intune-policy.ps1",
+          tenantId,
+          {
+            kind,
+            action: "delete",
+            policyId,
+            confirmName,
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     deploy: {
@@ -137,10 +152,15 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
         return result.plan;
       },
       deployTarget: (template, tenantId, options, createdBy) =>
-        call<IntuneTargetResult>("deploy-intune-template.ps1", tenantId, {
-          ...deployJob(template, options, false),
-          actor: createdBy,
-        }),
+        call<IntuneTargetResult>(
+          "deploy-intune-template.ps1",
+          tenantId,
+          {
+            ...deployJob(template, options, false),
+            actor: createdBy,
+          },
+          { purpose: "operator" },
+        ),
     },
 
     reusableSettings: {
@@ -151,12 +171,17 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
         return result.items ?? [];
       },
       sync: (tenantId, templates: readonly ReusableSettingTemplate[], options) =>
-        call<ReusableSettingsSyncResult>("sync-reusable-settings.ps1", tenantId, {
-          action: "sync",
-          templatesJson: JSON.stringify(templates),
-          dryRun: options.preview,
-          actor: options.actor,
-        }),
+        call<ReusableSettingsSyncResult>(
+          "sync-reusable-settings.ps1",
+          tenantId,
+          {
+            action: "sync",
+            templatesJson: JSON.stringify(templates),
+            dryRun: options.preview,
+            actor: options.actor,
+          },
+          options.preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     assignmentFilters: {
@@ -169,15 +194,35 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
         return result.items ?? [];
       },
       create: (tenantId, input: GraphFilterInput, actor) =>
-        call<FilterWriteResult>("set-assignment-filter.ps1", tenantId, filterJob("create", { filterJson: JSON.stringify(input), actor })),
+        call<FilterWriteResult>(
+          "set-assignment-filter.ps1",
+          tenantId,
+          filterJob("create", { filterJson: JSON.stringify(input), actor }),
+          { purpose: "operator" },
+        ),
       update: (tenantId, filterId, input, actor) =>
-        call<FilterWriteResult>("set-assignment-filter.ps1", tenantId, filterJob("edit", { filterId, filterJson: JSON.stringify(input), actor })),
+        call<FilterWriteResult>(
+          "set-assignment-filter.ps1",
+          tenantId,
+          filterJob("edit", { filterId, filterJson: JSON.stringify(input), actor }),
+          { purpose: "operator" },
+        ),
       remove: (tenantId, filterId, confirmName, actor) =>
-        call<FilterWriteResult>("set-assignment-filter.ps1", tenantId, filterJob("delete", { filterId, confirmName, actor })),
+        call<FilterWriteResult>(
+          "set-assignment-filter.ps1",
+          tenantId,
+          filterJob("delete", { filterId, confirmName, actor }),
+          { purpose: "operator" },
+        ),
       planDeploy: (tenantId, input) =>
         call<FilterDeployPlan>("set-assignment-filter.ps1", tenantId, filterJob("plan", { filterJson: JSON.stringify(input) })),
       deploy: (tenantId, input, actor) =>
-        call<FilterDeployResult>("set-assignment-filter.ps1", tenantId, filterJob("deploy", { filterJson: JSON.stringify(input), actor })),
+        call<FilterDeployResult>(
+          "set-assignment-filter.ps1",
+          tenantId,
+          filterJob("deploy", { filterJson: JSON.stringify(input), actor }),
+          { purpose: "operator" },
+        ),
     },
 
     compare: {
@@ -212,6 +257,7 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
           "invoke-device-action.ps1",
           tenantId,
           { deviceId, action, ...(reason ? { reason } : {}) },
+          { purpose: "operator" },
         ),
     },
 
@@ -221,6 +267,7 @@ export function createIntuneProviders(run: WorkerRunner, credentials: Credential
           "invoke-device-wipe.ps1",
           tenantId,
           { deviceId, action, ...(reason ? { reason } : {}) },
+          { purpose: "operator" },
         ),
     },
 

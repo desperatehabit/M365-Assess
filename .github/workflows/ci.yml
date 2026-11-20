@@ -362,8 +362,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # T-0908: macOS runner minutes are quota-limited on this plan, so keep
+      # macOS off pull requests. ubuntu-latest still covers every PR; macOS
+      # runs on merges to main and on manual dispatch (release branches).
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && fromJSON('["ubuntu-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v7
 

@@ -95,6 +95,7 @@ describe("run queue credential handling (T-0827)", () => {
     expect(context.Auth).toEqual({ Method: "ClientSecret", ClientId: "app-1", M365Environment: "commercial" });
     expect(context.Credential).toEqual({
       credentialRef: "tenants/t-a/credential",
+      purpose: "reader",
       record: expect.objectContaining({ authMethod: "client-secret", secretRef: "ref://tenants/t-a/credential/secret" }),
     });
   });

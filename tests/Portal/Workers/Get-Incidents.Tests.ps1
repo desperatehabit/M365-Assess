@@ -136,3 +136,7 @@ Describe 'Get-Incidents worker (T-0543)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

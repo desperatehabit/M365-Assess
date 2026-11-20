@@ -376,5 +376,5 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
 }
 
 AfterAll {
-    Remove-Item -Path 'Function:\global:Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

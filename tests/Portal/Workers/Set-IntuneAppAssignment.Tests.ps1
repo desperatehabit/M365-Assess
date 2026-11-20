@@ -199,3 +199,7 @@ Describe 'Set-IntuneAppAssignment worker (T-0324)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

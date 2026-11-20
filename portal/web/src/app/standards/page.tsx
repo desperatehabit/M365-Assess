@@ -12,6 +12,7 @@ import { TemplatesTable, type StandardsTemplateItem } from "../../components/sta
 import {
   cloneStandardTemplate,
   convertStandardTemplate,
+  copyStandardTemplate,
   createDriftClone,
   deleteStandardTemplate,
   fetchStandardTemplates,
@@ -77,6 +78,7 @@ function toItem(template: StandardTemplate, assignedTo: string[] = []): Standard
     schedule: template.scheduleId,
     lastRunAt: null,
     autoRemediate: template.autoRemediate,
+    builtIn: template.builtIn === true,
   };
 }
 
@@ -114,6 +116,16 @@ export default function StandardsPage({
       const clone = await cloneStandardTemplate(item.id, { name: `${item.name} (copy)` }, doFetch);
       await load();
       window.location.href = `/standards/${clone.id}`;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleMakeCopy = async (item: StandardsTemplateItem): Promise<void> => {
+    try {
+      const copy = await copyStandardTemplate(item.id, {}, doFetch);
+      await load();
+      window.location.href = `/standards/${copy.id}/edit`;
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -200,6 +212,7 @@ export default function StandardsPage({
         onEdit={(item) => {
           window.location.href = `/standards/${item.id}`;
         }}
+        onMakeCopy={handleMakeCopy}
         onCloneAndEdit={handleCloneAndEdit}
         onCreateDriftClone={handleDriftClone}
         onRunTemplateNow={handleRunNow}

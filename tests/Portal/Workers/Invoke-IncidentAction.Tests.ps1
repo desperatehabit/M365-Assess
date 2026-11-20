@@ -243,3 +243,7 @@ Describe 'Invoke-IncidentAction worker (T-0546)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

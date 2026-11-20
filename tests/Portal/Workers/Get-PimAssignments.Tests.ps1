@@ -120,3 +120,7 @@ Describe 'Get-PimAssignments worker (T-0242)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

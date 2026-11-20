@@ -1,6 +1,7 @@
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import Database from "better-sqlite3";
+import { SqliteAuditRepository } from "@m365-assess/db";
 import { afterEach, describe, expect, it } from "vitest";
 import { createApp, type App } from "./app.js";
 import { loadConfig } from "./config.js";
@@ -23,7 +24,8 @@ afterEach(async () => {
 });
 
 async function serve() {
-  const app = createApp({ ...loadConfig({}), devIdentityRole: "admin" }, { db: new Database(":memory:") });
+  const db = new Database(":memory:");
+  const app = createApp({ ...loadConfig({}), devIdentityRole: "admin" }, { db });
   const server = buildServer({ routes: app.routes, authenticators: app.authenticators });
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
   opened.push({ server, app });
@@ -35,7 +37,7 @@ async function serve() {
     body: JSON.stringify({ id: "tenant-probe", displayName: "Probe" }),
   });
   expect(created.status).toBe(201);
-  return base;
+  return { base, db };
 }
 
 interface Probe {
@@ -75,6 +77,7 @@ const PROBES: readonly Probe[] = [
   { group: "webhooks", method: "POST", path: `${T}/webhooks/sub-1/renew` },
   { group: "webhooks", method: "POST", path: `${T}/webhooks/sub-1/recreate` },
   { group: "webhooks", method: "POST", path: `${T}/webhooks/sub-1/test` },
+  { group: "webhook-notify", method: "POST", path: "/v1/webhooks/notify" },
 ];
 
 describe("EPIC-032 Audit Logs & Webhooks routes are mounted (T-0862)", () => {
@@ -85,6 +88,7 @@ describe("EPIC-032 Audit Logs & Webhooks routes are mounted (T-0862)", () => {
       "audit-exclusion-windows",
       "audit-search",
       "audit-searches",
+      "webhook-notify",
       "webhooks",
     ]);
   });
@@ -92,7 +96,7 @@ describe("EPIC-032 Audit Logs & Webhooks routes are mounted (T-0862)", () => {
   it.each(PROBES.map((p) => [`${p.group}: ${p.method} ${p.path}`, p] as const))(
     "%s is not a router 404",
     async (_label, probe) => {
-      const base = await serve();
+      const { base } = await serve();
       const response = await fetch(`${base}${probe.path}`, {
         method: probe.method,
         ...(probe.body === undefined
@@ -106,7 +110,7 @@ describe("EPIC-032 Audit Logs & Webhooks routes are mounted (T-0862)", () => {
   );
 
   it("mounts the saved-search mutation and row-action routes", async () => {
-    const base = await serve();
+    const { base } = await serve();
     const created = await fetch(`${base}${T}/audit/searches`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -142,5 +146,70 @@ describe("EPIC-032 Audit Logs & Webhooks routes are mounted (T-0862)", () => {
       expect(response.status, `${probe.method} ${probe.path}: ${JSON.stringify(body)}`).not.toBe(404);
       expect(body.code).not.toBe("request.not_found");
     }
+  });
+
+  // T-0905: the receiver is mounted without a portal session because Graph
+  // cannot carry one; the per-subscription clientState is the credential and
+  // only its hash is stored (migration 0131).
+  it("persists clientState as a hash and verifies Graph callbacks against it", async () => {
+    const { base, db } = await serve();
+    const CLIENT_STATE = "client-state-probe";
+    const auditRepo = new SqliteAuditRepository(db, 0);
+    const stored = await auditRepo.createWebhookSubscription({
+      id: "sub-notify",
+      tenantId: "tenant-probe",
+      resource: "users",
+      expiresOn: null,
+      state: "active",
+      notificationUrl: `${base}/v1/webhooks/notify`,
+      clientState: CLIENT_STATE,
+    });
+    expect(stored.clientStateHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stored.clientStateHash).not.toBe(CLIENT_STATE);
+    expect(await auditRepo.getWebhookSubscriptionById("sub-notify")).toMatchObject({
+      tenantId: "tenant-probe",
+      clientStateHash: stored.clientStateHash,
+    });
+
+    const handshake = await fetch(`${base}/v1/webhooks/notify?validationToken=token-123`, {
+      method: "POST",
+    });
+    expect(handshake.status).toBe(200);
+    expect(handshake.headers.get("content-type")).toContain("text/plain");
+    expect(await handshake.text()).toBe("token-123");
+
+    const post = (body: unknown) =>
+      fetch(`${base}/v1/webhooks/notify`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      });
+    const notification = (clientState?: string) => ({
+      value: [
+        {
+          subscriptionId: "sub-notify",
+          ...(clientState === undefined ? {} : { clientState }),
+          resource: "users",
+          changeType: "updated",
+        },
+      ],
+    });
+
+    const accepted = await post(notification(CLIENT_STATE));
+    expect(accepted.status).toBe(200);
+    const acceptedBody = (await accepted.json()) as { received?: number };
+    expect(acceptedBody.received).toBe(1);
+
+    const mismatched = await post(notification("wrong-client-state"));
+    expect(mismatched.status).toBe(401);
+    expect(((await mismatched.json()) as { code?: string }).code).toBe(
+      "webhooks.notify_invalid_client_state",
+    );
+
+    const missing = await post(notification());
+    expect(missing.status).toBe(401);
+    expect(((await missing.json()) as { code?: string }).code).toBe(
+      "webhooks.notify_invalid_client_state",
+    );
   });
 });

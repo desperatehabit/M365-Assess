@@ -64,20 +64,30 @@ export function createMfaProviders(call: EnvelopeWorkerCall): MfaProviders {
 
     reset: {
       resetMfa: (tenantId, userId, options) =>
-        call<ProviderMfaResetOutcome>("reset-user-mfa.ps1", tenantId, { userId, dryRun: options.dryRun, confirmed: true }),
+        call<ProviderMfaResetOutcome>(
+          "reset-user-mfa.ps1",
+          tenantId,
+          { userId, dryRun: options.dryRun, confirmed: true },
+          options.dryRun ? undefined : { purpose: "operator" },
+        ),
     },
 
     // The worker names the one-time value `temporaryAccessPass`; the route calls it `pass`.
     tap: {
       async createTap(tenantId, userId, input) {
-        const out = await call<TapWorkerOutput>("new-temporary-access-pass.ps1", tenantId, {
-          userId,
-          lifetimeMinutes: input.lifetimeMinutes,
-          oneTime: input.oneTime,
-          ...(input.startTime ? { startTime: input.startTime } : {}),
-          dryRun: input.dryRun,
-          confirmed: true,
-        });
+        const out = await call<TapWorkerOutput>(
+          "new-temporary-access-pass.ps1",
+          tenantId,
+          {
+            userId,
+            lifetimeMinutes: input.lifetimeMinutes,
+            oneTime: input.oneTime,
+            ...(input.startTime ? { startTime: input.startTime } : {}),
+            dryRun: input.dryRun,
+            confirmed: true,
+          },
+          input.dryRun ? undefined : { purpose: "operator" },
+        );
         return {
           status: out.status === "failed" ? "failed" : "applied",
           id: out.id ?? "",
@@ -90,20 +100,30 @@ export function createMfaProviders(call: EnvelopeWorkerCall): MfaProviders {
 
     actions: {
       sendPush: (tenantId, userId, options) =>
-        call<ProviderMfaActionOutcome>("invoke-mfa-action.ps1", tenantId, {
-          userId,
-          action: "push",
-          dryRun: options.dryRun,
-          confirmed: true,
-        }),
+        call<ProviderMfaActionOutcome>(
+          "invoke-mfa-action.ps1",
+          tenantId,
+          {
+            userId,
+            action: "push",
+            dryRun: options.dryRun,
+            confirmed: true,
+          },
+          options.dryRun ? undefined : { purpose: "operator" },
+        ),
       setDefaultMethod: (tenantId, userId, method, options) =>
-        call<ProviderMfaActionOutcome>("invoke-mfa-action.ps1", tenantId, {
-          userId,
-          action: "defaultMethod",
-          method,
-          dryRun: options.dryRun,
-          confirmed: true,
-        }),
+        call<ProviderMfaActionOutcome>(
+          "invoke-mfa-action.ps1",
+          tenantId,
+          {
+            userId,
+            action: "defaultMethod",
+            method,
+            dryRun: options.dryRun,
+            confirmed: true,
+          },
+          options.dryRun ? undefined : { purpose: "operator" },
+        ),
     },
   };
 }
@@ -124,12 +144,17 @@ export function createAuthMethodsPolicyProvider(call: TenantWorkerCall): AuthMet
       return { policy: { methods: asArray(policy.methods) }, retrievedAt: new Date().toISOString() };
     },
     async applyPolicy(tenantId, policy, options) {
-      const result = await call<{ after: AuthMethodPolicyShape }>("set-auth-methods-policy.ps1", tenantId, {
-        action: "apply",
-        policy,
-        dryRun: options.dryRun,
-        confirmed: true,
-      });
+      const result = await call<{ after: AuthMethodPolicyShape }>(
+        "set-auth-methods-policy.ps1",
+        tenantId,
+        {
+          action: "apply",
+          policy,
+          dryRun: options.dryRun,
+          confirmed: true,
+        },
+        options.dryRun ? undefined : { purpose: "operator" },
+      );
       return { policy: result.after };
     },
   };
@@ -159,14 +184,19 @@ export function createRegistrationCampaignProvider(call: TenantWorkerCall): Regi
       return { ...shape(out), retrievedAt: out.retrievedAt ?? new Date().toISOString() };
     },
     async setCampaign(tenantId, config) {
-      const out = await call<CampaignOutput>("set-registration-campaign.ps1", tenantId, {
-        action: "set",
-        state: config.state,
-        snoozeDurationInDays: config.snoozeDurationInDays,
-        includeTargets: config.includeTargets,
-        excludeTargets: config.excludeTargets,
-        confirmed: true,
-      });
+      const out = await call<CampaignOutput>(
+        "set-registration-campaign.ps1",
+        tenantId,
+        {
+          action: "set",
+          state: config.state,
+          snoozeDurationInDays: config.snoozeDurationInDays,
+          includeTargets: config.includeTargets,
+          excludeTargets: config.excludeTargets,
+          confirmed: true,
+        },
+        { purpose: "operator" },
+      );
       return { ...shape(out), appliedAt: out.appliedAt ?? new Date().toISOString() };
     },
   };

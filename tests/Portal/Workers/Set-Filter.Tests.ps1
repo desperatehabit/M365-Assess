@@ -266,3 +266,34 @@ Describe 'Set-Filter worker (T-0422)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-HostedContentFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-AntiPhishPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MalwareFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-HostedConnectionFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-HostedContentFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-AntiPhishRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MalwareFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-HostedConnectionFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-HostedContentFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-AntiPhishPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-MalwareFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-HostedConnectionFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-HostedContentFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-AntiPhishPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MalwareFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-HostedConnectionFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Enable-HostedContentFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Enable-AntiPhishRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Enable-MalwareFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Enable-HostedConnectionFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Disable-HostedContentFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Disable-AntiPhishRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Disable-MalwareFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Disable-HostedConnectionFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-HostedContentFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-AntiPhishPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MalwareFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-HostedConnectionFilterPolicy' -ErrorAction SilentlyContinue
+}

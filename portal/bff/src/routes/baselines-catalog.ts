@@ -42,6 +42,8 @@ export interface CatalogEntry {
   readonly name: string;
   readonly description: string;
   readonly stages: readonly CatalogStage[];
+  /** Catalog entries are the portal's pre-defined baselines. */
+  readonly builtIn: true;
 }
 
 export interface CommunityCatalogStatus {
@@ -101,6 +103,7 @@ export function loadBaselinesCatalog(catalogPath: string = DEFAULT_CATALOG_PATH)
       name: item.name,
       description: typeof item.description === "string" ? item.description : "",
       stages: item.stages,
+      builtIn: true as const,
     };
   });
   return {

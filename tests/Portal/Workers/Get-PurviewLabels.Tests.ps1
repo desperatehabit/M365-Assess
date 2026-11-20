@@ -388,3 +388,9 @@ return `$true
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-Label' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-LabelPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DlpSensitiveInformationType' -ErrorAction SilentlyContinue
+}

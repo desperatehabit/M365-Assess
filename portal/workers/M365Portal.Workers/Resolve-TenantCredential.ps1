@@ -45,6 +45,11 @@ function Resolve-TenantCredential {
     .PARAMETER Sections
         Assessment sections about to run, used only for the client-secret vs
         ExchangeOnline/Purview compatibility check.
+    .PARAMETER Purpose
+        Credential purpose the job declares: reader (assessment/read work, default)
+        or operator (write work, T-0917). Validated against the reference
+        (`tenants/<id>/credential` or `tenants/<id>/operator-credential`) and the
+        row's own purpose when present.
     .OUTPUTS
         System.Collections.Hashtable
     .EXAMPLE
@@ -69,7 +74,11 @@ function Resolve-TenantCredential {
         [scriptblock]$CredentialStore,
 
         [Parameter()]
-        [string[]]$Sections = @()
+        [string[]]$Sections = @(),
+
+        [Parameter()]
+        [ValidateSet('reader', 'operator')]
+        [string]$Purpose
     )
 
     $record = @{}
@@ -87,8 +96,27 @@ function Resolve-TenantCredential {
         throw "Tenant credential reference '$CredentialRef' does not belong to this tenant (code: worker.credential_ref_mismatch)."
     }
 
+    # Reference purpose (T-0917): the reader and operator credentials use distinct
+    # references. A job may declare -Purpose; otherwise the row's purpose decides.
+    $rowPurpose = ([string]$record['purpose']).Trim().ToLowerInvariant()
+    $declaredPurpose = ''
+    if ($Purpose) { $declaredPurpose = $Purpose.Trim().ToLowerInvariant() }
+    if ($declaredPurpose -and $rowPurpose -and $declaredPurpose -ne $rowPurpose) {
+        throw "Tenant credential '$CredentialRef' is a '$rowPurpose' credential but the job requested '$declaredPurpose' (code: worker.credential_purpose_mismatch)."
+    }
+    $effectivePurpose = if ($declaredPurpose) { $declaredPurpose } else { $rowPurpose }
+    $allowedRefs = if ($effectivePurpose -eq 'operator') {
+        @("tenants/$TenantId/operator-credential")
+    }
+    elseif ($effectivePurpose -eq 'reader') {
+        @("tenants/$TenantId/credential")
+    }
+    else {
+        @("tenants/$TenantId/credential", "tenants/$TenantId/operator-credential")
+    }
+
     $rowRef = [string]$record['secretRef']
-    if ($rowRef -and $rowRef -ne $CredentialRef -and "tenants/$TenantId/credential" -ne $CredentialRef) {
+    if ($allowedRefs -notcontains $CredentialRef -and $rowRef -ne $CredentialRef) {
         throw "Tenant credential reference '$CredentialRef' does not match the stored credential row (code: worker.credential_ref_mismatch)."
     }
 
@@ -311,10 +339,15 @@ function Read-WorkerContextCredential {
     if (-not $credentialRef) { return $null }
     $tenantId = ''
     if ($data['Tenant']) { $tenantId = [string]$data['Tenant']['TenantId'] }
+    $purpose = [string]$credential['purpose']
+    if (-not $purpose -and $credential['record']) {
+        $purpose = [string]$credential['record']['purpose']
+    }
     return @{
         TenantId      = $tenantId
         CredentialRef = $credentialRef
         Record        = $credential['record']
+        Purpose       = $purpose
     }
 }
 

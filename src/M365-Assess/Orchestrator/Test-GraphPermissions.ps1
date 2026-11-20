@@ -287,13 +287,19 @@ function Test-GraphPermissions {
 
     $grantedScopes = @($context.Scopes)
 
-    # App-only auth: delegated scopes are empty / '.default' (B2 #773).
-    # Hand off to the app-role validator instead of skipping silently.
-    if ($grantedScopes.Count -eq 0 -or ($grantedScopes.Count -eq 1 -and $grantedScopes[0] -eq '.default')) {
+    # App-only auth: delegated scopes are empty / '.default' (B2 #773). Certificate
+    # and managed-identity connections can still surface granted scopes, so also
+    # trust the context's AuthType rather than misclassifying the run as delegated.
+    $isAppOnly = ($context.AuthType -eq 'AppOnly') -or
+        $grantedScopes.Count -eq 0 -or
+        ($grantedScopes.Count -eq 1 -and $grantedScopes[0] -eq '.default')
+    if ($isAppOnly) {
         Write-Host '    i App-only auth detected -- validating Graph app role assignments instead of delegated scopes...' -ForegroundColor DarkGray
         Test-GraphAppRolePermissions -Context $context -ActiveSections $ActiveSections -OutputFolder $OutputFolder
         return
     }
+
+    $authMode = 'Delegated'
 
     # Compare required vs granted (case-insensitive)
     $grantedLower = $grantedScopes | ForEach-Object { $_.ToLower() }
@@ -303,7 +309,7 @@ function Test-GraphPermissions {
         Write-Host "    $([char]0x2714) All $($RequiredScopes.Count) required Graph scopes granted" -ForegroundColor Green
         Write-AssessmentLog -Level INFO -Message "Graph scope validation passed ($($RequiredScopes.Count) scopes)" -Section 'Setup'
         if ($OutputFolder -and (Test-Path -Path $OutputFolder -PathType Container)) {
-            Write-PermissionDeficitsFile -OutputFolder $OutputFolder -AuthMode 'Delegated' `
+            Write-PermissionDeficitsFile -OutputFolder $OutputFolder -AuthMode $authMode `
                 -ActiveSections $ActiveSections -RequiredRoles $RequiredScopes -GrantedRoles $grantedScopes `
                 -MissingByRole @() -PerSection $SectionScopeMap
         }
@@ -350,7 +356,7 @@ function Test-GraphPermissions {
     Write-AssessmentLog -Level WARN -Message "Missing Graph scopes: $($missingScopes -join ', ')" -Section 'Setup'
 
     if ($OutputFolder -and (Test-Path -Path $OutputFolder -PathType Container)) {
-        Write-PermissionDeficitsFile -OutputFolder $OutputFolder -AuthMode 'Delegated' `
+        Write-PermissionDeficitsFile -OutputFolder $OutputFolder -AuthMode $authMode `
             -ActiveSections $ActiveSections -RequiredRoles $RequiredScopes -GrantedRoles $grantedScopes `
             -MissingByRole $missingScopes -PerSection $SectionScopeMap
     }

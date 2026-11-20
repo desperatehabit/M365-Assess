@@ -569,22 +569,32 @@ export function createMailboxProviders(
 
   const mailboxWrite: MailboxWriteProvider = {
     createSharedMailbox: (tenantId, input: CreateSharedMailboxInput, preview: boolean) =>
-      call<MailboxWriteResult | MailboxWritePlan>("set-mailbox.ps1", tenantId, {
-        action: "create",
-        displayName: input.displayName,
-        ...(input.alias !== undefined ? { alias: input.alias } : {}),
-        ...(input.primarySmtpAddress !== undefined ? { primarySmtpAddress: input.primarySmtpAddress } : {}),
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxWriteResult | MailboxWritePlan>(
+        "set-mailbox.ps1",
+        tenantId,
+        {
+          action: "create",
+          displayName: input.displayName,
+          ...(input.alias !== undefined ? { alias: input.alias } : {}),
+          ...(input.primarySmtpAddress !== undefined ? { primarySmtpAddress: input.primarySmtpAddress } : {}),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     convertToShared: (tenantId, mailboxId: string, _input: ConvertMailboxInput, preview: boolean) =>
-      call<MailboxWriteResult | MailboxWritePlan>("set-mailbox.ps1", tenantId, {
-        action: "convert",
-        mailboxId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxWriteResult | MailboxWritePlan>(
+        "set-mailbox.ps1",
+        tenantId,
+        {
+          action: "convert",
+          mailboxId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
   };
 
   const mailboxSettings: MailboxSettingsProvider = {
@@ -594,12 +604,17 @@ export function createMailboxProviders(
       input: MailboxSettingsInput,
       preview: boolean,
     ): Promise<MailboxSettingsResult | MailboxSettingsPlan> =>
-      call<MailboxSettingsResult | MailboxSettingsPlan>("set-mailbox-settings.ps1", tenantId, {
-        mailboxId,
-        settings: input,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxSettingsResult | MailboxSettingsPlan>(
+        "set-mailbox-settings.ps1",
+        tenantId,
+        {
+          mailboxId,
+          settings: input,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
   };
 
   const mailboxPermissions: MailboxPermissionsProvider = {
@@ -664,17 +679,22 @@ export function createMailboxProviders(
       input: GrantMailboxPermissionInput,
       preview: boolean,
     ): Promise<MailboxPermissionResult | MailboxPermissionPlan> =>
-      call<MailboxPermissionResult | MailboxPermissionPlan>("set-mailbox-permission.ps1", tenantId, {
-        action: input.action,
-        mailboxId,
-        scope: input.scope,
-        ...(input.permissionType !== undefined ? { permissionType: input.permissionType } : {}),
-        principal: input.principal,
-        ...(input.accessRights !== undefined ? { accessRights: input.accessRights } : {}),
-        ...(input.automap !== undefined ? { automap: input.automap } : {}),
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxPermissionResult | MailboxPermissionPlan>(
+        "set-mailbox-permission.ps1",
+        tenantId,
+        {
+          action: input.action,
+          mailboxId,
+          scope: input.scope,
+          ...(input.permissionType !== undefined ? { permissionType: input.permissionType } : {}),
+          principal: input.principal,
+          ...(input.accessRights !== undefined ? { accessRights: input.accessRights } : {}),
+          ...(input.automap !== undefined ? { automap: input.automap } : {}),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     removePermission: (
       tenantId: string,
@@ -682,15 +702,20 @@ export function createMailboxProviders(
       input: RemoveMailboxPermissionInput,
       preview: boolean,
     ): Promise<MailboxPermissionResult | MailboxPermissionPlan> =>
-      call<MailboxPermissionResult | MailboxPermissionPlan>("set-mailbox-permission.ps1", tenantId, {
-        action: "remove",
-        mailboxId,
-        scope: input.scope,
-        ...(input.permissionType !== undefined ? { permissionType: input.permissionType } : {}),
-        principal: input.principal,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxPermissionResult | MailboxPermissionPlan>(
+        "set-mailbox-permission.ps1",
+        tenantId,
+        {
+          action: "remove",
+          mailboxId,
+          scope: input.scope,
+          ...(input.permissionType !== undefined ? { permissionType: input.permissionType } : {}),
+          principal: input.principal,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
   };
 
   // The tenant-wide report is one cursor-paged worker read (the worker already pages, filters
@@ -805,17 +830,22 @@ export function createMailboxProviders(
       input: CreateMailboxRuleInput,
       preview: boolean,
     ): Promise<MailboxRuleResult | MailboxRulePlan> =>
-      call<MailboxRuleResult | MailboxRulePlan>("set-mailbox-rule.ps1", tenantId, {
-        action: "create",
-        mailboxId,
-        name: input.name,
-        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-        ...(input.priority !== undefined ? { priority: input.priority } : {}),
-        ...ruleRecipientFields(input),
-        ...(input.deleteMessage !== undefined ? { deleteMessage: input.deleteMessage } : {}),
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxRuleResult | MailboxRulePlan>(
+        "set-mailbox-rule.ps1",
+        tenantId,
+        {
+          action: "create",
+          mailboxId,
+          name: input.name,
+          ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
+          ...ruleRecipientFields(input),
+          ...(input.deleteMessage !== undefined ? { deleteMessage: input.deleteMessage } : {}),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     editRule: async (
       tenantId: string,
@@ -824,27 +854,37 @@ export function createMailboxProviders(
       input: EditMailboxRuleInput,
       preview: boolean,
     ): Promise<MailboxRuleResult | MailboxRulePlan> =>
-      call<MailboxRuleResult | MailboxRulePlan>("set-mailbox-rule.ps1", tenantId, {
-        action: "edit",
-        mailboxId,
-        ruleId,
-        ...(input.name !== undefined ? { name: input.name } : {}),
-        ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
-        ...(input.priority !== undefined ? { priority: input.priority } : {}),
-        ...ruleRecipientFields(input),
-        ...(input.deleteMessage !== undefined ? { deleteMessage: input.deleteMessage } : {}),
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxRuleResult | MailboxRulePlan>(
+        "set-mailbox-rule.ps1",
+        tenantId,
+        {
+          action: "edit",
+          mailboxId,
+          ruleId,
+          ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.enabled !== undefined ? { enabled: input.enabled } : {}),
+          ...(input.priority !== undefined ? { priority: input.priority } : {}),
+          ...ruleRecipientFields(input),
+          ...(input.deleteMessage !== undefined ? { deleteMessage: input.deleteMessage } : {}),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     deleteRule: (tenantId: string, mailboxId: string, ruleId: string, preview: boolean) =>
-      call<MailboxRuleResult | MailboxRulePlan>("set-mailbox-rule.ps1", tenantId, {
-        action: "delete",
-        mailboxId,
-        ruleId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<MailboxRuleResult | MailboxRulePlan>(
+        "set-mailbox-rule.ps1",
+        tenantId,
+        {
+          action: "delete",
+          mailboxId,
+          ruleId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
   };
 
   const retention: RetentionProvider = {
@@ -904,24 +944,34 @@ export function createMailboxProviders(
     },
 
     assignTag: (tenantId: string, input: AssignRetentionTagInput, preview: boolean) =>
-      call<RetentionAssignResult | RetentionAssignPlan>("set-retention-tag.ps1", tenantId, {
-        action: "assign",
-        tagId: input.tagId,
-        ...(input.policyId !== undefined ? { policyId: input.policyId } : {}),
-        mailboxId: input.mailboxId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<RetentionAssignResult | RetentionAssignPlan>(
+        "set-retention-tag.ps1",
+        tenantId,
+        {
+          action: "assign",
+          tagId: input.tagId,
+          ...(input.policyId !== undefined ? { policyId: input.policyId } : {}),
+          mailboxId: input.mailboxId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     assignTagBulk: (tenantId: string, input: AssignRetentionTagBulkInput, preview: boolean) =>
-      call<RetentionAssignBulkResult | RetentionAssignBulkPlan>("set-retention-tag.ps1", tenantId, {
-        action: "assignBulk",
-        tagId: input.tagId,
-        ...(input.policyId !== undefined ? { policyId: input.policyId } : {}),
-        mailboxIds: input.mailboxIds,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<RetentionAssignBulkResult | RetentionAssignBulkPlan>(
+        "set-retention-tag.ps1",
+        tenantId,
+        {
+          action: "assignBulk",
+          tagId: input.tagId,
+          ...(input.policyId !== undefined ? { policyId: input.policyId } : {}),
+          mailboxIds: input.mailboxIds,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
   };
 
   const vacationApply: VacationApplyProvider = {
@@ -932,18 +982,24 @@ export function createMailboxProviders(
       options: VacationApplyOptions = {},
     ) => {
       const revertNotAfter = new Date(Date.parse(schedule.endsAt) + 24 * 3600 * 1000).toISOString();
-      return call<VacationWorkerResult>("invoke-vacation-schedule.ps1", tenantId, {
-        scheduleId: schedule.id,
-        phase,
-        mailboxId: schedule.mailboxId,
-        startsAt: schedule.startsAt,
-        endsAt: schedule.endsAt,
-        oooMessage: schedule.oooMessage,
-        ...(schedule.forwardTo !== null ? { forwardTo: schedule.forwardTo } : {}),
-        notAfter: phase === "enable" ? schedule.endsAt : revertNotAfter,
-        ...(options.priorState ? { priorState: options.priorState } : {}),
-        confirmed: true,
-      }).then(({ alertEvent, plan, ...result }) => {
+      // Both phases write the mailbox's automatic replies (T-0940).
+      return call<VacationWorkerResult>(
+        "invoke-vacation-schedule.ps1",
+        tenantId,
+        {
+          scheduleId: schedule.id,
+          phase,
+          mailboxId: schedule.mailboxId,
+          startsAt: schedule.startsAt,
+          endsAt: schedule.endsAt,
+          oooMessage: schedule.oooMessage,
+          ...(schedule.forwardTo !== null ? { forwardTo: schedule.forwardTo } : {}),
+          notAfter: phase === "enable" ? schedule.endsAt : revertNotAfter,
+          ...(options.priorState ? { priorState: options.priorState } : {}),
+          confirmed: true,
+        },
+        { purpose: "operator" },
+      ).then(({ alertEvent, plan, ...result }) => {
         // The worker names the failed-revert alert `alertEvent`; the route type calls it `alert`.
         raiseWorkerError(result);
         const withAlert = alertEvent === undefined || result.alert !== undefined ? result : { ...result, alert: alertEvent };
@@ -971,12 +1027,17 @@ export function createMailboxProviders(
       preview: boolean,
     ): Promise<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan> {
       try {
-        return await call<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan>("restore-mailbox.ps1", tenantId, {
-          action: "restore",
-          mailboxId,
-          dryRun: preview,
-          confirmed: !preview,
-        });
+        return await call<DeletedMailboxRestoreResult | DeletedMailboxRestorePlan>(
+          "restore-mailbox.ps1",
+          tenantId,
+          {
+            action: "restore",
+            mailboxId,
+            dryRun: preview,
+            confirmed: !preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        );
       } catch (error) {
         // The worker refuses a mailbox outside the soft-deleted set with "NotFound: ...";
         // the route contract for that is a structured 404, not a worker 502.

@@ -125,3 +125,7 @@ Describe 'New-PimRequest worker (T-0245)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

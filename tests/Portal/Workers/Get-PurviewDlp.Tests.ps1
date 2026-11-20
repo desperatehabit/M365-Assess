@@ -303,3 +303,8 @@ return `$true
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-DlpCompliancePolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DlpComplianceRule' -ErrorAction SilentlyContinue
+}

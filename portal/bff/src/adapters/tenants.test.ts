@@ -16,11 +16,13 @@ import {
 } from "./tenants.js";
 import {
   NO_CREDENTIAL,
+  NO_OPERATOR_CREDENTIAL,
   createGdapSyncRunner,
   createOnboardRunner,
   createTestConnectionRunner,
   credentialBlock,
   type WorkerRunner,
+  type WorkerRunOptions,
 } from "./workers.js";
 
 const NOW = "2026-09-26T12:00:00.000Z";
@@ -217,6 +219,7 @@ describe("worker runners (T-0822)", () => {
     await rows.upsertCredential(credential("t-a", { expiresOn: "2027-01-01T00:00:00Z" }));
     expect(await credentialBlock(rows, "t-a")).toEqual({
       credentialRef: "tenants/t-a/credential",
+      purpose: "reader",
       record: {
         tenantId: "t-a",
         authMethod: "certificate-thumbprint",
@@ -224,9 +227,43 @@ describe("worker runners (T-0822)", () => {
         secretRef: "thumbprint://ABC123",
         thumbprint: "ABC123",
         environment: "commercial",
+        purpose: "reader",
       },
     });
     await expect(credentialBlock(rows, "t-missing")).rejects.toMatchObject({ status: 409, code: NO_CREDENTIAL });
+  });
+
+  it("resolves the operator credential for write work and never falls back to the reader", async () => {
+    const { repo } = openRepos();
+    await repo.upsertTenant(tenant("t-a"));
+    const rows = createCredentialRowStore(repo);
+    await rows.upsertCredential(credential("t-a"));
+
+    await expect(credentialBlock(rows, "t-a", "operator")).rejects.toMatchObject({
+      status: 409,
+      code: NO_OPERATOR_CREDENTIAL,
+    });
+
+    await repo.upsertTenantCredential({
+      id: "cred-operator",
+      tenantId: "t-a",
+      authMethod: "certificate-thumbprint",
+      clientId: "operator-app",
+      secretRef: "thumbprint://OPERATOR",
+      thumbprint: "OPERATOR",
+      environment: "commercial",
+      expiresOn: null,
+      lastValidated: null,
+      purpose: "operator",
+    });
+
+    expect(await credentialBlock(rows, "t-a", "operator")).toEqual({
+      credentialRef: "tenants/t-a/operator-credential",
+      purpose: "operator",
+      record: expect.objectContaining({ clientId: "operator-app", purpose: "operator" }),
+    });
+    // The reader row is untouched.
+    expect((await rows.getCredential("t-a"))?.clientId).toBe("app-1");
   });
 
   it("runs the connection test with the tenant's credential block", async () => {
@@ -253,6 +290,33 @@ describe("worker runners (T-0822)", () => {
       entrypoint: "onboard-tenant.ps1",
       job: { tenantId: "t-a", confirmed: true, createNew: true, adminUpn: "admin@contoso.example" },
     });
+  });
+
+  it("relays device-code progress lines and keeps the 30-minute onboarding ceiling", async () => {
+    const relayed: { code?: string | null; signIn: string }[] = [];
+    const seen: { entrypoint: string; options?: WorkerRunOptions }[] = [];
+    const run: WorkerRunner = async (entrypoint, _job, options) => {
+      seen.push({ entrypoint, ...(options ? { options } : {}) });
+      options?.onProgressLine?.(
+        JSON.stringify({
+          kind: "device-code",
+          signIn: "exchange-online",
+          provider: "Exchange Online",
+          code: "EXO-12345",
+          verificationUrl: "https://microsoft.com/devicelogin",
+        }),
+      );
+      options?.onProgressLine?.("not a progress event");
+      return { tenantId: "t-a", status: "succeeded" } as never;
+    };
+
+    await createOnboardRunner(run)("t-a", { confirmed: true }, (event) => {
+      relayed.push({ code: event.code, signIn: event.signIn });
+    });
+
+    expect(relayed).toEqual([{ code: "EXO-12345", signIn: "exchange-online" }]);
+    expect(seen[0]?.entrypoint).toBe("onboard-tenant.ps1");
+    expect(seen[0]?.options?.timeoutMs).toBe(30 * 60 * 1000);
   });
 
   it("runs GDAP sync as the partner tenant with its credential", async () => {

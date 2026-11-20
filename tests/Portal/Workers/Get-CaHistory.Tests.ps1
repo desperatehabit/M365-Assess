@@ -208,3 +208,7 @@ Describe 'Get-CaHistory worker (T-0830)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

@@ -103,3 +103,7 @@ Describe 'Invoke-GraphRequest worker (T-0781, mounted by T-0870)' {
         $entry | Should -Match '=\s*Invoke-PortalGraphRequest\s'
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

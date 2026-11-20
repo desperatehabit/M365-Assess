@@ -241,3 +241,12 @@ Describe 'Set-MailboxSettings worker (T-0383)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Enable-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailboxRegionalConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-CalendarProcessing' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-CalendarProcessing' -ErrorAction SilentlyContinue
+}

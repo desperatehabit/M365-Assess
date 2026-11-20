@@ -172,3 +172,7 @@ Describe 'Set-IntuneApp worker (T-0843)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

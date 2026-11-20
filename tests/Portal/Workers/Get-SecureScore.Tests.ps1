@@ -197,3 +197,7 @@ Describe 'Get-SecureScore worker (T-0602)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

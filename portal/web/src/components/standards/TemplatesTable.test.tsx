@@ -27,6 +27,7 @@ function item(overrides: Partial<StandardsTemplateItem> = {}): StandardsTemplate
 const noopHandlers = {
   onViewTenantReport: vi.fn(),
   onEdit: vi.fn(),
+  onMakeCopy: vi.fn(),
   onCloneAndEdit: vi.fn(),
   onCreateDriftClone: vi.fn(),
   onRunTemplateNow: vi.fn(),
@@ -124,6 +125,27 @@ describe("TemplatesTable", () => {
     expect(screen.getByTestId("run-template-confirm")).toBeTruthy();
     fireEvent.click(screen.getByTestId("run-template-confirm-button"));
     expect(noopHandlers.onRunTemplateNow).toHaveBeenCalledWith(expect.objectContaining({ id: "tpl-1" }));
+  });
+
+  it("locks built-ins behind a badge and a Make a copy action", () => {
+    render(
+      <TemplatesTable
+        templates={[item({ builtIn: true })]}
+        githubEnabled
+        {...noopHandlers}
+      />,
+    );
+
+    expect(screen.getByTestId("builtin-badge-tpl-1").textContent).toContain("Built-in");
+    expect(screen.queryByTestId("edit-tpl-1")).toBeNull();
+    expect(screen.queryByTestId("delete-tpl-1")).toBeNull();
+    expect(screen.queryByTestId("convert-tpl-1")).toBeNull();
+    expect(screen.queryByTestId("schedule-tpl-1")).toBeNull();
+    expect(screen.queryByTestId("clone-edit-tpl-1")).toBeNull();
+    expect(screen.queryByTestId("run-now-tpl-1")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("copy-tpl-1"));
+    expect(noopHandlers.onMakeCopy).toHaveBeenCalledWith(expect.objectContaining({ id: "tpl-1" }));
   });
 
   it("uses CSS custom properties (zero hex literals)", () => {

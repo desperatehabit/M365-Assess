@@ -157,6 +157,7 @@ describe("RunsTable component", () => {
       expect(screen.getByText("Fabrikam Inc")).toBeDefined();
       expect(screen.getByText("Tailspin Toys")).toBeDefined();
       expect(screen.getByText("Wingtip Toys")).toBeDefined();
+      expect(screen.getByText("Multiple tenants")).toBeDefined();
 
       // Multi-tenant child badge
       expect(screen.getByText("2 tenants")).toBeDefined();
@@ -164,6 +165,34 @@ describe("RunsTable component", () => {
       // Findings counts
       expect(screen.getByText("42 pass")).toBeDefined();
       expect(screen.getByText("2 fail")).toBeDefined();
+    });
+
+    it("shows the tenant display name as main text with the tenant ID as secondary text", () => {
+      render(<RunsTable runs={SAMPLE_RUNS} />);
+
+      const id = screen.getByTestId("tenant-id-run-00000001-aaaa");
+      expect(id.textContent).toBe("tenant-contoso");
+      expect(id.getAttribute("title")).toBe("tenant-contoso");
+      // The name is still the primary label.
+      expect(screen.getByText("Contoso Ltd")).toBeDefined();
+    });
+
+    it("falls back to the tenant ID when the tenant was removed", () => {
+      const removedTenantRun: RunItem = {
+        id: "run-removed-tenant",
+        tenantId: "33333333-3333-3333-3333-333333333333",
+        parentRunId: null,
+        trigger: "manual",
+        sections: ["Identity"],
+        status: "succeeded",
+        summaryCounts: { pass: 1, fail: 0 },
+        createdAt: "2026-09-26T10:00:00.000Z",
+      };
+
+      render(<RunsTable runs={[removedTenantRun]} />);
+
+      expect(screen.getByText("33333333-3333-3333-3333-333333333333")).toBeDefined();
+      expect(screen.queryByTestId("tenant-id-run-removed-tenant")).toBeNull();
     });
 
     it("renders loading and error states properly", () => {
@@ -210,6 +239,59 @@ describe("RunsTable component", () => {
 
       expect(screen.getByText("Contoso Ltd")).toBeDefined();
       expect(screen.queryByText("Fabrikam Inc")).toBeNull();
+    });
+
+    it("still filters by the raw tenant ID", () => {
+      render(<RunsTable runs={SAMPLE_RUNS} />);
+      const input = screen.getByTestId("filter-tenant");
+
+      fireEvent.change(input, { target: { value: "tenant-fabrikam" } });
+
+      expect(screen.getByText("Fabrikam Inc")).toBeDefined();
+      expect(screen.queryByText("Contoso Ltd")).toBeNull();
+    });
+
+    it("matches a multi-tenant parent by one of its children's tenant names", () => {
+      const runs: RunItem[] = [
+        {
+          id: "run-multi",
+          tenantId: "tenant-parent",
+          parentRunId: null,
+          trigger: "manual",
+          sections: ["Identity"],
+          status: "partial",
+          createdAt: "2026-09-26T10:00:00.000Z",
+          children: [
+            {
+              id: "child-a",
+              tenantId: "tenant-child-a",
+              tenantDisplayName: "Northwind Traders",
+              trigger: "manual",
+              sections: ["Identity"],
+              status: "succeeded",
+              createdAt: "2026-09-26T10:00:00.000Z",
+            },
+            {
+              id: "child-b",
+              tenantId: "tenant-child-b",
+              tenantDisplayName: "Adventure Works",
+              trigger: "manual",
+              sections: ["Identity"],
+              status: "failed",
+              createdAt: "2026-09-26T10:00:00.000Z",
+            },
+          ],
+        },
+      ];
+
+      render(<RunsTable runs={runs} />);
+      const input = screen.getByTestId("filter-tenant");
+
+      fireEvent.change(input, { target: { value: "northwind" } });
+      expect(screen.getByTestId("run-row-run-multi")).toBeDefined();
+
+      fireEvent.change(input, { target: { value: "no-such-tenant" } });
+      expect(screen.queryByTestId("run-row-run-multi")).toBeNull();
     });
 
     it("filters runs by section name", () => {
@@ -299,6 +381,26 @@ describe("RunsTable component", () => {
       const compareBtn = screen.getByTestId("action-compare-run-00000001-aaaa");
       fireEvent.click(compareBtn);
       expect(onCompare).toHaveBeenCalledWith(SAMPLE_RUNS[0]);
+    });
+  });
+
+  describe("multi-tenant rows", () => {
+    it("expands a parent row to its per-tenant children and opens a child run", () => {
+      const onView = vi.fn();
+      render(<RunsTable runs={SAMPLE_RUNS} onView={onView} />);
+
+      // Collapsed by default: only the parent row with the tenant count badge.
+      expect(screen.getByTestId("run-row-run-00000005-eeee")).toBeDefined();
+      expect(screen.queryByTestId("run-child-row-child-1")).toBeNull();
+
+      fireEvent.click(screen.getByTestId("toggle-children-run-00000005-eeee"));
+
+      expect(screen.getByTestId("run-child-row-child-1")).toBeDefined();
+      expect(screen.getByTestId("run-child-row-child-2")).toBeDefined();
+
+      // A child row opens that child's run detail (and therefore its findings).
+      fireEvent.click(screen.getByTestId("action-view-child-1"));
+      expect(onView).toHaveBeenCalledWith(SAMPLE_RUNS[4]!.children![0]);
     });
   });
 

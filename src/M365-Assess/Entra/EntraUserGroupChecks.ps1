@@ -118,7 +118,7 @@ if ($authPolicy) {
         $settingParams = @{
             Category         = 'Directory Settings'
             Setting          = 'Non-Admin Tenant Creation Restricted'
-            CurrentValue     = "$canCreateTenants"
+            CurrentValue     = $(if ($canCreateTenants) { 'Restricted: No' } else { 'Restricted: Yes' })
             RecommendedValue = 'False'
             Status           = $(if (-not $canCreateTenants) { 'Pass' } else { 'Warning' })
             CheckId          = 'ENTRA-TENANT-001'

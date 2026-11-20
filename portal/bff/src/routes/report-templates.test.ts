@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 import { REPORT_SCHEMA_VERSION, parseReportTemplate } from "../../../contracts/src/reports.js";
 import { AppError } from "../errors.js";
 import {
+  BUILT_IN_REPORT_TEMPLATES,
   REPORT_TEMPLATE_INVALID,
   REPORT_TEMPLATE_NOT_FOUND,
   REPORT_TEMPLATE_PERMISSIONS,
+  REPORT_TEMPLATE_READ_ONLY,
   REPORT_TEMPLATE_TENANT_REQUIRED,
   createReportTemplateRoutes,
   type CloneTemplateInput,
@@ -266,17 +268,23 @@ describe("report template routes", () => {
     await createTemplate(value, { name: "Three", document: validDocument() });
 
     const list = handlerFor(value.routes, "GET", "/v1/report-templates");
-    const first = await list(request({ query: new URLSearchParams({ limit: "2" }) }));
-    const firstBody = first.body as { items: unknown[]; nextCursor: string | null };
-    expect(firstBody.items).toHaveLength(2);
-    expect(firstBody.nextCursor).not.toBeNull();
+    const names: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const query = new URLSearchParams({ limit: "2" });
+      if (cursor !== null) query.set("cursor", cursor);
+      const page = await list(request({ query }));
+      const body = page.body as {
+        items: { name: string }[];
+        nextCursor: string | null;
+      };
+      names.push(...body.items.map((item) => item.name));
+      cursor = body.nextCursor;
+    } while (cursor !== null);
 
-    const second = await list(
-      request({ query: new URLSearchParams({ limit: "2", cursor: firstBody.nextCursor ?? "" }) }),
-    );
-    const secondBody = second.body as { items: unknown[]; nextCursor: string | null };
-    expect(secondBody.items).toHaveLength(1);
-    expect(secondBody.nextCursor).toBeNull();
+    // Four built-in starting points precede the three stored templates.
+    expect(names).toHaveLength(7);
+    expect(names.slice(4)).toEqual(["One", "Two", "Three"]);
   });
 
   it("updates a template name and rejects an invalid replacement document", async () => {
@@ -399,6 +407,109 @@ describe("report template routes", () => {
   });
 });
 
+describe("built-in report templates (T-0923)", () => {
+  it("ships four read-only starting points whose documents satisfy the contract", () => {
+    expect(BUILT_IN_REPORT_TEMPLATES.map((template) => template.name)).toEqual([
+      "Executive summary",
+      "Technical findings",
+      "Compliance (per framework)",
+      "Remediation plan",
+    ]);
+    for (const template of BUILT_IN_REPORT_TEMPLATES) {
+      expect(template.tenantId).toBeNull();
+      expect(() => parseReportTemplate(template.document)).not.toThrow();
+      expect((template.document as { blocks: unknown[] }).blocks.length).toBeGreaterThan(1);
+    }
+  });
+
+  it("lists and reads built-ins with a read-only marker", async () => {
+    const value = harness();
+    const list = await handlerFor(value.routes, "GET", "/v1/report-templates")(request());
+    const items = (list.body as { items: Record<string, unknown>[] }).items;
+    expect(items).toHaveLength(4);
+    expect(items.every((item) => item["readOnly"] === true)).toBe(true);
+    expect(items.every((item) => item["builtIn"] === true)).toBe(true);
+
+    const get = handlerFor(value.routes, "GET", "/v1/report-templates/:templateId");
+    const builtIn = await get(
+      request({ params: { templateId: "builtin-executive-summary" } }),
+    );
+    expect(builtIn.status).toBe(200);
+    expect((builtIn.body as Record<string, unknown>)["readOnly"]).toBe(true);
+    expect((builtIn.body as Record<string, unknown>)["name"]).toBe("Executive summary");
+  });
+
+  it("refuses to update or delete a built-in", async () => {
+    const value = harness();
+    const update = handlerFor(value.routes, "PATCH", "/v1/report-templates/:templateId");
+    await expect(
+      update(
+        request({
+          method: "PATCH",
+          params: { templateId: "builtin-technical-findings" },
+          body: { name: "Changed" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: REPORT_TEMPLATE_READ_ONLY, status: 409 });
+
+    const remove = handlerFor(value.routes, "DELETE", "/v1/report-templates/:templateId");
+    await expect(
+      remove(
+        request({
+          method: "DELETE",
+          params: { templateId: "builtin-compliance" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: REPORT_TEMPLATE_READ_ONLY, status: 409 });
+    expect(await value.store.listTemplates()).toHaveLength(0);
+  });
+
+  it("clones a built-in into an editable stored template", async () => {
+    const value = harness();
+    const clone = handlerFor(value.routes, "POST", "/v1/report-templates/:templateId/clone");
+    const response = await clone(
+      request({
+        method: "POST",
+        params: { templateId: "builtin-remediation-plan" },
+        body: { name: "Q4 remediation" },
+      }),
+    );
+    expect(response.status).toBe(201);
+    const cloned = response.body as Record<string, unknown>;
+    expect(cloned["id"]).not.toBe("builtin-remediation-plan");
+    expect(cloned["name"]).toBe("Q4 remediation");
+    expect(cloned["readOnly"]).toBeUndefined();
+    const document = cloned["document"] as Record<string, unknown>;
+    expect(document["id"]).toBe(cloned["id"]);
+    expect(document["name"]).toBe("Q4 remediation");
+    expect((document["blocks"] as unknown[]).length).toBe(5);
+    expect(await value.store.listTemplates()).toHaveLength(1);
+  });
+
+  it("generates a report from a built-in when a tenant is supplied", async () => {
+    const value = harness();
+    const generate = handlerFor(value.routes, "POST", "/v1/report-templates/:templateId/generate");
+    await expect(
+      generate(
+        request({
+          method: "POST",
+          params: { templateId: "builtin-executive-summary" },
+        }),
+      ),
+    ).rejects.toMatchObject({ code: REPORT_TEMPLATE_TENANT_REQUIRED });
+
+    const response = await generate(
+      request({
+        method: "POST",
+        params: { templateId: "builtin-executive-summary" },
+        body: { tenantId: "tenant-a" },
+      }),
+    );
+    expect(response.status).toBe(202);
+    expect(value.render.requests[0]?.templateId).toBe("builtin-executive-summary");
+  });
+});
+
 describe("report template tenant scope (T-0823)", () => {
   it("hides and refuses other tenants' templates but keeps global ones open", async () => {
     const value = harness({ tenantAccess: (_ctx, tenantId) => tenantId === "tenant-a" });
@@ -416,7 +527,16 @@ describe("report template tenant scope (T-0823)", () => {
 
     const list = await handlerFor(value.routes, "GET", "/v1/report-templates")(request());
     const ids = (list.body as { items: { id: string }[] }).items.map((t) => t.id).sort();
-    expect(ids).toEqual([String(mine["id"]), String(global["id"])].sort());
+    expect(ids).toEqual(
+      [
+        String(mine["id"]),
+        String(global["id"]),
+        "builtin-executive-summary",
+        "builtin-technical-findings",
+        "builtin-compliance",
+        "builtin-remediation-plan",
+      ].sort(),
+    );
 
     const get = handlerFor(value.routes, "GET", "/v1/report-templates/:templateId");
     await expect(get(request({ params: { templateId: other.id } }))).rejects.toMatchObject({ status: 403 });

@@ -317,3 +317,12 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MgSubscribedSku' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-CsPhoneNumberAssignment' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-CsPhoneNumberAssignment' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-CsPhoneNumberAssignment' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-CsOnlineUser' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Grant-CsOnlineVoiceRoutingPolicy' -ErrorAction SilentlyContinue
+}

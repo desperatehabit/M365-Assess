@@ -46,9 +46,15 @@ import type { CustomTestDispatcher, CustomTestWorkerOutput } from "../custom-tes
 import type { TickSchedule, TickScheduleStore } from "../scheduler/tick.js";
 import type { SystemTimerStateStore } from "../scheduler/maintenance.js";
 import type { TenantStore } from "../routes/tenants.js";
-import { NO_CREDENTIAL, toCredentialBlock, type CredentialBlock, type WorkerRunner } from "./workers.js";
+import {
+  NO_CREDENTIAL,
+  NO_OPERATOR_CREDENTIAL,
+  toCredentialBlock,
+  type CredentialBlock,
+  type WorkerRunner,
+} from "./workers.js";
 
-export { NO_CREDENTIAL };
+export { NO_CREDENTIAL, NO_OPERATOR_CREDENTIAL };
 
 export const JOB_DISPATCH_UNAVAILABLE = "jobs.dispatch_unavailable";
 
@@ -164,18 +170,21 @@ async function prepareApplyJob(
   if (typeof planOutputRef !== "string" || planOutputRef === "") {
     throw new AppError(REMEDIATION_APPLY_NO_PLAN, `no stored plan job for plan ${planId}`, 409);
   }
-  const credential = await credentials.getCredential(envelope.tenantId);
+  // Apply writes tenant state: it must sign in with the operator app, never the
+  // reader credential (T-0917). A tenant without the opt-in write credential fails
+  // clearly rather than silently reverting to the read-only app.
+  const credential = await credentials.getCredential(envelope.tenantId, "operator");
   if (!credential) {
     throw new AppError(
-      NO_CREDENTIAL,
-      `tenant '${envelope.tenantId}' has no credential; set one before applying remediation`,
+      NO_OPERATOR_CREDENTIAL,
+      `tenant '${envelope.tenantId}' has no operator credential; onboarding must grant write access before applying remediation`,
       409,
     );
   }
-  const extra: Record<string, unknown> = { planOutputRef };
+  const extra: Record<string, unknown> = { planOutputRef, purpose: "operator" };
   return {
     envelope: { ...envelope, payload: { ...envelope.payload, ...extra } },
-    credential: toCredentialBlock(credential),
+    credential: toCredentialBlock(credential, "operator"),
   };
 }
 
