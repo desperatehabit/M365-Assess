@@ -11,14 +11,12 @@ reproduced and attributed.
 
 - [x] PRs #14 and #15 merged (Phase 0 exit). _2026-11-16._
 - [x] Phase 1 PR (`feat/portal-phase1-completion`) merged with CI green. _PR #16, 2026-11-18._
-- [ ] CI covers the portal (**T-0913**, PR #17). Until it merges, run the portal checks
-      locally: from a `C:\` path (Vitest misloads under a lowercase `c:` cwd),
-      `npm run build`, `npm run typecheck`, `npm test` in `portal/`. Build first on a clean
-      checkout: `bff` and `web` import `contracts` and `db` through their gitignored `dist/`.
-- [ ] Pester green on that commit:
-      `pwsh -NoProfile -Command "Invoke-Pester -Path './tests'"`. From a script or background
-      shell, close stdin (`< /dev/null`): a worker test that reads its job envelope from stdin
-      otherwise waits forever on an open pipe.
+- [x] CI covers the portal (**T-0913**, closed 2026-11-22). PR #20's
+      `Portal (build, typecheck, test)` job passed and main CI is green.
+- [x] Pester green on that commit (2026-11-22): 5815 passed, 14 skipped, and the two known
+      Windows `chmod` failures in `Invoke-ReportRender`. CI's Pester 7.4 and 7.6 jobs pass.
+      From a script or background shell, close stdin (`< /dev/null`): a worker test that reads
+      its job envelope from stdin otherwise waits forever on an open pipe.
 - [ ] A **test** tenant, not a client tenant. Several checks below write to the tenant.
 
 ## 1. Pre-flight already done without a tenant (2026-11-17)
@@ -45,7 +43,8 @@ Against the working tree, using `npm run dev` (BFF on :8080, web on :3000):
 
 1. Prerequisites on the BFF machine: `Microsoft.Graph.Authentication`,
    `Microsoft.Graph.Applications`, `Microsoft.Graph.Identity.Governance` (all the same version)
-   and `ExchangeOnlineManagement` below 3.8.0. Onboarding fails part-way without them (T-0915).
+   and `ExchangeOnlineManagement` below 3.8.0. The wizard now checks these before onboarding
+   starts and shows the exact install commands, pinned to the installed Graph SDK (T-0915).
 2. `cd portal && npm run dev`. Open http://localhost:3000. If `npm ci` fails with `EPERM`, a
    previous `npm run dev` is still running: stop it first.
 3. **Tenants → Add tenant**, *Create app registration* path. On Windows a PowerShell window
@@ -54,6 +53,17 @@ Against the working tree, using `npm run dev` (BFF on :8080, web on :3000):
    itself (T-0914). The app uses a **certificate**, because Exchange Online and Purview reject
    client secrets (`worker.credential_*`). A retry after a partial run resumes the existing app.
    Then run *Test connection*.
+   - **Write access (optional, needed for section 5 and every W row):** on the final step tick
+     *Also grant portal write access* and choose the groups to grant (identity, security,
+     Intune, SharePoint, Exchange). Dangerous grants (PIM role assignment, device wipe,
+     `Sites.FullControl.All`) require the separate confirmation. This creates the
+     `M365-Assess-Operator` app; the reader app stays read-only. Declining leaves onboarding
+     exactly as before. To add write access later, re-run
+     `Grant-M365AssessConsent -IncludeWritePermissions -WritePermissionGroups <groups>` (add
+     `-ConfirmDangerous` when a dangerous grant is selected) (T-0917).
+   - **Headless BFF:** when there is no interactive desktop, the wizard shows a device code and
+     verification URL for each of the three sign-ins; complete each one from your own browser
+     (T-0916).
 4. Pick the tenant in the tenant bar. Run one assessment from **Runs** and confirm it
    completes. This proves that the worker launch, the credential, and the Graph, EXO and
    SharePoint connections all work, and every other check depends on it.
@@ -75,7 +85,16 @@ No tenant names, domains or UPNs in tickets.
 ## 4. Ticket checks
 
 **R** = read-only. **W** = writes to the tenant; use test objects you create and remove
-afterwards. The onboarded app is read-only: grant the write permissions in **T-0917** before any W check.
+afterwards. The reader app is read-only by design. Before any W check, enable the opt-in
+`M365-Assess-Operator` app during onboarding (section 2.3) or re-run
+`Grant-M365AssessConsent -IncludeWritePermissions`. Write routes request the operator
+credential explicitly; a missing operator credential returns `409 tenant.operator_credential_missing`
+rather than falling back to the reader app (T-0917, T-0940).
+
+Two checks previously expected to fail for connection reasons now have their own session:
+historical search connects to Security & Compliance (`New-ComplianceSearch`), and voice
+connects to MicrosoftTeams (`*-Cs*`) (T-0941). A failure in those rows is now a finding, not a
+known gap.
 
 ### Security and auth
 | Ticket | Mode | Live check |
@@ -166,4 +185,9 @@ Record the run IDs in the ticket for EPIC-006 / the plan.
 ## 6. Exit
 
 Zero `fixed-unverified` in `TICKETS.md`, the T-0913+ tickets from the walk triaged, and the
-remediation round trip recorded.
+remediation round trip recorded. For each verified ticket add a `## Verification` section with
+the date, the run or request used, and what was seen; set `status: "closed"`, move the file to
+`ISSUES_CLOSED/`, and update the row and counts in `TICKETS.md` in the same commit.
+
+When the W rows pass, close **T-0941** and then **T-0917**; record the operator client id and
+the run IDs on both tickets.
