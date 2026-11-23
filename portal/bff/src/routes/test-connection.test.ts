@@ -57,15 +57,31 @@ class MemoryTenantStore implements TenantStore {
 class MemoryCredentialStore implements CredentialStoreRow {
   readonly records = new Map<string, CredentialRecord>();
 
-  async getCredential(tenantId: string): Promise<CredentialRecord | undefined> {
-    const found = this.records.get(tenantId);
+  async getCredential(
+    tenantId: string,
+    purpose: "reader" | "operator" = "reader",
+  ): Promise<CredentialRecord | undefined> {
+    const found = this.records.get(`${tenantId}:${purpose}`);
     return found ? { ...found } : undefined;
+  }
+
+  async listCredentials(tenantId: string): Promise<CredentialRecord[]> {
+    return [...this.records.values()]
+      .filter((row) => row.tenantId === tenantId)
+      .map((row) => ({ ...row }));
   }
 
   async upsertCredential(input: CredentialRecord): Promise<CredentialRecord> {
     const stored = { ...input };
-    this.records.set(stored.tenantId, stored);
+    this.records.set(`${stored.tenantId}:${stored.purpose ?? "reader"}`, stored);
     return { ...stored };
+  }
+
+  async deleteCredential(
+    tenantId: string,
+    purpose: "reader" | "operator" = "reader",
+  ): Promise<boolean> {
+    return this.records.delete(`${tenantId}:${purpose}`);
   }
 
   async appendAuditEvent(): Promise<unknown> {

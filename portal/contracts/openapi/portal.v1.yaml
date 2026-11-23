@@ -4387,15 +4387,115 @@ paths:
       security:
         - bearerAuth: []
   /tenants/{id}/credential:
-    post:
-      operationId: postTenantsIdCredential
-      summary: POST /tenants/{id}/credential
-      responses:
-        "200":
-          description: Successful response.
-      x-permission: CIPP.Admin.TenantCredentials
+    get:
+      operationId: getTenantCredential
+      summary: Read the tenant's reader credential (reader by default)
       security:
         - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The reader credential reference; no secret value.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantCredentialView"
+        "401":
+          description: Authentication required.
+        "403":
+          description: Tenant is outside the caller scope, or the caller lacks tenants.credentials.
+        "404":
+          description: The tenant has no reader credential.
+      x-permission: CIPP.Admin.TenantCredentials
+    post:
+      operationId: setTenantCredential
+      summary: Set or rotate a tenant credential; stores a secret reference only
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TenantCredentialSet"
+      responses:
+        "200":
+          description: The rotated credential reference; no secret value.
+        "201":
+          description: The new credential reference; no secret value.
+        "400":
+          description: Validation failed, or a client secret was supplied for Exchange Online/Purview sections.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Tenant is outside the caller scope, or the caller lacks tenants.credentials.
+      x-permission: CIPP.Admin.TenantCredentials
+    delete:
+      operationId: deleteTenantCredential
+      summary: Disable portal write access by removing the operator credential
+      description: Removes the operator credential row and records an audit event. The Entra app registration and its grants are left in place. Only the operator purpose can be deleted through this route; the reader credential is never removed.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: purpose
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - operator
+      responses:
+        "204":
+          description: The operator credential was removed.
+        "400":
+          description: The requested purpose is not operator; the reader credential cannot be deleted.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Tenant is outside the caller scope, or the caller lacks tenants.credentials.
+        "404":
+          description: The tenant has no operator credential.
+      x-permission: CIPP.Admin.TenantCredentials
+  /tenants/{id}/credentials:
+    get:
+      operationId: listTenantCredentials
+      summary: List every credential a tenant holds, including the operator credential
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The tenant's reader and operator credentials; no secret values.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantCredentialList"
+        "401":
+          description: Authentication required.
+        "403":
+          description: Tenant is outside the caller scope, or the caller lacks tenants.credentials.
+      x-permission: CIPP.Admin.TenantCredentials
   /tenants/{id}/graph-explorer:
     post:
       operationId: runGraphExplorerRequest
@@ -4420,24 +4520,112 @@ paths:
       x-permission: tools.read
   /tenants/{id}/onboard:
     post:
-      operationId: postTenantsIdOnboard
-      summary: POST /tenants/{id}/onboard
-      responses:
-        "200":
-          description: Successful response.
-      x-permission: Tenant.Administration.ReadWrite
+      operationId: onboardTenant
+      summary: Direct tenant onboarding with app registration and consent
       security:
         - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - confirmed
+              properties:
+                confirmed:
+                  type: boolean
+                adminUpn:
+                  type: string
+                appDisplayName:
+                  type: string
+                clientId:
+                  type: string
+                certificateThumbprint:
+                  type: string
+                createNew:
+                  type: boolean
+                includeWritePermissions:
+                  type: boolean
+                writePermissionGroups:
+                  type: array
+                  items:
+                    type: string
+                    enum:
+                      - identity
+                      - security
+                      - intune
+                      - sharepoint
+                      - exchange
+                confirmDangerous:
+                  type: boolean
+                replaceWriteGroups:
+                  type: boolean
+                  description: "Reconcile the operator app's managed grants to writePermissionGroups: add the selected grants and remove the unselected managed grants from the operator app only. The reader app is never changed (T-0942)."
+                displayName:
+                  type: string
+                defaultDomain:
+                  type: string
+                initialDomain:
+                  type: string
+                environment:
+                  type: string
+                progressId:
+                  type: string
+                  description: Client-generated id for the device-code progress channel the wizard polls while onboarding waits for a sign-in (T-0916).
+      responses:
+        "201":
+          description: Tenant onboarded successfully.
+        "400":
+          description: Confirmation required or invalid input.
+        "401":
+          description: Authentication required.
+        "403":
+          description: Forbidden; tenants.onboard permission required.
+        "500":
+          description: Onboarding failed.
+        "502":
+          description: Partial onboarding failure.
+        "504":
+          description: Onboarding exceeded the 30-minute job timeout while waiting for sign-in.
+      x-permission: Tenant.Administration.ReadWrite
   /tenants/{id}/onboard/progress/{progressId}:
     get:
-      operationId: getTenantsIdOnboardProgressProgressId
-      summary: GET /tenants/{id}/onboard/progress/{progressId}
-      responses:
-        "200":
-          description: Successful response.
-      x-permission: Tenant.Administration.ReadWrite
+      operationId: getOnboardProgress
+      summary: Read pending device-code progress for an onboarding job
+      description: Returns the sign-in events emitted by the onboarding worker since `since`. A pending device-code event carries the code and verification URL the wizard shows while the job waits (T-0916).
       security:
         - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: progressId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: "Progress snapshot: state (unknown, pending, done) and new events."
+        "401":
+          description: Authentication required.
+        "403":
+          description: Forbidden; tenants.onboard permission required.
+      x-permission: Tenant.Administration.ReadWrite
   /tenants/{id}/test-connection:
     post:
       operationId: postTenantsIdTestConnection
@@ -10642,6 +10830,123 @@ components:
           type: string
         updatedAt:
           type: string
+    TenantCredentialSet:
+      type: object
+      required:
+        - authMethod
+        - clientId
+      additionalProperties: false
+      properties:
+        authMethod:
+          type: string
+          enum:
+            - certificate
+            - certificate-thumbprint
+            - certificate-pfx
+            - client-secret
+        clientId:
+          type: string
+        thumbprint:
+          type:
+            - string
+            - "null"
+        clientSecret:
+          type:
+            - string
+            - "null"
+        certificatePath:
+          type:
+            - string
+            - "null"
+        certificatePassword:
+          type:
+            - string
+            - "null"
+        environment:
+          type: string
+          enum:
+            - commercial
+            - gcc
+            - gcchigh
+            - dod
+        expiresOn:
+          type:
+            - string
+            - "null"
+          format: date-time
+        sections:
+          type: array
+          items:
+            type: string
+    TenantCredentialView:
+      type: object
+      required:
+        - tenantId
+        - authMethod
+        - clientId
+        - secretRef
+        - environment
+        - purpose
+        - permissionGroups
+        - state
+        - createdAt
+        - updatedAt
+      properties:
+        tenantId:
+          type: string
+        authMethod:
+          type: string
+        clientId:
+          type: string
+        secretRef:
+          type: string
+        thumbprint:
+          type:
+            - string
+            - "null"
+        environment:
+          type: string
+        expiresOn:
+          type:
+            - string
+            - "null"
+          format: date-time
+        lastValidated:
+          type:
+            - string
+            - "null"
+        purpose:
+          type: string
+          enum:
+            - reader
+            - operator
+        permissionGroups:
+          type: array
+          description: Write-permission groups granted to the operator app; empty for the reader.
+          items:
+            type: string
+        state:
+          type: string
+          enum:
+            - valid
+            - expiring
+            - expired
+            - missing
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    TenantCredentialList:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/TenantCredentialView"
     AuditSearchFilters:
       type: object
       additionalProperties: false

@@ -4,7 +4,11 @@
 import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import TenantDetailPage, { tenantHistoryPath, tenantVariablesPath } from "./page";
+import TenantDetailPage, {
+  tenantCredentialsPath,
+  tenantHistoryPath,
+  tenantVariablesPath,
+} from "./page";
 
 const TENANT_ID = "tenant-1";
 
@@ -155,5 +159,73 @@ describe("Tenant detail tabs (T-0910)", () => {
     expect(screen.getByTestId("history-tab-content").textContent).not.toContain(
       "No audit events recorded for this tenant.",
     );
+  });
+});
+
+describe("Tenant detail Access tab (T-0942)", () => {
+  const READER = {
+    purpose: "reader",
+    clientId: "reader-client",
+    authMethod: "certificate-thumbprint",
+    thumbprint: "AAAA1111BBBB2222",
+    secretRef: "tenants/tenant-1/credential",
+    environment: "commercial",
+    expiresOn: "2027-06-01T00:00:00.000Z",
+    lastValidated: "2026-06-01T10:00:00.000Z",
+    state: "valid",
+    permissionGroups: [],
+  };
+
+  const OPERATOR = {
+    purpose: "operator",
+    clientId: "operator-client",
+    authMethod: "certificate-thumbprint",
+    thumbprint: "AAAA1111BBBB2222",
+    secretRef: "tenants/tenant-1/operator-credential",
+    environment: "commercial",
+    expiresOn: "2027-06-01T00:00:00.000Z",
+    lastValidated: "2026-06-10T09:30:00.000Z",
+    state: "valid",
+    permissionGroups: ["security"],
+  };
+
+  it("loads reader and operator credentials from /credentials and shows write status", async () => {
+    const calls = stubFetch((url) => {
+      if (url === tenantCredentialsPath(TENANT_ID)) {
+        return json(200, { items: [READER, OPERATOR] });
+      }
+      return undefined;
+    });
+    render(<TenantDetailPage params={{ id: TENANT_ID }} />);
+    await screen.findByTestId("tab-access");
+
+    expect(calls).toContain(tenantCredentialsPath(TENANT_ID));
+    expect(calls).not.toContain(`/v1/tenants/${TENANT_ID}/credential`);
+
+    fireEvent.click(screen.getByTestId("tab-access"));
+    const tab = await screen.findByTestId("access-tab-content");
+    await waitFor(() => expect(tab.textContent).toContain("reader-client"));
+
+    expect(screen.getByTestId("reader-thumbprint").textContent).toBe("AAAA1111BBBB2222");
+    expect(screen.getByTestId("write-access-status").textContent).toBe("Enabled");
+    expect(screen.getByTestId("operator-client-id").textContent).toBe("operator-client");
+    expect(screen.getByTestId("operator-groups").textContent).toContain("Security");
+  });
+
+  it("shows a credential load failure inside the Access tab", async () => {
+    stubFetch((url) => {
+      if (url === tenantCredentialsPath(TENANT_ID)) {
+        return json(500, { code: "internal", message: "credential store offline" });
+      }
+      return undefined;
+    });
+    render(<TenantDetailPage params={{ id: TENANT_ID }} />);
+    await screen.findByTestId("tab-access");
+
+    fireEvent.click(screen.getByTestId("tab-access"));
+    const error = await screen.findByTestId("access-error");
+    expect(error.textContent).toContain("HTTP 500");
+    expect(error.textContent).toContain("credential store offline");
+    expect(screen.getByTestId("write-access-status").textContent).toBe("Not enabled");
   });
 });

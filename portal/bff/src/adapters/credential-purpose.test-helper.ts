@@ -53,6 +53,12 @@ export function purposeAwareCredentials(
     async upsertCredential(input) {
       return input;
     },
+    async listCredentials(tenantId) {
+      return tenants.includes(tenantId) ? [credentialRecord(tenantId, "reader")] : [];
+    },
+    async deleteCredential() {
+      return false;
+    },
     async appendAuditEvent() {
       return undefined;
     },

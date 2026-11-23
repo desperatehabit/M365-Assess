@@ -43,6 +43,7 @@ if ($job.includeWritePermissions -eq $true) {
     $onboardParams['IncludeWritePermissions'] = $true
     $onboardParams['WritePermissionGroups'] = @($job.writePermissionGroups | ForEach-Object { [string]$_ })
     if ($job.confirmDangerous -eq $true) { $onboardParams['ConfirmDangerous'] = $true }
+    if ($job.replaceWriteGroups -eq $true) { $onboardParams['ReplaceWriteGroups'] = $true }
 }
 
 Invoke-TenantOnboarding @onboardParams | ConvertTo-Json -Depth 6 -Compress

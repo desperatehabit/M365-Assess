@@ -6,12 +6,12 @@ T-0941 added 2026-11-20; T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
 2026-11-22). When a ticket's `status` changes, update its row and the counts below in
 the same commit. The ticket file is the source of truth._
 
-**118 open · 462 closed**
+**119 open · 462 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
-| fixed-unverified | 68 |
+| fixed-unverified | 69 |
 | open | 2 |
 | closed | 9 |
 
@@ -126,6 +126,7 @@ the same commit. The ticket file is the source of truth._
 | [T-0936](ISSUES/T-0936.md) | medium | fixed-unverified | 1 | All 11 Power BI checks are Review after a 404, and the message blames the wrong cause |
 | [T-0937](ISSUES/T-0937.md) | medium | fixed-unverified | 10 | Collectors that skipped or failed are logged as `Complete` |
 | [T-0941](ISSUES/T-0941.md) | medium | open | 6 | Prove the runbook W rows with the operator app |
+| [T-0942](ISSUES/T-0942.md) | medium | fixed-unverified | 20 | Manage portal write access for an already-onboarded tenant |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |

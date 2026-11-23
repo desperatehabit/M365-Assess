@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState, type CSSProperties, type ReactElement } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 
 export type SetupMethod = "create-app" | "existing-app" | "manual-creds" | "import-gdap";
 export type M365Environment = "commercial" | "gcc" | "gcchigh" | "dod";
@@ -64,7 +71,7 @@ export interface OnboardingProgressSnapshot {
 
 export const ONBOARDING_PROGRESS_PREFIX = "/v1/tenants";
 
-async function fetchOnboardingProgress(
+export async function fetchOnboardingProgress(
   tenantId: string,
   progressId: string,
   since: number,
@@ -77,7 +84,7 @@ async function fetchOnboardingProgress(
   return (await response.json()) as OnboardingProgressSnapshot;
 }
 
-function newProgressId(): string {
+export function newProgressId(): string {
   const cryptoApi = globalThis.crypto;
   if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
     return cryptoApi.randomUUID();
@@ -92,8 +99,154 @@ const SIGN_IN_LABELS: Record<string, string> = {
   "exchange-online": "Exchange Online (RBAC role groups)",
 };
 
-function signInLabel(signIn: string): string {
+export function signInLabel(signIn: string): string {
   return SIGN_IN_LABELS[signIn] ?? signIn;
+}
+
+/** Options for {@link useOnboardingSignInProgress}. */
+export interface OnboardingSignInProgressOptions {
+  /** How often to poll for a pending device code. Default: 1500ms. */
+  readonly pollIntervalMs?: number;
+  /**
+   * Optional override for the device-code progress poll; the hook calls the BFF by
+   * default. Receives only events with a sequence greater than `since` (T-0916).
+   */
+  readonly watch?: (
+    progressId: string,
+    since: number,
+  ) => Promise<OnboardingProgressSnapshot>;
+}
+
+/** Device-code state shared by onboarding and per-tenant write-access grants. */
+export interface OnboardingSignInProgress {
+  readonly deviceCode: OnboardingSignInEvent | null;
+  readonly signedInStage: string | null;
+  readonly copyState: "idle" | "copied" | "failed";
+  readonly deviceCodeExpired: boolean;
+  /** Starts polling; clears any previous code and signed-in banner. */
+  readonly start: (tenantId: string, progressId: string) => void;
+  /** Stops polling and keeps the last state. */
+  readonly stop: () => void;
+  /** Stops polling and clears the code and signed-in banner. */
+  readonly reset: () => void;
+  readonly copyDeviceCode: () => Promise<void>;
+}
+
+/**
+ * Watches an onboarding job's progress channel for headless sign-in prompts
+ * (T-0916). Only one sign-in is pending at a time; a new device-code event
+ * supersedes the previous code, and a sign-in-complete event clears it.
+ */
+export function useOnboardingSignInProgress(
+  options: OnboardingSignInProgressOptions = {},
+): OnboardingSignInProgress {
+  const { pollIntervalMs = 1500, watch } = options;
+  const [deviceCode, setDeviceCode] = useState<OnboardingSignInEvent | null>(null);
+  const [signedInStage, setSignedInStage] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressActive = useRef(false);
+
+  // Keep the latest poll override and interval without restarting a running watch.
+  const watchRef = useRef(watch);
+  watchRef.current = watch;
+  const intervalRef = useRef(pollIntervalMs);
+  intervalRef.current = pollIntervalMs;
+
+  const stop = useCallback((): void => {
+    progressActive.current = false;
+    if (progressTimer.current) {
+      clearInterval(progressTimer.current);
+      progressTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => stop, [stop]);
+
+  const applySignInEvent = useCallback((event: OnboardingSignInEvent): void => {
+    if (event.kind === "device-code") {
+      setDeviceCode(event);
+      setSignedInStage(null);
+      setCopyState("idle");
+      return;
+    }
+    // sign-in-complete / sign-in-failed clear only their own pending code, so a
+    // late event can never wipe the next sign-in's code.
+    setDeviceCode((current) => (current && current.signIn === event.signIn ? null : current));
+    if (event.kind === "sign-in-complete") {
+      setSignedInStage(event.signIn);
+    }
+  }, []);
+
+  const start = useCallback(
+    (tenantId: string, progressId: string): void => {
+      stop();
+      setDeviceCode(null);
+      setSignedInStage(null);
+      setCopyState("idle");
+      progressActive.current = true;
+      let since = 0;
+
+      const tick = async (): Promise<void> => {
+        if (!progressActive.current) return;
+        try {
+          const snapshot = watchRef.current
+            ? await watchRef.current(progressId, since)
+            : await fetchOnboardingProgress(tenantId, progressId, since);
+          const events = [...(snapshot.events ?? [])].sort((a, b) => a.sequence - b.sequence);
+          for (const event of events) {
+            if (event.sequence <= since) continue;
+            since = event.sequence;
+            applySignInEvent(event);
+          }
+          if (snapshot.state === "done") {
+            stop();
+          }
+        } catch {
+          // Progress is advisory: the submit response still reports failures.
+        }
+      };
+
+      void tick();
+      progressTimer.current = setInterval(() => {
+        void tick();
+      }, intervalRef.current);
+    },
+    [applySignInEvent, stop],
+  );
+
+  const reset = useCallback((): void => {
+    stop();
+    setDeviceCode(null);
+    setSignedInStage(null);
+    setCopyState("idle");
+  }, [stop]);
+
+  const copyDeviceCode = useCallback(async (): Promise<void> => {
+    if (!deviceCode?.code) return;
+    try {
+      await navigator.clipboard?.writeText(deviceCode.code);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  }, [deviceCode]);
+
+  const deviceCodeExpired =
+    deviceCode?.expiresAt !== null &&
+    deviceCode?.expiresAt !== undefined &&
+    Date.parse(deviceCode.expiresAt) <= Date.now();
+
+  return {
+    deviceCode,
+    signedInStage,
+    copyState,
+    deviceCodeExpired,
+    start,
+    stop,
+    reset,
+    copyDeviceCode,
+  };
 }
 
 export interface AddTenantWizardProps {
@@ -230,7 +383,7 @@ const STEP_TITLES = [
 ];
 
 /** Opt-in portal write groups (T-0917); mirrors PermissionDefinitions.ps1. */
-const WRITE_GROUPS = [
+export const WRITE_GROUPS = [
   { id: "identity", name: "Identity", description: "Users, groups, Conditional Access, authentication methods, PIM." },
   { id: "security", name: "Security", description: "Defender alerts, incidents, and threat submissions." },
   { id: "intune", name: "Intune", description: "Configuration, apps, enrollment, and managed-device actions." },
@@ -239,7 +392,11 @@ const WRITE_GROUPS = [
 ] as const;
 
 /** Groups whose grants need the extra dangerous-action confirmation. */
-const DANGEROUS_WRITE_GROUPS = new Set<string>(["identity", "intune", "sharepoint"]);
+export const DANGEROUS_WRITE_GROUPS = new Set<string>(["identity", "intune", "sharepoint"]);
+
+export function writeGroupName(id: string): string {
+  return WRITE_GROUPS.find((group) => group.id === id)?.name ?? id;
+}
 
 export function AddTenantWizard({
   onComplete,
@@ -299,12 +456,19 @@ export function AddTenantWizard({
 
   // Step 6 headless sign-in relay (T-0916). Only one sign-in is pending at a time;
   // a new device-code event supersedes the previous code and a sign-in-complete
-  // event clears it.
-  const [deviceCode, setDeviceCode] = useState<OnboardingSignInEvent | null>(null);
-  const [signedInStage, setSignedInStage] = useState<string | null>(null);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
-  const progressActive = useRef(false);
+  // event clears it. The hook is shared with the per-tenant Access tab (T-0942).
+  const {
+    deviceCode,
+    signedInStage,
+    copyState,
+    deviceCodeExpired,
+    start: startProgressWatch,
+    reset: resetProgressWatch,
+    copyDeviceCode,
+  } = useOnboardingSignInProgress({
+    pollIntervalMs: progressPollIntervalMs,
+    watch: onWatchOnboardingProgress,
+  });
 
   const handleResolveIdentity = async (): Promise<void> => {
     if (!tenantInput.trim()) return;
@@ -378,78 +542,6 @@ export function AddTenantWizard({
     !includeWritePermissions ||
     (writeGroups.length > 0 && (dangerousWriteGroups.length === 0 || confirmDangerous));
 
-  const stopProgressWatch = (): void => {
-    progressActive.current = false;
-    if (progressTimer.current) {
-      clearInterval(progressTimer.current);
-      progressTimer.current = null;
-    }
-  };
-
-  useEffect(() => stopProgressWatch, []);
-
-  const applySignInEvent = (event: OnboardingSignInEvent): void => {
-    if (event.kind === "device-code") {
-      setDeviceCode(event);
-      setSignedInStage(null);
-      setCopyState("idle");
-      return;
-    }
-    // sign-in-complete / sign-in-failed clear only their own pending code, so a
-    // late event can never wipe the next sign-in's code.
-    setDeviceCode((current) => (current && current.signIn === event.signIn ? null : current));
-    if (event.kind === "sign-in-complete") {
-      setSignedInStage(event.signIn);
-    }
-  };
-
-  const startProgressWatch = (progressId: string): void => {
-    stopProgressWatch();
-    progressActive.current = true;
-    const tenant = tenantId || tenantInput;
-    let since = 0;
-
-    const tick = async (): Promise<void> => {
-      if (!progressActive.current) return;
-      try {
-        const snapshot = onWatchOnboardingProgress
-          ? await onWatchOnboardingProgress(progressId, since)
-          : await fetchOnboardingProgress(tenant, progressId, since);
-        const events = [...(snapshot.events ?? [])].sort((a, b) => a.sequence - b.sequence);
-        for (const event of events) {
-          if (event.sequence <= since) continue;
-          since = event.sequence;
-          applySignInEvent(event);
-        }
-        if (snapshot.state === "done") {
-          stopProgressWatch();
-        }
-      } catch {
-        // Progress is advisory: the submit response still reports failures.
-      }
-    };
-
-    void tick();
-    progressTimer.current = setInterval(() => {
-      void tick();
-    }, progressPollIntervalMs);
-  };
-
-  const copyDeviceCode = async (): Promise<void> => {
-    if (!deviceCode?.code) return;
-    try {
-      await navigator.clipboard?.writeText(deviceCode.code);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  };
-
-  const deviceCodeExpired =
-    deviceCode?.expiresAt !== null &&
-    deviceCode?.expiresAt !== undefined &&
-    Date.parse(deviceCode.expiresAt) <= Date.now();
-
   const handleSubmit = async (): Promise<void> => {
     if (!confirmed) {
       setSubmitError("Explicit confirmation is required before proceeding.");
@@ -468,9 +560,7 @@ export function AddTenantWizard({
     setSubmitting(true);
     setSubmitError(null);
     setOnboardingResult(null);
-    setDeviceCode(null);
-    setSignedInStage(null);
-    setCopyState("idle");
+    resetProgressWatch();
     try {
       const prerequisites = await checkPrerequisites();
       if (prerequisites && !prerequisites.ready) {
@@ -503,7 +593,7 @@ export function AddTenantWizard({
       };
 
       // Poll while the POST waits: a headless BFF relays each device code here.
-      startProgressWatch(progressId);
+      startProgressWatch(tenantId || tenantInput, progressId);
 
       if (onSubmitOnboarding) {
         const result = await onSubmitOnboarding(payload);
@@ -516,8 +606,7 @@ export function AddTenantWizard({
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Onboarding failed");
     } finally {
-      stopProgressWatch();
-      setDeviceCode(null);
+      resetProgressWatch();
       setSubmitting(false);
     }
   };

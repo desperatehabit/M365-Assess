@@ -61,6 +61,8 @@ const credentials: CredentialStoreRow = {
     if (tenantId !== "t-a") return undefined;
     return purpose === "operator" ? OPERATOR_CREDENTIAL : CREDENTIAL;
   },
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async (input) => input,
   appendAuditEvent: async () => undefined,
 };
@@ -183,6 +185,8 @@ describe("scheduled assessment runs (T-0840)", () => {
             updatedAt: "",
           }
         : undefined,
+    listCredentials: async () => [],
+    deleteCredential: async () => false,
   };
 
   async function setupWithCredential() {

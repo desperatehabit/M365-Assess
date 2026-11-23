@@ -24,6 +24,8 @@ function makeCredential(tenantId: string): CredentialRecord {
 const credentials: CredentialStoreRow = {
   getCredential: async (tenantId) =>
     tenantId === "t-a" || tenantId === "t-b" ? makeCredential(tenantId) : undefined,
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async (input) => input,
   appendAuditEvent: async () => undefined,
 };

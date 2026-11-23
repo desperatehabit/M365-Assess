@@ -1165,6 +1165,28 @@ function resolveTenantSubroute(tenantId: string, subPath: string, query: URLSear
       },
     };
   }
+  // Tenant Access tab (T-0942): one reader credential, no operator app in the demo.
+  if (subPath === "/credentials") {
+    return {
+      status: 200,
+      body: {
+        items: [
+          {
+            purpose: "reader",
+            authMethod: "appRegistration",
+            clientId: "00000000-0000-0000-0000-000000000101",
+            secretRef: "demo-secret-ref-01",
+            thumbprint: null,
+            environment: "commercial",
+            expiresOn: "2027-06-30T00:00:00.000Z",
+            lastValidated: DEMO_TIMESTAMP,
+            state: "valid",
+            permissionGroups: [],
+          },
+        ],
+      },
+    };
+  }
   if (subPath === "/variables") {
     return { status: 200, body: { items: DEMO_TENANT_VARIABLES } };
   }

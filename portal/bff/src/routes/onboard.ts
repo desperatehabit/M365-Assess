@@ -108,6 +108,12 @@ export interface OnboardInput {
   readonly includeWritePermissions?: boolean;
   readonly writePermissionGroups?: readonly string[];
   readonly confirmDangerous?: boolean;
+  /**
+   * Reconcile the operator app's managed grants to the selected groups (T-0942):
+   * add the selected grants and remove the unselected ones from the operator app
+   * only. The reader app is never touched.
+   */
+  readonly replaceWriteGroups?: boolean;
   readonly displayName?: string | null;
   readonly defaultDomain?: string | null;
   readonly initialDomain?: string | null;
@@ -276,6 +282,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             ? bodyObj["writePermissionGroups"].filter((value): value is string => typeof value === "string")
             : undefined,
           confirmDangerous: bodyObj["confirmDangerous"] === true,
+          replaceWriteGroups: bodyObj["replaceWriteGroups"] === true,
           displayName:
             typeof bodyObj["displayName"] === "string" ? bodyObj["displayName"] : undefined,
           defaultDomain:
@@ -461,6 +468,24 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
         }
         const savedTenant = await options.tenantStore.upsertTenant(tenantRecord);
 
+        // Re-onboarding an existing tenant updates its rows instead of appending
+        // duplicates, so the T-0942 Access tab sees one reader and one operator.
+        const priorReader = options.credentialStore
+          ? await options.credentialStore.getCredential(tenantId, "reader")
+          : undefined;
+        const priorOperator = options.credentialStore
+          ? await options.credentialStore.getCredential(tenantId, "operator")
+          : undefined;
+        const readerCreatedAt = priorReader?.createdAt ?? instant;
+        const operatorCreatedAt = priorOperator?.createdAt ?? instant;
+        const reportedGroups = Array.isArray(workerResult.writePermissionGroups)
+          ? workerResult.writePermissionGroups
+          : [];
+        const grantedGroups =
+          reportedGroups.length > 0
+            ? [...reportedGroups]
+            : [...(input.writePermissionGroups ?? [])];
+
         if (options.credentialStore && workerResult.clientId && workerResult.certificatePath) {
           // The worker kept the private key in an owner-only PFX file. Only its path is stored,
           // in the credential backend; the database row holds just the reference.
@@ -470,7 +495,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             JSON.stringify({ certificatePath: workerResult.certificatePath }),
           );
           await options.credentialStore.upsertCredential({
-            id: randomUUID(),
+            id: priorReader?.id ?? randomUUID(),
             tenantId,
             authMethod: "certificate-pfx",
             clientId: workerResult.clientId,
@@ -480,7 +505,8 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             expiresOn: null,
             lastValidated: instant,
             purpose: "reader",
-            createdAt: instant,
+            permissionGroups: null,
+            createdAt: readerCreatedAt,
             updatedAt: instant,
           });
         } else if (
@@ -489,7 +515,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
           workerResult.certificateThumbprint
         ) {
           await options.credentialStore.upsertCredential({
-            id: randomUUID(),
+            id: priorReader?.id ?? randomUUID(),
             tenantId,
             authMethod: "certificate-thumbprint",
             clientId: workerResult.clientId,
@@ -499,14 +525,16 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             expiresOn: null,
             lastValidated: instant,
             purpose: "reader",
-            createdAt: instant,
+            permissionGroups: null,
+            createdAt: readerCreatedAt,
             updatedAt: instant,
           });
         }
 
         // Operator credential (T-0917): stored beside the reader row, never over it.
         // The worker reuses the reader certificate, so the same secret material and
-        // thumbprint apply; only the purpose and client id differ.
+        // thumbprint apply; only the purpose and client id differ. Migration 0134
+        // records the granted write groups so the portal can show and reconcile them.
         if (
           options.credentialStore &&
           workerResult.operatorClientId &&
@@ -518,7 +546,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             JSON.stringify({ certificatePath: workerResult.operatorCertificatePath }),
           );
           await options.credentialStore.upsertCredential({
-            id: randomUUID(),
+            id: priorOperator?.id ?? randomUUID(),
             tenantId,
             authMethod: "certificate-pfx",
             clientId: workerResult.operatorClientId,
@@ -528,7 +556,8 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             expiresOn: null,
             lastValidated: instant,
             purpose: "operator",
-            createdAt: instant,
+            permissionGroups: grantedGroups,
+            createdAt: operatorCreatedAt,
             updatedAt: instant,
           });
         } else if (
@@ -537,7 +566,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
           workerResult.operatorCertificateThumbprint
         ) {
           await options.credentialStore.upsertCredential({
-            id: randomUUID(),
+            id: priorOperator?.id ?? randomUUID(),
             tenantId,
             authMethod: "certificate-thumbprint",
             clientId: workerResult.operatorClientId,
@@ -547,7 +576,8 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             expiresOn: null,
             lastValidated: instant,
             purpose: "operator",
-            createdAt: instant,
+            permissionGroups: grantedGroups,
+            createdAt: operatorCreatedAt,
             updatedAt: instant,
           });
         }
@@ -569,7 +599,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
               thumbprint: workerResult.certificateThumbprint,
               appDisplayName: workerResult.appDisplayName,
               operatorClientId: workerResult.operatorClientId ?? null,
-              writePermissionGroups: workerResult.writePermissionGroups ?? [],
+              writePermissionGroups: grantedGroups,
               status: "active",
             },
             result: "success",
@@ -629,7 +659,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
 
 export const ONBOARD_OPENAPI = {
   paths: {
-    "/v1/tenants/{id}/onboard": {
+    "/tenants/{id}/onboard": {
       post: {
         operationId: "onboardTenant",
         summary: "Direct tenant onboarding with app registration and consent",
@@ -659,6 +689,11 @@ export const ONBOARD_OPENAPI = {
                     },
                   },
                   confirmDangerous: { type: "boolean" },
+                  replaceWriteGroups: {
+                    type: "boolean",
+                    description:
+                      "Reconcile the operator app's managed grants to writePermissionGroups: add the selected grants and remove the unselected managed grants from the operator app only. The reader app is never changed (T-0942).",
+                  },
                   displayName: { type: "string" },
                   defaultDomain: { type: "string" },
                   initialDomain: { type: "string" },
@@ -684,7 +719,7 @@ export const ONBOARD_OPENAPI = {
         },
       },
     },
-    "/v1/tenants/{id}/onboard/progress/{progressId}": {
+    "/tenants/{id}/onboard/progress/{progressId}": {
       get: {
         operationId: "getOnboardProgress",
         summary: "Read pending device-code progress for an onboarding job",

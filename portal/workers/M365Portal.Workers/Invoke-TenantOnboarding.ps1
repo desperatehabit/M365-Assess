@@ -36,6 +36,9 @@ param(
     [switch]$ConfirmDangerous,
 
     [Parameter()]
+    [switch]$ReplaceWriteGroups,
+
+    [Parameter()]
     [bool]$Confirmed = $false,
 
     [Parameter()]
@@ -333,6 +336,9 @@ function Invoke-TenantOnboarding {
         [Parameter()]
         [switch]$ConfirmDangerous,
 
+        [Parameter()]
+        [switch]$ReplaceWriteGroups,
+
         [Parameter(Mandatory)]
         [bool]$Confirmed,
 
@@ -377,6 +383,7 @@ function Invoke-TenantOnboarding {
         $splat['IncludeWritePermissions'] = $true
         $splat['WritePermissionGroups'] = @($WritePermissionGroups)
         if ($ConfirmDangerous) { $splat['ConfirmDangerous'] = $true }
+        if ($ReplaceWriteGroups) { $splat['ReplaceWriteGroups'] = $true }
     }
 
     try {
@@ -626,6 +633,7 @@ if ($TenantId -and $Confirmed) {
                                      -IncludeWritePermissions:$IncludeWritePermissions `
                                      -WritePermissionGroups $WritePermissionGroups `
                                      -ConfirmDangerous:$ConfirmDangerous `
+                                     -ReplaceWriteGroups:$ReplaceWriteGroups `
                                      -Confirmed:$Confirmed `
                                      -Headless:$Headless `
                                      -ProgressChannel $ProgressChannel `

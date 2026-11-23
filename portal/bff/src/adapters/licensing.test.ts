@@ -19,6 +19,8 @@ const CREDENTIAL: CredentialRecord = {
 
 const credentials: CredentialStoreRow = {
   getCredential: async (tenantId) => ({ ...CREDENTIAL, tenantId }),
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async (input) => input,
   appendAuditEvent: async () => undefined,
 };

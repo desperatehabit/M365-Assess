@@ -234,6 +234,7 @@ export function createOnboardRunner(run: WorkerRunner): OnboardRunner {
               includeWritePermissions: true,
               writePermissionGroups: [...(input.writePermissionGroups ?? [])],
               ...(input.confirmDangerous ? { confirmDangerous: true } : {}),
+              ...(input.replaceWriteGroups ? { replaceWriteGroups: true } : {}),
             }
           : {}),
       },

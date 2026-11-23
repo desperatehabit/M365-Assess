@@ -23,6 +23,8 @@ import {
 import type { Route, RouteResponse } from "../server.js";
 import { ACCESS_CHECK_OPENAPI } from "./access.js";
 import { API_CLIENTS_OPENAPI } from "./api-clients.js";
+import { CREDENTIALS_OPENAPI } from "./credentials.js";
+import { ONBOARD_OPENAPI } from "./onboard.js";
 import { ME_OPENAPI } from "./me.js";
 import { ROLES_OPENAPI } from "./roles.js";
 import { PORTAL_USERS_OPENAPI } from "./users.js";
@@ -195,6 +197,9 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   ROLES_OPENAPI as unknown as OpenApiFragment,
   API_CLIENTS_OPENAPI as unknown as OpenApiFragment,
   ACCESS_CHECK_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-002 tenant credentials and onboarding (T-0917, T-0942).
+  CREDENTIALS_OPENAPI as unknown as OpenApiFragment,
+  ONBOARD_OPENAPI as unknown as OpenApiFragment,
   // EPIC-028 Incidents & Alerts (T-0858).
   INCIDENTS_OPENAPI as unknown as OpenApiFragment,
   INCIDENT_DETAIL_OPENAPI as unknown as OpenApiFragment,
