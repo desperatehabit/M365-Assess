@@ -1,16 +1,17 @@
 # M365-Assess — ticket register
 
-_Maintained by hand (last regenerated 2026-11-20; T-0909 to T-0913 added 2026-11-17;
+_Maintained by hand (last regenerated 2026-11-22; T-0909 to T-0913 added 2026-11-17;
 T-0914 to T-0916 added 2026-11-18; T-0917 to T-0939 added 2026-11-19; T-0940 and
-T-0941 added 2026-11-20). When a ticket's `status` changes, update its row and the
-counts below in the same commit. The ticket file is the source of truth._
+T-0941 added 2026-11-20; T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
+2026-11-22). When a ticket's `status` changes, update its row and the counts below in
+the same commit. The ticket file is the source of truth._
 
-**123 open · 457 closed**
+**118 open · 462 closed**
 
 | Status | Count |
 |---|---|
 | epic | 39 |
-| fixed-unverified | 73 |
+| fixed-unverified | 68 |
 | open | 2 |
 | closed | 9 |
 
@@ -49,8 +50,6 @@ counts below in the same commit. The ticket file is the source of truth._
 | [T-0858](ISSUES/T-0858.md) | high | fixed-unverified | 21 | Mount and deliver EPIC-028 Incidents & Alerts routes and bulk triage |
 | [T-0859](ISSUES/T-0859.md) | high | fixed-unverified | 12 | Mount EPIC-029 alerting routes and persist alerting entities |
 | [T-0876](ISSUES/T-0876.md) | high | fixed-unverified | 9 | Custom-script schedules and system timers enqueue job types with no runner |
-| [T-0899](ISSUES/T-0899.md) | high | fixed-unverified | 3 | /v1/api-clients CRUD and rotate-secret perform no authorization check |
-| [T-0913](ISSUES/T-0913.md) | high | fixed-unverified | 1 | CI does not build or test the portal |
 | [T-0917](ISSUES/T-0917.md) | high | open | 18 | Onboarding grants read-only access, so every portal write fails |
 | [T-0919](ISSUES/T-0919.md) | high | fixed-unverified | 4 | Each run appears twice in the Runs list, and only one copy has findings |
 | [T-0927](ISSUES/T-0927.md) | high | fixed-unverified | 2 | Run options chosen in the portal never reach the assessment |
@@ -133,9 +132,6 @@ counts below in the same commit. The ticket file is the source of truth._
 | [T-0853](ISSUES/T-0853.md) | low | fixed-unverified | 12 | Mount EPIC-023 Contacts & Resources routes |
 | [T-0865](ISSUES/T-0865.md) | low | fixed-unverified | 10 | Mount EPIC-035 Backup routes and invoke retention/replication |
 | [T-0901](ISSUES/T-0901.md) | low | fixed-unverified | 1 | Mailbox rule edit form shows an empty forwarding field for rules with several recipients |
-| [T-0906](ISSUES/T-0906.md) | low | fixed-unverified | 1 | Clean up global stub functions in Pester test files |
-| [T-0907](ISSUES/T-0907.md) | low | fixed-unverified | 7 | Fix pre-existing PowerShell lint findings in Invoke-DomainAction and Linux-only tests |
-| [T-0908](ISSUES/T-0908.md) | low | fixed-unverified | 1 | Resolve macos-latest CI smoke job runner-quota cancellations |
 | [T-0910](ISSUES/T-0910.md) | low | fixed-unverified | 1 | Tenant detail Variables and History tabs call routes that do not exist |
 | [T-0921](ISSUES/T-0921.md) | low | fixed-unverified | 3 | Nav items do not say what their pages do (for example Drift and Standards alignment) |
 | [T-0934](ISSUES/T-0934.md) | low | fixed-unverified | 1 | SPO-ACCESS-001 reports zero CA policies as "CA policies unavailable" |
@@ -603,3 +599,8 @@ counts below in the same commit. The ticket file is the source of truth._
 | [T-0897](ISSUES_CLOSED/T-0897.md) | 2026-10-05 | Workers use an invalid `$Var?` string interpolation in Graph URLs |
 | [T-0898](ISSUES_CLOSED/T-0898.md) | 2026-10-05 | Test runs write generated files into portal/bff/data/artifacts and one report is |
 | [T-0914](ISSUES_CLOSED/T-0914.md) | 2026-11-18 | In-portal tenant onboarding fails on Windows |
+| [T-0899](ISSUES_CLOSED/T-0899.md) | 2026-11-22 | /v1/api-clients CRUD and rotate-secret perform no authorization check |
+| [T-0906](ISSUES_CLOSED/T-0906.md) | 2026-11-22 | Clean up global stub functions in Pester test files |
+| [T-0907](ISSUES_CLOSED/T-0907.md) | 2026-11-22 | Fix pre-existing PowerShell lint findings in Invoke-DomainAction and Linux-only tests |
+| [T-0908](ISSUES_CLOSED/T-0908.md) | 2026-11-22 | Resolve macos-latest CI smoke job runner-quota cancellations |
+| [T-0913](ISSUES_CLOSED/T-0913.md) | 2026-11-22 | CI does not build or test the portal |

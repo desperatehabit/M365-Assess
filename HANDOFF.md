@@ -5,8 +5,10 @@ _Last updated: 2026-11-20, after the Phase 2 ticket batch._
 ## State
 
 - Branch: `fix/phase2-ticket-batch`, based on `main`.
-- 123 active tickets: 73 `fixed-unverified`, 2 `open` (T-0917, T-0941),
-  39 epics, 9 closed epics.
+- 118 active tickets: 68 `fixed-unverified`, 2 `open` (T-0917, T-0941),
+  39 epics, 9 closed epics. T-0899, T-0906, T-0907, T-0908 and T-0913 were
+  verified from CI/local checks and closed on 2026-11-22; the remaining
+  `fixed-unverified` tickets need the Phase 2 live walk.
 - Batch highlights:
   - **Run validity:** EXO/Purview `-Organization` resolves to the initial domain;
     run options reach the worker and are validated; `partial` runs and
