@@ -263,3 +263,8 @@ Describe 'Invoke-QuarantineAction worker (T-0424)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Release-QuarantineMessage' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Delete-QuarantineMessage' -ErrorAction SilentlyContinue
+}

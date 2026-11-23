@@ -212,6 +212,7 @@ import { INTUNE_APP_PATH } from "../routes/intune-apps-crud.js";
 import { INTUNE_APPS_QUEUE_PATH, INTUNE_APPS_QUEUE_RERUN_PATH, INTUNE_APPS_UPLOAD_PATH } from "../routes/intune-apps-queue.js";
 import { GDAP_OPENAPI } from "../routes/gdap.js";
 import { ONBOARD_OPENAPI } from "../routes/onboard.js";
+import { ONBOARDING_PREFLIGHT_OPENAPI } from "../routes/onboarding-preflight.js";
 import { TENANT_GROUPS_OPENAPI } from "../routes/tenant-groups.js";
 import { TENANT_VARIABLES_OPENAPI } from "../routes/tenant-variables.js";
 import { TENANTS_OPENAPI } from "../routes/tenants.js";
@@ -288,6 +289,7 @@ import { ROLE_ASSIGNMENTS_PATH } from "../routes/roles.js";
 import { RUNS_CANCEL_PATH, RUNS_RETRY_PATH } from "../routes/runs-actions.js";
 import { RUNS_ARTIFACTS_DOWNLOAD_PATH, RUNS_ARTIFACTS_LIST_PATH } from "../routes/runs-artifacts.js";
 import { RUNS_CREATE_PATH } from "../routes/runs-create.js";
+import { RUN_TEMPLATES_OPENAPI } from "../routes/run-templates.js";
 import { RUNS_DETAIL_PATH, RUNS_RESULTS_PATH } from "../routes/runs-detail.js";
 import { RUNS_EVENTS_PATH } from "../routes/runs-events.js";
 import { RUNS_LIST_PATH } from "../routes/runs-list.js";
@@ -341,6 +343,7 @@ import { AUDIT_SEARCHES_OPENAPI } from "../routes/audit-searches.js";
 import { AUDIT_COVERAGE_OPENAPI } from "../routes/audit-coverage.js";
 import { AUDIT_EXCLUSION_WINDOWS_OPENAPI } from "../routes/audit-exclusion-windows.js";
 import { WEBHOOKS_OPENAPI } from "../routes/webhooks.js";
+import { WEBHOOK_NOTIFY_PATH } from "../routes/webhook-notify.js";
 // EPIC-033 Licensing (T-0863).
 import {
   LICENSES_OPENAPI,
@@ -806,6 +809,7 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(CREDENTIALS_OPENAPI),
   ...registryEntriesFromOpenApi(GDAP_OPENAPI),
   ...registryEntriesFromOpenApi(ONBOARD_OPENAPI),
+  ...registryEntriesFromOpenApi(ONBOARDING_PREFLIGHT_OPENAPI),
   ...registryEntriesFromOpenApi(TEST_CONNECTION_OPENAPI),
   // EPIC-016 Intune (T-0820). Specific /intune/* paths precede the generic /intune/:kind
   // entries, mirroring the mount order in app.ts. Deploy routes also require write
@@ -923,6 +927,9 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "GET", path: RUNS_ARTIFACTS_LIST_PATH, permission: "Tenant.Runs.Read" },
   { method: "GET", path: RUNS_ARTIFACTS_DOWNLOAD_PATH, permission: "Tenant.Runs.Read" },
   { method: "GET", path: RUNS_EVENTS_PATH, permission: "Tenant.Runs.Read" },
+  // EPIC-003 run starting points (T-0922). Built-ins are read-only; the fragment
+  // carries every operation's permission.
+  ...registryEntriesFromOpenApi({ paths: RUN_TEMPLATES_OPENAPI }),
   // EPIC-011 users, BEC, offboarding, and user templates (T-0818).
   ...registryEntriesFromOpenApi(USERS_OPENAPI),
   ...registryEntriesFromOpenApi(BEC_OPENAPI),
@@ -1093,6 +1100,10 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(AUDIT_COVERAGE_OPENAPI),
   ...registryEntriesFromOpenApi(AUDIT_EXCLUSION_WINDOWS_OPENAPI),
   ...registryEntriesFromOpenApi(WEBHOOKS_OPENAPI),
+  // The Graph notification receiver is unauthenticated by design (SPEC §4.3):
+  // Graph cannot carry a portal session, so the subscription clientState is the
+  // credential and the route verifies it against the stored hash (T-0905).
+  { method: "POST", path: WEBHOOK_NOTIFY_PATH, permission: PUBLIC_PERMISSION },
   // EPIC-033 Licensing (T-0863). The gates route publishes no OpenAPI fragment,
   // so its mounted endpoint is registered directly.
   ...registryEntriesFromOpenApi(LICENSES_OPENAPI),

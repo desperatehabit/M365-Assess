@@ -43,7 +43,7 @@ describe("AppNav", () => {
     const hrefs = (label: string): readonly string[] =>
       (byLabel.get(label) ?? []).map((item) => item.href);
 
-    expect(hrefs("Devices")).toEqual(
+    expect(hrefs("Defender")).toEqual(
       expect.arrayContaining([
         "/security/defender",
         "/security/defender/onboarding",
@@ -80,10 +80,10 @@ describe("AppNav", () => {
         "/secure-score",
         "/audit-logs/manual",
         "/incidents",
-        "/test-packs",
-        "/custom-tests",
-        "/catalog",
       ]),
+    );
+    expect(hrefs("Assessments")).toEqual(
+      expect.arrayContaining(["/test-packs", "/custom-tests", "/catalog"]),
     );
     expect(hrefs("Tenant administration")).toEqual(
       expect.arrayContaining([

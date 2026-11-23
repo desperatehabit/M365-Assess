@@ -148,7 +148,7 @@ Describe 'Cross-platform smoke (B6 #777)' {
 
         AfterAll {
             foreach ($commandName in @($script:createdPortableAuthStubs)) {
-                Remove-Item -Path "function:global:$commandName" -ErrorAction SilentlyContinue
+                Remove-Item -Path "Function:\$commandName" -ErrorAction SilentlyContinue
             }
         }
 

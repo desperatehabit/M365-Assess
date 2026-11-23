@@ -231,3 +231,9 @@ Describe 'Set-Mailbox worker (T-0382)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
+}

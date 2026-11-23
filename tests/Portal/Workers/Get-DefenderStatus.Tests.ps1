@@ -189,3 +189,9 @@ Describe 'Get-DefenderStatus worker (T-0361)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MalwareFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-AntiPhishPolicy' -ErrorAction SilentlyContinue
+}

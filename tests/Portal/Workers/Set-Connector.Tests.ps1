@@ -619,3 +619,14 @@ Describe 'Set-Connector worker (T-0404)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-InboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-OutboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-InboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-InboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-InboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-OutboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-OutboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-OutboundConnector' -ErrorAction SilentlyContinue
+}

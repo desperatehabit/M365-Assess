@@ -13,6 +13,7 @@ import { BaselineCatalogDialog } from "../../components/baselines/BaselineCatalo
 import { MigrateFromStandardsDialog } from "../../components/baselines/MigrateFromStandardsDialog";
 import {
   advanceBaselineStage,
+  copyBaseline,
   deleteBaseline,
   fetchBaselines,
   fetchBaselinesCatalog,
@@ -88,6 +89,19 @@ const actionBtnStyle: CSSProperties = {
   fontSize: "12px",
   cursor: "pointer",
   whiteSpace: "nowrap",
+};
+
+const builtInBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  padding: "2px 8px",
+  borderRadius: "999px",
+  fontSize: "11px",
+  fontWeight: 600,
+  background: "var(--surface)",
+  color: "var(--text-soft)",
+  border: "1px solid var(--border)",
 };
 
 const tableWrapStyle: CSSProperties = {
@@ -202,6 +216,16 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
       await load();
     } catch (err) {
       setError(`Deleting “${name}”: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleMakeCopy = async (baseline: BaselineSummary): Promise<void> => {
+    try {
+      const copy = await copyBaseline(baseline.id, {}, doFetch);
+      setNotice(`Copied “${baseline.name}” to “${copy.name}”.`);
+      go(`/baselines/${copy.id}/edit`);
+    } catch (err) {
+      setError(`Copying “${baseline.name}”: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -393,7 +417,16 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
               const compliance = complianceFor(baseline.id);
               return (
                 <tr key={baseline.id} data-testid={`baseline-row-${baseline.id}`}>
-                  <td style={tdStyle}>{baseline.name}</td>
+                  <td style={tdStyle}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      {baseline.name}
+                      {baseline.builtIn && (
+                        <span style={builtInBadgeStyle} title="Built-in baseline: make a copy to edit" data-testid={`baseline-builtin-${baseline.id}`}>
+                          <span aria-hidden="true">🔒</span> Built-in
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td style={tdStyle} data-testid={`baseline-stages-${baseline.id}`}>
                     {baseline.stages.length}
                   </td>
@@ -416,34 +449,47 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
                       >
                         View
                       </button>
-                      <button
-                        type="button"
-                        style={actionBtnStyle}
-                        data-testid={`baseline-edit-${baseline.id}`}
-                        onClick={() => {
-                          go(`/baselines/${baseline.id}/edit`);
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        style={actionBtnStyle}
-                        data-testid={`baseline-run-${baseline.id}`}
-                        onClick={() =>
-                          setNotice("Baseline runs are driven by the baseline system timer (EPIC-007).")
-                        }
-                      >
-                        Run now
-                      </button>
-                      <button
-                        type="button"
-                        style={actionBtnStyle}
-                        data-testid={`baseline-delete-${baseline.id}`}
-                        onClick={() => void handleDelete(baseline.id, baseline.name)}
-                      >
-                        Delete
-                      </button>
+                      {baseline.builtIn ? (
+                        <button
+                          type="button"
+                          style={actionBtnStyle}
+                          data-testid={`baseline-copy-${baseline.id}`}
+                          onClick={() => void handleMakeCopy(baseline)}
+                        >
+                          Make a copy
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            style={actionBtnStyle}
+                            data-testid={`baseline-edit-${baseline.id}`}
+                            onClick={() => {
+                              go(`/baselines/${baseline.id}/edit`);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={actionBtnStyle}
+                            data-testid={`baseline-run-${baseline.id}`}
+                            onClick={() =>
+                              setNotice("Baseline runs are driven by the baseline system timer (EPIC-007).")
+                            }
+                          >
+                            Run now
+                          </button>
+                          <button
+                            type="button"
+                            style={actionBtnStyle}
+                            data-testid={`baseline-delete-${baseline.id}`}
+                            onClick={() => void handleDelete(baseline.id, baseline.name)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         style={actionBtnStyle}

@@ -110,3 +110,7 @@ Describe 'Set-RegistrationCampaign worker (T-0226)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

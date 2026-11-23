@@ -33,6 +33,9 @@ export type CredentialAuthMethod =
   | "certificate-pfx"
   | "client-secret";
 
+/** Credential purpose (T-0917): reader is the assessment app, operator the write app. */
+export type CredentialPurpose = "reader" | "operator";
+
 export interface CredentialRecord {
   id: string;
   tenantId: string;
@@ -43,6 +46,7 @@ export interface CredentialRecord {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  purpose?: CredentialPurpose;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +63,7 @@ export interface CredentialView {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  purpose: CredentialPurpose;
   state: CredentialState;
   createdAt: string;
   updatedAt: string;
@@ -82,7 +87,10 @@ export interface CredentialAuditInput {
 }
 
 export interface CredentialStoreRow {
-  getCredential(tenantId: string): Promise<CredentialRecord | undefined>;
+  getCredential(
+    tenantId: string,
+    purpose?: CredentialPurpose,
+  ): Promise<CredentialRecord | undefined>;
   upsertCredential(input: CredentialRecord): Promise<CredentialRecord>;
   appendAuditEvent(input: CredentialAuditInput): Promise<unknown>;
 }
@@ -266,6 +274,7 @@ function toView(record: CredentialRecord): CredentialView {
     environment: record.environment,
     expiresOn: record.expiresOn,
     lastValidated: record.lastValidated,
+    purpose: record.purpose ?? "reader",
     state: deriveCredentialState(record),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -357,6 +366,7 @@ export function createCredentialRoutes(options: CredentialRouteOptions): Route[]
           environment,
           expiresOn,
           lastValidated: null,
+          purpose: "reader",
           createdAt: prior?.createdAt ?? instant,
           updatedAt: instant,
         });

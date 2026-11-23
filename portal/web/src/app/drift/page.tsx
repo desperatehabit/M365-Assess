@@ -9,6 +9,7 @@
 // to next stage dialog belongs to EPIC-010 and is intentionally absent.
 // Zero colour literals: report theme tokens only.
 
+import Link from "next/link";
 import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { DriftTable, type DriftRowAction } from "../../components/drift/DriftTable";
 import {
@@ -281,9 +282,16 @@ export default function DriftPage({ fetcher, tenantId = "", templateId = "" }: D
     <div style={pageStyle} data-testid="drift-page">
       <div style={headerStyle}>
         <div>
-          <h1 style={titleStyle}>Manage Drift</h1>
+          <h1 style={titleStyle}>Drift triage</h1>
           <p style={{ margin: "4px 0 0", color: "var(--text-soft)", fontSize: "14px" }}>
-            Desired-state deviations with accept, tenant-override, and deny triage.
+            Work queue of settings that moved away from the applied standard.
+          </p>
+          <p style={{ margin: "6px 0 0", color: "var(--text-soft)", fontSize: "13px" }} data-testid="drift-cross-link">
+            Drift triage is the work queue; the{" "}
+            <Link href="/standards/alignment" style={{ color: "var(--accent-text)" }}>
+              standards scorecard
+            </Link>{" "}
+            summarises how close each tenant is to its standards.
           </p>
         </div>
         <div style={controlsStyle}>

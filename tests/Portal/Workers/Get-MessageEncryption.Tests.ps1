@@ -232,3 +232,9 @@ Describe 'Get-MessageEncryption worker (T-0469)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-IRMConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-OMEConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-OMEConfiguration' -ErrorAction SilentlyContinue
+}

@@ -102,3 +102,7 @@ Describe 'Get-IntuneAppStatus worker (T-0844)' {
         { Read-IntuneAppStatusJob -Path $path } | Should -Throw '*unknown action*'
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

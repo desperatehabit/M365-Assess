@@ -327,3 +327,7 @@ Describe 'New-TenantUser worker (T-0202)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

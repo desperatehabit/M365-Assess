@@ -195,6 +195,7 @@ async function mirrorSubscription(
       expiresOn: subscription.expirationDateTime || null,
       state: subscription.state,
       notificationUrl: subscription.notificationUrl ?? "",
+      ...(subscription.clientState !== undefined ? { clientState: subscription.clientState } : {}),
     });
     return;
   }
@@ -203,6 +204,7 @@ async function mirrorSubscription(
     expiresOn: subscription.expirationDateTime || null,
     state: subscription.state,
     notificationUrl: subscription.notificationUrl ?? "",
+    ...(subscription.clientState !== undefined ? { clientState: subscription.clientState } : {}),
   });
 }
 
@@ -300,8 +302,13 @@ export function createAuditProviders(
     },
   };
 
-  const manage = (tenantId: string, fields: Row): Promise<unknown> =>
-    call<unknown>(MANAGE_WEBHOOKS_WORKER, tenantId, fields);
+  const manage = (tenantId: string, fields: Row, write = false): Promise<unknown> =>
+    call<unknown>(
+      MANAGE_WEBHOOKS_WORKER,
+      tenantId,
+      fields,
+      write ? { purpose: "operator" } : undefined,
+    );
 
   const webhooks: WebhooksProvider = {
     async list(tenantId: string): Promise<WebhookListResult> {
@@ -328,7 +335,7 @@ export function createAuditProviders(
         action: "create",
         resource: input.resource,
         notificationUrl: input.notificationUrl,
-      });
+      }, true);
       raiseWorkerError(result);
       const mapped = mapMutation(result, tenantId);
       if (options.webhookStore && mapped.subscription) {
@@ -338,7 +345,7 @@ export function createAuditProviders(
     },
 
     async renew(tenantId, subscriptionId): Promise<WebhookMutationResult> {
-      const result = await manage(tenantId, { action: "renew", subscriptionId });
+      const result = await manage(tenantId, { action: "renew", subscriptionId }, true);
       raiseWorkerError(result);
       const mapped = mapMutation(result, tenantId);
       if (options.webhookStore && mapped.subscription) {
@@ -348,7 +355,7 @@ export function createAuditProviders(
     },
 
     async recreate(tenantId, subscriptionId): Promise<WebhookMutationResult> {
-      const result = await manage(tenantId, { action: "recreate", subscriptionId });
+      const result = await manage(tenantId, { action: "recreate", subscriptionId }, true);
       raiseWorkerError(result);
       const mapped = mapMutation(result, tenantId);
       if (options.webhookStore && mapped.subscription) {
@@ -358,7 +365,7 @@ export function createAuditProviders(
     },
 
     async remove(tenantId, subscriptionId): Promise<WebhookDeleteResult> {
-      const result = await manage(tenantId, { action: "delete", subscriptionId });
+      const result = await manage(tenantId, { action: "delete", subscriptionId }, true);
       raiseWorkerError(result);
       const row = asRecord(result);
       if (options.webhookStore) {
@@ -373,7 +380,8 @@ export function createAuditProviders(
     },
 
     async test(tenantId, subscriptionId): Promise<WebhookTestResult> {
-      const result = await manage(tenantId, { action: "test", subscriptionId });
+      // `test` creates and removes a subscription to prove delivery, so it writes.
+      const result = await manage(tenantId, { action: "test", subscriptionId }, true);
       raiseWorkerError(result);
       const row = asRecord(result);
       return {

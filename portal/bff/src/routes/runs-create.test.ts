@@ -15,6 +15,11 @@ import {
   type RunQueue,
   type RunRecord,
 } from "./runs-create.js";
+import {
+  createRunsListRoute,
+  type RunListStore,
+  type RunsListResponse,
+} from "./runs-list.js";
 
 const TENANT_1 = "11111111-1111-1111-1111-111111111111";
 const TENANT_2 = "22222222-2222-2222-2222-222222222222";
@@ -79,6 +84,27 @@ function makeContext(
       query: new URLSearchParams(),
       headers,
       params: {},
+    },
+  };
+}
+
+function listContext(query: Record<string, string> = {}): RequestContext {
+  return {
+    correlationId: "corr-list",
+    method: "GET",
+    path: "/v1/runs",
+    query: new URLSearchParams(query),
+    headers: {},
+    params: {},
+  };
+}
+
+function listStoreFrom(store: MemoryStore): RunListStore {
+  return {
+    async listRuns(tenantId?: string) {
+      return [...store.runs.values()]
+        .filter((run) => (tenantId ? run.tenantId === tenantId : true))
+        .map((run) => ({ ...run, durationMs: null }));
     },
   };
 }
@@ -174,6 +200,80 @@ describe("POST /v1/runs (T-0043)", () => {
     expect(queue.enqueued).toHaveLength(3);
   });
 
+  it("lists a single-tenant run as exactly one row (T-0919)", async () => {
+    const store = new MemoryStore();
+    const queue = new FakeQueue();
+
+    let seq = 0;
+    const idGenerator = () => {
+      seq += 1;
+      return { runId: `run-${seq}`, jobId: `job-${seq}`, requestId: `req-${seq}` };
+    };
+
+    const createRoute = createRunsCreateRoute({
+      store,
+      queue,
+      resolveCaller: () => adminCaller(),
+      idGenerator,
+      readBody: async () => JSON.stringify({ tenantId: TENANT_1 }),
+    });
+    const created = (await createRoute.handler(makeContext().ctx)).body as RunCreateResponseBody;
+    expect(created.children).toHaveLength(1);
+
+    const listRoute = createRunsListRoute({
+      store: listStoreFrom(store),
+      resolveCaller: () => adminCaller(),
+    });
+    const listed = (await listRoute.handler(listContext())).body as RunsListResponse;
+
+    // One logical row, represented by the child that holds the findings.
+    expect(listed.items).toHaveLength(1);
+    expect(listed.total).toBe(1);
+    expect(listed.items[0]?.id).toBe(created.children[0]!.id);
+    expect(listed.items[0]?.tenantId).toBe(TENANT_1);
+    expect(listed.items[0]?.artifactPath).toBe(created.children[0]!.artifactPath);
+    expect(listed.items[0]?.children ?? []).toHaveLength(0);
+  });
+
+  it("lists a multi-tenant run as one parent row with its per-tenant children (T-0919)", async () => {
+    const store = new MemoryStore();
+    const queue = new FakeQueue();
+    const groupResolver = new FakeGroupResolver();
+    groupResolver.groups.set(GROUP_1, [TENANT_2, TENANT_3]);
+
+    let seq = 0;
+    const idGenerator = () => {
+      seq += 1;
+      return { runId: `run-${seq}`, jobId: `job-${seq}`, requestId: `req-${seq}` };
+    };
+
+    const createRoute = createRunsCreateRoute({
+      store,
+      queue,
+      groupResolver,
+      resolveCaller: () => adminCaller(),
+      idGenerator,
+      readBody: async () => JSON.stringify({ tenants: [TENANT_1], groups: [GROUP_1] }),
+    });
+    const created = (await createRoute.handler(makeContext().ctx)).body as RunCreateResponseBody;
+    expect(created.children).toHaveLength(3);
+
+    const listRoute = createRunsListRoute({
+      store: listStoreFrom(store),
+      resolveCaller: () => adminCaller(),
+    });
+    const listed = (await listRoute.handler(listContext())).body as RunsListResponse;
+
+    expect(listed.items).toHaveLength(1);
+    expect(listed.total).toBe(1);
+    expect(listed.items[0]?.id).toBe(created.run.id);
+    expect(listed.items[0]?.children?.map((child) => child.tenantId).sort()).toEqual([
+      TENANT_1,
+      TENANT_2,
+      TENANT_3,
+    ]);
+  });
+
   it("rejects run creation with 403 when a requested tenant is outside the caller scope", async () => {
     const store = new MemoryStore();
     const queue = new FakeQueue();
@@ -213,6 +313,50 @@ describe("POST /v1/runs (T-0043)", () => {
     await expect(route.handler(ctx)).rejects.toMatchObject({
       status: 403,
       code: "auth.forbidden",
+    });
+  });
+
+  it("records the template a run started from (T-0922)", async () => {
+    const store = new MemoryStore();
+    const queue = new FakeQueue();
+
+    let seq = 0;
+    const idGenerator = () => {
+      seq += 1;
+      return { runId: `run-${seq}`, jobId: `job-${seq}`, requestId: `req-${seq}` };
+    };
+
+    const route = createRunsCreateRoute({
+      store,
+      queue,
+      resolveCaller: () => adminCaller(),
+      idGenerator,
+      readBody: async () =>
+        JSON.stringify({
+          tenantId: TENANT_1,
+          sections: ["Identity"],
+          options: {
+            quickScan: true,
+            templateId: "builtin-quick-identity",
+            templateName: "Quick identity check",
+            templateChanged: true,
+          },
+        }),
+    });
+
+    const response = await route.handler(makeContext().ctx);
+    expect(response.status).toBe(201);
+
+    const body = response.body as RunCreateResponseBody;
+    expect(body.run.options).toMatchObject({
+      templateId: "builtin-quick-identity",
+      templateName: "Quick identity check",
+      templateChanged: true,
+    });
+    expect(body.children[0]?.options).toMatchObject({
+      templateId: "builtin-quick-identity",
+      templateName: "Quick identity check",
+      templateChanged: true,
     });
   });
 

@@ -115,5 +115,21 @@
       "rationale": "Informational: surfaces the total count of disabled member accounts alongside total directory size. High ratios may indicate accounts pending removal or an offboarding gap.",
       "scfWeighting": 3
     }
+  },
+  {
+    "checkId": "POWERBI-COLLECTOR-000",
+    "name": "Power BI Collector Health",
+    "category": "COLLECTOR",
+    "collector": "PowerBI",
+    "hasAutomatedCheck": true,
+    "licensing": {
+      "minimum": "E3"
+    },
+    "frameworks": {},
+    "impactRating": {
+      "severity": "Info",
+      "rationale": "Collector-health row. A Warning here means the Fabric tenant-settings API could not be read, so the Power BI CIS 9.x checks are Review rather than assessed. It is not a tenant misconfiguration.",
+      "scfWeighting": 1
+    }
   }
 ]

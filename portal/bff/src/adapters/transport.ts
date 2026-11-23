@@ -149,35 +149,50 @@ export function createTransportProviders(
 
   const rulesWrite: TransportRulesWriteProvider = {
     async createRule(tenantId, input, preview): Promise<TransportRuleResult | TransportRulePlan> {
-      const result = await call<unknown>("set-transport-rule.ps1", tenantId, {
-        action: "create",
-        ...ruleWriteFields(input),
-        dryRun: preview,
-        confirmed: !preview,
-      });
+      const result = await call<unknown>(
+        "set-transport-rule.ps1",
+        tenantId,
+        {
+          action: "create",
+          ...ruleWriteFields(input),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       return result as TransportRuleResult | TransportRulePlan;
     },
 
     async editRule(tenantId, ruleId, input, preview): Promise<TransportRuleResult | TransportRulePlan> {
-      const result = await call<unknown>("set-transport-rule.ps1", tenantId, {
-        action: "edit",
-        ruleId,
-        ...ruleWriteFields(input),
-        dryRun: preview,
-        confirmed: !preview,
-      });
+      const result = await call<unknown>(
+        "set-transport-rule.ps1",
+        tenantId,
+        {
+          action: "edit",
+          ruleId,
+          ...ruleWriteFields(input),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       return result as TransportRuleResult | TransportRulePlan;
     },
 
     async deleteRule(tenantId, ruleId, preview): Promise<TransportRuleResult | TransportRulePlan> {
-      const result = await call<unknown>("set-transport-rule.ps1", tenantId, {
-        action: "delete",
-        ruleId,
-        dryRun: preview,
-        confirmed: !preview,
-      });
+      const result = await call<unknown>(
+        "set-transport-rule.ps1",
+        tenantId,
+        {
+          action: "delete",
+          ruleId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       return result as TransportRuleResult | TransportRulePlan;
     },
@@ -195,12 +210,17 @@ export function createTransportProviders(
       input,
       preview,
     ): Promise<ConnectorResult | ConnectorPlan> {
-      const result = await call<unknown>("set-connector.ps1", tenantId, {
-        action: "create",
-        ...connectorWriteFields(input),
-        dryRun: preview,
-        confirmed: !preview,
-      });
+      const result = await call<unknown>(
+        "set-connector.ps1",
+        tenantId,
+        {
+          action: "create",
+          ...connectorWriteFields(input),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       return result as ConnectorResult | ConnectorPlan;
     },
@@ -211,13 +231,18 @@ export function createTransportProviders(
       input,
       preview,
     ): Promise<ConnectorResult | ConnectorPlan> {
-      const result = await call<unknown>("set-connector.ps1", tenantId, {
-        action: input.action ?? "edit",
-        connectorId,
-        ...connectorWriteFields(input),
-        dryRun: preview,
-        confirmed: !preview,
-      });
+      const result = await call<unknown>(
+        "set-connector.ps1",
+        tenantId,
+        {
+          action: input.action ?? "edit",
+          connectorId,
+          ...connectorWriteFields(input),
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       return result as ConnectorResult | ConnectorPlan;
     },
@@ -227,12 +252,17 @@ export function createTransportProviders(
       connectorId,
       preview,
     ): Promise<ConnectorResult | ConnectorPlan> {
-      const result = await call<unknown>("set-connector.ps1", tenantId, {
-        action: "delete",
-        connectorId,
-        dryRun: preview,
-        confirmed: !preview,
-      });
+      const result = await call<unknown>(
+        "set-connector.ps1",
+        tenantId,
+        {
+          action: "delete",
+          connectorId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       return result as ConnectorResult | ConnectorPlan;
     },
@@ -241,14 +271,19 @@ export function createTransportProviders(
   const deploy: TransportTemplateDeployExecutor = {
     async apply(request: TransportTemplateApplyRequest): Promise<TransportTemplateApplyOutcome> {
       const kind = request.kind === "transport-rule" ? "rule" : "connector";
-      const result = await call<unknown>("deploy-transport-template.ps1", request.tenantId, {
-        kind,
-        template: request.payload,
-        variables: {},
-        actor: request.actor,
-        confirmed: true,
-        dryRun: false,
-      });
+      const result = await call<unknown>(
+        "deploy-transport-template.ps1",
+        request.tenantId,
+        {
+          kind,
+          template: request.payload,
+          variables: {},
+          actor: request.actor,
+          confirmed: true,
+          dryRun: false,
+        },
+        { purpose: "operator" },
+      );
       raiseWorkerError(result);
       const record = asRecord(result);
       if (record["success"] === false) {

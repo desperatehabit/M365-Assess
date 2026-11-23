@@ -2,13 +2,16 @@
 .SYNOPSIS
     Collects Power BI security and tenant configuration settings.
 .DESCRIPTION
-    Queries Power BI tenant settings for security-relevant configuration including
+    Queries Fabric tenant settings for security-relevant configuration including
     guest access, external sharing, publish to web, sensitivity labels, and service
     principal restrictions. Returns a structured inventory of settings with current
     values and CIS benchmark recommendations.
 
     Requires the MicrosoftPowerBIMgmt PowerShell module.
-    Uses Invoke-PowerBIRestMethod to query the admin API.
+    Uses Invoke-PowerBIRestMethod against the Fabric admin API tenant-settings
+    endpoint (https://api.fabric.microsoft.com/v1/admin/tenantsettings). The caller
+    must be a Fabric administrator (or a service principal allowed to use Fabric
+    read-only admin APIs) and hold the Tenant.Read.All delegated scope.
 .PARAMETER OutputPath
     Optional path to export results as CSV. If not specified, results are returned to the pipeline.
 .EXAMPLE
@@ -51,46 +54,98 @@ $_scriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocati
 $ctx = Initialize-SecurityConfig
 $settings = $ctx.Settings
 
+# T-0937: the collector reports its own outcome when the tenant-settings call
+# fails, so the orchestrator records Failed (with the reason) instead of Complete
+# from the placeholder rows the sentinel writes.
+$collectorOutcome = $null
+
 
 # ─── Retrieve all tenant settings ────────────────────────────────
+# Tenant settings are served by the Fabric admin API. The legacy Power BI
+# admin/tenantSettings path returns 404 on tenants that only expose the Fabric
+# admin surface, so call the documented Fabric endpoint directly.
+$fabricTenantSettingsUri = 'https://api.fabric.microsoft.com/v1/admin/tenantsettings'
 $script:settingsError = $null
+$allSettings = [System.Collections.Generic.List[object]]::new()
 try {
-    $tenantSettings = Invoke-PowerBIRestMethod -Url 'admin/tenantSettings' -Method Get -WarningAction SilentlyContinue | ConvertFrom-Json
-    $allSettings = $tenantSettings.tenantSettings
+    # Fabric pages the response (continuationUri) at a 25 requests/minute limit.
+    $nextUri = $fabricTenantSettingsUri
+    $pageCount = 0
+    while ($nextUri -and $pageCount -lt 100) {
+        $pageCount++
+        $page = Invoke-PowerBIRestMethod -Url $nextUri -Method Get -WarningAction SilentlyContinue | ConvertFrom-Json
+
+        # Fabric returns { value: [...] } with an 'enabled' flag. Keep the older
+        # Power BI shape ({ tenantSettings: [...] } with 'isEnabled') as a
+        # fallback so cached/proxied responses still parse.
+        $pageSettings = if ($page.PSObject.Properties['value']) { $page.value }
+                        elseif ($page.PSObject.Properties['tenantSettings']) { $page.tenantSettings }
+                        else { @() }
+        foreach ($setting in @($pageSettings)) { $allSettings.Add($setting) }
+
+        $nextUri = if ($page.PSObject.Properties['continuationUri']) { [string]$page.continuationUri } else { '' }
+    }
 }
 catch {
     $errMsg = $_.Exception.Message
-    if ($errMsg -match '404|Not Found') {
-        $script:settingsError = 'Power BI admin API not available -- ensure the calling account has Power BI Service Administrator role'
+    $statusCode = $null
+    if ($_.Exception.PSObject.Properties['Response'] -and $_.Exception.Response) {
+        try { $statusCode = [int]$_.Exception.Response.StatusCode } catch { $statusCode = $null }
     }
-    elseif ($errMsg -match '403|Forbidden|Unauthorized') {
-        $script:settingsError = 'Access denied -- insufficient permissions for Power BI tenant settings'
+    if (-not $statusCode) {
+        if ($errMsg -match '(^|\D)401(\D|$)') { $statusCode = 401 }
+        elseif ($errMsg -match '(^|\D)403(\D|$)') { $statusCode = 403 }
+        elseif ($errMsg -match '(^|\D)404(\D|$)') { $statusCode = 404 }
+    }
+
+    if ($statusCode -eq 401 -or $statusCode -eq 403) {
+        # A 401/403 is about who is calling, not where. Name the role and scope.
+        $script:settingsError = "Access denied (HTTP $statusCode) calling $fabricTenantSettingsUri -- the calling identity needs the Fabric Administrator role and the Tenant.Read.All delegated scope. Service principals must also be allowed to use Fabric read-only admin APIs. This is a permission or role problem, not a missing endpoint."
+    }
+    elseif ($statusCode -eq 404) {
+        # A 404 is about the endpoint, so do not send the operator to the role page.
+        $script:settingsError = "Fabric admin API endpoint not found (HTTP 404) at $fabricTenantSettingsUri -- the endpoint or API version is not available in this cloud or tenant. This is an endpoint or API problem, not a Power BI role problem."
     }
     else {
-        $script:settingsError = "Could not retrieve Power BI tenant settings: $errMsg"
+        $script:settingsError = "Could not retrieve Power BI tenant settings from $fabricTenantSettingsUri`: $errMsg"
     }
     Write-Warning $script:settingsError
     $allSettings = @()
 
-    # Add a sentinel Warning entry so the report shows a visible failure
-    # instead of silently producing Review status for all CIS 9.x checks.
+    # Sentinel Warning entry so the report shows a visible failure instead of
+    # silently producing Review status for all CIS 9.x checks. It carries a real
+    # CheckId (registered in controls/local-extensions.json) so it survives the
+    # CheckId filter in Build-SectionHtml and Export-ComplianceMatrix and the CSV,
+    # HTML, JSON and XLSX row counts stay aligned (T-0930).
     $sentinelParams = @{
         Category         = 'Power BI'
         Setting          = 'Power BI Tenant Settings'
-        CurrentValue     = "Could not verify -- API unavailable: $errMsg"
-        RecommendedValue = 'Verify settings in Power BI Admin Portal'
+        CurrentValue     = "Could not verify -- $($script:settingsError)"
+        RecommendedValue = 'Verify settings in Fabric Admin Portal > Tenant settings'
         Status           = 'Warning'
-        CheckId          = ''
-        Remediation      = 'Navigate to app.powerbi.com > Admin Portal > Tenant Settings'
+        CheckId          = 'POWERBI-COLLECTOR-000'
+        Remediation      = 'Fabric Admin Portal > Tenant settings. Confirm the calling identity is a Fabric administrator with the Tenant.Read.All scope (and, for service principals, that Fabric read-only admin APIs are allowed).'
     }
     Add-Setting @sentinelParams
+
+    # T-0937: no tenant settings were retrieved, so the collector Failed. The
+    # placeholder rows must not make the summary read Complete.
+    $collectorOutcome = [PSCustomObject]@{
+        PSTypeName = 'M365Assess.CollectorOutcome'
+        Outcome    = 'Failed'
+        Reason     = $script:settingsError
+    }
 }
 
-# Helper: look up a setting by settingName and return its isEnabled value
+# Helper: look up a setting by settingName and return its enabled value
 function Get-TenantSetting {
     param([string]$SettingName)
-    $match = $allSettings | Where-Object { $_.settingName -eq $SettingName }
-    if ($match) { return $match.isEnabled }
+    if (-not $allSettings) { return $null }
+    $match = @($allSettings | Where-Object { $_.settingName -eq $SettingName }) | Select-Object -First 1
+    if (-not $match) { return $null }
+    # Fabric uses 'enabled'; the legacy Power BI admin API used 'isEnabled'.
+    if ($match.PSObject.Properties['enabled'] -and $null -ne $match.enabled) { return [bool]$match.enabled }
+    if ($match.PSObject.Properties['isEnabled'] -and $null -ne $match.isEnabled) { return [bool]$match.isEnabled }
     return $null
 }
 
@@ -251,3 +306,12 @@ Add-Setting @settingParams
 
 # ─── Output ──────────────────────────────────────────────────────
 Export-SecurityConfigReport -Settings $settings -OutputPath $OutputPath -ServiceLabel 'Power BI'
+
+# T-0937: emit the outcome for an in-process run, and write it beside the CSV for
+# an isolated child-process run (the orchestrator reads and removes that file).
+if ($collectorOutcome) {
+    if ($OutputPath) {
+        $collectorOutcome | ConvertTo-Json -Compress | Set-Content -LiteralPath "$OutputPath.status.json" -Encoding UTF8
+    }
+    $collectorOutcome
+}

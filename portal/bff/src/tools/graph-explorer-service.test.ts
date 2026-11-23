@@ -278,6 +278,7 @@ describe("createGraphExplorerWorkerExecutor", () => {
       tenantId: "tenant-a",
       credential: {
         credentialRef: "tenants/tenant-a/credential",
+        purpose: "reader",
         record: {
           tenantId: "tenant-a",
           authMethod: "certificate-thumbprint",
@@ -285,6 +286,7 @@ describe("createGraphExplorerWorkerExecutor", () => {
           secretRef: "cert://ABC",
           thumbprint: "ABC",
           environment: "commercial",
+          purpose: "reader",
         },
       },
       request: { method: "GET", url: GET_USERS.url },

@@ -148,3 +148,7 @@ Describe 'Deploy-CaTemplate worker (T-0286)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

@@ -169,3 +169,8 @@ Describe 'Get-MessageDetail worker (T-0464)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MessageTrace' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MessageTraceDetail' -ErrorAction SilentlyContinue
+}

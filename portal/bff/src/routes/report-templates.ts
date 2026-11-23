@@ -4,6 +4,7 @@
 // Writes are gated on `Tenant.ReportTemplate.ReadWrite` (SPEC §7); the concrete RBAC
 // resolver is injected so this module does not depend on the auth implementation.
 import { randomUUID } from "node:crypto";
+import { REPORT_SCHEMA_VERSION } from "@m365-assess/contracts/reports";
 import { AppError, ErrorCodes } from "../errors.js";
 import { RbacErrorCodes } from "../rbac/authorize.js";
 import { paginate, parsePagination } from "../pagination.js";
@@ -18,6 +19,262 @@ export const REPORT_TEMPLATE_PERMISSIONS = {
 export const REPORT_TEMPLATE_INVALID = "report_template.invalid";
 export const REPORT_TEMPLATE_NOT_FOUND = "report_template.not_found";
 export const REPORT_TEMPLATE_TENANT_REQUIRED = "report_template.tenant_required";
+export const REPORT_TEMPLATE_READ_ONLY = "report_template.read_only";
+
+const BUILT_IN_TIMESTAMP = "2026-01-01T00:00:00.000Z";
+
+function builtInDocument(
+  name: string,
+  subtitle: string,
+  blocks: ReadonlyArray<Record<string, unknown>>,
+): Record<string, unknown> {
+  const id = `builtin-${name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}`;
+  return {
+    schemaVersion: REPORT_SCHEMA_VERSION,
+    id,
+    name,
+    settings: { title: name, subtitle, redact: false },
+    pageSetup: {
+      pageSize: "A4",
+      orientation: "portrait",
+      marginMm: 16,
+      footerText: "Confidential",
+    },
+    brandingOverrides: { showPageNumbers: true },
+    blocks,
+  };
+}
+
+function builtInTemplate(
+  id: string,
+  name: string,
+  document: Record<string, unknown>,
+): StoredReportTemplate {
+  return {
+    id,
+    name,
+    tenantId: null,
+    document: { ...document, id, name },
+    createdBy: "system",
+    updatedBy: null,
+    createdAt: BUILT_IN_TIMESTAMP,
+    updatedAt: BUILT_IN_TIMESTAMP,
+    deletedAt: null,
+  };
+}
+
+/**
+ * Ready-made starting points (T-0923). They live in the route module rather than
+ * a migration: they are global, immutable records the caller clones or saves
+ * over as a new template, so no tenant row needs seeding.
+ */
+export const BUILT_IN_REPORT_TEMPLATES: readonly StoredReportTemplate[] = [
+  builtInTemplate(
+    "builtin-executive-summary",
+    "Executive summary",
+    builtInDocument("Executive summary", "Board-level posture and priorities", [
+      {
+        id: "exec-summary-tenant",
+        type: "tenant-summary",
+        title: "Tenant at a glance",
+        static: false,
+        dataBinding: { entity: "run-summary" },
+        settings: { fields: ["Tenant", "Run", "Status", "Finished"] },
+      },
+      {
+        id: "exec-summary-scores",
+        type: "score-cards",
+        title: "Headline scores",
+        static: false,
+        dataBinding: { entity: "secure-score" },
+        settings: { metrics: ["secureScore", "passRate", "openRisks"], columns: 3 },
+      },
+      {
+        id: "exec-summary-trend",
+        type: "secure-score-trend",
+        title: "Secure score trend",
+        static: false,
+        dataBinding: { entity: "secure-score" },
+        settings: { points: 6, includeTarget: true },
+      },
+      {
+        id: "exec-summary-risks",
+        type: "top-risks",
+        title: "Top risks",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { limit: 5, minSeverity: "high" },
+      },
+      {
+        id: "exec-summary-actions",
+        type: "remediation-progress",
+        title: "Remediation progress",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { groupBy: "status", showPercentages: true },
+      },
+      {
+        id: "exec-summary-note",
+        type: "rich-text",
+        title: "Analyst note",
+        static: true,
+        settings: {
+          body: "Replace this note with the quarter's headline observation before saving.",
+        },
+      },
+    ]),
+  ),
+  builtInTemplate(
+    "builtin-technical-findings",
+    "Technical findings",
+    builtInDocument("Technical findings", "Full control-level evidence", [
+      {
+        id: "tech-findings-divider",
+        type: "section-divider",
+        title: "Assessment evidence",
+        static: true,
+        settings: { eyebrow: "Findings" },
+      },
+      {
+        id: "tech-findings-table",
+        type: "findings-table",
+        title: "All findings",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { statuses: [], severities: [], sections: [], limit: 100 },
+      },
+      {
+        id: "tech-findings-risks",
+        type: "top-risks",
+        title: "Highest-severity failures",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { limit: 10, minSeverity: "medium" },
+      },
+      {
+        id: "tech-findings-coverage",
+        type: "framework-coverage",
+        title: "Coverage by section",
+        static: false,
+        dataBinding: { entity: "compliance" },
+        settings: { frameworks: [], showGaps: true },
+      },
+      {
+        id: "tech-findings-progress",
+        type: "remediation-progress",
+        title: "Progress by severity",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { groupBy: "severity", showPercentages: true },
+      },
+    ]),
+  ),
+  builtInTemplate(
+    "builtin-compliance",
+    "Compliance (per framework)",
+    builtInDocument("Compliance (per framework)", "Framework alignment and gaps", [
+      {
+        id: "compliance-divider",
+        type: "section-divider",
+        title: "Compliance posture",
+        static: true,
+        settings: { eyebrow: "Frameworks" },
+      },
+      {
+        id: "compliance-coverage",
+        type: "framework-coverage",
+        title: "Framework coverage",
+        static: false,
+        dataBinding: { entity: "compliance" },
+        settings: { frameworks: [], showGaps: true },
+      },
+      {
+        id: "compliance-bars",
+        type: "progress-bars",
+        title: "Pass and fail counts",
+        static: false,
+        dataBinding: { entity: "compliance" },
+        settings: { metrics: ["pass", "fail", "warning"], showPercentages: true },
+      },
+      {
+        id: "compliance-gaps",
+        type: "findings-table",
+        title: "Open compliance gaps",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { statuses: ["fail", "warning"], severities: [], sections: [], limit: 50 },
+      },
+      {
+        id: "compliance-note",
+        type: "rich-text",
+        title: "Framework note",
+        static: true,
+        settings: {
+          body: "Add framework-specific commentary and compensating controls here.",
+        },
+      },
+    ]),
+  ),
+  builtInTemplate(
+    "builtin-remediation-plan",
+    "Remediation plan",
+    builtInDocument("Remediation plan", "Prioritised actions and drift", [
+      {
+        id: "remediation-intro",
+        type: "rich-text",
+        title: "Plan scope",
+        static: true,
+        settings: {
+          body: "This plan prioritises failed controls by severity and tracks movement against the previous run.",
+        },
+      },
+      {
+        id: "remediation-risks",
+        type: "top-risks",
+        title: "Priority actions",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { limit: 10, minSeverity: "high" },
+      },
+      {
+        id: "remediation-progress",
+        type: "remediation-progress",
+        title: "Remediation progress",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { groupBy: "status", showPercentages: true },
+      },
+      {
+        id: "remediation-findings",
+        type: "findings-table",
+        title: "Open failures",
+        static: false,
+        dataBinding: { entity: "findings" },
+        settings: { statuses: ["fail"], severities: [], sections: [], limit: 50 },
+      },
+      {
+        id: "remediation-comparison",
+        type: "run-comparison",
+        title: "Drift since the baseline run",
+        static: false,
+        dataBinding: { entity: "run-summary" },
+        settings: { mode: "drift", showUnchanged: false },
+      },
+    ]),
+  ),
+];
+
+const BUILT_IN_BY_ID = new Map(
+  BUILT_IN_REPORT_TEMPLATES.map((template) => [template.id, template]),
+);
+
+export function builtInReportTemplate(id: string): StoredReportTemplate | undefined {
+  return BUILT_IN_BY_ID.get(id);
+}
+
+export function isBuiltInReportTemplate(id: string): boolean {
+  return BUILT_IN_BY_ID.has(id);
+}
 
 export interface StoredReportTemplate {
   id: string;
@@ -178,13 +435,20 @@ export function createReportTemplateRoutes(deps: ReportTemplateDependencies): Re
     const tenantId = optionalQuery(ctx, "tenantId");
     if (tenantId !== undefined) requireAccess(ctx, tenantId);
     const includeDeleted = ctx.query.get("includeDeleted") === "true";
-    const templates = (await deps.store.listTemplates({ tenantId, includeDeleted })).filter((t) =>
+    const builtIns = includeDeleted
+      ? []
+      : BUILT_IN_REPORT_TEMPLATES.filter((template) => visible(ctx, template.tenantId));
+    const stored = (await deps.store.listTemplates({ tenantId, includeDeleted })).filter((t) =>
       visible(ctx, t.tenantId),
     );
+    const templates = [...builtIns, ...stored];
     const page = paginate(templates, parsePagination(ctx.query));
     return {
       status: 200,
-      body: { items: page.items.map(toResponse), nextCursor: page.nextCursor },
+      body: {
+        items: page.items.map((template) => toResponse(template, isBuiltInReportTemplate(template.id))),
+        nextCursor: page.nextCursor,
+      },
     };
   };
 
@@ -208,17 +472,22 @@ export function createReportTemplateRoutes(deps: ReportTemplateDependencies): Re
   };
 
   const get: Handler = async (ctx) => {
-    const template = requireTemplate(
-      await deps.store.getTemplate(requireParam(ctx, "templateId"), {
-        tenantId: optionalQuery(ctx, "tenantId"),
-      }),
-    );
+    const id = requireParam(ctx, "templateId");
+    const builtIn = builtInReportTemplate(id);
+    const template = builtIn
+      ? builtIn
+      : requireTemplate(
+          await deps.store.getTemplate(id, {
+            tenantId: optionalQuery(ctx, "tenantId"),
+          }),
+        );
     requireAccess(ctx, template.tenantId);
-    return { status: 200, body: toResponse(template) };
+    return { status: 200, body: toResponse(template, builtIn !== undefined) };
   };
 
   const update: Handler = async (ctx) => {
     const id = requireParam(ctx, "templateId");
+    if (isBuiltInReportTemplate(id)) throw readOnly(id);
     const existing = requireTemplate(
       await deps.store.getTemplate(id, { tenantId: optionalQuery(ctx, "tenantId") }),
     );
@@ -241,6 +510,7 @@ export function createReportTemplateRoutes(deps: ReportTemplateDependencies): Re
 
   const remove: Handler = async (ctx) => {
     const id = requireParam(ctx, "templateId");
+    if (isBuiltInReportTemplate(id)) throw readOnly(id);
     requireAccess(ctx, requireTemplate(await deps.store.getTemplate(id)).tenantId);
     const deleted = await deps.store.softDeleteTemplate(id, {
       actorUserId: actor(ctx),
@@ -252,9 +522,10 @@ export function createReportTemplateRoutes(deps: ReportTemplateDependencies): Re
 
   const clone: Handler = async (ctx) => {
     const sourceId = requireParam(ctx, "templateId");
-    const source = requireTemplate(
-      await deps.store.getTemplate(sourceId, { includeDeleted: false }),
-    );
+    const builtIn = builtInReportTemplate(sourceId);
+    const source = builtIn
+      ? builtIn
+      : requireTemplate(await deps.store.getTemplate(sourceId, { includeDeleted: false }));
     requireAccess(ctx, source.tenantId);
     const body = optionalBodyRecord(ctx.body);
     const name =
@@ -266,22 +537,40 @@ export function createReportTemplateRoutes(deps: ReportTemplateDependencies): Re
         ? source.tenantId
         : optionalString(body, "tenantId");
     requireAccess(ctx, tenantId);
-    const cloned = await deps.store.cloneTemplate(sourceId, {
-      id: randomUUID(),
-      name,
-      tenantId,
-      createdBy: actor(ctx),
-      actorUserId: actor(ctx),
-      correlationId: ctx.correlationId,
-    });
-    return { status: 201, body: toResponse(requireTemplate(cloned)) };
+    const id = randomUUID();
+    // A built-in is not in the store, so clone it by writing a fresh record;
+    // stored templates keep using the store's clone implementation.
+    const cloned = builtIn
+      ? await deps.store.createTemplate({
+          id,
+          name,
+          tenantId,
+          document: cloneDocument(source.document, id, name),
+          createdBy: actor(ctx),
+          actorUserId: actor(ctx),
+          correlationId: ctx.correlationId,
+        })
+      : await deps.store.cloneTemplate(sourceId, {
+          id,
+          name,
+          tenantId,
+          createdBy: actor(ctx),
+          actorUserId: actor(ctx),
+          correlationId: ctx.correlationId,
+        });
+    return {
+      status: 201,
+      body: toResponse(requireTemplate(cloned), false),
+    };
   };
 
   const generate: Handler = async (ctx) => {
     const templateId = requireParam(ctx, "templateId");
-    const template = requireTemplate(
-      await deps.store.getTemplate(templateId, { includeDeleted: false }),
-    );
+    const template =
+      builtInReportTemplate(templateId) ??
+      requireTemplate(
+        await deps.store.getTemplate(templateId, { includeDeleted: false }),
+      );
     requireAccess(ctx, template.tenantId);
     const body = optionalBodyRecord(ctx.body);
     const tenantId =
@@ -346,7 +635,10 @@ export function createReportTemplateRoutes(deps: ReportTemplateDependencies): Re
   ];
 }
 
-function toResponse(template: StoredReportTemplate): Record<string, unknown> {
+function toResponse(
+  template: StoredReportTemplate,
+  readOnly = false,
+): Record<string, unknown> {
   return {
     id: template.id,
     name: template.name,
@@ -356,7 +648,26 @@ function toResponse(template: StoredReportTemplate): Record<string, unknown> {
     updatedBy: template.updatedBy,
     createdAt: template.createdAt,
     updatedAt: template.updatedAt,
+    // Alert rules mark seeded catalog entries `builtIn`; report templates keep
+    // the same marker and add `readOnly` because the block document is editable
+    // only after cloning.
+    ...(readOnly ? { readOnly: true, builtIn: true } : {}),
   };
+}
+
+function cloneDocument(document: unknown, id: string, name: string): unknown {
+  if (typeof document === "object" && document !== null && !Array.isArray(document)) {
+    return { ...(document as Record<string, unknown>), id, name };
+  }
+  return document;
+}
+
+function readOnly(id: string): AppError {
+  return new AppError(
+    REPORT_TEMPLATE_READ_ONLY,
+    `Built-in report template ${id} is read-only; clone it or save as a new template`,
+    409,
+  );
 }
 
 function requireTemplate(

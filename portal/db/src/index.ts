@@ -32,3 +32,4 @@ export * from "./alerting-repository.js";
 export * from "./transport-template-repository.js";
 export * from "./filter-template-repository.js";
 export * from "./quarantine-repository.js";
+export * from "./run-template-repository.js";

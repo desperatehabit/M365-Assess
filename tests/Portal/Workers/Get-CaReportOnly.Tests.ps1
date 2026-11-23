@@ -173,3 +173,7 @@ Describe 'Get-CaReportOnly worker (T-0289)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

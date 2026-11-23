@@ -173,3 +173,7 @@ Describe 'New-TemporaryAccessPass worker (T-0223)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

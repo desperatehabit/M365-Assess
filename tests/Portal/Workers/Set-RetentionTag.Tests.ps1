@@ -220,3 +220,8 @@ Describe 'Set-RetentionTag worker (T-0387)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
+}

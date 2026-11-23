@@ -57,7 +57,15 @@ function Read-WorkerRunContext {
     # (secret/optional auth fields are omitted by design), which ConvertFrom-RunContextJson
     # already tolerates. Relax strict mode for this scope so missing keys read as null.
     Set-StrictMode -Off
-    return ConvertFrom-RunContextJson -Json $json
+    $context = ConvertFrom-RunContextJson -Json $json
+    # RunContext has no Options member (the orchestrator takes them as CLI switches), so
+    # carry the run options from context.json on an attached property for the mapper.
+    $data = $json | ConvertFrom-Json -AsHashtable
+    $options = if ($data -is [System.Collections.IDictionary]) { $data['Options'] } else { $null }
+    if ($null -ne $options) {
+        $context | Add-Member -NotePropertyName Options -NotePropertyValue $options -Force
+    }
+    return $context
 }
 
 function Get-WorkerArtifacts {
@@ -227,6 +235,39 @@ function Write-WorkerResult {
     return $resultPath
 }
 
+function Get-WorkerOptionValue {
+    <#
+    .SYNOPSIS
+        Reads a named value from a hashtable/dictionary or a property bag.
+    .DESCRIPTION
+        context.json options arrive as a hashtable (ConvertFrom-Json -AsHashtable) while a
+        Pester test may pass a PSCustomObject. Missing keys read as $null, never an error.
+    .PARAMETER Options
+        The options collection to read from.
+    .PARAMETER Name
+        Option name, for example SkipPurview.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        [object]$Options,
+
+        [Parameter(Mandatory)]
+        [string]$Name
+    )
+
+    if ($null -eq $Options) { return $null }
+    if ($Options -is [System.Collections.IDictionary]) {
+        foreach ($key in $Options.Keys) {
+            if ([string]$key -eq $Name) { return $Options[$key] }
+        }
+        return $null
+    }
+    $property = $Options.PSObject.Properties[$Name]
+    if ($property) { return $property.Value }
+    return $null
+}
+
 function Invoke-WorkerAssessment {
     <#
     .SYNOPSIS
@@ -267,8 +308,15 @@ function Invoke-WorkerAssessment {
     }
 
     $splat = @{ OutputFolder = $OutputFolder }
-    if ($Context.Tenant.TenantId) {
-        $splat['TenantId'] = $Context.Tenant.TenantId
+    # Exchange Online / Purview reject a tenant GUID as -Organization, so hand the
+    # assessment the primary domain the portal context already carries. Fall back to the
+    # tenant id when no domain is known, preserving the previous behaviour.
+    $tenantArg = ''
+    if ($Context.Tenant.DefaultDomain) { $tenantArg = $Context.Tenant.DefaultDomain }
+    elseif ($Context.Tenant.InitialDomain) { $tenantArg = $Context.Tenant.InitialDomain }
+    elseif ($Context.Tenant.TenantId) { $tenantArg = $Context.Tenant.TenantId }
+    if ($tenantArg) {
+        $splat['TenantId'] = $tenantArg
     }
     $sections = @($Context.Scope.Sections)
     if ($sections.Count -gt 0) {
@@ -306,6 +354,17 @@ function Invoke-WorkerAssessment {
     }
     if ($Context.Scope.QuickScan) {
         $splat['QuickScan'] = $true
+    }
+    # Every option the portal recorded reaches its assessment switch here (T-0927). The
+    # context carries an Options block attached by Read-WorkerRunContext; a hashtable or
+    # PSCustomObject context works the same way so Pester can drive this mapper directly.
+    $runOptions = Get-WorkerOptionValue -Options $Context -Name 'Options'
+    if ($null -ne $runOptions) {
+        if (Get-WorkerOptionValue -Options $runOptions -Name 'QuickScan') { $splat['QuickScan'] = $true }
+        if (Get-WorkerOptionValue -Options $runOptions -Name 'SkipPurview') { $splat['SkipPurview'] = $true }
+        if (Get-WorkerOptionValue -Options $runOptions -Name 'Redact') { $splat['Redact'] = $true }
+        # The wizard names this option Evidence; the assessment's switch is -EvidencePackage.
+        if (Get-WorkerOptionValue -Options $runOptions -Name 'Evidence') { $splat['EvidencePackage'] = $true }
     }
     # A service child has no one to answer prompts; a missing module must fail the run, not hang.
     $splat['NonInteractive'] = $true

@@ -298,7 +298,10 @@ function requireParam(ctx: RequestContext, name: string): string {
 export type RemediationOperation = "plan" | "apply" | "verify";
 
 // Each job gets its own folder: the run's folder holds the assessment's artifacts and
-// result.json, which a remediation job's result must not overwrite.
+// result.json, which a remediation job's result must not overwrite. `runId` links the
+// job back to the assessment run that produced the findings; it is a reference only,
+// never a claim on that run's status or timing (T-0928), so the hub ignores this job
+// type's lifecycle events for run state.
 function buildRemediationEnvelope(
   ctx: RequestContext,
   operation: RemediationOperation,
@@ -308,7 +311,12 @@ function buildRemediationEnvelope(
   requestId: string,
   createdAt: string,
   extraPayload: Record<string, unknown> = {},
+  credentialPurpose: "reader" | "operator" = "reader",
 ): JobEnvelope {
+  const credentialRef =
+    credentialPurpose === "operator"
+      ? `tenants/${tenantId}/operator-credential`
+      : `tenants/${tenantId}/credential`;
   return {
     schemaVersion: "v1",
     jobId,
@@ -321,11 +329,14 @@ function buildRemediationEnvelope(
     payload: {
       contextRef: `remediation/${tenantId}/${jobId}/job.json`,
       outputRef: `remediation/${tenantId}/${jobId}`,
-      credentialRef: `tenants/${tenantId}/credential`,
+      credentialRef,
       sectionRefs: [],
       artifactRefs: [],
       // Job-specific fields ride alongside the reference payload; the envelope
-      // contract validates the refs and permits additional keys.
+      // contract validates the refs and permits additional keys. `purpose` tells
+      // the queue which credential row to attach (T-0917): apply writes tenant
+      // state and must use the operator app; plan and verify read with the reader.
+      purpose: credentialPurpose,
       ...{ operation, ...extraPayload },
     },
   };
@@ -459,7 +470,7 @@ export function createRemediationRoutes(options: RemediationRouteOptions): Remed
         reason: parsed.reason,
         idempotencyKey,
         actor: callerActor(caller),
-      }),
+      }, "operator"),
     );
 
     const handle: RemediationApplyHandle = {

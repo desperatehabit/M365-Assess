@@ -542,6 +542,7 @@ export function createLicenseChangeProvider(
           actor: request.actor,
           correlationId: request.correlationId,
         },
+        request.dryRun ? undefined : { purpose: "operator" },
       );
       raiseWorkerError(result);
       return {

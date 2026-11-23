@@ -37,4 +37,12 @@ foreach ($field in $optional.Keys) {
     if ($optional[$field]) { $onboardParams[$field] = [string]$optional[$field] }
 }
 
+# Opt-in operator app for portal writes (T-0917). Absent means the reader-only
+# onboarding path, unchanged.
+if ($job.includeWritePermissions -eq $true) {
+    $onboardParams['IncludeWritePermissions'] = $true
+    $onboardParams['WritePermissionGroups'] = @($job.writePermissionGroups | ForEach-Object { [string]$_ })
+    if ($job.confirmDangerous -eq $true) { $onboardParams['ConfirmDangerous'] = $true }
+}
+
 Invoke-TenantOnboarding @onboardParams | ConvertTo-Json -Depth 6 -Compress

@@ -189,7 +189,7 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
             $pdfPath = Join-Path -Path $scratch -ChildPath 'report.pdf'
 
             { Invoke-ReportRender -HtmlPath $htmlPath -PdfPath $pdfPath -ChromiumPath $stub -TimeoutSec 2 } | Should -Throw '*render.timeout*'
-            $lingering = @((& ps -eo args) | Where-Object { $_ -match 'sleep 47' })
+            $lingering = @((& /bin/ps -eo args) | Where-Object { $_ -match 'sleep 47' })
             $lingering.Count | Should -Be 0
         }
 

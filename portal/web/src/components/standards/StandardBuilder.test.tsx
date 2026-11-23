@@ -193,6 +193,49 @@ describe("StandardBuilderPage", () => {
   });
 });
 
+describe("StandardBuilder built-ins (T-0924)", () => {
+  it("opens a built-in read-only with a Make a copy banner", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const builtIn = {
+      id: "builtin-standard-identity",
+      name: "Identity baseline",
+      kind: "standards",
+      actions: { report: true, alert: true, remediate: false },
+      autoRemediate: false,
+      settings: [{ key: "ENTRA-SECDEFAULT-001", value: { state: "enabled" } }],
+      scheduleId: null,
+      builtIn: true,
+    };
+    const fetcher = (async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      if (url === "/v1/standards/catalog") {
+        return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/v1/standards/templates/builtin-standard-identity") {
+        return new Response(JSON.stringify({ template: builtIn }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (url === "/v1/standards/templates/builtin-standard-identity/copy" && init?.method === "POST") {
+        return new Response(JSON.stringify({ template: { ...builtIn, id: "tpl-copy", name: "Identity baseline (copy)", builtIn: false } }), { status: 201, headers: { "Content-Type": "application/json" } });
+      }
+      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as unknown as typeof fetch;
+
+    const navigate = vi.fn();
+    render(<StandardBuilderPage params={{ id: "builtin-standard-identity" }} fetcher={fetcher} navigate={navigate} />);
+
+    await waitFor(() => expect(screen.getByTestId("builtin-banner")).toBeTruthy());
+    expect(screen.getByTestId("builtin-banner").textContent).toContain("read-only");
+    expect((screen.getByTestId("builder-name") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByTestId("builder-add-standards")).toBeNull();
+    expect(screen.queryByTestId("builder-save")).toBeNull();
+    expect(screen.getByTestId("builtin-standard-ENTRA-SECDEFAULT-001")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("builtin-make-copy"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/standards/tpl-copy/edit"));
+    expect(calls.find((call) => call.url === "/v1/standards/templates/builtin-standard-identity/copy")?.init?.method).toBe("POST");
+  });
+});
+
 describe("catalog helpers", () => {
   it("derives impact and licence-missing", () => {
     expect(standardImpact({ licensePreset: "E5" })).toBe("high");

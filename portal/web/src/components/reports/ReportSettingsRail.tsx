@@ -29,13 +29,6 @@ export interface ReportSettingsRailProps {
   readonly onBrandingChange: (next: BuilderBranding) => void;
 }
 
-const fieldStyle: Record<string, string> = {
-  background: "var(--input-bg)",
-  border: "1px solid var(--border)",
-  borderRadius: "6px",
-  color: "var(--text)",
-};
-
 export default function ReportSettingsRail({
   settings,
   pageSetup,
@@ -47,20 +40,16 @@ export default function ReportSettingsRail({
 }: ReportSettingsRailProps) {
   return (
     <aside
+      className="report-settings-rail"
       aria-label="Report settings"
       data-testid="report-settings-rail"
-      style={{
-        background: "var(--bg-elev)",
-        borderLeft: "1px solid var(--border)",
-        color: "var(--text)",
-        padding: "16px",
-      }}
     >
-      <section aria-labelledby="report-settings-heading">
-        <h2 id="report-settings-heading">Report Settings</h2>
-        <label>
-          Title
+      <section className="report-rail-section" aria-labelledby="report-settings-heading">
+        <h2 id="report-settings-heading">Report settings</h2>
+        <label className="report-field">
+          <span>Title</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Report title"
             data-testid="report-setting-title"
@@ -69,12 +58,12 @@ export default function ReportSettingsRail({
             onChange={(event) =>
               onSettingsChange({ ...settings, title: event.target.value })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
-          Subtitle
+        <label className="report-field">
+          <span>Subtitle</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Report subtitle"
             data-testid="report-setting-subtitle"
@@ -83,10 +72,9 @@ export default function ReportSettingsRail({
             onChange={(event) =>
               onSettingsChange({ ...settings, subtitle: event.target.value })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
+        <label className="report-checkbox">
           <input
             type="checkbox"
             aria-label="Redact sensitive values"
@@ -101,11 +89,12 @@ export default function ReportSettingsRail({
         </label>
       </section>
 
-      <section aria-labelledby="page-setup-heading">
-        <h2 id="page-setup-heading">Page Setup &amp; Branding</h2>
-        <label>
-          Page size
+      <section className="report-rail-section" aria-labelledby="page-setup-heading">
+        <h2 id="page-setup-heading">Page setup</h2>
+        <label className="report-field">
+          <span>Page size</span>
           <select
+            className="report-input"
             aria-label="Page size"
             data-testid="report-page-size"
             disabled={disabled}
@@ -116,16 +105,16 @@ export default function ReportSettingsRail({
                 pageSize: event.target.value as BuilderPageSetup["pageSize"],
               })
             }
-            style={fieldStyle}
           >
             <option value="A4">A4</option>
             <option value="Letter">Letter</option>
             <option value="Legal">Legal</option>
           </select>
         </label>
-        <label>
-          Orientation
+        <label className="report-field">
+          <span>Orientation</span>
           <select
+            className="report-input"
             aria-label="Page orientation"
             data-testid="report-page-orientation"
             disabled={disabled}
@@ -137,15 +126,15 @@ export default function ReportSettingsRail({
                   .value as BuilderPageSetup["orientation"],
               })
             }
-            style={fieldStyle}
           >
             <option value="portrait">Portrait</option>
             <option value="landscape">Landscape</option>
           </select>
         </label>
-        <label>
-          Margin (mm)
+        <label className="report-field">
+          <span>Margin (mm)</span>
           <input
+            className="report-input"
             type="number"
             aria-label="Page margin in millimetres"
             data-testid="report-page-margin"
@@ -158,12 +147,12 @@ export default function ReportSettingsRail({
                 marginMm: Number(event.target.value),
               })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
-          Header text
+        <label className="report-field">
+          <span>Header text</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Header text"
             data-testid="report-page-header"
@@ -172,12 +161,12 @@ export default function ReportSettingsRail({
             onChange={(event) =>
               onPageSetupChange({ ...pageSetup, headerText: event.target.value })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
-          Footer text
+        <label className="report-field">
+          <span>Footer text</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Footer text"
             data-testid="report-page-footer"
@@ -186,12 +175,16 @@ export default function ReportSettingsRail({
             onChange={(event) =>
               onPageSetupChange({ ...pageSetup, footerText: event.target.value })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
-          Primary colour
+      </section>
+
+      <section className="report-rail-section" aria-labelledby="branding-heading">
+        <h2 id="branding-heading">Branding</h2>
+        <label className="report-field">
+          <span>Primary colour</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Primary brand colour"
             data-testid="report-brand-primary"
@@ -203,12 +196,12 @@ export default function ReportSettingsRail({
                 primaryColor: event.target.value,
               })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
-          Secondary colour
+        <label className="report-field">
+          <span>Secondary colour</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Secondary brand colour"
             data-testid="report-brand-secondary"
@@ -220,12 +213,12 @@ export default function ReportSettingsRail({
                 secondaryColor: event.target.value,
               })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
-          Watermark text
+        <label className="report-field">
+          <span>Watermark text</span>
           <input
+            className="report-input"
             type="text"
             aria-label="Watermark text"
             data-testid="report-brand-watermark"
@@ -237,10 +230,9 @@ export default function ReportSettingsRail({
                 watermarkText: event.target.value,
               })
             }
-            style={fieldStyle}
           />
         </label>
-        <label>
+        <label className="report-checkbox">
           <input
             type="checkbox"
             aria-label="Show page numbers"

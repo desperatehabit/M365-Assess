@@ -19,6 +19,8 @@ export interface StandardsTemplateItem {
   readonly schedule: string | null;
   readonly lastRunAt: string | null;
   readonly autoRemediate?: boolean;
+  /** Pre-defined templates are locked: copy them to edit. */
+  readonly builtIn?: boolean;
 }
 
 export interface TemplatesTableProps {
@@ -29,6 +31,7 @@ export interface TemplatesTableProps {
   readonly githubEnabled?: boolean;
   readonly onViewTenantReport?: (template: StandardsTemplateItem) => void;
   readonly onEdit?: (template: StandardsTemplateItem) => void;
+  readonly onMakeCopy?: (template: StandardsTemplateItem) => void;
   readonly onCloneAndEdit?: (template: StandardsTemplateItem) => void;
   readonly onCreateDriftClone?: (template: StandardsTemplateItem) => void;
   readonly onRunTemplateNow?: (template: StandardsTemplateItem) => void;
@@ -152,6 +155,16 @@ export function kindBadgeStyle(kind: StandardTemplateKind): CSSProperties {
   return { ...badgeBaseStyle, background: "var(--accent-soft)", color: "var(--accent-text)", border: "1px solid var(--accent)" };
 }
 
+export function builtInBadgeStyle(): CSSProperties {
+  return {
+    ...badgeBaseStyle,
+    background: "var(--surface)",
+    color: "var(--text-soft)",
+    border: "1px solid var(--border)",
+    gap: "4px",
+  };
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) return "—";
   const date = new Date(value);
@@ -173,6 +186,7 @@ export function TemplatesTable({
   githubEnabled = false,
   onViewTenantReport,
   onEdit,
+  onMakeCopy,
   onCloneAndEdit,
   onCreateDriftClone,
   onRunTemplateNow,
@@ -293,7 +307,21 @@ export function TemplatesTable({
               )}
               {filtered.map((template) => (
                 <tr key={template.id} data-testid={`template-row-${template.id}`}>
-                  <td style={tdStyle}>{template.name}</td>
+                  <td style={tdStyle}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      {template.name}
+                      {template.builtIn && (
+                        <span
+                          className="status-badge"
+                          style={builtInBadgeStyle()}
+                          data-testid={`builtin-badge-${template.id}`}
+                          title="Built-in template: make a copy to edit"
+                        >
+                          <span aria-hidden="true">🔒</span> Built-in
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td style={tdStyle}>
                     <span className="status-badge" style={kindBadgeStyle(template.kind)} data-testid={`kind-${template.id}`}>
                       {kindLabel(template.kind)}
@@ -310,42 +338,47 @@ export function TemplatesTable({
                           View tenant report
                         </button>
                       )}
-                      {onEdit && (
+                      {template.builtIn && onMakeCopy && (
+                        <button type="button" style={actionBtnStyle} onClick={() => onMakeCopy(template)} data-testid={`copy-${template.id}`}>
+                          Make a copy
+                        </button>
+                      )}
+                      {!template.builtIn && onEdit && (
                         <button type="button" style={actionBtnStyle} onClick={() => onEdit(template)} data-testid={`edit-${template.id}`}>
                           Edit
                         </button>
                       )}
-                      {onCloneAndEdit && (
+                      {!template.builtIn && onCloneAndEdit && (
                         <button type="button" style={actionBtnStyle} onClick={() => onCloneAndEdit(template)} data-testid={`clone-edit-${template.id}`}>
                           Clone &amp; edit
                         </button>
                       )}
-                      {onCreateDriftClone && template.kind === "standards" && (
+                      {!template.builtIn && onCreateDriftClone && template.kind === "standards" && (
                         <button type="button" style={actionBtnStyle} onClick={() => onCreateDriftClone(template)} data-testid={`drift-clone-${template.id}`}>
                           Create drift clone
                         </button>
                       )}
-                      {onRunTemplateNow && (
+                      {!template.builtIn && onRunTemplateNow && (
                         <button type="button" style={actionBtnStyle} onClick={() => setConfirmRun(template.id)} data-testid={`run-now-${template.id}`}>
                           Run template now
                         </button>
                       )}
-                      {onSetSchedule && template.kind !== "drift" && (
+                      {!template.builtIn && onSetSchedule && template.kind !== "drift" && (
                         <button type="button" style={actionBtnStyle} onClick={() => onSetSchedule(template)} data-testid={`schedule-${template.id}`}>
                           {template.schedule ? "Disable schedule" : "Enable schedule"}
                         </button>
                       )}
-                      {onSaveToGitHub && githubEnabled && (
+                      {!template.builtIn && onSaveToGitHub && githubEnabled && (
                         <button type="button" style={actionBtnStyle} onClick={() => onSaveToGitHub(template)} data-testid={`github-${template.id}`}>
                           Save to GitHub
                         </button>
                       )}
-                      {onConvert && (
+                      {!template.builtIn && onConvert && (
                         <button type="button" style={actionBtnStyle} onClick={() => onConvert(template)} data-testid={`convert-${template.id}`}>
                           Convert
                         </button>
                       )}
-                      {onDelete && (
+                      {!template.builtIn && onDelete && (
                         <button type="button" style={actionBtnStyle} onClick={() => onDelete(template)} data-testid={`delete-${template.id}`}>
                           Delete
                         </button>

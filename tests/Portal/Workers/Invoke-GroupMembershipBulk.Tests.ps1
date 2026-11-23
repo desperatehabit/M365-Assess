@@ -89,3 +89,7 @@ Describe 'Invoke-GroupMembershipBulk worker (T-0268)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

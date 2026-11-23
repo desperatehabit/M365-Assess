@@ -104,6 +104,7 @@ export function createDefenderProviders(
           "deploy-defender-policies.ps1",
           tenantId,
           deployFields(options, false),
+          { purpose: "operator" },
         );
         raiseWorkerError(result);
         const record = asRecord(result);

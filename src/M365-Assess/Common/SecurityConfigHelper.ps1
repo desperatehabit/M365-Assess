@@ -83,6 +83,66 @@ function Get-ActiveSecurityContext {
     return $null
 }
 
+function Get-CheckLicensingGate {
+    <#
+    .SYNOPSIS
+        Returns the tenant licensing gate recorded for a check, when one applies.
+    .DESCRIPTION
+        Initialize-CheckProgress compares each registry check's licensing-overlay
+        requiredServicePlans with the tenant's active service plans and records
+        unmet checks under $global:CheckProgressState.LicenseSkipped. This helper
+        exposes that decision to Add-SecuritySetting, so a check the tenant cannot
+        license is recorded as NotLicensed instead of the Pass/Fail the collector
+        computed from missing features.
+
+        Returns $null when licence data is unavailable (standalone collector use),
+        when the check is licensed, or when no CheckId is supplied.
+    .PARAMETER CheckId
+        Registry check identifier. A trailing .N sub-number is ignored.
+    .OUTPUTS
+        Hashtable with Name and RequiredPlans, or $null.
+    .EXAMPLE
+        $gate = Get-CheckLicensingGate -CheckId 'CA-USERRISK-001'
+        if ($gate) { $gate.RequiredPlans }
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$CheckId
+    )
+
+    if ([string]::IsNullOrWhiteSpace($CheckId)) { return $null }
+
+    $baseCheckId = if ($CheckId -match '^(.+)\.\d+$') { $Matches[1] } else { $CheckId }
+
+    $state = Get-Variable -Name 'CheckProgressState' -ValueOnly -Scope Global -ErrorAction SilentlyContinue
+    if (-not $state -or -not ($state -is [hashtable]) -or -not $state.ContainsKey('LicenseSkipped')) {
+        return $null
+    }
+
+    $skipped = $state.LicenseSkipped
+    if (-not ($skipped -is [hashtable]) -or -not $skipped.ContainsKey($baseCheckId)) {
+        return $null
+    }
+
+    $gate = $skipped[$baseCheckId]
+    $requiredPlans = if ($gate -is [hashtable] -and $gate.ContainsKey('RequiredPlans')) {
+        @($gate['RequiredPlans'])
+    }
+    else {
+        @($gate)
+    }
+    if ($requiredPlans.Count -eq 0) { return $null }
+
+    $name = if ($gate -is [hashtable] -and $gate.ContainsKey('Name')) { [string]$gate['Name'] } else { '' }
+    return @{
+        Name          = $name
+        RequiredPlans = $requiredPlans
+    }
+}
+
 function Add-Setting {
     <#
     .SYNOPSIS
@@ -181,7 +241,10 @@ function Add-SecuritySetting {
     .PARAMETER RecommendedValue
         The expected/recommended value per the benchmark.
     .PARAMETER Status
-        Assessment result: Pass, Fail, Warning, Review, or Info.
+        Assessment result: Pass, Fail, Warning, Review, Info, Skipped, Unknown,
+        NotApplicable, or NotLicensed. A check whose licensing-overlay service
+        plans are missing from the tenant is recorded as NotLicensed regardless
+        of the status supplied by the collector.
     .PARAMETER CheckId
         Registry check identifier (e.g., 'EXO-AUTH-001'). Sub-numbered automatically.
     .PARAMETER Remediation
@@ -313,12 +376,32 @@ function Add-SecuritySetting {
         }
     }
 
+    # T-0935 -- licence gating must reach the recorded finding, not just the
+    # progress display. Initialize-CheckProgress records checks whose licensing
+    # overlay requirements the tenant does not meet; record those as NotLicensed
+    # so an unlicensed tenant is not reported as failing a feature it cannot buy.
+    # The collector's observation is kept in CurrentValue for audit context.
+    $recordedStatus = $Status
+    $recordedCurrentValue = $CurrentValue
+    $licenseGate = Get-CheckLicensingGate -CheckId $CheckId
+    if ($licenseGate) {
+        $planList = @($licenseGate.RequiredPlans) -join ' or '
+        $reason = "Requires $planList, not licensed"
+        $recordedStatus = 'NotLicensed'
+        $recordedCurrentValue = if ([string]::IsNullOrWhiteSpace($CurrentValue)) {
+            $reason
+        }
+        else {
+            "$reason (collector reported: $CurrentValue)"
+        }
+    }
+
     $Settings.Add([PSCustomObject]@{
         Category           = $Category
         Setting            = $Setting
-        CurrentValue       = $CurrentValue
+        CurrentValue       = $recordedCurrentValue
         RecommendedValue   = $RecommendedValue
-        Status             = $Status
+        Status             = $recordedStatus
         CheckId            = $subCheckId
         Remediation        = $Remediation
         IntentDesign       = [bool]$IntentDesign
@@ -342,9 +425,9 @@ function Add-SecuritySetting {
         }
         if ($AdoptionSignals) {
             $AdoptionSignals[$subCheckId] = @{
-                Status       = $Status
+                Status       = $recordedStatus
                 Setting      = $Setting
-                CurrentValue = $CurrentValue
+                CurrentValue = $recordedCurrentValue
                 Category     = $Category
             }
         }
@@ -352,7 +435,7 @@ function Add-SecuritySetting {
 
     # Invoke real-time progress tracking if available (set up by Show-CheckProgress.ps1)
     if ($CheckId -and (Get-Command -Name Update-CheckProgress -ErrorAction SilentlyContinue)) {
-        Update-CheckProgress -CheckId $subCheckId -Setting $Setting -Status $Status
+        Update-CheckProgress -CheckId $subCheckId -Setting $Setting -Status $recordedStatus
     }
 }
 

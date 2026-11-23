@@ -211,3 +211,7 @@ Describe 'Get-MessageTrace worker (T-0462)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MessageTraceV2' -ErrorAction SilentlyContinue
+}

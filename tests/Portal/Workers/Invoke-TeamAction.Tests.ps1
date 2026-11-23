@@ -332,3 +332,7 @@ Describe 'Invoke-TeamAction worker (T-0505)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

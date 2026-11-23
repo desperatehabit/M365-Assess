@@ -55,7 +55,7 @@ describe("Intune providers (T-0820)", () => {
       entrypoint: "get-intune-policies.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         kind: "compliance",
         platform: "windows",
         assigned: false,

@@ -238,3 +238,7 @@ Describe 'Get-TransportRules worker (T-0401)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-TransportRule' -ErrorAction SilentlyContinue
+}

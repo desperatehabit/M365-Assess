@@ -24,10 +24,17 @@ import {
   validateBaselineInput,
   type BaselineSaveAssignment,
 } from "../domain/baseline-validate.js";
+import { loadBaselinesCatalog } from "./baselines-catalog.js";
+import {
+  builtinLockedError,
+  copyTemplateName,
+  isBuiltInTemplate,
+} from "./template-builtin.js";
 
 export const BASELINES_PATH = "/v1/baselines";
 export const BASELINE_DETAIL_PATH = "/v1/baselines/:baselineId";
 export const BASELINE_ASSIGN_PATH = "/v1/baselines/:baselineId/assign";
+export const BASELINE_COPY_PATH = "/v1/baselines/:baselineId/copy";
 
 export const BASELINES_PERMISSIONS = {
   read: "Tenant.Baselines.Read",
@@ -55,6 +62,51 @@ export interface BaselineRecord {
   readonly stages: readonly BaselineStageRecord[];
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** True for pre-defined baselines; they are read-only and can only be copied. */
+  readonly builtIn?: boolean;
+}
+
+// ─── Built-in baselines (T-0924) ────────────────────────────────────────────
+
+const BUILT_IN_TIMESTAMP = "2026-01-01T00:00:00.000Z";
+
+/**
+ * The local catalog's prebuilt baselines are the portal's built-in baselines.
+ * Serving them from the route module keeps them fresh on every upgrade and
+ * means a seed can never overwrite an operator copy in the repository.
+ */
+export const BUILT_IN_BASELINES: readonly BaselineRecord[] = (() => {
+  try {
+    return loadBaselinesCatalog().entries.map((entry) => ({
+      id: `builtin-baseline-${entry.id}`,
+      name: entry.name,
+      logic: "and" as const,
+      alerting: { enabled: false },
+      enabled: true,
+      stages: entry.stages.map((stage) => ({
+        order: stage.order,
+        conditions: stage.conditions.map((condition) => ({ ...condition })),
+        action: stage.action,
+      })),
+      createdAt: BUILT_IN_TIMESTAMP,
+      updatedAt: BUILT_IN_TIMESTAMP,
+      builtIn: true,
+    }));
+  } catch {
+    // A missing or invalid catalog must not take the baselines API down; the
+    // catalog endpoint reports the fault separately.
+    return [];
+  }
+})();
+
+const BUILT_IN_BY_ID = new Map(BUILT_IN_BASELINES.map((baseline) => [baseline.id, baseline]));
+
+export function builtInBaseline(id: string): BaselineRecord | undefined {
+  return BUILT_IN_BY_ID.get(id);
+}
+
+export function isBuiltInBaseline(id: string): boolean {
+  return BUILT_IN_BY_ID.has(id);
 }
 
 export interface BaselineAssignmentRecord {
@@ -288,8 +340,8 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
   async function handleList(ctx: BaselinesRequest): Promise<RouteResponse> {
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, BASELINES_PERMISSIONS.read);
-    const items = await options.store.listBaselines();
-    return { status: 200, body: { items: [...items] } };
+    const items = [...BUILT_IN_BASELINES, ...(await options.store.listBaselines())];
+    return { status: 200, body: { items } };
   }
 
   async function handleCreate(ctx: BaselinesRequest): Promise<RouteResponse> {
@@ -329,11 +381,12 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, BASELINES_PERMISSIONS.read);
     const baselineId = requireParam(ctx, "baselineId");
-    const baseline = await options.store.getBaseline(baselineId);
+    const builtIn = builtInBaseline(baselineId);
+    const baseline = builtIn ?? (await options.store.getBaseline(baselineId));
     if (!baseline) {
       throw new AppError(BASELINE_NOT_FOUND, `Baseline ${baselineId} not found`, 404);
     }
-    const rows = await options.store.listBaselineAssignments(baselineId);
+    const rows = builtIn ? [] : await options.store.listBaselineAssignments(baselineId);
     return { status: 200, body: toDetail(baseline, rows) };
   }
 
@@ -341,9 +394,15 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, BASELINES_PERMISSIONS.write);
     const baselineId = requireParam(ctx, "baselineId");
+    if (isBuiltInBaseline(baselineId)) {
+      throw builtinLockedError("baseline", baselineId);
+    }
     const existing = await options.store.getBaseline(baselineId);
     if (!existing) {
       throw new AppError(BASELINE_NOT_FOUND, `Baseline ${baselineId} not found`, 404);
+    }
+    if (isBuiltInTemplate(existing)) {
+      throw builtinLockedError("baseline", baselineId);
     }
     const body = requireBodyRecord(ctx.body);
     const existingAssignments = await options.store.listBaselineAssignments(baselineId);
@@ -389,6 +448,13 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, BASELINES_PERMISSIONS.write);
     const baselineId = requireParam(ctx, "baselineId");
+    if (isBuiltInBaseline(baselineId)) {
+      throw builtinLockedError("baseline", baselineId);
+    }
+    const existing = await options.store.getBaseline(baselineId);
+    if (existing && isBuiltInTemplate(existing)) {
+      throw builtinLockedError("baseline", baselineId);
+    }
     const deleted = await options.store.deleteBaseline(baselineId);
     if (!deleted) {
       throw new AppError(BASELINE_NOT_FOUND, `Baseline ${baselineId} not found`, 404);
@@ -400,9 +466,15 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
     const caller = requireCaller(options, ctx);
     await ensureAuthorized(options, caller, BASELINES_PERMISSIONS.write);
     const baselineId = requireParam(ctx, "baselineId");
+    if (isBuiltInBaseline(baselineId)) {
+      throw builtinLockedError("baseline", baselineId);
+    }
     const existing = await options.store.getBaseline(baselineId);
     if (!existing) {
       throw new AppError(BASELINE_NOT_FOUND, `Baseline ${baselineId} not found`, 404);
+    }
+    if (isBuiltInTemplate(existing)) {
+      throw builtinLockedError("baseline", baselineId);
     }
     const body = requireBodyRecord(ctx.body);
     const assignments = parseAssignments(body["assignments"] ?? []);
@@ -416,6 +488,44 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
     return { status: 200, body: { baselineId, assignments: [...rows] } };
   }
 
+  /**
+   * Copies any baseline (built-in or operator) into a new operator-owned
+   * baseline. The copy starts unassigned so it can be edited without changing
+   * the source, and a colliding name gets the `(copy)` / `(copy N)` suffix.
+   */
+  async function handleCopy(ctx: BaselinesRequest): Promise<RouteResponse> {
+    const caller = requireCaller(options, ctx);
+    await ensureAuthorized(options, caller, BASELINES_PERMISSIONS.write);
+    const baselineId = requireParam(ctx, "baselineId");
+    const builtIn = builtInBaseline(baselineId);
+    const source = builtIn ?? (await options.store.getBaseline(baselineId));
+    if (!source) {
+      throw new AppError(BASELINE_NOT_FOUND, `Baseline ${baselineId} not found`, 404);
+    }
+    const body = ctx.body === undefined || ctx.body === null ? {} : requireBodyRecord(ctx.body);
+    const requestedName =
+      typeof body["name"] === "string" && (body["name"] as string).trim().length > 0
+        ? (body["name"] as string).trim()
+        : undefined;
+    const existingNames = [
+      ...BUILT_IN_BASELINES.map((baseline) => baseline.name),
+      ...(await options.store.listBaselines()).map((baseline) => baseline.name),
+    ];
+    const created = await options.store.createBaseline({
+      name: requestedName ?? copyTemplateName(source.name, existingNames),
+      alerting: { ...source.alerting },
+      enabled: source.enabled,
+      stages: source.stages.map((stage) => ({
+        order: stage.order,
+        conditions: stage.conditions.map((condition) => ({ ...condition })),
+        action: stage.action,
+      })),
+      assignments: [],
+    });
+    const rows = await options.store.listBaselineAssignments(created.id);
+    return { status: 201, body: toDetail({ ...created, builtIn: false }, rows) };
+  }
+
   return [
     { method: "GET", path: BASELINES_PATH, handler: handleList },
     { method: "POST", path: BASELINES_PATH, handler: handleCreate },
@@ -423,6 +533,7 @@ export function createBaselinesRoutes(options: BaselinesRouteOptions): Route[] {
     { method: "PATCH", path: BASELINE_DETAIL_PATH, handler: handleUpdate },
     { method: "DELETE", path: BASELINE_DETAIL_PATH, handler: handleDelete },
     { method: "POST", path: BASELINE_ASSIGN_PATH, handler: handleAssign },
+    { method: "POST", path: BASELINE_COPY_PATH, handler: handleCopy },
   ];
 }
 
@@ -503,7 +614,22 @@ export const BASELINES_OPENAPI = {
       responses: {
         "200": { description: "Assigned.", content: { "application/json": { schema: { $ref: "#/components/schemas/BaselineAssignments" } } } },
         "400": { description: "Invalid assignment.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
-        "403": { description: "Forbidden or tenant out of scope.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "403": { description: "Forbidden, tenant out of scope, or built-in locked.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+        "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
+      },
+    },
+  },
+  "/v1/baselines/{baselineId}/copy": {
+    post: {
+      tags: ["Baselines"],
+      operationId: "copyBaseline",
+      summary: "Make an editable operator copy of a baseline, including a built-in.",
+      permission: BASELINES_PERMISSIONS.write,
+      security: [{ bearerAuth: [] }],
+      parameters: [{ name: "baselineId", in: "path", required: true, schema: { type: "string" } }],
+      responses: {
+        "201": { description: "Copied.", content: { "application/json": { schema: { $ref: "#/components/schemas/Baseline" } } } },
+        "403": { description: "Forbidden.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
         "404": { description: "Not found.", content: { "application/json": { schema: { $ref: "#/components/schemas/Error" } } } },
       },
     },

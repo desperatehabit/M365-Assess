@@ -236,3 +236,18 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-EXOMailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-MailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
+}

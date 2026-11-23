@@ -138,6 +138,14 @@ export function BaselineCatalogDialog({
               <div key={entry.id} style={entryStyle} data-testid={`catalog-entry-${entry.id}`}>
                 <div>
                   <strong>{entry.name}</strong>
+                  {entry.builtIn && (
+                    <span
+                      style={{ marginLeft: "8px", fontSize: "11px", color: "var(--text-soft)", border: "1px solid var(--border)", borderRadius: "999px", padding: "1px 8px" }}
+                      data-testid={`catalog-builtin-${entry.id}`}
+                    >
+                      Built-in
+                    </span>
+                  )}
                   <p style={metaStyle}>
                     {entry.description || "No description."} · {entry.stages.length} stage
                     {entry.stages.length === 1 ? "" : "s"} · {standardCount(entry)} standard

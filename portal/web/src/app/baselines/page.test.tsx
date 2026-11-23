@@ -126,6 +126,48 @@ describe("BaselinesPage catalog", () => {
   });
 });
 
+describe("BaselinesPage built-ins (T-0924)", () => {
+  it("shows a lock badge and offers Make a copy instead of edit/delete", async () => {
+    const navigate = vi.fn();
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const builtIn = {
+      id: "builtin-baseline-identity-baseline",
+      name: "Identity Baseline",
+      logic: "and",
+      alerting: { enabled: false },
+      enabled: true,
+      stages: [{ order: 0, conditions: [], action: "report" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      builtIn: true,
+    };
+    const fetcher = (async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      if (url === "/v1/baselines") return jsonResponse({ items: [builtIn] });
+      if (url === "/v1/baselines/fleet") return jsonResponse(FLEET);
+      if (url === `/v1/baselines/${builtIn.id}/copy` && init?.method === "POST") {
+        return jsonResponse(
+          { ...builtIn, id: "bl-copy", name: "Identity Baseline (copy)", builtIn: false },
+          201,
+        );
+      }
+      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as unknown as typeof fetch;
+
+    render(<BaselinesPage fetcher={fetcher} navigate={navigate} />);
+    await waitFor(() => expect(screen.getByTestId("baseline-row-builtin-baseline-identity-baseline")).toBeTruthy());
+
+    expect(screen.getByTestId("baseline-builtin-builtin-baseline-identity-baseline").textContent).toContain("Built-in");
+    expect(screen.queryByTestId("baseline-edit-builtin-baseline-identity-baseline")).toBeNull();
+    expect(screen.queryByTestId("baseline-delete-builtin-baseline-identity-baseline")).toBeNull();
+    expect(screen.queryByTestId("baseline-run-builtin-baseline-identity-baseline")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("baseline-copy-builtin-baseline-identity-baseline"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/baselines/bl-copy/edit"));
+    expect(calls.find((call) => call.url === `/v1/baselines/${builtIn.id}/copy`)?.init?.method).toBe("POST");
+  });
+});
+
 describe("BaselinesPage stage advance (T-0879)", () => {
   it("advances an eligible tenant and reloads the rollout", async () => {
     const calls: Array<{ url: string; init?: RequestInit }> = [];

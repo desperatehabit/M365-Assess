@@ -212,3 +212,7 @@ Describe 'New-Team worker (T-0504)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

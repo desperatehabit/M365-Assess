@@ -23,6 +23,14 @@ Describe 'Invoke-TenantOnboarding worker (T-0025)' {
         }
     }
 
+    Context 'assessment read permissions' {
+        It 'grants Agreement.Read.All through the onboarding consent run (T-0915)' {
+            $definitions = Get-Content -LiteralPath (Join-Path $script:repoRoot 'src/M365-Assess/Setup/PermissionDefinitions.ps1') -Raw
+            $definitions | Should -Match "Name = 'Agreement\.Read\.All'"
+            $definitions | Should -Match 'ENTRA-TOU-001'
+        }
+    }
+
     Context 'confirmation gating' {
         It 'refuses to run and throws when Confirmed is false' {
             $seenForce = $false
@@ -68,6 +76,62 @@ Describe 'Invoke-TenantOnboarding worker (T-0025)' {
             $result.certificateThumbprint | Should -Be 'THUMB123'
             $result.totalFailed | Should -Be 0
             $result.error | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'opt-in operator write access (T-0917)' {
+        It 'passes the selected write groups and danger confirmation to the cmdlet' {
+            $seen = @{}
+            $handler = {
+                param($TenantId, $Force, $IncludeWritePermissions, $WritePermissionGroups, $ConfirmDangerous)
+                $seen['IncludeWritePermissions'] = $IncludeWritePermissions
+                $seen['WritePermissionGroups'] = @($WritePermissionGroups)
+                $seen['ConfirmDangerous'] = $ConfirmDangerous
+                return [pscustomobject]@{
+                    ClientId                      = 'reader-app'
+                    CertificateThumbprint         = 'READER-THUMB'
+                    OperatorClientId              = 'operator-app'
+                    OperatorCertificateThumbprint = 'READER-THUMB'
+                    OperatorAppDisplayName        = 'M365-Assess-Operator'
+                    OperatorCreated               = $true
+                    WritePermissionGroups         = @('identity', 'intune')
+                    TotalFailed                   = 0
+                }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId $script:stubTenantId `
+                                              -Confirmed $true `
+                                              -IncludeWritePermissions `
+                                              -WritePermissionGroups @('identity', 'intune') `
+                                              -ConfirmDangerous `
+                                              -CmdletHandler $handler
+
+            $seen['IncludeWritePermissions'] | Should -BeTrue
+            $seen['WritePermissionGroups'] | Should -Be @('identity', 'intune')
+            $seen['ConfirmDangerous'] | Should -BeTrue
+            $result.status | Should -Be 'succeeded'
+            $result.operatorClientId | Should -Be 'operator-app'
+            $result.operatorCertificateThumbprint | Should -Be 'READER-THUMB'
+            $result.writePermissionGroups | Should -Be @('identity', 'intune')
+        }
+
+        It 'keeps the reader-only path when write access is not requested' {
+            $seenWrite = $null
+            $handler = {
+                param($TenantId, $Force, $IncludeWritePermissions)
+                $seenWrite = $IncludeWritePermissions
+                return [pscustomobject]@{
+                    ClientId              = 'reader-app'
+                    CertificateThumbprint = 'READER-THUMB'
+                    TotalFailed           = 0
+                }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId $script:stubTenantId -Confirmed $true -CmdletHandler $handler
+
+            $seenWrite | Should -BeFalse
+            $result.operatorClientId | Should -BeNullOrEmpty
+            $result.operatorAppDisplayName | Should -BeNullOrEmpty
         }
     }
 
@@ -173,6 +237,86 @@ Describe 'Invoke-TenantOnboarding worker (T-0025)' {
     }
 }
 
+Describe 'Onboarding prerequisites preflight (T-0915)' {
+    # Onboarding needs these modules on the machine that runs the BFF; the worker reports
+    # them before onboarding starts, with install commands pinned to the installed Graph
+    # SDK version (mixing Graph module versions causes assembly load errors).
+
+    Context 'Test-OnboardingPrerequisite' {
+        It 'ships a preflight function and a worker entrypoint' {
+            (Get-Command -Name 'Test-OnboardingPrerequisite' -CommandType Function) | Should -Not -BeNullOrEmpty
+            Test-Path -LiteralPath (Join-Path $script:repoRoot 'portal/workers/onboarding-preflight.ps1') | Should -BeTrue
+        }
+
+        It 'reports ready when every onboarding module is installed' {
+            $result = Test-OnboardingPrerequisite -InstalledModules @{
+                'Microsoft.Graph.Authentication'      = '2.34.0'
+                'Microsoft.Graph.Applications'        = '2.34.0'
+                'Microsoft.Graph.Identity.Governance' = '2.34.0'
+                'ExchangeOnlineManagement'            = '3.9.0'
+            }
+
+            $result.ready | Should -BeTrue
+            @($result.missingModules).Count | Should -Be 0
+            @($result.installCommands).Count | Should -Be 0
+            $result.graphVersion | Should -Be '2.34.0'
+            $result.modules.Count | Should -Be 4
+            ($result.modules | Where-Object { -not $_.installed }).Count | Should -Be 0
+        }
+
+        It 'names a missing Graph module and pins its install to the installed Authentication version' {
+            $result = Test-OnboardingPrerequisite -InstalledModules @{
+                'Microsoft.Graph.Authentication' = '2.34.0'
+                'Microsoft.Graph.Applications'   = '2.34.0'
+                'ExchangeOnlineManagement'       = '3.9.0'
+            }
+
+            $result.ready | Should -BeFalse
+            @($result.missingModules) | Should -Contain 'Microsoft.Graph.Identity.Governance'
+            @($result.installCommands) | Should -Contain 'Install-Module Microsoft.Graph.Identity.Governance -RequiredVersion 2.34.0 -Scope CurrentUser -Force'
+            $result.message | Should -Match 'Microsoft\.Graph\.Identity\.Governance'
+            $result.message | Should -Match 'Install-Module Microsoft\.Graph\.Identity\.Governance -RequiredVersion 2\.34\.0'
+            $result.message | Should -Match 'assembly load errors'
+            $missingModule = $result.modules | Where-Object { $_.name -eq 'Microsoft.Graph.Identity.Governance' }
+            $missingModule.installed | Should -BeFalse
+            $missingModule.version | Should -BeNullOrEmpty
+        }
+
+        It 'does not pin ExchangeOnlineManagement to the Graph version' {
+            $result = Test-OnboardingPrerequisite -InstalledModules @{
+                'Microsoft.Graph.Authentication'      = '2.34.0'
+                'Microsoft.Graph.Applications'        = '2.34.0'
+                'Microsoft.Graph.Identity.Governance' = '2.34.0'
+            }
+
+            $result.ready | Should -BeFalse
+            @($result.installCommands) | Should -Be @('Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force')
+            $result.installCommands[0] | Should -Not -Match 'RequiredVersion'
+            $result.message | Should -Match 'Install-Module ExchangeOnlineManagement -Scope CurrentUser -Force'
+        }
+
+        It 'asks for Microsoft.Graph.Authentication first when the pin version is unknown' {
+            $result = Test-OnboardingPrerequisite -InstalledModules @{
+                'ExchangeOnlineManagement' = '3.9.0'
+            }
+
+            $result.ready | Should -BeFalse
+            @($result.missingModules) | Should -Contain 'Microsoft.Graph.Authentication'
+            @($result.installCommands) | Should -Contain 'Install-Module Microsoft.Graph.Authentication -Scope CurrentUser -Force'
+            $result.message | Should -Match 'Install it first'
+            $result.message | Should -Match 'assembly load errors'
+        }
+
+        It 'probes this machine when no inventory is supplied' {
+            $result = Test-OnboardingPrerequisite
+
+            $result.modules.Count | Should -Be 4
+            $result.ready | Should -BeOfType [bool]
+            @($result.installCommands).Count | Should -Be (@($result.missingModules).Count)
+        }
+    }
+}
+
 Describe 'Onboarding sign-in window (hidden Windows worker)' {
     # Graph SDK 2.34+ always signs in through WAM on Windows, and WAM needs a console window.
     # A worker spawned hidden has none, so the consent runs in a new visible window instead.
@@ -186,12 +330,12 @@ Describe 'Onboarding sign-in window (hidden Windows worker)' {
         Set-Content -LiteralPath $script:fakeConsent -Encoding utf8 -Value @'
 function Grant-M365AssessConsent {
     [CmdletBinding()]
-    param($TenantId, [switch]$Force, [switch]$CreateNew, $AdminUpn, $AppDisplayName, $ClientId, $CertificateThumbprint)
+    param($TenantId, [switch]$Force, [switch]$CreateNew, $AdminUpn, $AppDisplayName, $ClientId, $CertificateThumbprint, [switch]$UseDeviceCode, $SignInProgressCallback)
     if ($TenantId -eq 'fail-tenant') { throw 'consent blew up' }
     [pscustomobject]@{
         ClientId              = "client-for-$TenantId"
         CertificateThumbprint = 'THUMB'
-        AppDisplayName        = "force=$($Force.IsPresent) createNew=$($CreateNew.IsPresent) upn=$AdminUpn"
+        AppDisplayName        = "force=$($Force.IsPresent) createNew=$($CreateNew.IsPresent) upn=$AdminUpn deviceCode=$($UseDeviceCode.IsPresent)"
         TotalFailed           = 0
         GraphPermissions      = @([pscustomobject]@{ Permission = 'User.Read.All'; Status = 'Granted' })
         ComplianceRoles       = @()
@@ -234,7 +378,7 @@ function Grant-M365AssessConsent {
             }
 
             $result.ClientId | Should -Be 'client-for-tenant-1'
-            $result.AppDisplayName | Should -Be 'force=True createNew=True upn=admin@contoso.onmicrosoft.com'
+            $result.AppDisplayName | Should -Be 'force=True createNew=True upn=admin@contoso.onmicrosoft.com deviceCode=False'
             $result.GraphPermissions[0].Permission | Should -Be 'User.Read.All'
         }
 
@@ -298,6 +442,179 @@ function Grant-M365AssessConsent {
 
         It 'returns a boolean on Windows' -Skip:(-not $IsWindows) {
             Test-WorkerHasConsoleWindow | Should -BeOfType [bool]
+        }
+    }
+}
+
+Describe 'Headless device-code onboarding (T-0916)' {
+    # A BFF with no interactive desktop cannot show the sign-in window. The worker then
+    # runs the consent in-process with -UseDeviceCode and relays each code and
+    # verification URL as a JSON progress line for the wizard.
+
+    BeforeAll {
+        $script:headlessDir = Join-Path ([System.IO.Path]::GetTempPath()) ("onboard-headless-" + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType Directory -Path $script:headlessDir -Force | Out-Null
+
+        $script:headlessConsent = Join-Path $script:headlessDir 'headless consent.ps1'
+        Set-Content -LiteralPath $script:headlessConsent -Encoding utf8 -Value @'
+function Grant-M365AssessConsent {
+    [CmdletBinding()]
+    param($TenantId, [switch]$Force, [switch]$CreateNew, $AdminUpn, $AppDisplayName, $ClientId, $CertificateThumbprint, [switch]$UseDeviceCode, $SignInProgressCallback)
+    if ($TenantId -eq 'expired-tenant') {
+        throw 'The device code for Exchange Online (exchange-online) expired before an operator signed in. Start onboarding again for a fresh code (code: onboard.device_code_expired).'
+    }
+    if ($UseDeviceCode -and $SignInProgressCallback) {
+        & $SignInProgressCallback ([pscustomobject]@{
+            Kind            = 'device-code'
+            Stage           = 'graph-bootstrap'
+            Provider        = 'Microsoft Graph'
+            Code            = 'CODE-1234'
+            VerificationUrl = 'https://microsoft.com/devicelogin'
+            ExpiresOn       = (Get-Date).ToUniversalTime().AddMinutes(15)
+            Message         = 'sign in'
+        })
+        & $SignInProgressCallback ([pscustomobject]@{
+            Kind     = 'sign-in-complete'
+            Stage    = 'graph-bootstrap'
+            Provider = 'Microsoft Graph'
+            Account  = $AdminUpn
+        })
+    }
+    [pscustomobject]@{
+        ClientId              = "client-for-$TenantId"
+        CertificateThumbprint = 'THUMB'
+        AppDisplayName        = "deviceCode=$($UseDeviceCode.IsPresent)"
+        TotalFailed           = 0
+        GraphPermissions      = @()
+        ComplianceRoles       = @()
+        ExoRoleGroups         = @()
+    }
+}
+'@
+    }
+
+    AfterAll {
+        Remove-Item -LiteralPath $script:headlessDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+
+    Context 'Test-InteractiveDesktop' {
+        It 'reports no desktop when headless mode is forced' {
+            Test-InteractiveDesktop -Headless -IsWindowsHost $true -UserInteractive $true -SessionId 1 | Should -BeFalse
+        }
+
+        It 'reports no desktop off Windows' {
+            Test-InteractiveDesktop -IsWindowsHost $false -UserInteractive $true -SessionId 1 | Should -BeFalse
+        }
+
+        It 'reports no desktop for a non-interactive process' {
+            Test-InteractiveDesktop -IsWindowsHost $true -UserInteractive $false -SessionId 1 | Should -BeFalse
+        }
+
+        It 'reports no desktop in session 0, where services run' {
+            Test-InteractiveDesktop -IsWindowsHost $true -UserInteractive $true -SessionId 0 | Should -BeFalse
+        }
+
+        It 'reports a desktop for an interactive Windows session' {
+            Test-InteractiveDesktop -IsWindowsHost $true -UserInteractive $true -SessionId 1 | Should -BeTrue
+        }
+
+        It 'honours the M365_PORTAL_HEADLESS escape hatch' {
+            $previous = $env:M365_PORTAL_HEADLESS
+            try {
+                $env:M365_PORTAL_HEADLESS = 'true'
+                Test-InteractiveDesktop -IsWindowsHost $true -UserInteractive $true -SessionId 1 | Should -BeFalse
+            }
+            finally {
+                $env:M365_PORTAL_HEADLESS = $previous
+            }
+        }
+
+        It 'returns a boolean on this machine' {
+            Test-InteractiveDesktop | Should -BeOfType [bool]
+        }
+    }
+
+    Context 'Invoke-TenantOnboarding routing' {
+        It 'runs the consent in-process with device code and relays each code when there is no desktop' {
+            Mock Test-InteractiveDesktop { $false }
+            Mock Invoke-ConsentInSignInWindow { throw 'should not open a sign-in window' }
+            $events = [System.Collections.Generic.List[object]]::new()
+
+            $result = Invoke-TenantOnboarding -TenantId 'tenant-headless' `
+                -AdminUpn 'admin@contoso.onmicrosoft.com' `
+                -CreateNew `
+                -Confirmed $true `
+                -CmdletScript $script:headlessConsent `
+                -ProgressChannel { param($event) $events.Add($event) }
+
+            $result.status | Should -Be 'succeeded'
+            $result.appDisplayName | Should -Be 'deviceCode=True'
+            $events.Count | Should -Be 2
+            $events[0].kind | Should -Be 'device-code'
+            $events[0].signIn | Should -Be 'graph-bootstrap'
+            $events[0].provider | Should -Be 'Microsoft Graph'
+            $events[0].code | Should -Be 'CODE-1234'
+            $events[0].verificationUrl | Should -Be 'https://microsoft.com/devicelogin'
+            $events[0].sequence | Should -Be 1
+            $events[0].schemaVersion | Should -Be 'v1'
+            $events[0].expiresAt | Should -Not -BeNullOrEmpty
+            $events[1].kind | Should -Be 'sign-in-complete'
+            $events[1].sequence | Should -Be 2
+            Should -Invoke Invoke-ConsentInSignInWindow -Times 0 -Exactly
+        }
+
+        It 'keeps the window path on a desktop and does not request device code' {
+            Mock Test-InteractiveDesktop { $true }
+            Mock Test-WorkerHasConsoleWindow { $false }
+            Mock Invoke-ConsentInSignInWindow {
+                [pscustomobject]@{ ClientId = 'from-window'; CertificateThumbprint = 'T'; TotalFailed = 0; AppDisplayName = 'deviceCode=False' }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId 'tenant-desktop' -Confirmed $true -CmdletScript $script:headlessConsent
+
+            $result.status | Should -Be 'succeeded'
+            $result.clientId | Should -Be 'from-window'
+            Should -Invoke Invoke-ConsentInSignInWindow -Times 1 -Exactly
+        }
+
+        It 'reports an expired device code with a clear message' {
+            Mock Test-InteractiveDesktop { $false }
+
+            $result = Invoke-TenantOnboarding -TenantId 'expired-tenant' `
+                -AdminUpn 'admin@contoso.onmicrosoft.com' `
+                -Confirmed $true `
+                -CmdletScript $script:headlessConsent
+
+            $result.status | Should -Be 'failed'
+            $result.error | Should -Match 'onboard\.device_code_expired'
+            $result.error | Should -Match 'Start onboarding again'
+        }
+    }
+
+    Context 'progress line' {
+        It 'passes the event to the channel and stamps it as a v1 progress payload' {
+            $script:relayEvent = $null
+            $relay = Get-OnboardingSignInRelay -Channel { param($event) $script:relayEvent = $event }
+
+            & $relay ([pscustomobject]@{
+                Kind            = 'device-code'
+                Stage           = 'exchange-online'
+                Provider        = 'Exchange Online'
+                Code            = 'LINE-CODE'
+                VerificationUrl = 'https://microsoft.com/devicelogin'
+                ExpiresOn       = (Get-Date).ToUniversalTime().AddMinutes(10)
+            })
+
+            $event = $script:relayEvent
+            $event | Should -Not -BeNullOrEmpty
+            $event['schemaVersion'] | Should -Be 'v1'
+            $event['sequence'] | Should -Be 1
+            $event['kind'] | Should -Be 'device-code'
+            $event['signIn'] | Should -Be 'exchange-online'
+            $event['code'] | Should -Be 'LINE-CODE'
+            $event['verificationUrl'] | Should -Be 'https://microsoft.com/devicelogin'
+            $event['expiresAt'] | Should -Not -BeNullOrEmpty
+            ($event | ConvertTo-Json -Compress -Depth 4) | Should -Match '"code":"LINE-CODE"'
         }
     }
 }

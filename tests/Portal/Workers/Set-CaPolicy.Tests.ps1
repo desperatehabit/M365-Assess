@@ -180,3 +180,7 @@ Describe 'Set-CaPolicy worker (T-0282)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

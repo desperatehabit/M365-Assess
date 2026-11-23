@@ -62,7 +62,7 @@ describe("Conditional Access providers (T-0819)", () => {
       entrypoint: "get-ca-policies.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         state: "enabled",
         control: "mfa",
         top: 50,

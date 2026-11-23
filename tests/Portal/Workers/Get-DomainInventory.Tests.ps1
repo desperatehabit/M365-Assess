@@ -277,3 +277,7 @@ Describe 'Get-DomainInventory worker (T-0662)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

@@ -568,10 +568,12 @@ Describe 'EntraPasswordAuthChecks - Modern schema with default states' {
                                 id    = 'MicrosoftAuthenticator'
                                 state = 'enabled'
                                 '@odata.type' = '#microsoft.graph.microsoftAuthenticatorAuthenticationMethodConfiguration'
-                                # 'default' = Microsoft-managed = on. App context explicitly enabled.
+                                # 'default' = Microsoft-managed = on. Microsoft enables both
+                                # number matching and application context by default, so the
+                                # check must treat both the same way.
                                 featureSettings = @{
                                     numberMatchingRequiredState        = @{ state = 'default' }
-                                    displayAppInformationRequiredState = @{ state = 'enabled' }
+                                    displayAppInformationRequiredState = @{ state = 'default' }
                                 }
                             }
                         )
@@ -623,10 +625,11 @@ Describe 'EntraPasswordAuthChecks - Modern schema with default states' {
         . "$PSScriptRoot/../../src/M365-Assess/Entra/EntraPasswordAuthChecks.ps1"
     }
 
-    It 'Authenticator fatigue protection passes when number matching is at default (Microsoft-managed)' {
+    It 'Authenticator fatigue protection passes when number matching and app context are at default (Microsoft-managed)' {
         $check = $settings | Where-Object { $_.Setting -eq 'Authenticator Fatigue Protection' }
         $check | Should -Not -BeNullOrEmpty
-        $check.Status | Should -Be 'Pass' -Because "'default' number matching is enforced by Microsoft"
+        $check.Status | Should -Be 'Pass' -Because "'default' means on for both number matching and app context"
+        $check.CurrentValue | Should -Match 'App context: default'
     }
 
     It 'System-preferred MFA passes when at default' {

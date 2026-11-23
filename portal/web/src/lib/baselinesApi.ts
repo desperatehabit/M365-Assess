@@ -42,6 +42,8 @@ export interface BaselineSummary {
   readonly stages: readonly BaselineStageInput[];
   readonly createdAt: string;
   readonly updatedAt: string;
+  /** Pre-defined baselines are read-only; make a copy to edit them. */
+  readonly builtIn?: boolean;
 }
 
 export interface BaselineDetail extends BaselineSummary {
@@ -121,6 +123,23 @@ export async function deleteBaseline(baselineId: string, fetcher?: Fetcher): Pro
     method: "DELETE",
   });
   await expectOk(response, "Deleting baseline");
+}
+
+/** Makes an editable operator copy (the only write path for a built-in). */
+export async function copyBaseline(
+  baselineId: string,
+  options: { name?: string } = {},
+  fetcher?: Fetcher,
+): Promise<BaselineDetail> {
+  const response = await asFetcher(fetcher)(
+    `/v1/baselines/${encodeURIComponent(baselineId)}/copy`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    },
+  );
+  return (await expectOk(response, "Copying baseline")) as BaselineDetail;
 }
 
 export async function assignBaseline(
@@ -216,6 +235,7 @@ export interface BaselineCatalogEntry {
   readonly name: string;
   readonly description: string;
   readonly stages: readonly BaselineCatalogStage[];
+  readonly builtIn?: boolean;
 }
 
 export interface BaselineCatalog {

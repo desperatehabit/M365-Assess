@@ -149,6 +149,39 @@ Describe 'Resolve-TenantCredential worker (T-0011)' {
             $auth.ContainsKey('ClientSecret') | Should -BeFalse
         }
 
+        It 'resolves the operator credential for a write job with its own reference (T-0917)' {
+            $record = New-ThumbprintRecord
+            $record['clientId'] = 'operator-app-id'
+            $record['purpose'] = 'operator'
+            $auth = Resolve-TenantCredential -TenantId $script:stubTenantId `
+                -CredentialRef "tenants/$script:stubTenantId/operator-credential" `
+                -CredentialRecord $record -Purpose 'operator' -Sections @('Identity')
+
+            $auth['Method'] | Should -Be 'Certificate'
+            $auth['ClientId'] | Should -Be 'operator-app-id'
+            $auth['CertificateThumbprint'] | Should -Be $record['thumbprint']
+        }
+
+        It 'refuses to use an operator credential when the job declares reader' {
+            $record = New-ThumbprintRecord
+            $record['purpose'] = 'operator'
+            {
+                Resolve-TenantCredential -TenantId $script:stubTenantId `
+                    -CredentialRef "tenants/$script:stubTenantId/operator-credential" `
+                    -CredentialRecord $record -Purpose 'reader' -Sections @('Identity')
+            } | Should -Throw '*worker.credential_purpose_mismatch*'
+        }
+
+        It 'refuses an operator reference against a reader credential row' {
+            $record = New-ThumbprintRecord
+            $record['purpose'] = 'reader'
+            {
+                Resolve-TenantCredential -TenantId $script:stubTenantId `
+                    -CredentialRef "tenants/$script:stubTenantId/operator-credential" `
+                    -CredentialRecord $record -Sections @('Identity')
+            } | Should -Throw '*worker.credential_ref_mismatch*'
+        }
+
         It 'resolves a client secret from the store by secretRef as a SecureString' {
             $seen = @{}
             $auth = Resolve-TenantCredential -TenantId $script:stubTenantId `

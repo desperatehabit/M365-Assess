@@ -107,6 +107,22 @@ describe("runFeatureWorker (T-0815)", () => {
     expect(noJobDirsLeft()).toEqual([]);
   });
 
+  it("forwards each complete stdout line to onProgressLine as it arrives", async () => {
+    const seen: string[] = [];
+    const { spawnImpl } = fakeSpawn((child) => {
+      child.stdout.emit("data", '{"kind":"device-code","code":"AB');
+      child.stdout.emit("data", 'CD"}\ndiagnostic\n');
+      child.stdout.emit("data", '{"ok":true}\n');
+      child.emit("exit", 0);
+    });
+    await runFeatureWorker(
+      "onboard-tenant.ps1",
+      { tenantId: "t" },
+      options(spawnImpl, { onProgressLine: (line: string) => seen.push(line) }),
+    );
+    expect(seen).toEqual(['{"kind":"device-code","code":"ABCD"}', "diagnostic", '{"ok":true}']);
+  });
+
   it("writes the job file readable by its owner only", async () => {
     const { spawnImpl, calls } = fakeSpawn((child) => {
       child.stdout.emit("data", "{}");

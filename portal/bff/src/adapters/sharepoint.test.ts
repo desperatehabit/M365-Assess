@@ -49,7 +49,7 @@ describe("SharePoint providers (T-0855)", () => {
       entrypoint: "get-sharepoint-sites.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         Type: "team",
         Sharing: "externalUserSharingOnly",
         StoragePercent: "25",
@@ -339,7 +339,7 @@ describe("SharePoint providers (T-0855)", () => {
       entrypoint: "get-site-browser.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         SiteId: "site-1",
       },
     });

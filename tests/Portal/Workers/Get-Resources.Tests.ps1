@@ -320,3 +320,9 @@ Describe 'Get-Resources worker (T-0448)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DistributionGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-DistributionGroupMember' -ErrorAction SilentlyContinue
+}

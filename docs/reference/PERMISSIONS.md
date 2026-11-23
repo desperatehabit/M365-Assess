@@ -17,7 +17,7 @@
 | Compliance | — | 0 | 0 | 0 | 1 |
 | Email | ExchangeOnline | 0 | 1 | 1 | 0 |
 | Hybrid | Graph | 2 | 2 | 0 | 0 |
-| Identity | Graph | 9 | 8 | 0 | 0 |
+| Identity | Graph | 9 | 9 | 0 | 0 |
 | Intune | Graph | 2 | 4 | 0 | 0 |
 | Inventory | Graph, ExchangeOnline | 7 | 7 | 1 | 0 |
 | Licensing | Graph | 2 | 2 | 0 | 0 |
@@ -115,6 +115,7 @@
 
 | Permission | Reason |
 |---|---|
+| `Agreement.Read.All` | Terms of Use agreements and their acceptance settings (ENTRA-TOU-001) |
 | `Application.Read.All` | App registrations, service principals, OAuth permission grants |
 | `AuditLog.Read.All` | Sign-in logs and directory audit events |
 | `Directory.Read.All` | Devices, admin units, role templates |

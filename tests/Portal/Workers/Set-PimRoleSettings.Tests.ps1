@@ -80,3 +80,7 @@ Describe 'Set-PimRoleSettings worker (T-0244)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

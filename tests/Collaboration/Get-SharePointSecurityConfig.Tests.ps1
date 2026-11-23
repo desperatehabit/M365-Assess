@@ -201,142 +201,164 @@ Describe 'Get-SharePointSecurityConfig' {
         $settings.Count | Should -BeGreaterOrEqual 22
     }
 
-    # --- #383: Review -> Warning fallback tests ---
+    # --- #383 / T-0933: unverifiable settings are Review ---
 
-    Context 'when beta SharePoint endpoint is unavailable' {
+    Context 'when the beta SharePoint endpoint is unavailable' {
         BeforeAll {
             Mock Invoke-MgGraphRequest {
                 param($Method, $Uri)
                 switch -Wildcard ($Uri) {
                     '*/v1.0/admin/sharepoint/settings' {
                         return @{
-                            sharingCapability              = 'existingExternalUserSharingOnly'
+                            sharingCapability                 = 'existingExternalUserSharingOnly'
                             isResharingByExternalUsersEnabled = $false
-                            sharingDomainRestrictionMode    = 'allowList'
-                            isUnmanagedSyncClientRestricted = $true
-                            isMacSyncAppEnabled             = $false
-                            isLoopEnabled                   = $false
-                            oneDriveLoopSharingCapability   = 'disabled'
-                            defaultSharingLinkType          = 'specificPeople'
-                            externalUserExpirationRequired  = $true
-                            externalUserExpireInDays        = 30
-                            emailAttestationRequired        = $true
-                            emailAttestationReAuthDays      = 15
-                            defaultLinkPermission           = 'view'
+                            sharingDomainRestrictionMode      = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled               = $false
+                            isLoopEnabled                     = $false
+                            oneDriveLoopSharingCapability     = 'disabled'
+                            defaultSharingLinkType            = 'specificPeople'
+                            externalUserExpirationRequired    = $true
+                            externalUserExpireInDays          = 30
+                            emailAttestationRequired          = $true
+                            emailAttestationReAuthDays        = 15
+                            defaultLinkPermission             = 'view'
                             isLegacyAuthProtocolsEnabled      = $false
                         }
                     }
                     '*/v1.0/policies/activityBasedTimeoutPolicies' {
-                        return @{ value = @(
-                            @{ id = 'policy-1'; displayName = 'Idle Timeout Policy' }
-                        )}
+                        return @{ value = @(@{ id = 'policy-1'; displayName = 'Idle Timeout Policy' }) }
                     }
                     '*/beta/admin/sharepoint/settings' {
-                        # Beta endpoint unavailable — throw to simulate failure
                         throw 'Beta endpoint not available'
                     }
-                    '*/v1.0/sites*' {
-                        return @{ value = @() }
-                    }
-                    '*/v1.0/identity/conditionalAccess/policies' {
-                        return @{ value = @() }
-                    }
-                    default {
-                        return @{ value = @() }
-                    }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @() } }
+                    default { return @{ value = @() } }
                 }
             }
 
-            $betaCtx = Initialize-SecurityConfig
-            $betaSettings = $betaCtx.Settings
-            $betaCheckIdCounter = $betaCtx.CheckIdCounter
-
-            function local:Add-BetaSetting {
-                param(
-                    [string]$Category, [string]$Setting, [string]$CurrentValue,
-                    [string]$RecommendedValue, [string]$Status,
-                    [string]$CheckId = '', [string]$Remediation = ''
-                )
-                $p = @{
-                    Settings         = $betaSettings
-                    CheckIdCounter   = $betaCheckIdCounter
-                    Category         = $Category
-                    Setting          = $Setting
-                    CurrentValue     = $CurrentValue
-                    RecommendedValue = $RecommendedValue
-                    Status           = $Status
-                    CheckId          = $CheckId
-                    Remediation      = $Remediation
-                }
-                Add-SecuritySetting @p
-            }
-
-            # Re-dot-source with fresh context by running the script logic inline
-            # We use a script block approach to isolate the settings
-            $scriptPath = "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
-            $betaSettingsResult = & {
-                $settings2 = [System.Collections.Generic.List[object]]::new()
-                $checkIdCounter2 = @{ Value = 1 }
-
-                function Add-Setting2 {
-                    param(
-                        [string]$Category, [string]$Setting, [string]$CurrentValue,
-                        [string]$RecommendedValue, [string]$Status,
-                        [string]$CheckId = '', [string]$Remediation = ''
-                    )
-                    $settings2.Add([PSCustomObject]@{
-                        Category         = $Category
-                        Setting          = $Setting
-                        CurrentValue     = $CurrentValue
-                        RecommendedValue = $RecommendedValue
-                        Status           = $Status
-                        CheckId          = $CheckId
-                        Remediation      = $Remediation
-                    })
-                }
-
-                # Simulate the B2B block with beta unavailable
-                $betaSpoSettings2 = $null
-                try {
-                    Invoke-MgGraphRequest -Method GET -Uri '/beta/admin/sharepoint/settings' -ErrorAction Stop | Out-Null
-                }
-                catch {
-                    # beta unavailable
-                }
-
-                if ($betaSpoSettings2 -and $null -ne $betaSpoSettings2['isB2BIntegrationEnabled']) {
-                    # would be pass
-                }
-                else {
-                    Add-Setting2 -Category 'Authentication' -Setting 'SharePoint B2B Integration' `
-                        -CurrentValue 'Could not verify' -RecommendedValue 'True' -Status 'Warning' -CheckId 'SPO-B2B-001'
-                }
-
-                # Simulate MALWARE block with beta unavailable
-                if ($betaSpoSettings2 -and $null -ne $betaSpoSettings2['disallowInfectedFileDownload']) {
-                    # would be pass
-                }
-                else {
-                    Add-Setting2 -Category 'Malware Protection' -Setting 'Infected File Download Blocked' `
-                        -CurrentValue 'Could not verify' -RecommendedValue 'True' -Status 'Warning' -CheckId 'SPO-MALWARE-002'
-                }
-
-                $settings2
-            }
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:betaSettingsResult = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
         }
 
-        It 'SPO-MALWARE-002 returns Warning not Review when beta endpoint unavailable' {
-            $check = $betaSettingsResult | Where-Object { $_.CheckId -eq 'SPO-MALWARE-002' }
+        It 'SPO-MALWARE-002 returns Review when the property is not returned' {
+            $check = $script:betaSettingsResult | Where-Object { $_.CheckId -like 'SPO-MALWARE-002*' }
             $check | Should -Not -BeNullOrEmpty
-            $check.Status | Should -Be 'Warning'
-            $check.CurrentValue | Should -Be 'Could not verify'
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'not returned|Could not verify'
         }
 
-        It 'SPO-B2B-001 returns Warning not Review when beta endpoint unavailable' {
-            $check = $betaSettingsResult | Where-Object { $_.CheckId -eq 'SPO-B2B-001' }
+        It 'SPO-B2B-001 returns Review when the property is not returned' {
+            $check = $script:betaSettingsResult | Where-Object { $_.CheckId -like 'SPO-B2B-001*' }
             $check | Should -Not -BeNullOrEmpty
-            $check.Status | Should -Be 'Warning'
-            $check.CurrentValue | Should -Be 'Could not verify'
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'not returned|Could not verify'
+        }
+
+        It 'SPO-SHARING-008 returns Review because the setting is not exposed by Graph' {
+            $check = $script:betaSettingsResult | Where-Object { $_.CheckId -like 'SPO-SHARING-008*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+        }
+    }
+
+    Context 'when the sync restriction uses the documented property name' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                     = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled     = $false
+                            sharingDomainRestrictionMode          = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled                   = $false
+                            isLoopEnabled                         = $false
+                            oneDriveLoopSharingCapability         = 'disabled'
+                            defaultSharingLinkType                = 'specificPeople'
+                            externalUserExpirationRequired        = $true
+                            externalUserExpireInDays              = 30
+                            emailAttestationRequired              = $true
+                            emailAttestationReAuthDays            = 15
+                            defaultLinkPermission                 = 'view'
+                            isLegacyAuthProtocolsEnabled          = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @() } }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:documentedSyncSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-SYNC-001 passes from isUnmanagedSyncAppForTenantRestricted' {
+            $check = $script:documentedSyncSettings | Where-Object { $_.CheckId -like 'SPO-SYNC-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Pass'
+            $check.CurrentValue | Should -Be 'True'
+        }
+
+        It 'SPO-ACCESS-002 passes from isUnmanagedSyncAppForTenantRestricted' {
+            $check = $script:documentedSyncSettings | Where-Object { $_.CheckId -like 'SPO-ACCESS-002*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Pass'
+            $check.CurrentValue | Should -Be 'True'
+        }
+    }
+
+    Context 'when the sync restriction property is absent' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                 = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled = $false
+                            sharingDomainRestrictionMode      = 'allowList'
+                            isMacSyncAppEnabled               = $false
+                            isLoopEnabled                     = $false
+                            oneDriveLoopSharingCapability     = 'disabled'
+                            defaultSharingLinkType            = 'specificPeople'
+                            externalUserExpirationRequired    = $true
+                            externalUserExpireInDays          = 30
+                            emailAttestationRequired          = $true
+                            emailAttestationReAuthDays        = 15
+                            defaultLinkPermission             = 'view'
+                            isLegacyAuthProtocolsEnabled      = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @() } }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:missingSyncSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-SYNC-001 reports Review, never Warning, when the property is absent' {
+            $check = $script:missingSyncSettings | Where-Object { $_.CheckId -like 'SPO-SYNC-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'Not returned by API'
+        }
+
+        It 'SPO-ACCESS-002 reports Review, never Warning, when the property is absent' {
+            $check = $script:missingSyncSettings | Where-Object { $_.CheckId -like 'SPO-ACCESS-002*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'Not returned by API'
         }
     }
 
@@ -785,6 +807,241 @@ Describe 'Get-SharePointSecurityConfig' {
         }
     }
 
+
+    Context 'when the site resource omits sharingCapability (T-0933)' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                     = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled     = $false
+                            sharingDomainRestrictionMode          = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled                   = $false
+                            isLoopEnabled                         = $false
+                            oneDriveLoopSharingCapability         = 'disabled'
+                            defaultSharingLinkType                = 'specificPeople'
+                            externalUserExpirationRequired        = $true
+                            externalUserExpireInDays              = 30
+                            emailAttestationRequired              = $true
+                            emailAttestationReAuthDays            = 15
+                            defaultLinkPermission                 = 'view'
+                            isLegacyAuthProtocolsEnabled          = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' {
+                        return @{ value = @(
+                            [PSCustomObject]@{ id = '1'; displayName = 'Finance'; webUrl = 'https://tenant.sharepoint.com/sites/finance' }
+                        )}
+                    }
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @(@{ id = 'ca1'; displayName = 'All Apps'; state = 'enabled'; conditions = @{ applications = @{ includeApplications = @('All') } } }) } }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:noSiteSharingSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-SITE-001 reports Review instead of Pass when sharingCapability is absent' {
+            $check = $script:noSiteSharingSettings | Where-Object { $_.CheckId -like 'SPO-SITE-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'sharingCapability'
+        }
+
+        It 'SPO-SITE-002 reports Review instead of Pass for a sensitive site without sharingCapability' {
+            $check = $script:noSiteSharingSettings | Where-Object { $_.CheckId -like 'SPO-SITE-002*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+        }
+    }
+
+    Context 'when the site list cannot be retrieved (T-0933)' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                     = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled     = $false
+                            sharingDomainRestrictionMode          = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled                   = $false
+                            isLoopEnabled                         = $false
+                            oneDriveLoopSharingCapability         = 'disabled'
+                            defaultSharingLinkType                = 'specificPeople'
+                            externalUserExpirationRequired        = $true
+                            externalUserExpireInDays              = 30
+                            emailAttestationRequired              = $true
+                            emailAttestationReAuthDays            = 15
+                            defaultLinkPermission                 = 'view'
+                            isLegacyAuthProtocolsEnabled          = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @(@{ id = 'ca1'; displayName = 'All Apps'; state = 'enabled'; conditions = @{ applications = @{ includeApplications = @('All') } } }) } }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:emptySiteListSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-SITE-001 reports Review, never Warning, when the site list is empty' {
+            $check = $script:emptySiteListSettings | Where-Object { $_.CheckId -like 'SPO-SITE-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+        }
+
+        It 'SPO-SITE-002 reports Review, never Info, when the site list is empty' {
+            $check = $script:emptySiteListSettings | Where-Object { $_.CheckId -like 'SPO-SITE-002*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+        }
+    }
+
+    Context 'when zero CA policies are read successfully (T-0934)' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                     = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled     = $false
+                            sharingDomainRestrictionMode          = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled                   = $false
+                            isLoopEnabled                         = $false
+                            oneDriveLoopSharingCapability         = 'disabled'
+                            defaultSharingLinkType                = 'specificPeople'
+                            externalUserExpirationRequired        = $true
+                            externalUserExpireInDays              = 30
+                            emailAttestationRequired              = $true
+                            emailAttestationReAuthDays            = 15
+                            defaultLinkPermission                 = 'view'
+                            isLegacyAuthProtocolsEnabled          = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    # Read succeeds and returns an empty policy list.
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @() } }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:zeroCaSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-ACCESS-001 reports not covered instead of unavailable' {
+            $check = $script:zeroCaSettings | Where-Object { $_.CheckId -like 'SPO-ACCESS-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Fail'
+            $check.CurrentValue | Should -Match 'not covered|No CA policies'
+            $check.CurrentValue | Should -Not -Match 'unavailable'
+        }
+    }
+
+    Context 'when the CA policy read fails (T-0934)' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                     = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled     = $false
+                            sharingDomainRestrictionMode          = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled                   = $false
+                            isLoopEnabled                         = $false
+                            oneDriveLoopSharingCapability         = 'disabled'
+                            defaultSharingLinkType                = 'specificPeople'
+                            externalUserExpirationRequired        = $true
+                            externalUserExpireInDays              = 30
+                            emailAttestationRequired              = $true
+                            emailAttestationReAuthDays            = 15
+                            defaultLinkPermission                 = 'view'
+                            isLegacyAuthProtocolsEnabled          = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    '*/v1.0/identity/conditionalAccess/policies' { throw '403 Forbidden' }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:failedCaSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-ACCESS-001 still reports unavailable when the policy read fails' {
+            $check = $script:failedCaSettings | Where-Object { $_.CheckId -like 'SPO-ACCESS-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Info'
+            $check.CurrentValue | Should -Match 'unavailable'
+        }
+    }
+
+    Context 'when guest expiration and verification code properties are absent (T-0933)' {
+        BeforeAll {
+            Mock Invoke-MgGraphRequest {
+                param($Method, $Uri)
+                switch -Wildcard ($Uri) {
+                    '*/v1.0/admin/sharepoint/settings' {
+                        return @{
+                            sharingCapability                     = 'existingExternalUserSharingOnly'
+                            isResharingByExternalUsersEnabled     = $false
+                            sharingDomainRestrictionMode          = 'allowList'
+                            isUnmanagedSyncAppForTenantRestricted = $true
+                            isMacSyncAppEnabled                   = $false
+                            isLoopEnabled                         = $false
+                            oneDriveLoopSharingCapability         = 'disabled'
+                            defaultSharingLinkType                = 'specificPeople'
+                            defaultLinkPermission                 = 'view'
+                            isLegacyAuthProtocolsEnabled          = $false
+                        }
+                    }
+                    '*/v1.0/policies/activityBasedTimeoutPolicies' { return @{ value = @() } }
+                    '*/beta/admin/sharepoint/settings' { return @{ isB2BIntegrationEnabled = $true; oneDriveSharingCapability = 'disabled'; disallowInfectedFileDownload = $true } }
+                    '*/v1.0/sites*' { return @{ value = @() } }
+                    '*/v1.0/identity/conditionalAccess/policies' { return @{ value = @(@{ id = 'ca1'; displayName = 'All Apps'; state = 'enabled'; conditions = @{ applications = @{ includeApplications = @('All') } } }) } }
+                    default { return @{ value = @() } }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            $script:missingSharingSettings = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointSecurityConfig.ps1"
+        }
+
+        It 'SPO-SHARING-005 reports Review, never Warning, when the property is absent' {
+            $check = $script:missingSharingSettings | Where-Object { $_.CheckId -like 'SPO-SHARING-005*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'Not returned by API'
+        }
+
+        It 'SPO-SHARING-006 reports Review, never Warning, when the property is absent' {
+            $check = $script:missingSharingSettings | Where-Object { $_.CheckId -like 'SPO-SHARING-006*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Review'
+            $check.CurrentValue | Should -Match 'Not returned by API'
+        }
+    }
 
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue

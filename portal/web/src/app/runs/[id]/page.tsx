@@ -6,6 +6,8 @@
 // Strictly uses report theme tokens with zero colour literals.
 
 import React, { useEffect, useState, use, type CSSProperties, type ReactElement } from "react";
+import { useSearchParams } from "next/navigation";
+import { usePermission } from "../../../components/PermissionGate";
 import {
   RunDetailTabs,
   type RunDetailData,
@@ -13,6 +15,9 @@ import {
   type RunArtifactDetail,
   type RunIssueDetail,
 } from "../../../components/RunDetailTabs";
+
+/** The permission the apply route requires (bff/src/routes/remediation.ts). */
+const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 const pageStyle: CSSProperties = {
   padding: "32px",
@@ -48,6 +53,11 @@ export default function RunDetailPage(props: RunDetailPageProps): ReactElement {
       : (props.params as { id: string });
 
   const runId = resolvedParams.id;
+
+  // The Remediation page links back with ?planId= so both views open the same plan.
+  const searchParams = useSearchParams();
+  const planId = searchParams?.get("planId") ?? "";
+  const canApply = usePermission(REMEDIATION_APPLY_PERMISSION) === true;
 
   const [run, setRun] = useState<RunDetailData | null>(null);
   const [findings, setFindings] = useState<RunFindingDetail[]>([]);
@@ -166,6 +176,9 @@ export default function RunDetailPage(props: RunDetailPageProps): ReactElement {
         issues={issues}
         onCancel={handleCancel}
         onRetry={handleRetry}
+        canApply={canApply}
+        initialPlanId={planId}
+        onRefreshResults={fetchRunData}
       />
     </div>
   );

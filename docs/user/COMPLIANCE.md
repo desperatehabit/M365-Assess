@@ -76,7 +76,7 @@ The assessment suite includes **292 security checks** across **16 collector fami
 ## Control Registry
 
 <!-- registry-stats:registry:begin -->
-Framework mappings are defined in `controls/registry.json`, which contains **292 control entries** — the M365-scoped subset of the upstream CheckID registry plus **5 local extension checks**.
+Framework mappings are defined in `controls/registry.json`, which contains **292 control entries** — the M365-scoped subset of the upstream CheckID registry plus **6 local extension checks**.
 <!-- registry-stats:registry:end -->
 
 CheckID upstream also carries Windows-endpoint `WIN-*` and Azure-subscription `AZ-*` checks; the sync workflow filters those out via `controls/sync-scope.json` because no collector in this module can emit them. Each entry specifies the check ID, description, and mappings to all applicable frameworks.

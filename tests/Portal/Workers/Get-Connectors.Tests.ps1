@@ -198,3 +198,8 @@ Describe 'Get-Connectors worker (T-0851)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-InboundConnector' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-OutboundConnector' -ErrorAction SilentlyContinue
+}

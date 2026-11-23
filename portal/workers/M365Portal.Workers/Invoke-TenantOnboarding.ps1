@@ -26,7 +26,26 @@ param(
     [switch]$CreateNew,
 
     [Parameter()]
+    [switch]$IncludeWritePermissions,
+
+    [Parameter()]
+    [ValidateSet('identity', 'security', 'intune', 'sharepoint', 'exchange')]
+    [string[]]$WritePermissionGroups = @(),
+
+    [Parameter()]
+    [switch]$ConfirmDangerous,
+
+    [Parameter()]
     [bool]$Confirmed = $false,
+
+    [Parameter()]
+    [switch]$Headless,
+
+    [Parameter()]
+    [scriptblock]$ProgressChannel,
+
+    [Parameter()]
+    [scriptblock]$DeviceCodeTokenAcquirer,
 
     [Parameter()]
     [string]$CmdletScript = '',
@@ -65,6 +84,118 @@ public static extern System.IntPtr GetConsoleWindow();
 '@
     }
     return [M365Portal.OnboardingConsole]::GetConsoleWindow() -ne [System.IntPtr]::Zero
+}
+
+function Test-InteractiveDesktop {
+    <#
+    .SYNOPSIS
+        Returns $true when a person can see a sign-in prompt on this machine's desktop.
+    .DESCRIPTION
+        The interactive WAM/browser sign-in needs a desktop to draw on. A deployed BFF
+        (a server, a container, a service account, or a non-Windows host) has none, so
+        onboarding uses the device-code flow and relays each code to the wizard instead.
+        A worker spawned hidden still gets the visible sign-in window on a local Windows
+        desktop (T-0914), because that window is what carries the prompt.
+    .PARAMETER Headless
+        Force headless mode, regardless of the machine.
+    .PARAMETER IsWindowsHost
+        Test seam: overrides $IsWindows.
+    .PARAMETER UserInteractive
+        Test seam: overrides [Environment]::UserInteractive.
+    .PARAMETER SessionId
+        Test seam: overrides the current process session id (0 is the services session).
+    .EXAMPLE
+        if (-not (Test-InteractiveDesktop)) { 'use device code' }
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter()]
+        [switch]$Headless,
+
+        [Parameter()]
+        [Nullable[bool]]$IsWindowsHost,
+
+        [Parameter()]
+        [Nullable[bool]]$UserInteractive,
+
+        [Parameter()]
+        [Nullable[int]]$SessionId
+    )
+
+    if ($Headless) { return $false }
+    if ($env:M365_PORTAL_HEADLESS -match '^(?i:1|true|yes)$') { return $false }
+
+    $windows = if ($null -ne $IsWindowsHost) {
+        [bool]$IsWindowsHost
+    }
+    elseif ($null -ne $IsWindows) {
+        [bool]$IsWindows
+    }
+    else {
+        # Windows PowerShell 5.1 has no $IsWindows and only runs on Windows.
+        $true
+    }
+    if (-not $windows) { return $false }
+
+    $interactive = if ($null -ne $UserInteractive) { [bool]$UserInteractive } else { [Environment]::UserInteractive }
+    if (-not $interactive) { return $false }
+
+    $session = if ($null -ne $SessionId) { [int]$SessionId } else { (Get-Process -Id $PID).SessionId }
+    if ($session -eq 0) { return $false }
+
+    return $true
+}
+
+function Get-OnboardingSignInRelay {
+    <#
+    .SYNOPSIS
+        Builds the relay that forwards consent sign-in events to the BFF progress line.
+    .PARAMETER Channel
+        Optional test channel that receives the event object instead of a stdout JSON line.
+    .EXAMPLE
+        $relay = Get-OnboardingSignInRelay
+    #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'Channel',
+        Justification = 'Read inside the returned relay closure')]
+    [OutputType([scriptblock])]
+    param(
+        [Parameter()]
+        [scriptblock]$Channel
+    )
+
+    $state = @{ Sequence = 0 }
+    return {
+        param($SignInEvent)
+
+        $state.Sequence++
+        $expiresAt = $null
+        if ($SignInEvent.ExpiresOn) {
+            $expiresAt = ([datetimeoffset]$SignInEvent.ExpiresOn).ToUniversalTime().ToString('o')
+        }
+        $payload = [ordered]@{
+            schemaVersion   = 'v1'
+            sequence        = $state.Sequence
+            at              = (Get-Date).ToUniversalTime().ToString('o')
+            kind            = [string]$SignInEvent.Kind
+            signIn          = [string]$SignInEvent.Stage
+            provider        = [string]$SignInEvent.Provider
+            code            = if ($SignInEvent.Code) { [string]$SignInEvent.Code } else { $null }
+            verificationUrl = if ($SignInEvent.VerificationUrl) { [string]$SignInEvent.VerificationUrl } else { $null }
+            expiresAt       = $expiresAt
+            message         = if ($SignInEvent.Message) { [string]$SignInEvent.Message } else { $null }
+            account         = if ($SignInEvent.Account) { [string]$SignInEvent.Account } else { $null }
+            error           = if ($SignInEvent.Error) { [string]$SignInEvent.Error } else { $null }
+        }
+
+        if ($Channel) {
+            & $Channel $payload
+            return
+        }
+        # The BFF reads the worker's stdout line by line and relays device-code events.
+        [System.Console]::Out.WriteLine(($payload | ConvertTo-Json -Compress -Depth 4))
+    }.GetNewClosure()
 }
 
 function Invoke-ConsentInSignInWindow {
@@ -158,6 +289,17 @@ function Invoke-TenantOnboarding {
         Refuses execution unless Confirmed is $true. Invokes Grant-M365AssessConsent with -Force
         only after confirmation is verified. Returns a structured onboarding envelope detailing
         the provisioned client ID, certificate thumbprint, and per-step permission status.
+
+        When there is no interactive desktop (see Test-InteractiveDesktop), the consent runs
+        in-process with the device-code flow and each pending code and verification URL is
+        written to the progress channel as a JSON line. Otherwise the existing in-console or
+        visible sign-in window path is used.
+    .PARAMETER Headless
+        Force the device-code flow even when a desktop is available.
+    .PARAMETER ProgressChannel
+        Test seam: receives progress event objects instead of writing them to stdout.
+    .PARAMETER DeviceCodeTokenAcquirer
+        Test seam forwarded to Grant-M365AssessConsent for the Exchange Online device-code token.
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -181,8 +323,27 @@ function Invoke-TenantOnboarding {
         [Parameter()]
         [switch]$CreateNew,
 
+        [Parameter()]
+        [switch]$IncludeWritePermissions,
+
+        [Parameter()]
+        [ValidateSet('identity', 'security', 'intune', 'sharepoint', 'exchange')]
+        [string[]]$WritePermissionGroups = @(),
+
+        [Parameter()]
+        [switch]$ConfirmDangerous,
+
         [Parameter(Mandatory)]
         [bool]$Confirmed,
+
+        [Parameter()]
+        [switch]$Headless,
+
+        [Parameter()]
+        [scriptblock]$ProgressChannel,
+
+        [Parameter()]
+        [scriptblock]$DeviceCodeTokenAcquirer,
 
         [Parameter()]
         [string]$CmdletScript = '',
@@ -212,6 +373,11 @@ function Invoke-TenantOnboarding {
     if ($ClientId) { $splat['ClientId'] = $ClientId }
     if ($CertificateThumbprint) { $splat['CertificateThumbprint'] = $CertificateThumbprint }
     if ($CreateNew) { $splat['CreateNew'] = $true }
+    if ($IncludeWritePermissions) {
+        $splat['IncludeWritePermissions'] = $true
+        $splat['WritePermissionGroups'] = @($WritePermissionGroups)
+        if ($ConfirmDangerous) { $splat['ConfirmDangerous'] = $true }
+    }
 
     try {
         $rawResult = $null
@@ -219,7 +385,19 @@ function Invoke-TenantOnboarding {
             $rawResult = & $CmdletHandler @splat
         }
         elseif ($CmdletScript -and (Test-Path -LiteralPath $CmdletScript -PathType Leaf)) {
-            if (Test-WorkerHasConsoleWindow) {
+            if (-not (Test-InteractiveDesktop -Headless:$Headless)) {
+                # No desktop to show a prompt on: use the device-code flow and relay each
+                # code through the job progress line the BFF forwards to the wizard.
+                Write-Verbose 'No interactive desktop; using device-code sign-in.'
+                . $CmdletScript
+                $splat['UseDeviceCode'] = $true
+                $splat['SignInProgressCallback'] = Get-OnboardingSignInRelay -Channel $ProgressChannel
+                if ($DeviceCodeTokenAcquirer) {
+                    $splat['DeviceCodeTokenAcquirer'] = $DeviceCodeTokenAcquirer
+                }
+                $rawResult = Grant-M365AssessConsent @splat
+            }
+            elseif (Test-WorkerHasConsoleWindow) {
                 . $CmdletScript
                 $rawResult = Grant-M365AssessConsent @splat
             }
@@ -240,7 +418,14 @@ function Invoke-TenantOnboarding {
         $status = if ($totalFailed -gt 0) { 'partial' } else { 'succeeded' }
         $errorMessage = if ($totalFailed -gt 0) {
             # Name what failed and why; the run output is not shown to the operator otherwise.
-            $failedItems = foreach ($step in @($rawResult.GraphPermissions, $rawResult.ComplianceRoles, $rawResult.ExoRoleGroups)) {
+            $failedItems = foreach ($step in @(
+                $rawResult.GraphPermissions
+                $rawResult.ComplianceRoles
+                $rawResult.ExoRoleGroups
+                $rawResult.OperatorGraphPermissions
+                $rawResult.OperatorDirectoryRoles
+                $rawResult.OperatorExoRoleGroups
+            )) {
                 foreach ($item in @($step)) {
                     if ($item.Status -in 'Failed', 'NotFound') {
                         $name = @($item.Permission, $item.Role, $item.RoleGroup) | Where-Object { $_ } | Select-Object -First 1
@@ -266,6 +451,15 @@ function Invoke-TenantOnboarding {
             graphPermissions      = $rawResult.GraphPermissions
             complianceRoles       = $rawResult.ComplianceRoles
             exoRoleGroups         = $rawResult.ExoRoleGroups
+            operatorAppDisplayName        = [string]$rawResult.OperatorAppDisplayName
+            operatorClientId              = [string]$rawResult.OperatorClientId
+            operatorCertificateThumbprint = [string]$rawResult.OperatorCertificateThumbprint
+            operatorCertificatePath       = [string]$rawResult.OperatorCertificatePath
+            operatorCreated               = [bool]$rawResult.OperatorCreated
+            writePermissionGroups         = @($rawResult.WritePermissionGroups)
+            operatorGraphPermissions      = $rawResult.OperatorGraphPermissions
+            operatorDirectoryRoles        = $rawResult.OperatorDirectoryRoles
+            operatorExoRoleGroups         = $rawResult.OperatorExoRoleGroups
             totalFailed           = $totalFailed
             error                 = $errorMessage
             completedAt           = (Get-Date).ToUniversalTime().ToString('o')
@@ -284,10 +478,141 @@ function Invoke-TenantOnboarding {
             graphPermissions      = @()
             complianceRoles       = @()
             exoRoleGroups         = @()
+            operatorAppDisplayName        = ''
+            operatorClientId              = ''
+            operatorCertificateThumbprint = ''
+            operatorCertificatePath       = ''
+            operatorCreated               = $false
+            writePermissionGroups         = @()
+            operatorGraphPermissions      = @()
+            operatorDirectoryRoles        = @()
+            operatorExoRoleGroups         = @()
             totalFailed           = 1
             error                 = "Tenant onboarding failed: $err (code: onboard.failed)"
             completedAt           = (Get-Date).ToUniversalTime().ToString('o')
         }
+    }
+}
+
+function Test-OnboardingPrerequisite {
+    <#
+    .SYNOPSIS
+        Reports the PowerShell modules tenant onboarding needs, before onboarding starts.
+    .DESCRIPTION
+        Onboarding runs Grant-M365AssessConsent, which needs the Microsoft Graph and
+        Exchange Online modules on the machine that runs the portal workers. This check is
+        read-only: it reports the installed versions, the missing modules, and the exact
+        Install-Module commands. Graph modules are pinned to the installed
+        Microsoft.Graph.Authentication version because mixing Graph SDK versions causes
+        assembly load errors.
+    .PARAMETER RequiredModules
+        Modules onboarding needs. Defaults to Graph authentication, applications, and
+        identity governance plus ExchangeOnlineManagement.
+    .PARAMETER InstalledModules
+        Test seam: a module name to installed version table used instead of probing this
+        machine.
+    .EXAMPLE
+        $preflight = Test-OnboardingPrerequisite
+        if (-not $preflight.ready) { $preflight.installCommands }
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter()]
+        [string[]]$RequiredModules = @(
+            'Microsoft.Graph.Authentication'
+            'Microsoft.Graph.Applications'
+            'Microsoft.Graph.Identity.Governance'
+            'ExchangeOnlineManagement'
+        ),
+
+        [Parameter()]
+        [hashtable]$InstalledModules
+    )
+
+    $graphModules = @(
+        'Microsoft.Graph.Authentication'
+        'Microsoft.Graph.Applications'
+        'Microsoft.Graph.Identity.Governance'
+    )
+
+    $inventory = @{}
+    if ($InstalledModules) {
+        foreach ($name in $InstalledModules.Keys) {
+            if ($InstalledModules[$name]) {
+                $inventory[[string]$name] = [string]$InstalledModules[$name]
+            }
+        }
+    }
+    else {
+        foreach ($name in $RequiredModules) {
+            $installed = Get-Module -ListAvailable -Name $name -ErrorAction SilentlyContinue |
+                Sort-Object -Property Version -Descending |
+                Select-Object -First 1
+            if ($installed) {
+                $inventory[$name] = [string]$installed.Version
+            }
+        }
+    }
+
+    $graphVersion = $inventory['Microsoft.Graph.Authentication']
+    $modules = @(
+        foreach ($name in $RequiredModules) {
+            $isInstalled = $inventory.ContainsKey($name)
+            [pscustomobject]@{
+                name      = $name
+                installed = $isInstalled
+                version   = if ($isInstalled) { $inventory[$name] } else { $null }
+            }
+        }
+    )
+
+    $missing = @($modules | Where-Object { -not $_.installed } | Select-Object -ExpandProperty name)
+    $installCommands = @(
+        foreach ($name in $missing) {
+            if ($graphVersion -and $graphModules -contains $name) {
+                "Install-Module $name -RequiredVersion $graphVersion -Scope CurrentUser -Force"
+            }
+            else {
+                "Install-Module $name -Scope CurrentUser -Force"
+            }
+        }
+    )
+
+    if ($missing.Count -eq 0) {
+        return [pscustomobject]@{
+            ready           = $true
+            graphVersion    = $graphVersion
+            modules         = $modules
+            missingModules  = @()
+            installCommands = @()
+            message         = 'All onboarding PowerShell modules are installed.'
+        }
+    }
+
+    $lines = [System.Collections.Generic.List[string]]::new()
+    $lines.Add("Missing required onboarding PowerShell modules: $($missing -join ', ').")
+    $missingGraph = @($missing | Where-Object { $graphModules -contains $_ })
+    if ($missingGraph.Count -gt 0) {
+        if ($graphVersion) {
+            $lines.Add("Install the Microsoft Graph modules at the installed Microsoft.Graph.Authentication version ($graphVersion): mixing Graph SDK versions causes assembly load errors.")
+        }
+        else {
+            $lines.Add('Microsoft.Graph.Authentication is not installed. Install it first, then run this check again so the other Graph modules can be pinned to its version (mixing Graph SDK versions causes assembly load errors).')
+        }
+    }
+    $lines.Add('Run these commands in the account that runs the portal workers, then run the check again:')
+    foreach ($command in $installCommands) {
+        $lines.Add($command)
+    }
+
+    return [pscustomobject]@{
+        ready           = $false
+        graphVersion    = $graphVersion
+        modules         = $modules
+        missingModules  = $missing
+        installCommands = $installCommands
+        message         = ($lines -join [Environment]::NewLine)
     }
 }
 
@@ -298,7 +623,13 @@ if ($TenantId -and $Confirmed) {
                                      -ClientId $ClientId `
                                      -CertificateThumbprint $CertificateThumbprint `
                                      -CreateNew:$CreateNew `
+                                     -IncludeWritePermissions:$IncludeWritePermissions `
+                                     -WritePermissionGroups $WritePermissionGroups `
+                                     -ConfirmDangerous:$ConfirmDangerous `
                                      -Confirmed:$Confirmed `
+                                     -Headless:$Headless `
+                                     -ProgressChannel $ProgressChannel `
+                                     -DeviceCodeTokenAcquirer $DeviceCodeTokenAcquirer `
                                      -CmdletScript $CmdletScript `
                                      -CmdletHandler $CmdletHandler
     return $result

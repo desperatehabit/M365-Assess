@@ -243,3 +243,7 @@ Describe 'Manage-WebhookSubscription worker (T-0625)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

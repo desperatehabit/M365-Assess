@@ -230,3 +230,8 @@ Describe 'Invoke-QuarantineBulk worker (T-0425)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Release-QuarantineMessage' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Delete-QuarantineMessage' -ErrorAction SilentlyContinue
+}

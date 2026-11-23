@@ -93,6 +93,8 @@ export const GRAPH_EXPLORER_WORKER_ENTRYPOINT = "invoke-graph-request.ps1";
 // Same value as adapters/workers NO_CREDENTIAL; duplicated so the service does
 // not import the worker-supervisor chain.
 export const GRAPH_EXPLORER_TENANT_NO_CREDENTIAL = "tenant.credential_missing";
+// Same value as adapters/workers NO_OPERATOR_CREDENTIAL (T-0917/T-0940).
+export const GRAPH_EXPLORER_TENANT_NO_OPERATOR_CREDENTIAL = "tenant.operator_credential_missing";
 
 interface GraphExplorerWorkerResult {
   status: number;
@@ -270,18 +272,33 @@ export function createGraphExplorerWorkerExecutor(
   credentials: CredentialStoreRow,
 ): GraphExplorerExecutor {
   return async (tenantId, request) => {
-    const row = await credentials.getCredential(tenantId);
+    // A GET reads; POST/PATCH/PUT/DELETE can mutate tenant state and therefore
+    // signs in with the opt-in operator app (T-0940). Never fall back to reader.
+    const purpose = request.method === "GET" ? "reader" : "operator";
+    const row = await credentials.getCredential(tenantId, purpose);
     if (!row) {
+      if (purpose === "operator") {
+        throw new AppError(
+          GRAPH_EXPLORER_TENANT_NO_OPERATOR_CREDENTIAL,
+          `tenant '${tenantId}' has no operator credential; onboarding must grant write access before a Graph write can run`,
+          409,
+        );
+      }
       throw new AppError(
         GRAPH_EXPLORER_TENANT_NO_CREDENTIAL,
         `tenant '${tenantId}' has no credential; set one before running tenant work`,
         409,
       );
     }
+    const credentialRef =
+      purpose === "operator"
+        ? `tenants/${row.tenantId}/operator-credential`
+        : `tenants/${row.tenantId}/credential`;
     const result = await run<GraphExplorerWorkerResult>(GRAPH_EXPLORER_WORKER_ENTRYPOINT, {
       tenantId,
       credential: {
-        credentialRef: `tenants/${row.tenantId}/credential`,
+        credentialRef,
+        purpose,
         record: {
           tenantId: row.tenantId,
           authMethod: row.authMethod,
@@ -289,6 +306,7 @@ export function createGraphExplorerWorkerExecutor(
           secretRef: row.secretRef,
           thumbprint: row.thumbprint,
           environment: row.environment,
+          purpose,
         },
       },
       request: {

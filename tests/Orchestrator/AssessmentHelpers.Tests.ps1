@@ -293,6 +293,11 @@ Describe 'Show-CollectorResult' {
         Show-CollectorResult -Label 'Secure Score' -Status 'Failed' -Items 0 -DurationSeconds 0 -ErrorMessage '403 Forbidden'
         Should -Invoke Write-Host -Times 1 -Exactly
     }
+
+    It 'should call Write-Host for Partial status (T-0937)' {
+        Show-CollectorResult -Label 'Teams Security Config' -Status 'Partial' -Items 12 -DurationSeconds 1.2 -ErrorMessage 'Teams endpoints unavailable'
+        Should -Invoke Write-Host -Times 1 -Exactly
+    }
 }
 
 Describe 'Show-SectionHeader' {

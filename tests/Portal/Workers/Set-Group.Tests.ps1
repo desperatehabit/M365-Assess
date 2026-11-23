@@ -17,9 +17,9 @@ BeforeAll {
 }
 
 AfterAll {
-    Remove-Item -Path 'Function:\global:Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
-    Remove-Item -Path 'Function:\global:Set-UnifiedGroup' -ErrorAction SilentlyContinue
-    Remove-Item -Path 'Function:\global:Set-DistributionGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-UnifiedGroup' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-DistributionGroup' -ErrorAction SilentlyContinue
 }
 
 Describe 'Set-Group worker (T-0262, T-0900)' {

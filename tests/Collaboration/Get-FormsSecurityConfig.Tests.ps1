@@ -253,3 +253,168 @@ Describe 'Get-FormsSecurityConfig - Not Connected' {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
     }
 }
+
+Describe 'Get-FormsSecurityConfig - current formsSettings property names (T-0932)' {
+    # Synthetic fixture shaped like a GET /beta/admin/forms/settings response,
+    # using the documented property names. No tenant names, domains, or UPNs.
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        function Get-MgContext {
+            return @{
+                TenantId = 'test-tenant-id'
+                AuthType = 'Delegated'
+                Account  = 'admin@contoso.com'
+            }
+        }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/beta/admin/forms/settings' {
+                    return @{
+                        isExternalSendFormEnabled            = $false
+                        isExternalShareCollaborationEnabled  = $false
+                        isExternalShareResultEnabled         = $false
+                        isInOrgFormsPhishingScanEnabled      = $true
+                        isRecordIdentityByDefaultEnabled     = $true
+                        isBingImageSearchEnabled             = $false
+                    }
+                }
+                default { return @{ value = @() } }
+            }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        $script:documentedNameSettings = . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-FormsSecurityConfig.ps1"
+    }
+
+    It 'FORMS-CONFIG-004 reads isInOrgFormsPhishingScanEnabled and passes when enabled' {
+        $check = $script:documentedNameSettings | Where-Object { $_.CheckId -like 'FORMS-CONFIG-004*' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Be 'True'
+    }
+
+    It 'FORMS-CONFIG-006 reads isBingImageSearchEnabled and passes when disabled' {
+        $check = $script:documentedNameSettings | Where-Object { $_.CheckId -like 'FORMS-CONFIG-006*' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Be 'False'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-FormsSecurityConfig - preferred property wins when both shapes are present' {
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        function Get-MgContext {
+            return @{
+                TenantId = 'test-tenant-id'
+                AuthType = 'Delegated'
+                Account  = 'admin@contoso.com'
+            }
+        }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/beta/admin/forms/settings' {
+                    return @{
+                        isExternalSendFormEnabled            = $false
+                        isExternalShareCollaborationEnabled  = $false
+                        isExternalShareResultEnabled         = $false
+                        # Documented names disagree with the legacy fallbacks; the
+                        # documented value must be used.
+                        isInOrgFormsPhishingScanEnabled      = $false
+                        isPhishingScanEnabled                = $true
+                        isRecordIdentityByDefaultEnabled     = $true
+                        isBingImageSearchEnabled             = $true
+                        isBingImageVideoSearchEnabled        = $false
+                    }
+                }
+                default { return @{ value = @() } }
+            }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        $script:bothShapeSettings = . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-FormsSecurityConfig.ps1"
+    }
+
+    It 'FORMS-CONFIG-004 uses the documented phishing property' {
+        $check = $script:bothShapeSettings | Where-Object { $_.CheckId -like 'FORMS-CONFIG-004*' }
+        $check.Status | Should -Be 'Fail'
+        $check.CurrentValue | Should -Be 'False'
+    }
+
+    It 'FORMS-CONFIG-006 uses the documented Bing search property' {
+        $check = $script:bothShapeSettings | Where-Object { $_.CheckId -like 'FORMS-CONFIG-006*' }
+        $check.Status | Should -Be 'Review'
+        $check.CurrentValue | Should -Be 'True'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-FormsSecurityConfig - absent properties yield Review' {
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        function Get-MgContext {
+            return @{
+                TenantId = 'test-tenant-id'
+                AuthType = 'Delegated'
+                Account  = 'admin@contoso.com'
+            }
+        }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/beta/admin/forms/settings' {
+                    return @{
+                        isExternalSendFormEnabled            = $false
+                        isExternalShareCollaborationEnabled  = $false
+                        isExternalShareResultEnabled         = $false
+                        isRecordIdentityByDefaultEnabled     = $true
+                        # Neither phishing nor Bing search properties returned.
+                    }
+                }
+                default { return @{ value = @() } }
+            }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        $script:missingPropertySettings = . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-FormsSecurityConfig.ps1"
+    }
+
+    It 'FORMS-CONFIG-004 reports Review, never Fail, when the property is absent' {
+        $check = $script:missingPropertySettings | Where-Object { $_.CheckId -like 'FORMS-CONFIG-004*' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Review'
+        $check.CurrentValue | Should -Match 'Not returned by API'
+    }
+
+    It 'FORMS-CONFIG-006 reports Review, never Pass, when the property is absent' {
+        $check = $script:missingPropertySettings | Where-Object { $_.CheckId -like 'FORMS-CONFIG-006*' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Review'
+        $check.CurrentValue | Should -Match 'Not returned by API'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}

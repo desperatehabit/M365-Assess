@@ -84,6 +84,20 @@ Describe 'Export-AssessmentBridgeJson' {
         $out.domainSummary.'SharePoint & OneDrive'.fail | Should -Be 1
     }
 
+    It 'counts Info and NotLicensed findings so the domain buckets sum to the total' {
+        $rows = @(
+            [PSCustomObject]@{ CheckId = 'CA-INFO-001.1'; Status = 'Info'; CurrentValue = 'x'; Remediation = '' }
+            [PSCustomObject]@{ CheckId = 'CA-PIM-001.1'; Status = 'NotLicensed'; CurrentValue = 'x'; Remediation = '' }
+            [PSCustomObject]@{ CheckId = 'CA-PASS-001.1'; Status = 'Pass'; CurrentValue = 'x'; Remediation = '' }
+        )
+        $out = Invoke-BridgeExport -Path (Join-Path -Path $TestDrive -ChildPath 'buckets.json') -Rows $rows
+        $bucket = $out.domainSummary.'Conditional Access'
+        $bucket.info | Should -Be 1
+        $bucket.notLicensed | Should -Be 1
+        ($bucket.pass + $bucket.warn + $bucket.fail + $bucket.review + $bucket.info + $bucket.skipped + $bucket.notLicensed) |
+            Should -Be $bucket.total
+    }
+
     It 'matches the portal ingestion fixture' {
         $expected = Invoke-BridgeExport -Path (Join-Path -Path $TestDrive -ChildPath 'fixture.json') -Rows (Get-BridgeFixtureRow)
         $fixture = Get-Content -Path $script:portalFixture -Raw | ConvertFrom-Json -DateKind String

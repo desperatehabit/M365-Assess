@@ -155,3 +155,7 @@ Describe 'Set-AutopilotProfile worker (T-0845)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

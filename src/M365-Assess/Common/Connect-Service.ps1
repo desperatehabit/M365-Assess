@@ -12,7 +12,9 @@
     Defaults to 'User.Read.All' if not specified.
 .PARAMETER TenantId
     The tenant ID or domain (e.g., 'contoso.onmicrosoft.com'). Optional for
-    interactive auth but required for app-only auth.
+    interactive auth but required for app-only auth. Exchange Online and Purview
+    also accept the initial (*.onmicrosoft.*) domain here; a GUID is never passed
+    to them as -Organization (the cmdlets reject it).
 .PARAMETER ClientId
     Application (client) ID for app-only authentication. Requires TenantId
     and either CertificateThumbprint or ClientSecret.
@@ -167,6 +169,52 @@ function Resolve-InitialDomain {
     return $null
 }
 
+function Test-DomainValue {
+    <#
+    .SYNOPSIS
+        Returns $true when a value is shaped like a DNS domain name.
+    .DESCRIPTION
+        Used to keep tenant GUIDs and other non-domain values out of -Organization.
+        A GUID contains hyphens but no dot, so it never matches.
+    #>
+    [OutputType([bool])]
+    param([string]$Value)
+    if (-not $Value) { return $false }
+    return $Value -match '^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$'
+}
+
+function Resolve-OrganizationDomain {
+    <#
+    .SYNOPSIS
+        Resolves the tenant domain Connect-ExchangeOnline / Connect-IPPSSession accept as -Organization.
+    .DESCRIPTION
+        App-only Exchange Online and Purview authentication need the tenant's initial
+        (*.onmicrosoft.*) domain, never the tenant GUID (the cmdlets reject a GUID with
+        "Organization cannot be a Guid"). Uses -TenantId directly when it already is the
+        initial domain, otherwise looks the initial domain up through Microsoft Graph.
+        Throws an actionable error when no domain can be resolved, so a GUID is never
+        handed to the Exchange cmdlets.
+    #>
+    [OutputType([string])]
+    param(
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$TenantId
+    )
+
+    $organization = Resolve-InitialDomain -TenantId $TenantId
+    if (Test-DomainValue -Value $organization) { return $organization }
+
+    # A domain the caller supplied is already valid for -Organization; only GUIDs and
+    # other non-domain values must fail.
+    if (Test-DomainValue -Value $TenantId) { return $TenantId }
+
+    if ($TenantId -match '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') {
+        throw "Exchange Online / Purview app-only authentication needs the tenant's initial (*.onmicrosoft.*) domain, but only a tenant GUID was supplied. Connect to Microsoft Graph first so the domain can be resolved, or pass the initial domain as -TenantId (for example '<tenant>.onmicrosoft.com')."
+    }
+    throw "Could not resolve a tenant domain for Exchange Online / Purview authentication from '$TenantId'. Pass the tenant's initial (*.onmicrosoft.*) domain as -TenantId, or connect to Microsoft Graph first so it can be resolved."
+}
+
 function Set-ExchangeAppOnlyAuth {
     <#
     .SYNOPSIS
@@ -174,9 +222,10 @@ function Set-ExchangeAppOnlyAuth {
     .DESCRIPTION
         Connect-ExchangeOnline and Connect-IPPSSession resolve -CertificateThumbprint only through
         the Windows certificate store, which is unavailable on Linux/macOS. When a certificate
-        object is supplied it is passed via -Certificate together with -Organization (the tenant's
-        initial domain). Windows keeps the unchanged -CertificateThumbprint code path. Fails early
-        with an actionable error when the required material cannot be resolved.
+        object is supplied it is passed via -Certificate. Both certificate inputs are paired with
+        -Organization resolved to the tenant's initial domain, because the cmdlets reject a GUID
+        there. Windows keeps the -CertificateThumbprint code path. Fails early with an actionable
+        error when the required material cannot be resolved.
     #>
     param(
         [Parameter(Mandatory)][hashtable]$ConnectParams,
@@ -185,23 +234,23 @@ function Set-ExchangeAppOnlyAuth {
         [System.Security.Cryptography.X509Certificates.X509Certificate2]$Certificate,
         [string]$TenantId
     )
+
+    if (-not $Certificate -and -not $CertificateThumbprint) {
+        throw "App-only Exchange Online / Purview authentication requires a certificate: pass -Certificate, -CertificatePath, or (on Windows) -CertificateThumbprint."
+    }
+    if (-not $Certificate -and $IsWindows -eq $false) {
+        throw "-CertificateThumbprint is Windows-only for Exchange Online / Purview (it is resolved through the Windows certificate store). On Linux/macOS, pass the certificate with -Certificate or -CertificatePath instead."
+    }
+
+    # Resolve the initial domain on every certificate path, never pass the tenant GUID.
+    $ConnectParams['Organization'] = Resolve-OrganizationDomain -TenantId $TenantId
     $ConnectParams['AppId'] = $ClientId
+
     if ($Certificate) {
         $ConnectParams['Certificate'] = $Certificate
-        $organization = Resolve-InitialDomain -TenantId $TenantId
-        if (-not $organization) {
-            throw "Could not resolve the tenant's initial (*.onmicrosoft.*) domain, which app-only Exchange Online / Purview authentication requires. Connect to Microsoft Graph first, or pass -TenantId as the initial domain."
-        }
-        $ConnectParams['Organization'] = $organization
-    }
-    elseif ($CertificateThumbprint) {
-        if ($IsWindows -eq $false) {
-            throw "-CertificateThumbprint is Windows-only for Exchange Online / Purview (it is resolved through the Windows certificate store). On Linux/macOS, pass the certificate with -Certificate or -CertificatePath instead."
-        }
-        $ConnectParams['CertificateThumbprint'] = $CertificateThumbprint
     }
     else {
-        throw "App-only Exchange Online / Purview authentication requires a certificate: pass -Certificate, -CertificatePath, or (on Windows) -CertificateThumbprint."
+        $ConnectParams['CertificateThumbprint'] = $CertificateThumbprint
     }
 }
 
@@ -310,9 +359,9 @@ try {
             $connectParams = @{
                 ShowBanner = $false
             }
-            if ($TenantId) { $connectParams['Organization'] = $TenantId }
 
             if ($ManagedIdentity) {
+                if ($TenantId) { $connectParams['Organization'] = Resolve-OrganizationDomain -TenantId $TenantId }
                 $connectParams['ManagedIdentity'] = $true
             }
             elseif ($ClientId -and ($appOnlyCertificate -or $CertificateThumbprint)) {
@@ -321,11 +370,14 @@ try {
             elseif ($ClientId -and $ClientSecret) {
                 throw "Exchange Online does not support client secret authentication. Use -CertificateThumbprint for app-only auth."
             }
-            elseif ($UseDeviceCode) {
-                $connectParams['Device'] = $true
-            }
-            elseif ($UserPrincipalName) {
-                $connectParams['UserPrincipalName'] = $UserPrincipalName
+            else {
+                if ($TenantId) { $connectParams['Organization'] = Resolve-OrganizationDomain -TenantId $TenantId }
+                if ($UseDeviceCode) {
+                    $connectParams['Device'] = $true
+                }
+                elseif ($UserPrincipalName) {
+                    $connectParams['UserPrincipalName'] = $UserPrincipalName
+                }
             }
 
             if ($currentEnv.ExoEnvironment) {
@@ -348,7 +400,6 @@ try {
             }
 
             $connectParams = @{}
-            if ($TenantId) { $connectParams['Organization'] = $TenantId }
 
             if ($ManagedIdentity) {
                 Write-Warning "Purview (Connect-IPPSSession) does not support managed identity auth. Falling back to browser-based login."
@@ -360,8 +411,11 @@ try {
             elseif ($ClientId -and $ClientSecret) {
                 throw "Purview does not support client secret authentication. Use -CertificateThumbprint for app-only auth."
             }
-            elseif ($UserPrincipalName) {
-                $connectParams['UserPrincipalName'] = $UserPrincipalName
+            else {
+                if ($TenantId) { $connectParams['Organization'] = Resolve-OrganizationDomain -TenantId $TenantId }
+                if ($UserPrincipalName) {
+                    $connectParams['UserPrincipalName'] = $UserPrincipalName
+                }
             }
 
             if ($UseDeviceCode) {

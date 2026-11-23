@@ -218,3 +218,8 @@ Describe 'Get-Contacts worker (T-0442)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MailContact' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MailUser' -ErrorAction SilentlyContinue
+}

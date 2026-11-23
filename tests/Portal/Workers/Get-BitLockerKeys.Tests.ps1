@@ -107,3 +107,7 @@ Describe 'Get-BitLockerKeys worker (T-0346)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

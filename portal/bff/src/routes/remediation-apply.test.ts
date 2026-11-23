@@ -182,6 +182,9 @@ describe("POST /v1/remediation/plans/{planId}/apply (T-0108)", () => {
     expect(payload["continueOnFailure"]).toBe(true);
     expect(payload["reason"]).toBe("ticket-1");
     expect(payload["idempotencyKey"]).toBe("key-1");
+    // Apply writes tenant state, so it declares the operator credential (T-0917).
+    expect(payload["purpose"]).toBe("operator");
+    expect(payload["credentialRef"]).toBe(`tenants/${TENANT_1}/operator-credential`);
   });
 
   it("defaults dryRun to true when the body omits it", async () => {

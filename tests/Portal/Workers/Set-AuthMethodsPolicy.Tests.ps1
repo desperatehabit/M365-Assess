@@ -116,3 +116,7 @@ Describe 'Set-AuthMethodsPolicy worker (T-0225)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

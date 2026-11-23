@@ -313,3 +313,7 @@ Describe 'Get-PermissionsReport worker (T-0523)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

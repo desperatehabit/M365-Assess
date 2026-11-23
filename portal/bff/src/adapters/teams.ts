@@ -178,11 +178,16 @@ export function createTeamsProviders(
     input: TeamLifecycleInput,
     preview: boolean,
   ): Promise<TeamOperationResult | TeamLifecyclePlan> =>
-    call<TeamOperationResult | TeamLifecyclePlan>("invoke-team-action.ps1", tenantId, {
-      action,
-      correlationId: randomUUID(),
-      payload: lifecyclePayload(teamId, input, preview),
-    });
+    call<TeamOperationResult | TeamLifecyclePlan>(
+      "invoke-team-action.ps1",
+      tenantId,
+      {
+        action,
+        correlationId: randomUUID(),
+        payload: lifecyclePayload(teamId, input, preview),
+      },
+      preview ? undefined : { purpose: "operator" },
+    );
 
   const lifecycle: TeamsLifecycleProvider = {
     editTeam: (tenantId, teamId, input, preview) => lifecycleCall(tenantId, "edit", teamId, input, preview),
@@ -236,30 +241,45 @@ export function createTeamsProviders(
     },
 
     assignNumber: (tenantId, input: AssignVoiceNumberInput, preview: boolean) =>
-      call<TeamsVoiceResult | TeamsVoicePlan>("invoke-teams-voice.ps1", tenantId, {
-        action: "assign",
-        phoneNumber: input.phoneNumber,
-        targetId: input.targetId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<TeamsVoiceResult | TeamsVoicePlan>(
+        "invoke-teams-voice.ps1",
+        tenantId,
+        {
+          action: "assign",
+          phoneNumber: input.phoneNumber,
+          targetId: input.targetId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     releaseNumber: (tenantId, numberId, preview) =>
-      call<TeamsVoiceResult | TeamsVoicePlan>("invoke-teams-voice.ps1", tenantId, {
-        action: "release",
-        numberId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<TeamsVoiceResult | TeamsVoicePlan>(
+        "invoke-teams-voice.ps1",
+        tenantId,
+        {
+          action: "release",
+          numberId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
 
     assignPolicy: (tenantId, input: AssignVoicePolicyInput, preview: boolean) =>
-      call<TeamsVoiceResult | TeamsVoicePlan>("invoke-teams-voice.ps1", tenantId, {
-        action: "policy",
-        policyId: input.policyId,
-        targetId: input.targetId,
-        dryRun: preview,
-        confirmed: !preview,
-      }),
+      call<TeamsVoiceResult | TeamsVoicePlan>(
+        "invoke-teams-voice.ps1",
+        tenantId,
+        {
+          action: "policy",
+          policyId: input.policyId,
+          targetId: input.targetId,
+          dryRun: preview,
+          confirmed: !preview,
+        },
+        preview ? undefined : { purpose: "operator" },
+      ),
   };
 
   // The create route builds the resolved plan and queues a remediation envelope.
@@ -267,21 +287,26 @@ export function createTeamsProviders(
   // envelope onto new-team.ps1 and returns the envelope's job id.
   const enqueueCreate = async (envelope: JobEnvelope): Promise<string> => {
     const payload = asRecord(envelope.payload);
-    const result = await call<unknown>("new-team.ps1", envelope.tenantId, {
-      schemaVersion: "v1",
-      correlationId: envelope.correlationId,
-      payload: {
-        team: {
-          name: asString(payload["name"]),
-          owners: asArray(payload["owners"]).map((entry) => String(entry)),
-          members: asArray(payload["members"]).map((entry) => String(entry)),
-          visibility: asString(payload["visibility"], "private"),
-          settings: asRecord(payload["settings"]),
+    const result = await call<unknown>(
+      "new-team.ps1",
+      envelope.tenantId,
+      {
+        schemaVersion: "v1",
+        correlationId: envelope.correlationId,
+        payload: {
+          team: {
+            name: asString(payload["name"]),
+            owners: asArray(payload["owners"]).map((entry) => String(entry)),
+            members: asArray(payload["members"]).map((entry) => String(entry)),
+            visibility: asString(payload["visibility"], "private"),
+            settings: asRecord(payload["settings"]),
+          },
+          dryRun: false,
+          ...(payload["actor"] !== undefined ? { actor: payload["actor"] } : {}),
         },
-        dryRun: false,
-        ...(payload["actor"] !== undefined ? { actor: payload["actor"] } : {}),
       },
-    });
+      { purpose: "operator" },
+    );
     raiseWorkerError(result);
     return envelope.jobId;
   };
@@ -291,20 +316,25 @@ export function createTeamsProviders(
   const enqueueLis = async (envelope: JobEnvelope): Promise<string> => {
     const payload = asRecord(envelope.payload);
     const action = asString(payload["action"]);
-    const result = await call<unknown>("invoke-lis-location.ps1", envelope.tenantId, {
-      action,
-      ...(payload["locationId"] !== undefined ? { locationId: payload["locationId"] } : {}),
-      ...(payload["displayName"] !== undefined ? { displayName: payload["displayName"] } : {}),
-      ...(payload["street"] !== undefined ? { street: payload["street"] } : {}),
-      ...(payload["city"] !== undefined ? { city: payload["city"] } : {}),
-      ...(payload["state"] !== undefined ? { state: payload["state"] } : {}),
-      ...(payload["country"] !== undefined ? { country: payload["country"] } : {}),
-      ...(payload["postalCode"] !== undefined ? { postalCode: payload["postalCode"] } : {}),
-      ...(payload["companyName"] !== undefined ? { companyName: payload["companyName"] } : {}),
-      // The worker re-checks the delete confirmation against the display name.
-      ...(action === "delete" ? { confirmName: payload["displayName"] } : {}),
-      dryRun: false,
-    });
+    const result = await call<unknown>(
+      "invoke-lis-location.ps1",
+      envelope.tenantId,
+      {
+        action,
+        ...(payload["locationId"] !== undefined ? { locationId: payload["locationId"] } : {}),
+        ...(payload["displayName"] !== undefined ? { displayName: payload["displayName"] } : {}),
+        ...(payload["street"] !== undefined ? { street: payload["street"] } : {}),
+        ...(payload["city"] !== undefined ? { city: payload["city"] } : {}),
+        ...(payload["state"] !== undefined ? { state: payload["state"] } : {}),
+        ...(payload["country"] !== undefined ? { country: payload["country"] } : {}),
+        ...(payload["postalCode"] !== undefined ? { postalCode: payload["postalCode"] } : {}),
+        ...(payload["companyName"] !== undefined ? { companyName: payload["companyName"] } : {}),
+        // The worker re-checks the delete confirmation against the display name.
+        ...(action === "delete" ? { confirmName: payload["displayName"] } : {}),
+        dryRun: false,
+      },
+      { purpose: "operator" },
+    );
     raiseWorkerError(result);
     return envelope.jobId;
   };

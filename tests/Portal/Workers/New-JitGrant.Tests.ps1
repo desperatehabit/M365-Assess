@@ -94,3 +94,7 @@ Describe 'New-JitGrant worker (T-0246)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

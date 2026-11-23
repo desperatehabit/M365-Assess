@@ -270,12 +270,14 @@ function Show-CollectorResult {
     $symbol = switch ($Status) {
         'Complete' { [char]0x2713 }
         'Skipped'  { [char]0x25CB }
+        'Partial'  { [char]0x26A0 }
         'Failed'   { [char]0x2717 }
         default    { '-' }
     }
     $color = switch ($Status) {
         'Complete' { 'Cyan' }
         'Skipped'  { 'DarkGray' }
+        'Partial'  { 'Yellow' }
         'Failed'   { 'Magenta' }
         default    { 'White' }
     }
@@ -290,6 +292,13 @@ function Show-CollectorResult {
                 "skipped $([char]0x2014) $shortErr"
             }
             else { 'skipped' }
+        }
+        'Partial' {
+            if ($ErrorMessage) {
+                $shortErr = if ($ErrorMessage.Length -gt 28) { $ErrorMessage.Substring(0, 25) + '...' } else { $ErrorMessage }
+                "partial $([char]0x2014) $($Items) items $([char]0x2014) $shortErr"
+            }
+            else { "partial $([char]0x2014) $($Items) items" }
         }
         'Failed' {
             if ($ErrorMessage) {
@@ -317,6 +326,7 @@ function Show-AssessmentSummary {
 
     $completeCount = @($SummaryResults | Where-Object { $_.Status -eq 'Complete' }).Count
     $skippedCount = @($SummaryResults | Where-Object { $_.Status -eq 'Skipped' }).Count
+    $partialCount = @($SummaryResults | Where-Object { $_.Status -eq 'Partial' }).Count
     $failedCount = @($SummaryResults | Where-Object { $_.Status -eq 'Failed' }).Count
     $totalCollectors = $SummaryResults.Count
 
@@ -328,6 +338,7 @@ function Show-AssessmentSummary {
     Write-Host "    Sections: $SectionCount    Collectors: $totalCollectors" -ForegroundColor White
 
     $statsLine = "    $([char]0x2713) Complete: $completeCount"
+    if ($partialCount -gt 0) { $statsLine += "   $([char]0x26A0) Partial: $partialCount" }
     if ($skippedCount -gt 0) { $statsLine += "   $([char]0x25CB) Skipped: $skippedCount" }
     if ($failedCount -gt 0) { $statsLine += "   $([char]0x2717) Failed: $failedCount" }
     Write-Host $statsLine -ForegroundColor White

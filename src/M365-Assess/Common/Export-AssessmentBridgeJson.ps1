@@ -128,15 +128,21 @@ function Export-AssessmentBridgeJson {
             default          { 'Other' }
         }
         if (-not $domainSummary.Contains($d)) {
-            $domainSummary[$d] = [ordered]@{ pass = 0; warn = 0; fail = 0; review = 0; total = 0 }
+            $domainSummary[$d] = [ordered]@{
+                pass = 0; warn = 0; fail = 0; review = 0; info = 0
+                skipped = 0; notLicensed = 0; total = 0
+            }
         }
         $bucket = $domainSummary[$d]
         $bucket.total++
         switch ($f.Status) {
-            'Pass'    { $bucket.pass++ }
-            'Warning' { $bucket.warn++ }
-            'Fail'    { $bucket.fail++ }
-            'Review'  { $bucket.review++ }
+            'Pass'        { $bucket.pass++ }
+            'Warning'     { $bucket.warn++ }
+            'Fail'        { $bucket.fail++ }
+            'Review'      { $bucket.review++ }
+            'Info'        { $bucket.info++ }
+            'Skipped'     { $bucket.skipped++ }
+            'NotLicensed' { $bucket.notLicensed++ }
         }
     }
 

@@ -68,7 +68,7 @@ Describe 'Start-HistoricalSearch worker (T-0465)' {
         It 'entrypoint connects EXO in the child, delegates to the worker, and emits JSON' {
             $entrySource = Get-Content -LiteralPath $script:entrypoint -Raw
             $entrySource | Should -Match 'Start-HistoricalSearch\.ps1'
-            $entrySource | Should -Match 'Connect-WorkerTenant -JobFile \$JobFile -Service ExchangeOnline'
+            $entrySource | Should -Match 'Connect-WorkerTenant -JobFile \$JobFile -Service Purview'
             $entrySource | Should -Match 'Read-HistoricalSearchJob -Path'
             $entrySource | Should -Match 'Start-HistoricalSearch -TenantId'
             $entrySource | Should -Match 'Get-HistoricalSearchResult -TenantId'
@@ -330,4 +330,11 @@ Describe 'Start-HistoricalSearch worker (T-0465)' {
             { Read-HistoricalSearchJob -Path (Join-Path $TestDrive 'does-not-exist.json') } | Should -Throw '*not found*'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\New-ComplianceSearch' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Start-ComplianceSearch' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-ComplianceSearch' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-ComplianceSearch' -ErrorAction SilentlyContinue
 }

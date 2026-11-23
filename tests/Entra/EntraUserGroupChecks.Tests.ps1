@@ -204,6 +204,11 @@ Describe 'EntraUserGroupChecks' {
         $check.Status | Should -Be 'Pass'
     }
 
+    It 'Non-admin tenant creation reports the value in the label terms when restricted' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Non-Admin Tenant Creation Restricted' }
+        $check.CurrentValue | Should -Be 'Restricted: Yes'
+    }
+
     It 'All checks use ENTRA- prefix' {
         $withCheckId = $settings | Where-Object { $_.CheckId -and $_.CheckId.Trim() -ne '' }
         foreach ($s in $withCheckId) {
@@ -321,6 +326,13 @@ Describe 'EntraUserGroupChecks - Insecure Settings' {
         $check = $settings | Where-Object { $_.Setting -eq 'LinkedIn Account Connections' }
         $check | Should -Not -BeNullOrEmpty
         $check.Status | Should -Be 'Fail'
+    }
+
+    It 'Non-admin tenant creation reports Restricted: No when non-admins can create tenants' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Non-Admin Tenant Creation Restricted' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.CurrentValue | Should -Be 'Restricted: No'
+        $check.Status | Should -Be 'Warning'
     }
 
     AfterAll {

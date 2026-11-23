@@ -227,3 +227,7 @@ Bad Site,bad-site,portal,owner@example.invalid,,disabled
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

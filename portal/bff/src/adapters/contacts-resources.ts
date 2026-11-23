@@ -235,13 +235,18 @@ export function createContactsResourcesAdapters(
     preview: boolean,
     contactId?: string,
   ): Promise<ContactCrudResult | ContactPlan> {
-    const result = await envelope<unknown>(CONTACT_ACTION_WORKER, tenantId, {
-      action,
-      ...(contactId !== undefined ? { contactId } : {}),
-      ...payloadFields,
-      dryRun: preview,
-      confirm: !preview,
-    });
+    const result = await envelope<unknown>(
+      CONTACT_ACTION_WORKER,
+      tenantId,
+      {
+        action,
+        ...(contactId !== undefined ? { contactId } : {}),
+        ...payloadFields,
+        dryRun: preview,
+        confirm: !preview,
+      },
+      preview ? undefined : { purpose: "operator" },
+    );
     raiseWorkerError(result);
     const record = asRecord(result);
     throwIfFailed(record, "contacts", action);
@@ -268,14 +273,19 @@ export function createContactsResourcesAdapters(
     preview: boolean,
     resourceId?: string,
   ): Promise<ResourceCrudResult | ResourcePlan> {
-    const result = await envelope<unknown>(RESOURCE_ACTION_WORKER, tenantId, {
-      kind,
-      action,
-      ...(resourceId !== undefined ? { resourceId } : {}),
-      ...payloadFields,
-      dryRun: preview,
-      confirm: !preview,
-    });
+    const result = await envelope<unknown>(
+      RESOURCE_ACTION_WORKER,
+      tenantId,
+      {
+        kind,
+        action,
+        ...(resourceId !== undefined ? { resourceId } : {}),
+        ...payloadFields,
+        dryRun: preview,
+        confirm: !preview,
+      },
+      preview ? undefined : { purpose: "operator" },
+    );
     raiseWorkerError(result);
     const record = asRecord(result);
     throwIfFailed(record, "resources", action);
@@ -351,11 +361,16 @@ export function createContactsResourcesAdapters(
 
   const contactsImport: ContactsImportProvider = {
     async importContacts(tenantId: string, input: ContactsImportInput): Promise<ContactsImportReport> {
-      const result = await envelope<unknown>(CONTACTS_IMPORT_WORKER, tenantId, {
-        ...(input.csv !== undefined ? { csv: input.csv } : {}),
-        ...(input.rows !== undefined ? { rows: [...input.rows] } : {}),
-        preview: input.preview,
-      });
+      const result = await envelope<unknown>(
+        CONTACTS_IMPORT_WORKER,
+        tenantId,
+        {
+          ...(input.csv !== undefined ? { csv: input.csv } : {}),
+          ...(input.rows !== undefined ? { rows: [...input.rows] } : {}),
+          preview: input.preview,
+        },
+        input.preview ? undefined : { purpose: "operator" },
+      );
       raiseWorkerError(result);
       const record = asRecord(result);
       const rows = asArray(record["rows"]).map(mapImportRow);
@@ -441,13 +456,18 @@ export function createContactsResourcesAdapters(
       const results: ContactDeployResult[] = [];
       for (const target of targets) {
         try {
-          const output = await envelope<unknown>(CONTACT_TEMPLATE_DEPLOY_WORKER, target.tenantId, {
-            template,
-            targets: [target],
-            variables: target.variables,
-            dryRun: false,
-            actor,
-          });
+          const output = await envelope<unknown>(
+            CONTACT_TEMPLATE_DEPLOY_WORKER,
+            target.tenantId,
+            {
+              template,
+              targets: [target],
+              variables: target.variables,
+              dryRun: false,
+              actor,
+            },
+            { purpose: "operator" },
+          );
           raiseWorkerError(output);
           const record = asRecord(output);
           const rows = asArray(record["targets"]);

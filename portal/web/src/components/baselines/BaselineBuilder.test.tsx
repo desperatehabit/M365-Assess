@@ -176,4 +176,48 @@ describe("BaselineBuilderPage", () => {
     expect(screen.getByTestId("timeline-step-standards").dataset.state).toBe("done");
     expect(screen.getByTestId("builder-notice").textContent).toContain("Seeded");
   });
+
+  it("opens a built-in read-only with a Make a copy banner", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetcher = (async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      if (url === "/v1/baselines/builtin-baseline-identity-baseline") {
+        return new Response(
+          JSON.stringify({
+            id: "builtin-baseline-identity-baseline",
+            name: "Identity Baseline",
+            logic: "and",
+            alerting: { enabled: false },
+            enabled: true,
+            stages: [{ order: 0, conditions: [], action: "report" }],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            assignments: [],
+            builtIn: true,
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      if (url === "/v1/baselines/builtin-baseline-identity-baseline/copy" && init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ id: "bl-copy", name: "Identity Baseline (copy)", stages: [], assignments: [], builtIn: false }),
+          { status: 201, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as unknown as typeof fetch;
+
+    render(<BaselineBuilderPage params={{ id: "builtin-baseline-identity-baseline" }} fetcher={fetcher} />);
+
+    await waitFor(() => expect(screen.getByTestId("builtin-banner")).toBeTruthy());
+    expect(screen.getByTestId("builtin-banner").textContent).toContain("read-only");
+    expect((screen.getByTestId("builder-name") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByTestId("builder-save") as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.queryByTestId("assignment-add")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("builtin-make-copy"));
+    await waitFor(() =>
+      expect(calls.find((call) => call.url === "/v1/baselines/builtin-baseline-identity-baseline/copy")?.init?.method).toBe("POST"),
+    );
+  });
 });

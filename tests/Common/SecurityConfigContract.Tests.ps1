@@ -330,3 +330,7 @@ Describe 'Collector Contract Compliance' -ForEach @(
             -Because "$FileName should use Initialize-SecurityConfig instead of raw List construction"
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Update-CheckProgress' -ErrorAction SilentlyContinue
+}

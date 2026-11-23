@@ -121,3 +121,7 @@ Describe 'Deploy-GroupTemplate worker (T-0266)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

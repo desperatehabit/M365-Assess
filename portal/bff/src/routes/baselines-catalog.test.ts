@@ -30,6 +30,7 @@ describe("local baseline catalog (T-0190)", () => {
     expect(catalog.entries.length).toBeGreaterThan(0);
     for (const entry of catalog.entries) {
       expect(entry.name.trim().length).toBeGreaterThan(0);
+      expect(entry.builtIn).toBe(true);
       expect(entry.stages.length).toBeGreaterThan(0);
       const orders = entry.stages.map((stage) => stage.order);
       expect([...orders].sort((a, b) => a - b)).toEqual(orders);

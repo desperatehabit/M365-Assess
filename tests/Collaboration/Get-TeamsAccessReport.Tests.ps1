@@ -76,6 +76,40 @@ Describe 'Get-TeamsAccessReport' {
     }
 }
 
+Describe 'Get-TeamsAccessReport - app-only auth reports Skipped (T-0937)' {
+    BeforeAll {
+        function global:Assert-GraphConnection { return $true }
+        function global:Write-AssessmentLog { param($Message, $Level) }
+        function global:Get-MgContext {
+            return @{ TenantId = 'test-tenant-id'; AuthType = 'AppOnly'; AppName = 'TestApp' }
+        }
+
+        Mock Invoke-MgGraphRequest { throw 'Teams Graph APIs do not support app-only auth' }
+
+        $script:appOnlyOutput = @(& "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-TeamsAccessReport.ps1")
+    }
+
+    It 'does not return an all-N/A report row' {
+        @($script:appOnlyOutput | Where-Object { $_.PSObject.Properties.Name -contains 'AllowGuestAccess' }).Count |
+            Should -Be 0
+    }
+
+    It 'reports the collector outcome as Skipped with the app-only reason' {
+        $outcome = @($script:appOnlyOutput | Where-Object {
+            $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+        })
+        $outcome.Count | Should -Be 1
+        $outcome[0].Outcome | Should -Be 'Skipped'
+        $outcome[0].Reason | Should -Match 'app-only not supported'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Assert-GraphConnection -ErrorAction SilentlyContinue
+        Remove-Item Function:\Write-AssessmentLog -ErrorAction SilentlyContinue
+        Remove-Item Function:\Get-MgContext -ErrorAction SilentlyContinue
+    }
+}
+
 Describe 'Get-TeamsAccessReport - beta endpoint unavailable' {
     BeforeAll {
         function global:Assert-GraphConnection { return $true }

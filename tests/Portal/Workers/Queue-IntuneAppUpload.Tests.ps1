@@ -264,3 +264,7 @@ Describe 'Queue-IntuneAppUpload worker (T-0323)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

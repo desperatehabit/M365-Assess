@@ -169,12 +169,17 @@ export function createSharingProviders(
       tenantId: string,
       link: SharingLinkRef,
     ): Promise<{ status: "removed" | "failed"; before: unknown; after: unknown; error?: string | null }> {
-      const result = await call<unknown>("remove-sharing-links.ps1", tenantId, {
-        links: [link],
-        mode: "Apply",
-        confirmCount: 1,
-        correlationId: randomUUID(),
-      });
+      const result = await call<unknown>(
+        "remove-sharing-links.ps1",
+        tenantId,
+        {
+          links: [link],
+          mode: "Apply",
+          confirmCount: 1,
+          correlationId: randomUUID(),
+        },
+        { purpose: "operator" },
+      );
       raiseWorkerError(result);
       const record = asRecord(result);
       const first = asArray(record["results"])[0];

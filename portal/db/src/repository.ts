@@ -70,6 +70,13 @@ export interface Tenant {
   deletedAt: string | null;
 }
 
+/**
+ * Credential purpose (T-0917). `reader` is the assessment/reader app credential
+ * stored by onboarding today; `operator` is the opt-in write app credential.
+ * A tenant may hold one of each; writes resolve `operator` and reads `reader`.
+ */
+export type TenantCredentialPurpose = "reader" | "operator";
+
 export interface TenantCredential {
   id: string;
   tenantId: string;
@@ -80,6 +87,7 @@ export interface TenantCredential {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  purpose?: TenantCredentialPurpose;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,22 +103,31 @@ export class CredentialRefError extends Error {
   readonly code = "credential.invalid_ref";
 
   constructor(ref: string) {
-    super(`credential reference '${ref}' is not of the form tenants/{tenantId}/credential`);
+    super(
+      `credential reference '${ref}' is not of the form tenants/{tenantId}/credential or tenants/{tenantId}/operator-credential`,
+    );
     this.name = "CredentialRefError";
   }
 }
 
-export function formatCredentialRef(tenantId: string): CredentialRef {
-  return `tenants/${tenantId}/credential` as CredentialRef;
+export function formatCredentialRef(
+  tenantId: string,
+  purpose: TenantCredentialPurpose = "reader",
+): CredentialRef {
+  const suffix = purpose === "operator" ? "operator-credential" : "credential";
+  return `tenants/${tenantId}/${suffix}` as CredentialRef;
 }
 
-export function parseCredentialRef(ref: string): { tenantId: string } {
-  const match = /^tenants\/([^/]+)\/credential$/.exec(ref);
+export function parseCredentialRef(ref: string): {
+  tenantId: string;
+  purpose: TenantCredentialPurpose;
+} {
+  const match = /^tenants\/([^/]+)\/(operator-)?credential$/.exec(ref);
   const tenantId = match?.[1];
   if (!tenantId) {
     throw new CredentialRefError(ref);
   }
-  return { tenantId };
+  return { tenantId, purpose: match[2] ? "operator" : "reader" };
 }
 
 export function isCredentialRefForTenant(ref: string, tenantId: string): boolean {
@@ -369,6 +386,12 @@ export interface WebhookSubscription {
   expiresOn: string | null;
   state: string;
   notificationUrl: string;
+  /**
+   * SHA-256 hex of the Graph clientState the subscription was created with
+   * (T-0905). Only the hash is stored; the receiver hashes the callback's
+   * clientState and compares. NULL for rows created before 0131.
+   */
+  clientStateHash: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -391,8 +414,14 @@ export type AuditSearchUpdate = Partial<
 >;
 export type AuditCoverageInput = Omit<AuditCoverage, "createdAt" | "updatedAt"> &
   Partial<Pick<AuditCoverage, "createdAt" | "updatedAt">>;
-export type WebhookSubscriptionInput = Omit<WebhookSubscription, "createdAt" | "updatedAt"> &
-  Partial<Pick<WebhookSubscription, "createdAt" | "updatedAt">>;
+export type WebhookSubscriptionInput = Omit<
+  WebhookSubscription,
+  "createdAt" | "updatedAt" | "clientStateHash"
+> &
+  Partial<Pick<WebhookSubscription, "createdAt" | "updatedAt">> & {
+    /** Plaintext clientState from the worker; hashed at rest, never stored. */
+    clientState?: string;
+  };
 export type AuditExclusionWindowInput = Omit<
   AuditExclusionWindow,
   "createdAt" | "updatedAt" | "deletedAt"
@@ -1384,7 +1413,10 @@ export interface Repository {
   upsertTenant(input: TenantInput): Promise<Tenant>;
   softDeleteTenant(tenantId: string, options?: { now?: string }): Promise<boolean>;
 
-  getTenantCredential(tenantId: string): Promise<TenantCredential | undefined>;
+  getTenantCredential(
+    tenantId: string,
+    purpose?: TenantCredentialPurpose,
+  ): Promise<TenantCredential | undefined>;
   listTenantCredentials(tenantId: string): Promise<TenantCredential[]>;
   upsertTenantCredential(input: TenantCredentialInput): Promise<TenantCredential>;
 

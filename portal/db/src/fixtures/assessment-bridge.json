@@ -74,6 +74,9 @@
       "warn": 1,
       "fail": 0,
       "review": 0,
+      "info": 0,
+      "skipped": 0,
+      "notLicensed": 0,
       "total": 1
     },
     "Exchange Online": {
@@ -81,6 +84,9 @@
       "warn": 0,
       "fail": 0,
       "review": 0,
+      "info": 0,
+      "skipped": 0,
+      "notLicensed": 0,
       "total": 1
     },
     "SharePoint & OneDrive": {
@@ -88,6 +94,9 @@
       "warn": 0,
       "fail": 1,
       "review": 0,
+      "info": 0,
+      "skipped": 0,
+      "notLicensed": 0,
       "total": 1
     },
     "Entra ID": {
@@ -95,6 +104,9 @@
       "warn": 0,
       "fail": 0,
       "review": 1,
+      "info": 0,
+      "skipped": 0,
+      "notLicensed": 0,
       "total": 1
     }
   }

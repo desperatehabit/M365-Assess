@@ -18,6 +18,7 @@ $script:RequiredGraphPermissions = @(
     @{ Name = 'RoleManagement.Read.Directory';           Sections = 'Identity'                               ; Reason = 'Entra directory role assignments and PIM eligibility' }
     @{ Name = 'Policy.Read.All';                         Sections = 'Tenant, Identity'                       ; Reason = 'Conditional Access, auth methods, token lifetime, password policies' }
     @{ Name = 'Application.Read.All';                    Sections = 'Identity'                               ; Reason = 'App registrations, service principals, OAuth permission grants' }
+    @{ Name = 'Agreement.Read.All';                      Sections = 'Identity'                               ; Reason = 'Terms of Use agreements and their acceptance settings (ENTRA-TOU-001)' }
     @{ Name = 'Directory.Read.All';                      Sections = 'Identity'                               ; Reason = 'Devices, admin units, role templates' }
     # -- Intune ----------------------------------------------------------------
     @{ Name = 'DeviceManagementManagedDevices.Read.All'; Sections = 'Intune'                                 ; Reason = 'Managed device inventory and compliance state' }
@@ -100,3 +101,170 @@ $script:RequiredComplianceRoles = @(
         Reason       = 'Broad read-only access across Microsoft 365 services including Purview, covering gaps not addressed by the above roles.'
     }
 )
+
+# ==============================================================================
+# OPERATOR (WRITE) PERMISSIONS - OPT-IN APP REGISTRATION
+#
+# The assessment/reader app registration above must stay read-only. Portal write
+# workers use a second app registration, M365-Assess-Operator, provisioned only
+# when Grant-M365AssessConsent is called with -IncludeWritePermissions and an
+# explicit -WritePermissionGroups selection (T-0917).
+#
+# Groups mirror the write-permission matrix in ISSUES/T-0917.md. A permission
+# listed in $script:OperatorDangerousPermissions requires -ConfirmDangerous;
+# without it the cmdlet refuses before changing the tenant.
+# ==============================================================================
+
+$script:OperatorWriteGroups = [ordered]@{
+    identity   = @{
+        Description        = 'Users, groups, Conditional Access, authentication methods, PIM role settings and role assignment.'
+        GraphPermissions   = @(
+            'User.ReadWrite.All'
+            'Group.ReadWrite.All'
+            'Policy.ReadWrite.ConditionalAccess'
+            'Policy.ReadWrite.SecurityDefaults'
+            'Policy.ReadWrite.AuthenticationMethod'
+            'UserAuthenticationMethod.ReadWrite.All'
+            'RoleManagementPolicy.ReadWrite.Directory'
+            'RoleAssignmentSchedule.ReadWrite.Directory'
+            'RoleEligibilitySchedule.ReadWrite.Directory'
+            'Domain.ReadWrite.All'
+            'MailboxSettings.ReadWrite'
+        )
+        ExchangeAppRoles   = @()
+        ExoRoleGroups      = @()
+        DirectoryRoles     = @()
+    }
+    security   = @{
+        Description        = 'Defender alerts, incidents, and threat submissions.'
+        GraphPermissions   = @(
+            'SecurityAlert.ReadWrite.All'
+            'SecurityIncident.ReadWrite.All'
+            'ThreatSubmission.ReadWrite.All'
+        )
+        ExchangeAppRoles   = @()
+        ExoRoleGroups      = @()
+        DirectoryRoles     = @()
+    }
+    intune     = @{
+        Description        = 'Intune configuration, apps, service configuration, and managed-device actions.'
+        GraphPermissions   = @(
+            'DeviceManagementConfiguration.ReadWrite.All'
+            'DeviceManagementApps.ReadWrite.All'
+            'DeviceManagementServiceConfig.ReadWrite.All'
+            'DeviceManagementManagedDevices.ReadWrite.All'
+            'DeviceManagementManagedDevices.PrivilegedOperations.All'
+        )
+        ExchangeAppRoles   = @()
+        ExoRoleGroups      = @()
+        DirectoryRoles     = @()
+    }
+    sharepoint = @{
+        Description        = 'SharePoint site permissions and property edits, plus Teams creation and settings.'
+        GraphPermissions   = @(
+            'Sites.FullControl.All'
+            'Team.Create'
+            'TeamSettings.ReadWrite.All'
+        )
+        ExchangeAppRoles   = @()
+        ExoRoleGroups      = @()
+        DirectoryRoles     = @()
+    }
+    exchange   = @{
+        Description        = 'Exchange Online and Purview writes through the Exchange Administrator, eDiscovery Manager, and Teams Administrator roles.'
+        GraphPermissions   = @()
+        ExchangeAppRoles   = @(
+            'Exchange.ManageAsApp'
+            'Organization.Read.All'
+            'MailboxSettings.Read'
+        )
+        ExoRoleGroups      = @(
+            'Exchange Administrator'
+        )
+        DirectoryRoles     = @(
+            'Exchange Administrator'
+            'eDiscovery Manager'
+            'Teams Administrator'
+        )
+    }
+}
+
+# Permissions that need -ConfirmDangerous: PIM role assignment (any directory
+# role, including Global Administrator), device wipe, and full SharePoint control.
+$script:OperatorDangerousPermissions = @(
+    'RoleAssignmentSchedule.ReadWrite.Directory'
+    'RoleEligibilitySchedule.ReadWrite.Directory'
+    'DeviceManagementManagedDevices.PrivilegedOperations.All'
+    'Sites.FullControl.All'
+)
+
+# Built-in Entra directory role template ids for the operator app. Stable across
+# tenants. Exchange Administrator also exists as an EXO role group; when the
+# exchange group is selected it is assigned in both surfaces.
+$script:OperatorDirectoryRoleTemplates = @{
+    'Exchange Administrator' = '29232cdf-9323-42fd-ade2-1d097af3e4de'
+    'eDiscovery Manager'     = '5f2222b1-57c3-48ba-8ad5-d4759f1fde6f'
+    'Teams Administrator'    = '69091246-20e8-4a56-aa4d-066075b2a7a8'
+}
+
+# Resolves the -WritePermissionGroups selection into the exact Graph, Exchange,
+# EXO-role, and directory-role grants, and names the dangerous permissions the
+# caller must confirm. Pure data selection; no tenant access.
+function Get-M365AssessOperatorWriteSelection {
+    <#
+    .SYNOPSIS
+        Resolves the opt-in write groups into the permissions and roles to grant.
+    .DESCRIPTION
+        Deduplicates the selected groups and returns the Graph application
+        permissions, Exchange Online app roles, EXO role groups, directory roles,
+        and the dangerous permission subset that requires -ConfirmDangerous.
+    .PARAMETER Groups
+        Write groups: identity, security, intune, sharepoint, exchange.
+    .EXAMPLE
+        PS> Get-M365AssessOperatorWriteSelection -Groups @('identity','intune')
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string[]]$Groups
+    )
+
+    $selected = @($Groups | ForEach-Object { $_.Trim().ToLowerInvariant() } | Select-Object -Unique)
+    $graph = [System.Collections.Generic.List[string]]::new()
+    $exchangeAppRoles = [System.Collections.Generic.List[string]]::new()
+    $exoRoleGroups = [System.Collections.Generic.List[string]]::new()
+    $directoryRoles = [System.Collections.Generic.List[string]]::new()
+
+    foreach ($group in $selected) {
+        if (-not $script:OperatorWriteGroups.Contains($group)) {
+            $valid = ($script:OperatorWriteGroups.Keys -join ', ')
+            throw "Unknown write permission group '$group'. Valid groups: $valid (code: consent.invalid_write_group)."
+        }
+        $definition = $script:OperatorWriteGroups[$group]
+        foreach ($permission in @($definition.GraphPermissions)) {
+            if (-not $graph.Contains($permission)) { $graph.Add($permission) }
+        }
+        foreach ($role in @($definition.ExchangeAppRoles)) {
+            if (-not $exchangeAppRoles.Contains($role)) { $exchangeAppRoles.Add($role) }
+        }
+        foreach ($roleGroup in @($definition.ExoRoleGroups)) {
+            if (-not $exoRoleGroups.Contains($roleGroup)) { $exoRoleGroups.Add($roleGroup) }
+        }
+        foreach ($role in @($definition.DirectoryRoles)) {
+            if (-not $directoryRoles.Contains($role)) { $directoryRoles.Add($role) }
+        }
+    }
+
+    $dangerous = @($graph | Where-Object { $script:OperatorDangerousPermissions -contains $_ })
+
+    return [pscustomobject]@{
+        Groups              = $selected
+        GraphPermissions    = @($graph)
+        ExchangeAppRoles    = @($exchangeAppRoles)
+        ExoRoleGroups       = @($exoRoleGroups)
+        DirectoryRoles      = @($directoryRoles)
+        DangerousPermissions = $dangerous
+    }
+}

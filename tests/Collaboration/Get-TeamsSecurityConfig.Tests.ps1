@@ -221,7 +221,7 @@ Describe 'Get-TeamsSecurityConfig - sovereign-cloud endpoint gaps emit Skipped (
         }
 
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
-        . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-TeamsSecurityConfig.ps1"
+        $script:collectorOutput = . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-TeamsSecurityConfig.ps1"
     }
 
     It 'emits Skipped for every meeting-policy check when the endpoint 400s' {
@@ -244,6 +244,16 @@ Describe 'Get-TeamsSecurityConfig - sovereign-cloud endpoint gaps emit Skipped (
         $apps.Status | Should -Be 'Pass'
     }
 
+    It 'reports the collector outcome as Partial when endpoints were unavailable (T-0937)' {
+        $outcome = @($script:collectorOutput | Where-Object {
+            $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+        })
+        $outcome.Count | Should -Be 1
+        $outcome[0].Outcome | Should -Be 'Partial'
+        $outcome[0].Reason | Should -Match 'teamsMeetingPolicy'
+        $outcome[0].Reason | Should -Match 'teamsClientConfiguration'
+    }
+
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
         Remove-Item Function:\Get-MgContext -ErrorAction SilentlyContinue
@@ -251,7 +261,10 @@ Describe 'Get-TeamsSecurityConfig - sovereign-cloud endpoint gaps emit Skipped (
     }
 }
 
-Describe 'Get-TeamsSecurityConfig - App-Only Auth Early Exit' {
+Describe 'Get-TeamsSecurityConfig - App-Only Auth (T-0937)' {
+    # An app-only run cannot read the Graph /teamwork/* endpoints (HTTP 412). The
+    # collector must list every Teams check as Skipped with the reason and report
+    # itself as Skipped -- never as a clean Complete run with no items.
     BeforeAll {
         function global:Update-CheckProgress {
             param($CheckId, $Setting, $Status)
@@ -269,10 +282,32 @@ Describe 'Get-TeamsSecurityConfig - App-Only Auth Early Exit' {
         # Capture the output from the collector
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
         $script:collectorOutput = . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-TeamsSecurityConfig.ps1"
+        $script:outcome = @($script:collectorOutput | Where-Object {
+            $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+        })
+        $script:rows = @($script:collectorOutput | Where-Object {
+            -not ($_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome')
+        })
     }
 
-    It 'Returns empty array for app-only auth' {
-        @($script:collectorOutput).Count | Should -Be 0
+    It 'emits each Teams check as Skipped with app-only-not-supported reason' {
+        $script:rows.Count | Should -BeGreaterThan 0
+        foreach ($row in $script:rows) {
+            $row.CheckId | Should -Match '^TEAMS-'
+            $row.Status | Should -Be 'Skipped' -Because "check $($row.CheckId) must not report a result it never collected"
+            $row.CurrentValue | Should -Be 'Not assessed'
+            $row.Remediation | Should -Match 'app-only not supported'
+        }
+    }
+
+    It 'does not return an empty result (no Complete with 0 items)' {
+        @($script:rows | Where-Object { $_.CheckId -like 'TEAMS-MEETING-*' }).Count | Should -Be 9
+    }
+
+    It 'reports the collector outcome as Skipped with a reason' {
+        $script:outcome.Count | Should -Be 1
+        $script:outcome[0].Outcome | Should -Be 'Skipped'
+        $script:outcome[0].Reason | Should -Match 'app-only not supported'
     }
 
     AfterAll {
@@ -378,8 +413,20 @@ Describe 'Get-TeamsSecurityConfig - No Teams License' {
         $script:collectorOutput = . "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-TeamsSecurityConfig.ps1"
     }
 
-    It 'Returns empty array when no Teams license is detected' {
-        @($script:collectorOutput).Count | Should -Be 0
+    It 'Returns no check rows when no Teams license is detected' {
+        $checkRows = @($script:collectorOutput | Where-Object {
+            -not ($_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome')
+        })
+        $checkRows.Count | Should -Be 0
+    }
+
+    It 'reports the collector outcome as Skipped (T-0937)' {
+        $outcome = @($script:collectorOutput | Where-Object {
+            $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+        })
+        $outcome.Count | Should -Be 1
+        $outcome[0].Outcome | Should -Be 'Skipped'
+        $outcome[0].Reason | Should -Match 'No Teams licenses'
     }
 
     AfterAll {

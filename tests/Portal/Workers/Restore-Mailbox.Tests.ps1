@@ -197,3 +197,8 @@ Describe 'Restore-Mailbox worker (T-0388)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Undo-SoftDeletedMailbox' -ErrorAction SilentlyContinue
+}

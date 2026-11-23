@@ -60,11 +60,35 @@ async function serve(
   };
 }
 
+/** Seed the opt-in operator credential row a write worker requests (T-0940). */
+function seedOperatorCredential(db: Database.Database, tenantId: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR REPLACE INTO tenant_credentials
+       (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `${tenantId}-operator`,
+    tenantId,
+    "certificate-thumbprint",
+    "operator-app",
+    "thumbprint://ABC123",
+    "ABC123",
+    "commercial",
+    null,
+    null,
+    "operator",
+    now,
+    now,
+  );
+}
+
 /** Serve with tenant t-a and its credential set up, as `role`. */
 async function adminWithTenant(runner: WorkerRunner, role: "admin" | "operator" = "admin", db = new Database(":memory:")) {
   const setup = await serve("admin", db, runner);
   await setup.post("/v1/tenants", { id: "t-a", displayName: "Contoso" });
   await setup.post("/v1/tenants/t-a/credential", { authMethod: "certificate-thumbprint", clientId: "app-1", thumbprint: "ABC123" });
+  seedOperatorCredential(db, "t-a");
   return role === "admin" ? setup : serve("operator", db, runner);
 }
 
@@ -286,6 +310,7 @@ describe("tenants and onboarding routes (T-0822)", () => {
           tenantId: "t-a",
           credential: {
             credentialRef: "tenants/t-a/credential",
+            purpose: "reader",
             record: expect.objectContaining({ tenantId: "t-a", clientId: "app-1", thumbprint: "ABC123" }),
           },
         },
@@ -1106,7 +1131,7 @@ describe("EPIC-017 routes (T-0844)", () => {
     );
     expect(queue.items[0]).toMatchObject({ deploymentId, state: "succeeded", appId: "graph-app-1" });
     const upload = calls.find((c) => c.entrypoint === "queue-intune-app-upload.ps1")!;
-    expect(upload.job).toMatchObject({ tenantId: "t-a", deploymentId, appType: "store", credential: { credentialRef: "tenants/t-a/credential" } });
+    expect(upload.job).toMatchObject({ tenantId: "t-a", deploymentId, appType: "store", credential: { credentialRef: "tenants/t-a/operator-credential", purpose: "operator" } });
     expect(db.prepare("SELECT type FROM jobs").all()).toEqual([{ type: "app-upload" }]);
     const actions = (db.prepare("SELECT action FROM audit_events WHERE action LIKE 'intune.app.upload.%' ORDER BY rowid").all() as { action: string }[]).map((r) => r.action);
     expect(actions).toEqual(["intune.app.upload.queued", "intune.app.upload.uploading", "intune.app.upload.committing", "intune.app.upload.succeeded"]);
