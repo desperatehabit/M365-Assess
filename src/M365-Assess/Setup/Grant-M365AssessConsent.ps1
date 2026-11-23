@@ -493,6 +493,33 @@ function Test-ExoTransientObjectError {
     return $Message -match "Couldn't find object|could not be found|couldn't be found|couldn't be performed because object|not found"
 }
 
+function Test-ExoPartnerManagedRoleGroupError {
+    <#
+    .SYNOPSIS
+        Recognises an Exchange Online role group that is partner-managed and
+        cannot have its membership changed.
+    .DESCRIPTION
+        Some tenants carry a partner-managed Exchange role group (for example
+        ExchangeServiceAdmins_<id> with capability Partner_Managed), often from a
+        CSP relationship even when GDAP is not used today. A delegated admin
+        cannot add members to it, and retrying never helps. The app-only
+        authorization surface is the Entra directory role, so this is only fatal
+        when that role is missing.
+    .PARAMETER Message
+        The exception message to classify.
+    .EXAMPLE
+        Test-ExoPartnerManagedRoleGroupError -Message $_.Exception.Message
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
+
+    return $Message -match "Partner_Managed|partner managed role group|Membership of a partner managed role group|out of the current user's write scope"
+}
+
 function Grant-M365AssessConsent {
     <#
     .SYNOPSIS
@@ -2167,7 +2194,18 @@ function Grant-M365AssessConsent {
                                                 $_.Role -eq $rg -and $_.Status -in @('Added', 'AlreadyPresent')
                                             }
                                         ).Count -gt 0
-                                        if ($entraRoleAssigned -and (Test-ExoTransientObjectError -Message $exoMessage)) {
+                                        if (Test-ExoPartnerManagedRoleGroupError -Message $exoMessage) {
+                                            if ($entraRoleAssigned) {
+                                                Write-Warn "$rg - Exchange role group is partner-managed and cannot be changed; the Entra '$rg' directory role is assigned, so app-only writes can proceed."
+                                                $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Warning'; Error = $exoMessage })
+                                            }
+                                            else {
+                                                $action = "The Exchange role group '$rg' is partner-managed and cannot be changed. Assign the Entra '$rg' directory role to the operator app (or use the partner's GDAP role), then retry."
+                                                Write-Fail "$rg - $action"
+                                                $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Error = $action })
+                                            }
+                                        }
+                                        elseif ($entraRoleAssigned -and (Test-ExoTransientObjectError -Message $exoMessage)) {
                                             Write-Warn "$rg - Exchange role group is not resolvable on this DC yet; the Entra '$rg' directory role is assigned, so app-only writes can proceed. Re-run onboarding later to add the EXO role group."
                                             $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Warning'; Error = $exoMessage })
                                         }

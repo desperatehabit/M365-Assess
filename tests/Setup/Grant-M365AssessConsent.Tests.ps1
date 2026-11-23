@@ -519,6 +519,52 @@ Describe 'Operator write reconciliation (T-0942)' {
         @($result.OperatorExoRoleGroups | Where-Object { $_.Status -eq 'Failed' }) | Should -HaveCount 0
     }
 
+    It 'warns when the Exchange role group is partner-managed and the Entra role is assigned' -Skip:(-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+        Mock Start-Sleep { }
+        Mock Get-RoleGroupMember { param($Identity) return @() }
+        Mock Add-RoleGroupMember {
+            throw "The operation on Identity ""ExchangeServiceAdmins_102400532"" failed because it's out of the current user's write scope. The action 'Add-RoleGroupMember', 'Identity,Member', may not be performed on the management role group 'ExchangeServiceAdmins_102400532' with capability 'Partner_Managed'. Membership of a partner managed role group can't be changed."
+        }
+
+        $result = Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' `
+            -ClientId 'reader-client' -CertificateThumbprint 'THUMB' `
+            -AdminUpn 'admin@contoso.onmicrosoft.com' `
+            -IncludeWritePermissions -WritePermissionGroups @('exchange') -ReplaceWriteGroups `
+            -SkipGraph -SkipComplianceRoles -Force
+
+        $exo = @($result.OperatorExoRoleGroups | Where-Object { $_.RoleGroup -eq 'Exchange Administrator' })
+        $exo | Should -HaveCount 1
+        $exo[0].Status | Should -Be 'Warning'
+        @($result.OperatorExoRoleGroups | Where-Object { $_.Status -eq 'Failed' }) | Should -HaveCount 0
+    }
+
+    It 'fails with an actionable message when the role group is partner-managed and the Entra role is missing' -Skip:(-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+        Mock Start-Sleep { }
+        Mock Get-RoleGroupMember { param($Identity) return @() }
+        Mock Add-RoleGroupMember {
+            throw "The operation on Identity ""ExchangeServiceAdmins_102400532"" failed because it's out of the current user's write scope. Membership of a partner managed role group can't be changed."
+        }
+        # The Entra Exchange Administrator assignment itself fails, so the
+        # partner-managed EXO group is the only route left and must stay fatal.
+        Mock Get-MgDirectoryRoleMemberAsServicePrincipal { param($DirectoryRoleId, $All) return @() }
+        Mock New-MgDirectoryRoleMemberByRef {
+            param($DirectoryRoleId, $BodyParameter)
+            if ($DirectoryRoleId -eq 'dir-exchange') { throw 'Insufficient privileges to assign the directory role.' }
+        }
+
+        $result = Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' `
+            -ClientId 'reader-client' -CertificateThumbprint 'THUMB' `
+            -AdminUpn 'admin@contoso.onmicrosoft.com' `
+            -IncludeWritePermissions -WritePermissionGroups @('exchange') -ReplaceWriteGroups `
+            -SkipGraph -SkipComplianceRoles -Force
+
+        $exo = @($result.OperatorExoRoleGroups | Where-Object { $_.RoleGroup -eq 'Exchange Administrator' })
+        $exo | Should -HaveCount 1
+        $exo[0].Status | Should -Be 'Failed'
+        $exo[0].Error | Should -Match 'partner-managed'
+        $exo[0].Error | Should -Match 'Assign the Entra'
+    }
+
     It 'removes nothing on a first run because the operator app holds no unselected grants' {
         Mock Get-MgServicePrincipalAppRoleAssignment { param($ServicePrincipalId) return @() }
         Mock Get-MgDirectoryRoleMemberAsServicePrincipal { param($DirectoryRoleId) return @() }

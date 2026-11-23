@@ -277,7 +277,16 @@ export function TenantAccessPanel({
           )
         : [];
       const warningNames = exoWarnings
-        .map((entry) => (entry as { roleGroup?: unknown }).roleGroup)
+        .map((entry) => {
+          const name = (entry as { roleGroup?: unknown }).roleGroup;
+          if (typeof name !== "string" || name.length === 0) return null;
+          const error = (entry as { error?: unknown }).error;
+          // Partner-managed role groups cannot be changed; the Entra role is
+          // the authorization surface, so name the limitation in the warning.
+          const partnerManaged =
+            typeof error === "string" && /partner[\s_-]*managed|write scope/i.test(error);
+          return partnerManaged ? `${name} (partner-managed)` : name;
+        })
         .filter((name): name is string => typeof name === "string" && name.length > 0);
       setResultWarning(
         warningNames.length > 0

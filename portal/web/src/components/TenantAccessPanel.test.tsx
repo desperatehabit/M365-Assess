@@ -220,7 +220,14 @@ describe("TenantAccessPanel (T-0942)", () => {
         return json(201, {
           onboarding: {
             operatorClientId: "operator-new",
-            operatorExoRoleGroups: [{ roleGroup: "Exchange Administrator", status: "Warning" }],
+            operatorExoRoleGroups: [
+              {
+                roleGroup: "Exchange Administrator",
+                status: "Warning",
+                error:
+                  "Membership of a partner managed role group can't be changed (capability 'Partner_Managed').",
+              },
+            ],
           },
         });
       }
@@ -236,6 +243,7 @@ describe("TenantAccessPanel (T-0942)", () => {
     await waitFor(() =>
       expect(screen.getByTestId("write-access-warning").textContent).toContain("Exchange Administrator"),
     );
+    expect(screen.getByTestId("write-access-warning").textContent).toContain("partner-managed");
     expect(screen.getByTestId("write-access-status").textContent).toBe("Enabled");
   });
 
