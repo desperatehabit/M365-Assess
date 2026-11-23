@@ -6,7 +6,7 @@
 
 - **Checks:** 292 (290 automated)
 - **Collector families:** 16 (see `controls/sync-scope.json`)
-- **Local extension checks:** 5 (pending upstream CheckID adoption)
+- **Local extension checks:** 6 (pending upstream CheckID adoption)
 - **Severity-rated:** 292 of 292 (0 unrated checks display the default Medium severity)
 - **Learn-more links:** 31 of 292
 
