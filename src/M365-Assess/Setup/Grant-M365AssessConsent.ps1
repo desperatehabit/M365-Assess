@@ -580,6 +580,13 @@ function Grant-M365AssessConsent {
         assignment, DeviceManagementManagedDevices.PrivilegedOperations.All, or
         Sites.FullControl.All). Without it the cmdlet refuses before changing the
         tenant and names the dangerous grants.
+    .PARAMETER ReplaceWriteGroups
+        Reconcile the operator app's managed grants to -WritePermissionGroups:
+        add the selected grants and remove the managed operator grants that are
+        no longer selected (Graph app roles, directory roles from the T-0917
+        matrix, and EXO role groups). The reader app is never changed, and
+        assignments outside the T-0917 matrix are never removed. Requires
+        -IncludeWritePermissions.
     .PARAMETER Force
         Bypass the high-impact ShouldProcess confirmation prompt. Without -Force,
         the cmdlet prompts before any tenant-mutating action (ConfirmImpact='High').
@@ -681,6 +688,9 @@ function Grant-M365AssessConsent {
         [switch]$ConfirmDangerous,
 
         [Parameter()]
+        [switch]$ReplaceWriteGroups,
+
+        [Parameter()]
         [switch]$Force,
 
         [Parameter()]
@@ -751,6 +761,44 @@ function Grant-M365AssessConsent {
             throw 'Provisioning the operator app registration requires -AdminUpn for the delegated Graph session (code: consent.admin_upn_required).'
         }
     }
+    elseif ($ReplaceWriteGroups) {
+        throw 'ReplaceWriteGroups requires -IncludeWritePermissions and at least one -WritePermissionGroups value (code: consent.replace_requires_write).'
+    }
+
+    # Everything -ReplaceWriteGroups may remove: only grants the T-0917 matrix owns.
+    # Assignments outside this set are never touched, and the reader app is a
+    # different service principal entirely.
+    $operatorManagedGraphPermissions = @(
+        @(
+            foreach ($group in @($script:OperatorWriteGroups.Keys)) {
+                @($script:OperatorWriteGroups[$group].GraphPermissions)
+            }
+        ) | Select-Object -Unique
+    )
+    $operatorManagedExchangeAppRoles = @(
+        @(
+            foreach ($group in @($script:OperatorWriteGroups.Keys)) {
+                @($script:OperatorWriteGroups[$group].ExchangeAppRoles)
+            }
+        ) | Select-Object -Unique
+    )
+    $operatorManagedExoRoleGroups = @(
+        @(
+            foreach ($group in @($script:OperatorWriteGroups.Keys)) {
+                @($script:OperatorWriteGroups[$group].ExoRoleGroups)
+            }
+        ) | Select-Object -Unique
+    )
+    $operatorManagedDirectoryRoles = @(
+        @(
+            foreach ($group in @($script:OperatorWriteGroups.Keys)) {
+                @($script:OperatorWriteGroups[$group].DirectoryRoles)
+            }
+        ) | Select-Object -Unique
+    )
+    # The operator app may carry Purview app access from an earlier manual grant;
+    # it is managed but never selected by the write matrix, so a replace run removes it.
+    $operatorManagedPurviewAppRoles = @('Purview.ApplicationAccess')
 
     # ==================================================================
     # INTERNAL HELPERS (private to function scope)
@@ -776,6 +824,7 @@ function Grant-M365AssessConsent {
     function Write-StepSummary {
         param([string]$Label, [object[]]$Results, [string]$ItemField)
         $added    = @($Results | Where-Object { $_.Status -eq 'Added' }).Count
+        $removed  = @($Results | Where-Object { $_.Status -eq 'Removed' }).Count
         $present  = @($Results | Where-Object { $_.Status -eq 'AlreadyPresent' }).Count
         $failed   = @($Results | Where-Object { $_.Status -eq 'Failed' }).Count
         $notfound = @($Results | Where-Object { $_.Status -eq 'NotFound' }).Count
@@ -785,6 +834,10 @@ function Grant-M365AssessConsent {
 
         Write-Host "  -- $Label $pad" -ForegroundColor Cyan
         Write-Host "     Added           : $added"   -ForegroundColor $(if ($added -gt 0) { 'Green' } else { 'DarkGray' })
+        if ($removed -gt 0) {
+            Write-Host "     Removed         : $removed" -ForegroundColor Green
+            $Results | Where-Object { $_.Status -eq 'Removed' } | ForEach-Object { Write-Host "       - $($_.$ItemField)" -ForegroundColor Green }
+        }
         Write-Host "     Already present : $present" -ForegroundColor DarkGray
         if ($skipped -gt 0) { Write-Host "     Skipped         : $skipped" -ForegroundColor DarkGray }
         if ($failed -gt 0) {
@@ -830,6 +883,31 @@ function Grant-M365AssessConsent {
             }
             foreach ($rg in @($operatorSelection.ExoRoleGroups)) {
                 Write-Host "    - EXO role group: $rg" -ForegroundColor DarkYellow
+            }
+            if ($ReplaceWriteGroups) {
+                $unselectedGraph = @($operatorManagedGraphPermissions | Where-Object { @($operatorSelection.GraphPermissions) -notcontains $_ })
+                $unselectedExchange = @($operatorManagedExchangeAppRoles | Where-Object { @($operatorSelection.ExchangeAppRoles) -notcontains $_ })
+                $unselectedExo = @($operatorManagedExoRoleGroups | Where-Object { @($operatorSelection.ExoRoleGroups) -notcontains $_ })
+                $unselectedRoles = @($operatorManagedDirectoryRoles | Where-Object { @($operatorSelection.DirectoryRoles) -notcontains $_ })
+                Write-Host '  -ReplaceWriteGroups would remove these unselected managed operator grants:' -ForegroundColor White
+                foreach ($permission in $unselectedGraph) {
+                    Write-Host "    - Graph app role: $permission" -ForegroundColor DarkYellow
+                }
+                foreach ($role in $unselectedExchange) {
+                    Write-Host "    - Exchange app role: $role" -ForegroundColor DarkYellow
+                }
+                foreach ($role in $operatorManagedPurviewAppRoles) {
+                    Write-Host "    - Purview app role (if present): $role" -ForegroundColor DarkYellow
+                }
+                foreach ($role in $unselectedRoles) {
+                    Write-Host "    - Directory role: $role" -ForegroundColor DarkYellow
+                }
+                foreach ($rg in $unselectedExo) {
+                    Write-Host "    - EXO role group: $rg" -ForegroundColor DarkYellow
+                }
+                if (@($unselectedGraph).Count + @($unselectedExchange).Count + @($operatorManagedPurviewAppRoles).Count + @($unselectedRoles).Count + @($unselectedExo).Count -eq 0) {
+                    Write-Host '    - Nothing: every managed operator grant is still selected' -ForegroundColor DarkGray
+                }
             }
             Write-Host '  The reader app is not granted any write permission.' -ForegroundColor DarkGray
         }
@@ -1682,14 +1760,20 @@ function Grant-M365AssessConsent {
             $operatorCertificatePath = $certificatePath
 
             # --- Selected Graph application permissions ---
+            $operatorGraphRoleNames = @{}
             if ($SkipGraph) {
                 Write-Step 'Operator Graph permissions - SKIPPED (-SkipGraph specified)'
             }
-            elseif (@($operatorSelection.GraphPermissions).Count -gt 0) {
-                Write-Step "Adding operator Graph permissions ($(@($operatorSelection.GraphPermissions).Count))..."
+            elseif (@($operatorSelection.GraphPermissions).Count -gt 0 -or $ReplaceWriteGroups) {
+                if (@($operatorSelection.GraphPermissions).Count -gt 0) {
+                    Write-Step "Adding operator Graph permissions ($(@($operatorSelection.GraphPermissions).Count))..."
+                }
                 $graphSp = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'" -ErrorAction Stop
                 $roleLookup = @{}
-                foreach ($role in $graphSp.AppRoles) { $roleLookup[$role.Value] = $role.Id }
+                foreach ($role in $graphSp.AppRoles) {
+                    $roleLookup[$role.Value] = $role.Id
+                    $operatorGraphRoleNames[[string]$role.Id] = $role.Value
+                }
                 $existingOperatorGraphIds = @(
                     Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -ErrorAction SilentlyContinue |
                         Where-Object { $_.ResourceId -eq $graphSp.Id } |
@@ -1727,6 +1811,38 @@ function Grant-M365AssessConsent {
                         $operatorGraphResults.Add([PSCustomObject]@{ Permission = $permission; Status = 'WhatIf' })
                     }
                 }
+
+                # Reconciliation: remove managed Graph app roles that are no
+                # longer selected. Unrelated assignments are left untouched.
+                if ($ReplaceWriteGroups) {
+                    Write-Step 'Reconciling operator Graph permissions to the selected write groups...'
+                    $currentGraphAssignments = @(
+                        Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -ErrorAction SilentlyContinue |
+                            Where-Object { $_.ResourceId -eq $graphSp.Id }
+                    )
+                    foreach ($assignment in $currentGraphAssignments) {
+                        $roleId = [string]$assignment.AppRoleId
+                        if (-not $roleId -or -not $operatorGraphRoleNames.ContainsKey($roleId)) { continue }
+                        $name = [string]$operatorGraphRoleNames[$roleId]
+                        if ($operatorManagedGraphPermissions -notcontains $name) { continue }
+                        if (@($operatorSelection.GraphPermissions) -contains $name) { continue }
+                        if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, "Remove Graph permission: $name")) {
+                            try {
+                                Remove-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -AppRoleAssignmentId $assignment.Id -ErrorAction Stop
+                                Write-OK "Removed $name"
+                                $operatorGraphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'Removed' })
+                            }
+                            catch {
+                                Write-Fail "Removing $name - $($_.Exception.Message)"
+                                $operatorGraphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'Failed'; Error = $_.Exception.Message })
+                            }
+                        }
+                        else {
+                            Write-Host "    [WhatIf] Would remove: $name" -ForegroundColor DarkYellow
+                            $operatorGraphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'WhatIf' })
+                        }
+                    }
+                }
             }
 
             # --- Exchange Online app roles (Exchange.ManageAsApp etc.) ---
@@ -1759,6 +1875,69 @@ function Grant-M365AssessConsent {
                 }
                 catch {
                     Write-Warn "Could not assign Exchange app roles to the operator app: $_"
+                }
+            }
+
+            # --- Reconciliation of Exchange and Purview app roles ---
+            # The write matrix owns Exchange.ManageAsApp, its read companions, and
+            # Purview.ApplicationAccess. Remove only those on the operator app when
+            # they are no longer selected; never touch another resource's grants.
+            if ($ReplaceWriteGroups) {
+                Write-Step 'Reconciling operator Exchange and Purview app roles...'
+                $operatorAppRoleAssignments = @(
+                    Get-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -ErrorAction SilentlyContinue
+                )
+                $appRoleResources = @(
+                    @{
+                        AppId    = '00000002-0000-0ff1-ce00-000000000000'
+                        Label    = 'Exchange'
+                        Managed  = @($operatorManagedExchangeAppRoles)
+                        Selected = @($operatorSelection.ExchangeAppRoles)
+                    }
+                    @{
+                        AppId    = '00000007-0000-0ff1-ce00-000000000000'
+                        Label    = 'Purview'
+                        Managed  = @($operatorManagedPurviewAppRoles)
+                        Selected = @()
+                    }
+                )
+                foreach ($resource in $appRoleResources) {
+                    if (@($resource.Managed).Count -eq 0) { continue }
+                    try {
+                        $resourceSp = Get-MgServicePrincipal -Filter "appId eq '$($resource.AppId)'" -ErrorAction Stop
+                    }
+                    catch {
+                        Write-Warn "Could not resolve the $($resource.Label) service principal to reconcile its app roles: $($_.Exception.Message)"
+                        continue
+                    }
+                    if (-not $resourceSp) { continue }
+                    $resourceRoleNames = @{}
+                    foreach ($role in $resourceSp.AppRoles) { $resourceRoleNames[[string]$role.Id] = $role.Value }
+                    $currentAssignments = @(
+                        $operatorAppRoleAssignments | Where-Object { $_.ResourceId -eq $resourceSp.Id }
+                    )
+                    foreach ($assignment in $currentAssignments) {
+                        $roleId = [string]$assignment.AppRoleId
+                        if (-not $roleId -or -not $resourceRoleNames.ContainsKey($roleId)) { continue }
+                        $name = [string]$resourceRoleNames[$roleId]
+                        if (@($resource.Managed) -notcontains $name) { continue }
+                        if (@($resource.Selected) -contains $name) { continue }
+                        if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, "Remove $($resource.Label) app role: $name")) {
+                            try {
+                                Remove-MgServicePrincipalAppRoleAssignment -ServicePrincipalId $operatorSp.Id -AppRoleAssignmentId $assignment.Id -ErrorAction Stop
+                                Write-OK "Removed $name ($($resource.Label))"
+                                $operatorGraphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'Removed' })
+                            }
+                            catch {
+                                Write-Fail "Removing $name ($($resource.Label)) - $($_.Exception.Message)"
+                                $operatorGraphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'Failed'; Error = $_.Exception.Message })
+                            }
+                        }
+                        else {
+                            Write-Host "    [WhatIf] Would remove $($resource.Label) app role: $name" -ForegroundColor DarkYellow
+                            $operatorGraphResults.Add([PSCustomObject]@{ Permission = $name; Status = 'WhatIf' })
+                        }
+                    }
                 }
             }
 
@@ -1830,10 +2009,43 @@ function Grant-M365AssessConsent {
                 }
             }
 
+            # --- Reconciliation of managed directory roles ---
+            if ($ReplaceWriteGroups) {
+                Write-Step 'Reconciling operator directory roles to the selected write groups...'
+                foreach ($roleName in @($script:OperatorDirectoryRoleTemplates.Keys)) {
+                    if (@($operatorSelection.DirectoryRoles) -contains $roleName) { continue }
+                    $templateId = $script:OperatorDirectoryRoleTemplates[$roleName]
+                    $dirRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$templateId'" -ErrorAction SilentlyContinue
+                    if (-not $dirRole) { continue }
+                    $existingMembers = @(
+                        Get-MgDirectoryRoleMemberAsServicePrincipal -DirectoryRoleId $dirRole.Id -All -ErrorAction SilentlyContinue |
+                            Select-Object -ExpandProperty Id
+                    )
+                    if ($existingMembers -notcontains $operatorSp.Id) { continue }
+                    if ($PSCmdlet.ShouldProcess($OperatorAppDisplayName, "Remove directory role: $roleName")) {
+                        try {
+                            Remove-MgDirectoryRoleMemberByRef -DirectoryRoleId $dirRole.Id -DirectoryObjectId $operatorSp.Id -ErrorAction Stop
+                            Write-OK "Removed $roleName"
+                            $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Removed' })
+                        }
+                        catch {
+                            Write-Fail "Removing $roleName - $($_.Exception.Message)"
+                            $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'Failed'; Error = $_.Exception.Message })
+                        }
+                    }
+                    else {
+                        Write-Host "    [WhatIf] Would remove directory role: $roleName" -ForegroundColor DarkYellow
+                        $operatorDirectoryResults.Add([PSCustomObject]@{ Role = $roleName; Status = 'WhatIf' })
+                    }
+                }
+            }
+
             Disconnect-MgGraph -ErrorAction SilentlyContinue | Out-Null
 
             # --- Exchange Online role groups (exchange group only) ---
-            if (@($operatorSelection.ExoRoleGroups).Count -gt 0) {
+            # A replace run connects even when no EXO group is selected so it can
+            # remove the managed groups that are no longer selected.
+            if (@($operatorSelection.ExoRoleGroups).Count -gt 0 -or $ReplaceWriteGroups) {
                 if ($SkipExchangeRbac) {
                     Write-Step 'Operator Exchange Online RBAC - SKIPPED (-SkipExchangeRbac specified)'
                     foreach ($rg in @($operatorSelection.ExoRoleGroups)) {
@@ -1841,7 +2053,12 @@ function Grant-M365AssessConsent {
                     }
                 }
                 else {
-                    Write-Step "Adding the operator app to Exchange Online role groups..."
+                    if (@($operatorSelection.ExoRoleGroups).Count -gt 0) {
+                        Write-Step "Adding the operator app to Exchange Online role groups..."
+                    }
+                    else {
+                        Write-Step 'Reconciling operator Exchange Online role groups...'
+                    }
                     $operatorExoConnected = $false
                     try {
                         Connect-M365AssessExchangeSession -TenantId $TenantId `
@@ -1923,6 +2140,50 @@ function Grant-M365AssessConsent {
                             else {
                                 Write-Host "    [WhatIf] Would add the operator app to EXO role group: $rg" -ForegroundColor DarkYellow
                                 $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'WhatIf' })
+                            }
+                        }
+
+                        # Reconciliation: remove managed EXO role-group memberships
+                        # that are no longer selected. Only matrix groups are touched.
+                        if ($ReplaceWriteGroups) {
+                            foreach ($rg in @($operatorManagedExoRoleGroups)) {
+                                if (@($operatorSelection.ExoRoleGroups) -contains $rg) { continue }
+                                $isMember = $false
+                                try {
+                                    $memberObjects = @(Get-RoleGroupMember -Identity $rg -ErrorAction Stop)
+                                    $memberKeys = @(
+                                        foreach ($member in $memberObjects) {
+                                            if ($member.Name) { [string]$member.Name }
+                                            if ($member.Id) { [string]$member.Id }
+                                        }
+                                    )
+                                    $isMember = $memberKeys -contains $OperatorAppDisplayName -or $memberKeys -contains $operatorSp.Id
+                                }
+                                catch {
+                                    Write-Warn "$rg - could not query members: $($_.Exception.Message)"
+                                }
+                                if (-not $isMember) { continue }
+
+                                if ($PSCmdlet.ShouldProcess($rg, "Remove '$OperatorAppDisplayName'")) {
+                                    try {
+                                        try {
+                                            Remove-RoleGroupMember -Identity $rg -Member $OperatorAppDisplayName -ErrorAction Stop
+                                        }
+                                        catch {
+                                            Remove-RoleGroupMember -Identity $rg -Member $operatorSp.Id -ErrorAction Stop
+                                        }
+                                        Write-OK "Removed operator from $rg"
+                                        $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Removed' })
+                                    }
+                                    catch {
+                                        Write-Fail "Removing operator from $rg - $($_.Exception.Message)"
+                                        $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Error = $_.Exception.Message })
+                                    }
+                                }
+                                else {
+                                    Write-Host "    [WhatIf] Would remove the operator app from EXO role group: $rg" -ForegroundColor DarkYellow
+                                    $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'WhatIf' })
+                                }
                             }
                         }
 
@@ -2088,5 +2349,11 @@ function Grant-M365AssessConsent {
         OperatorGraphPermissions      = $operatorGraphResults
         OperatorDirectoryRoles        = $operatorDirectoryResults
         OperatorExoRoleGroups         = $operatorExoResults
+        OperatorRemoved               = @(
+            @(
+                @($operatorGraphResults) + @($operatorDirectoryResults) + @($operatorExoResults)
+            ) | Where-Object { $_.Status -eq 'Removed' }
+        )
+        ReplaceWriteGroups            = [bool]$ReplaceWriteGroups
     }
 }

@@ -74,7 +74,9 @@ export function createTenantVariableStore(repo: SqliteRepository): TenantVariabl
 export function createCredentialRowStore(repo: SqliteRepository): CredentialStoreRow {
   return {
     getCredential: (tenantId, purpose) => repo.getTenantCredential(tenantId, purpose),
+    listCredentials: (tenantId) => repo.listTenantCredentials(tenantId),
     upsertCredential: (input) => repo.upsertTenantCredential(input),
+    deleteCredential: (tenantId, purpose) => repo.deleteTenantCredential(tenantId, purpose),
     appendAuditEvent: (input) => repo.appendAuditEvent(input),
   };
 }

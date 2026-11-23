@@ -88,6 +88,12 @@ export interface TenantCredential {
   expiresOn: string | null;
   lastValidated: string | null;
   purpose?: TenantCredentialPurpose;
+  /**
+   * Write-permission groups granted to the opt-in operator app (T-0942), for
+   * example ["identity", "exchange"]. NULL for the reader credential and for
+   * operator rows created before migration 0134.
+   */
+  permissionGroups: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -324,8 +330,11 @@ export type TenantInput = Omit<
       | "lastError"
     >
   >;
-export type TenantCredentialInput = Omit<TenantCredential, "createdAt" | "updatedAt"> &
-  Partial<Pick<TenantCredential, "createdAt" | "updatedAt">>;
+export type TenantCredentialInput = Omit<
+  TenantCredential,
+  "createdAt" | "updatedAt" | "permissionGroups"
+> &
+  Partial<Pick<TenantCredential, "createdAt" | "updatedAt" | "permissionGroups">>;
 export type TenantGroupInput = Omit<TenantGroup, "createdAt" | "updatedAt" | "deletedAt"> &
   Partial<Pick<TenantGroup, "createdAt" | "updatedAt" | "deletedAt">>;
 export type TenantGroupMemberInput = Omit<TenantGroupMember, "createdAt" | "updatedAt"> &
@@ -1418,6 +1427,11 @@ export interface Repository {
     purpose?: TenantCredentialPurpose,
   ): Promise<TenantCredential | undefined>;
   listTenantCredentials(tenantId: string): Promise<TenantCredential[]>;
+  /** Removes one purpose's credential row; the Entra app and grants are left in place (T-0942). */
+  deleteTenantCredential(
+    tenantId: string,
+    purpose: TenantCredentialPurpose,
+  ): Promise<boolean>;
   upsertTenantCredential(input: TenantCredentialInput): Promise<TenantCredential>;
 
   getTenantGroup(groupId: string, options?: ListOptions): Promise<TenantGroup | undefined>;

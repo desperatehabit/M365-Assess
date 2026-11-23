@@ -75,10 +75,23 @@ class MemoryCredentialStore implements CredentialStoreRow {
     return found ? { ...found } : undefined;
   }
 
+  async listCredentials(tenantId: string): Promise<CredentialRecord[]> {
+    return [...this.records.values()]
+      .filter((row) => row.tenantId === tenantId)
+      .map((row) => ({ ...row }));
+  }
+
   async upsertCredential(input: CredentialRecord): Promise<CredentialRecord> {
     const stored = { ...input };
     this.records.set(this.key(stored.tenantId, stored.purpose ?? "reader"), stored);
     return { ...stored };
+  }
+
+  async deleteCredential(
+    tenantId: string,
+    purpose: "reader" | "operator" = "reader",
+  ): Promise<boolean> {
+    return this.records.delete(this.key(tenantId, purpose));
   }
 
   async appendAuditEvent(): Promise<unknown> {
@@ -333,6 +346,7 @@ describe("Tenant onboarding route (T-0025)", () => {
           includeWritePermissions: true,
           writePermissionGroups: ["identity", "intune"],
           confirmDangerous: true,
+          replaceWriteGroups: true,
         },
       ),
     );
@@ -341,14 +355,99 @@ describe("Tenant onboarding route (T-0025)", () => {
     expect(h.runnerCalls[0].input.includeWritePermissions).toBe(true);
     expect(h.runnerCalls[0].input.writePermissionGroups).toEqual(["identity", "intune"]);
     expect(h.runnerCalls[0].input.confirmDangerous).toBe(true);
+    expect(h.runnerCalls[0].input.replaceWriteGroups).toBe(true);
 
     const reader = await h.credentials.getCredential(TENANT_ID, "reader");
     expect(reader?.clientId).toBe("reader-app-id");
     expect(reader?.purpose).toBe("reader");
+    expect(reader?.permissionGroups).toBeNull();
     const operator = await h.credentials.getCredential(TENANT_ID, "operator");
     expect(operator?.clientId).toBe("operator-app-id");
     expect(operator?.purpose).toBe("operator");
     expect(operator?.thumbprint).toBe("AABBCCDDEEFF0011223344556677889900112233");
+    expect(operator?.permissionGroups).toEqual(["identity", "intune"]);
+  });
+
+  it("falls back to the requested groups when the worker omits writePermissionGroups", async () => {
+    const h = createHarness({
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "reader-app-id",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorClientId: "operator-app-id",
+      operatorCertificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorAppDisplayName: "M365-Assess-Operator",
+      totalFailed: 0,
+      completedAt: NOW,
+    });
+
+    await h.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["security"],
+        },
+      ),
+    );
+
+    const operator = await h.credentials.getCredential(TENANT_ID, "operator");
+    expect(operator?.permissionGroups).toEqual(["security"]);
+  });
+
+  it("updates the existing operator row on re-onboarding instead of appending a duplicate", async () => {
+    const result: OnboardWorkerResult = {
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "reader-app-id",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorClientId: "operator-app-id",
+      operatorCertificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      writePermissionGroups: ["identity"],
+      totalFailed: 0,
+      completedAt: NOW,
+    };
+    const h = createHarness(result);
+
+    await h.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["identity"],
+        },
+      ),
+    );
+    const firstId = (await h.credentials.getCredential(TENANT_ID, "operator"))?.id;
+
+    const second = createHarness({
+      ...result,
+      writePermissionGroups: ["security"],
+    });
+    // The second harness starts empty, so seed the existing rows to mimic a
+    // tenant that was already onboarded through this store.
+    const prior = await h.credentials.getCredential(TENANT_ID, "operator");
+    if (prior) await second.credentials.upsertCredential(prior);
+    const reader = await h.credentials.getCredential(TENANT_ID, "reader");
+    if (reader) await second.credentials.upsertCredential(reader);
+
+    await second.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["security"],
+        },
+      ),
+    );
+
+    const rows = await second.credentials.listCredentials(TENANT_ID);
+    expect(rows.filter((row) => row.purpose === "operator")).toHaveLength(1);
+    expect(rows.find((row) => row.purpose === "operator")?.id).toBe(firstId);
+    expect(rows.find((row) => row.purpose === "operator")?.permissionGroups).toEqual(["security"]);
   });
 
   it("keeps the reader-only path when write access is declined", async () => {
@@ -443,11 +542,15 @@ describe("Tenant onboarding route (T-0025)", () => {
   });
 
   it("declares OpenAPI specification matching the route", () => {
-    expect(ONBOARD_OPENAPI.paths["/v1/tenants/{id}/onboard"]).toBeDefined();
-    expect(ONBOARD_OPENAPI.paths["/v1/tenants/{id}/onboard"].post.permission).toBe(ONBOARD_PERMISSION);
-    expect(ONBOARD_OPENAPI.paths["/v1/tenants/{id}/onboard/progress/{progressId}"]).toBeDefined();
+    expect(ONBOARD_OPENAPI.paths["/tenants/{id}/onboard"]).toBeDefined();
+    expect(ONBOARD_OPENAPI.paths["/tenants/{id}/onboard"].post.permission).toBe(ONBOARD_PERMISSION);
     expect(
-      ONBOARD_OPENAPI.paths["/v1/tenants/{id}/onboard/progress/{progressId}"].get.permission,
+      ONBOARD_OPENAPI.paths["/tenants/{id}/onboard"].post.requestBody.content["application/json"]
+        .schema.properties,
+    ).toHaveProperty("replaceWriteGroups");
+    expect(ONBOARD_OPENAPI.paths["/tenants/{id}/onboard/progress/{progressId}"]).toBeDefined();
+    expect(
+      ONBOARD_OPENAPI.paths["/tenants/{id}/onboard/progress/{progressId}"].get.permission,
     ).toBe(ONBOARD_PERMISSION);
   });
 });

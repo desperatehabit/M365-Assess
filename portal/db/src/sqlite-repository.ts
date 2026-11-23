@@ -419,6 +419,10 @@ export class SqliteRepository implements Repository {
       expiresOn: asNullableString(row["expiresOn"]),
       lastValidated: asNullableString(row["lastValidated"]),
       purpose: (asNullableString(row["purpose"]) ?? "reader") as TenantCredentialPurpose,
+      permissionGroups:
+        row["permissionGroups"] === null || row["permissionGroups"] === undefined
+          ? null
+          : parseJsonArray(row["permissionGroups"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -886,15 +890,25 @@ export class SqliteRepository implements Repository {
     ).map((row) => this.mapCredential(row));
   }
 
+  async deleteTenantCredential(
+    tenantId: string,
+    purpose: TenantCredentialPurpose,
+  ): Promise<boolean> {
+    const result = this.db
+      .prepare("DELETE FROM tenant_credentials WHERE tenantId = ? AND purpose = ?")
+      .run(tenantId, purpose);
+    return result.changes > 0;
+  }
+
   async upsertTenantCredential(input: TenantCredentialInput): Promise<TenantCredential> {
     const createdAt = input.createdAt ?? nowIso();
     const updatedAt = input.updatedAt ?? nowIso();
     this.db
       .prepare(
         `INSERT INTO tenant_credentials
-           (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, createdAt, updatedAt)
+           (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, permissionGroups, createdAt, updatedAt)
          VALUES
-           (@id, @tenantId, @authMethod, @clientId, @secretRef, @thumbprint, @environment, @expiresOn, @lastValidated, @purpose, @createdAt, @updatedAt)
+           (@id, @tenantId, @authMethod, @clientId, @secretRef, @thumbprint, @environment, @expiresOn, @lastValidated, @purpose, @permissionGroups, @createdAt, @updatedAt)
          ON CONFLICT(id) DO UPDATE SET
            tenantId = excluded.tenantId,
            authMethod = excluded.authMethod,
@@ -905,6 +919,7 @@ export class SqliteRepository implements Repository {
            expiresOn = excluded.expiresOn,
            lastValidated = excluded.lastValidated,
            purpose = excluded.purpose,
+           permissionGroups = excluded.permissionGroups,
            updatedAt = excluded.updatedAt`,
       )
       .run({
@@ -918,6 +933,10 @@ export class SqliteRepository implements Repository {
         expiresOn: input.expiresOn ?? null,
         lastValidated: input.lastValidated ?? null,
         purpose: input.purpose ?? "reader",
+        permissionGroups:
+          input.permissionGroups === undefined || input.permissionGroups === null
+            ? null
+            : JSON.stringify(input.permissionGroups),
         createdAt,
         updatedAt,
       });

@@ -133,6 +133,42 @@ Describe 'Invoke-TenantOnboarding worker (T-0025)' {
             $result.operatorClientId | Should -BeNullOrEmpty
             $result.operatorAppDisplayName | Should -BeNullOrEmpty
         }
+
+        It 'passes -ReplaceWriteGroups to the consent cmdlet (T-0942)' {
+            $seen = @{}
+            $handler = {
+                param($TenantId, $Force, $IncludeWritePermissions, $WritePermissionGroups, $ReplaceWriteGroups)
+                $seen['IncludeWritePermissions'] = $IncludeWritePermissions
+                $seen['WritePermissionGroups'] = @($WritePermissionGroups)
+                $seen['ReplaceWriteGroups'] = $ReplaceWriteGroups
+                return [pscustomobject]@{
+                    ClientId              = 'reader-app'
+                    CertificateThumbprint = 'READER-THUMB'
+                    OperatorClientId      = 'operator-app'
+                    OperatorCertificateThumbprint = 'READER-THUMB'
+                    WritePermissionGroups = @('security')
+                    TotalFailed           = 0
+                }
+            }
+
+            $result = Invoke-TenantOnboarding -TenantId $script:stubTenantId `
+                                              -Confirmed $true `
+                                              -IncludeWritePermissions `
+                                              -WritePermissionGroups @('security') `
+                                              -ReplaceWriteGroups `
+                                              -CmdletHandler $handler
+
+            $seen['ReplaceWriteGroups'] | Should -BeTrue
+            $seen['WritePermissionGroups'] | Should -Be @('security')
+            $result.status | Should -Be 'succeeded'
+            $result.writePermissionGroups | Should -Be @('security')
+        }
+
+        It 'reads replaceWriteGroups from the job envelope and forwards it' {
+            $source = Get-Content -LiteralPath (Join-Path $script:repoRoot 'portal/workers/onboard-tenant.ps1') -Raw
+            $source | Should -Match '\$job\.replaceWriteGroups'
+            $source | Should -Match 'onboardParams\[''ReplaceWriteGroups''\] = \$true'
+        }
     }
 
     Context 'PFX-backed certificates (no Windows certificate store)' {

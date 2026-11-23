@@ -1,9 +1,12 @@
 "use client";
 
 import React, { use, useEffect, useState, type CSSProperties, type ReactElement } from "react";
-import { CredentialBadge, type CredentialState } from "../../../components/CredentialBadge";
+import {
+  TenantAccessPanel,
+  type TenantCredentialSummary,
+} from "../../../components/TenantAccessPanel";
 
-type DetailTab = "overview" | "credential" | "groups" | "variables" | "history";
+type DetailTab = "overview" | "access" | "groups" | "variables" | "history";
 
 interface TenantDetailData {
   id: string;
@@ -20,17 +23,6 @@ interface TenantDetailData {
   lastRunAt: string | null;
   createdAt: string;
   updatedAt: string;
-}
-
-interface CredentialDetailData {
-  authMethod: string;
-  clientId: string;
-  secretRef: string;
-  thumbprint: string | null;
-  environment: string;
-  expiresOn: string | null;
-  lastValidated: string | null;
-  state: CredentialState;
 }
 
 interface GroupMemberData {
@@ -66,13 +58,22 @@ export function tenantHistoryPath(tenantId: string): string {
   return `/v1/logbook?tenant=${encodeURIComponent(tenantId)}`;
 }
 
+// Reader and operator credentials for the Access tab (T-0942).
+export function tenantCredentialsPath(tenantId: string): string {
+  return `/v1/tenants/${encodeURIComponent(tenantId)}/credentials`;
+}
+
 async function loadList<T>(path: string, label: string): Promise<T[]> {
   const res = await fetch(path);
   if (!res.ok) {
     let detail = res.statusText;
     try {
-      const body = (await res.json()) as { message?: string };
-      if (body?.message) detail = body.message;
+      const body = (await res.json()) as { message?: string; code?: string };
+      if (body?.message) {
+        detail = body.code ? `${body.code}: ${body.message}` : body.message;
+      } else if (body?.code) {
+        detail = body.code;
+      }
     } catch {
       // non-JSON error body; keep the status text
     }
@@ -191,7 +192,8 @@ export default function TenantDetailPage({
   const tenantId = resolved?.id ?? "";
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [tenant, setTenant] = useState<TenantDetailData | null>(null);
-  const [credential, setCredential] = useState<CredentialDetailData | null>(null);
+  const [credentials, setCredentials] = useState<TenantCredentialSummary[] | null>(null);
+  const [credentialsError, setCredentialsError] = useState<string | null>(null);
   const [groups, setGroups] = useState<GroupMemberData[]>([]);
   const [variables, setVariables] = useState<VariableData[]>([]);
   const [history, setHistory] = useState<AuditHistoryItem[]>([]);
@@ -207,6 +209,16 @@ export default function TenantDetailPage({
     void loadData();
   }, [tenantId]);
 
+  const loadCredentials = async (): Promise<void> => {
+    setCredentialsError(null);
+    try {
+      setCredentials(await loadList<TenantCredentialSummary>(tenantCredentialsPath(tenantId), "tenant credentials"));
+    } catch (err) {
+      setCredentials([]);
+      setCredentialsError(describeError(err));
+    }
+  };
+
   const loadData = async (): Promise<void> => {
     setLoading(true);
     setError(null);
@@ -218,14 +230,8 @@ export default function TenantDetailPage({
       const data = await res.json();
       setTenant(data);
 
-      // Attempt to load credential
-      try {
-        const credRes = await fetch(`/v1/tenants/${tenantId}/credential`);
-        if (credRes.ok) {
-          const credData = await credRes.json();
-          setCredential(credData);
-        }
-      } catch {}
+      // Reader and operator credentials feed the Access tab (T-0942).
+      await loadCredentials();
 
       // Attempt to load groups
       try {
@@ -381,11 +387,11 @@ export default function TenantDetailPage({
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab("credential")}
-          style={tabButtonStyle(activeTab === "credential")}
-          data-testid="tab-credential"
+          onClick={() => setActiveTab("access")}
+          style={tabButtonStyle(activeTab === "access")}
+          data-testid="tab-access"
         >
-          Credential
+          Access
         </button>
         <button
           type="button"
@@ -453,55 +459,14 @@ export default function TenantDetailPage({
         </div>
       )}
 
-      {/* Tab 2: Credential */}
-      {activeTab === "credential" && (
-        <div style={sectionCardStyle} data-testid="credential-tab-content">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Tenant Credential</h3>
-            {credential && <CredentialBadge state={credential.state} expiresOn={credential.expiresOn} />}
-          </div>
-
-          {credential ? (
-            <div style={gridStyle}>
-              <div>
-                <div style={fieldLabelStyle}>Auth Method</div>
-                <div style={fieldValueStyle}>{credential.authMethod}</div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Application (Client) ID</div>
-                <div style={{ ...fieldValueStyle, fontFamily: "var(--font-mono)" }}>{credential.clientId}</div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Certificate Thumbprint</div>
-                <div style={{ ...fieldValueStyle, fontFamily: "var(--font-mono)" }}>
-                  {credential.thumbprint ?? "—"}
-                </div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Storage Reference</div>
-                <div style={{ ...fieldValueStyle, fontFamily: "var(--font-mono)", fontSize: "13px" }}>
-                  {credential.secretRef}
-                </div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Expires On</div>
-                <div style={fieldValueStyle}>
-                  {credential.expiresOn ? new Date(credential.expiresOn).toLocaleDateString() : "Never"}
-                </div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Last Validated</div>
-                <div style={fieldValueStyle}>
-                  {credential.lastValidated ? new Date(credential.lastValidated).toLocaleString() : "Not yet tested"}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ color: "var(--text-soft)" }}>
-              No credential configured for this tenant. Use the Set Credential action to add one.
-            </div>
-          )}
-        </div>
+      {/* Tab 2: Access (reader and write credentials, T-0942) */}
+      {activeTab === "access" && (
+        <TenantAccessPanel
+          tenantId={tenantId}
+          credentials={credentials}
+          error={credentialsError}
+          onReload={loadCredentials}
+        />
       )}
 
       {/* Tab 3: Groups */}

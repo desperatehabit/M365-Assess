@@ -134,6 +134,7 @@ describe("repository surface", () => {
       "softDeleteTenant",
       "getTenantCredential",
       "listTenantCredentials",
+      "deleteTenantCredential",
       "upsertTenantCredential",
       "getTenantGroup",
       "listTenantGroups",
@@ -254,8 +255,89 @@ describe("tenant scoping", () => {
   });
 });
 
-describe("soft delete", () => {
-  it("hides tenants and groups but keeps the rows and supports includeDeleted", async () => {
+describe("credential purposes and write groups (T-0942)", () => {
+  it("stores granted write groups on the operator row and deletes one purpose at a time", async () => {
+    const repo = await openSqliteRepository({ filename: tempDbPath() });
+    await repo.upsertTenant(tenant(TENANT_A));
+
+    await repo.upsertTenantCredential({
+      id: "cred-reader",
+      tenantId: TENANT_A,
+      authMethod: "certificate-thumbprint",
+      clientId: "reader-client",
+      secretRef: "cert://thumbprint/reader",
+      thumbprint: "READER-THUMB",
+      environment: "global",
+      expiresOn: null,
+      lastValidated: null,
+      purpose: "reader",
+      permissionGroups: null,
+    });
+    await repo.upsertTenantCredential({
+      id: "cred-operator",
+      tenantId: TENANT_A,
+      authMethod: "certificate-thumbprint",
+      clientId: "operator-client",
+      secretRef: "cert://thumbprint/operator",
+      thumbprint: "OPERATOR-THUMB",
+      environment: "global",
+      expiresOn: null,
+      lastValidated: null,
+      purpose: "operator",
+      permissionGroups: ["identity", "exchange"],
+    });
+
+    const rows = await repo.listTenantCredentials(TENANT_A);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((row) => row.purpose === "operator")?.permissionGroups).toEqual([
+      "identity",
+      "exchange",
+    ]);
+    expect(rows.find((row) => row.purpose === "reader")?.permissionGroups).toBeNull();
+
+    expect(await repo.deleteTenantCredential(TENANT_A, "operator")).toBe(true);
+    expect(await repo.getTenantCredential(TENANT_A, "operator")).toBeUndefined();
+    expect(await repo.getTenantCredential(TENANT_A, "reader")).toBeDefined();
+    expect(await repo.deleteTenantCredential(TENANT_A, "operator")).toBe(false);
+
+    // Re-onboarding updates the same operator row and replaces its groups.
+    await repo.upsertTenantCredential({
+      id: "cred-operator",
+      tenantId: TENANT_A,
+      authMethod: "certificate-thumbprint",
+      clientId: "operator-client",
+      secretRef: "cert://thumbprint/operator",
+      thumbprint: "OPERATOR-THUMB",
+      environment: "global",
+      expiresOn: null,
+      lastValidated: null,
+      purpose: "operator",
+      permissionGroups: ["security"],
+    });
+    expect((await repo.getTenantCredential(TENANT_A, "operator"))?.permissionGroups).toEqual([
+      "security",
+    ]);
+    repo.close();
+  });
+
+  it("adds the permissionGroups column with migration 0134", async () => {
+    const filename = tempDbPath();
+    const repo = await openSqliteRepository({ filename });
+    repo.close();
+
+    const raw = new Database(filename);
+    const columns = raw
+      .prepare("PRAGMA table_info(tenant_credentials)")
+      .all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).toContain("permissionGroups");
+    expect(
+      raw.prepare("SELECT COUNT(*) AS c FROM schema_versions WHERE version = 134").get(),
+    ).toMatchObject({ c: 1 });
+    raw.close();
+  });
+});
+
+describe("soft delete", () => {  it("hides tenants and groups but keeps the rows and supports includeDeleted", async () => {
     const filename = tempDbPath();
     const repo = await openSqliteRepository({ filename });
     await repo.upsertTenant(tenant(TENANT_A));
