@@ -468,6 +468,31 @@ function Connect-M365AssessExchangeSession {
     }
 }
 
+function Test-ExoTransientObjectError {
+    <#
+    .SYNOPSIS
+        Recognises the Exchange Online DC-propagation errors seen right after an
+        app or service principal is created.
+    .DESCRIPTION
+        Exchange Online can reject a role-group membership with "object ... couldn't
+        be found" while the role group, the member, or the directory object has not
+        replicated to the DC the session reached. The wording varies by cmdlet and
+        module version, so match the observed variants rather than one phrase.
+    .PARAMETER Message
+        The exception message to classify.
+    .EXAMPLE
+        Test-ExoTransientObjectError -Message $_.Exception.Message
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Message
+    )
+
+    return $Message -match "Couldn't find object|could not be found|couldn't be found|couldn't be performed because object|not found"
+}
+
 function Grant-M365AssessConsent {
     <#
     .SYNOPSIS
@@ -1608,7 +1633,7 @@ function Grant-M365AssessConsent {
                                 $added = $true
                             }
                             catch {
-                                if ($attempt -ge 6 -or $_.Exception.Message -notmatch "Couldn't find object|could not be found|not found") { throw }
+                                if ($attempt -ge 6 -or -not (Test-ExoTransientObjectError -Message $_.Exception.Message)) { throw }
                                 Write-Info "$rg - service principal not visible to Exchange yet; retrying in 15s ($attempt/5)"
                                 Start-Sleep -Seconds 15
                             }
@@ -2118,7 +2143,7 @@ function Grant-M365AssessConsent {
                                             $added = $true
                                         }
                                         catch {
-                                            if ($attempt -ge 6 -or $_.Exception.Message -notmatch "Couldn't find object|could not be found|not found") { throw }
+                                            if ($attempt -ge 6 -or -not (Test-ExoTransientObjectError -Message $_.Exception.Message)) { throw }
                                             Write-Info "$rg - operator service principal not visible to Exchange yet; retrying in 15s ($attempt/5)"
                                             Start-Sleep -Seconds 15
                                         }
@@ -2127,13 +2152,29 @@ function Grant-M365AssessConsent {
                                     $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Added' })
                                 }
                                 catch {
-                                    if ($_.Exception.Message -match 'already a member') {
+                                    $exoMessage = $_.Exception.Message
+                                    if ($exoMessage -match 'already a member') {
                                         Write-Skip "$rg - already a member (confirmed via error)"
                                         $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'AlreadyPresent' })
                                     }
                                     else {
-                                        Write-Fail "$rg - $($_.Exception.Message)"
-                                        $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Error = $_.Exception.Message })
+                                        # The operator app already has the Entra directory role of the
+                                        # same name, which is the app-only authorization surface. A
+                                        # stale Exchange DC that cannot resolve the EXO role group must
+                                        # not block write access; record it and let onboarding finish.
+                                        $entraRoleAssigned = @(
+                                            $operatorDirectoryResults | Where-Object {
+                                                $_.Role -eq $rg -and $_.Status -in @('Added', 'AlreadyPresent')
+                                            }
+                                        ).Count -gt 0
+                                        if ($entraRoleAssigned -and (Test-ExoTransientObjectError -Message $exoMessage)) {
+                                            Write-Warn "$rg - Exchange role group is not resolvable on this DC yet; the Entra '$rg' directory role is assigned, so app-only writes can proceed. Re-run onboarding later to add the EXO role group."
+                                            $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Warning'; Error = $exoMessage })
+                                        }
+                                        else {
+                                            Write-Fail "$rg - $exoMessage"
+                                            $operatorExoResults.Add([PSCustomObject]@{ RoleGroup = $rg; Status = 'Failed'; Error = $exoMessage })
+                                        }
                                     }
                                 }
                             }

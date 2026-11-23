@@ -499,6 +499,26 @@ Describe 'Operator write reconciliation (T-0942)' {
         $exoRemoved | Should -Contain 'Exchange Administrator'
     }
 
+    It 'warns instead of failing when the EXO role group is unresolved but the Entra role is assigned' -Skip:(-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
+        Mock Start-Sleep { }
+        Mock Get-RoleGroupMember { param($Identity) return @() }
+        Mock Add-RoleGroupMember {
+            throw "The operation couldn't be performed because object 'Exchange Administrator' couldn't be found on 'DM8PR06A07DC003.NAMPR06A007.PROD.OUTLOOK.COM'."
+        }
+
+        $result = Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' `
+            -ClientId 'reader-client' -CertificateThumbprint 'THUMB' `
+            -AdminUpn 'admin@contoso.onmicrosoft.com' `
+            -IncludeWritePermissions -WritePermissionGroups @('exchange') -ReplaceWriteGroups `
+            -SkipGraph -SkipComplianceRoles -Force
+
+        $exo = @($result.OperatorExoRoleGroups | Where-Object { $_.RoleGroup -eq 'Exchange Administrator' })
+        $exo | Should -HaveCount 1
+        $exo[0].Status | Should -Be 'Warning'
+        $exo[0].Error | Should -Match "couldn't be found"
+        @($result.OperatorExoRoleGroups | Where-Object { $_.Status -eq 'Failed' }) | Should -HaveCount 0
+    }
+
     It 'removes nothing on a first run because the operator app holds no unselected grants' {
         Mock Get-MgServicePrincipalAppRoleAssignment { param($ServicePrincipalId) return @() }
         Mock Get-MgDirectoryRoleMemberAsServicePrincipal { param($DirectoryRoleId) return @() }

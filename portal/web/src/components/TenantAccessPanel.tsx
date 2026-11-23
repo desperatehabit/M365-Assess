@@ -145,6 +145,7 @@ export function TenantAccessPanel({
   const [dialogError, setDialogError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
+  const [resultWarning, setResultWarning] = useState<string | null>(null);
   const [disableConfirm, setDisableConfirm] = useState(false);
   const [disabling, setDisabling] = useState(false);
   const [cliCopyState, setCliCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -172,6 +173,7 @@ export function TenantAccessPanel({
     setDialogError(null);
     setActionError(null);
     setResult(null);
+    setResultWarning(null);
     setCliCopyState("idle");
     setUrlCopyState("idle");
   };
@@ -221,6 +223,7 @@ export function TenantAccessPanel({
     setDialogError(null);
     setActionError(null);
     setResult(null);
+    setResultWarning(null);
     startProgressWatch(tenantId, progressId);
     try {
       const response = await fetch(`/v1/tenants/${tenantId}/onboard`, {
@@ -245,7 +248,11 @@ export function TenantAccessPanel({
       const body = (await response.json().catch(() => ({}))) as {
         operatorClientId?: unknown;
         operatorAppId?: unknown;
-        onboarding?: { operatorClientId?: unknown; writePermissionGroups?: unknown };
+        onboarding?: {
+          operatorClientId?: unknown;
+          writePermissionGroups?: unknown;
+          operatorExoRoleGroups?: unknown;
+        };
       };
       const operatorId =
         typeof body.onboarding?.operatorClientId === "string"
@@ -261,6 +268,22 @@ export function TenantAccessPanel({
           (operatorId ? ` Operator client id: ${operatorId}.` : "") +
           " The reader app registration is unchanged.",
       );
+      const exoWarnings = Array.isArray(body.onboarding?.operatorExoRoleGroups)
+        ? body.onboarding.operatorExoRoleGroups.filter(
+            (entry) =>
+              typeof entry === "object" &&
+              entry !== null &&
+              (entry as { status?: unknown }).status === "Warning",
+          )
+        : [];
+      const warningNames = exoWarnings
+        .map((entry) => (entry as { roleGroup?: unknown }).roleGroup)
+        .filter((name): name is string => typeof name === "string" && name.length > 0);
+      setResultWarning(
+        warningNames.length > 0
+          ? `Write access is enabled, but Exchange Online role group membership for ${warningNames.join(", ")} could not be confirmed yet. Retry onboarding later if Exchange cmdlets fail.`
+          : null,
+      );
       closeDialog();
       await onReload();
     } catch (err) {
@@ -275,6 +298,7 @@ export function TenantAccessPanel({
     setDisabling(true);
     setActionError(null);
     setResult(null);
+    setResultWarning(null);
     try {
       const response = await fetch(
         `/v1/tenants/${tenantId}/credential?purpose=operator`,
@@ -524,6 +548,11 @@ export function TenantAccessPanel({
         {result && (
           <div className="access-alert success" data-testid="write-access-result">
             {result}
+          </div>
+        )}
+        {resultWarning && (
+          <div className="access-alert warning" data-testid="write-access-warning">
+            {resultWarning}
           </div>
         )}
       </section>
