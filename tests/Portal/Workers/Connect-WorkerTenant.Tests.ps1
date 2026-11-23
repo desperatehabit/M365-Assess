@@ -5,6 +5,7 @@ BeforeAll {
 
     function global:Disconnect-MgGraph { param([switch]$ErrorAction) }
     function global:Disconnect-ExchangeOnline { param([switch]$Confirm, $ErrorAction) }
+    function global:Disconnect-MicrosoftTeams { param([switch]$Confirm, $ErrorAction) }
 
     # A stand-in Connect-Service.ps1 that records each call and fails on request.
     $script:connectScript = Join-Path $TestDrive 'Connect-Service.ps1'
@@ -110,6 +111,35 @@ Describe 'Connect-WorkerTenant (T-0826)' {
             @($session.Services) | Should -Be @('Graph', 'ExchangeOnline')
         }
 
+        It 'connects Graph before a Purview worker so the initial domain resolves (T-0941)' {
+            $session = Connect-WorkerTenant -JobFile (New-JobFile -Job $script:thumbprintJob) -Service Purview -ConnectScript $script:connectScript
+            @($global:ConnectCalls | ForEach-Object { $_.Service }) | Should -Be @('Graph', 'Purview')
+            @($session.Services) | Should -Be @('Graph', 'Purview')
+        }
+
+        It 'opens a MicrosoftTeams session with the resolved app-only certificate (T-0941)' {
+            $global:TeamsParams = $null
+            $teams = { param($p) $global:TeamsParams = $p; return $true }
+            $session = Connect-WorkerTenant -JobFile (New-JobFile -Job $script:thumbprintJob) -Service Teams -TeamsConnect $teams -ConnectScript $script:connectScript
+            @($session.Services) | Should -Be @('Teams')
+            $global:TeamsParams.ApplicationId | Should -Be 'app-1'
+            $global:TeamsParams.TenantId | Should -Be 'tenant-a'
+            $global:TeamsParams.CertificateThumbprint | Should -Be 'ABC123'
+            $global:ConnectCalls.Count | Should -Be 0
+        }
+
+        It 'refuses a MicrosoftTeams session without a certificate (T-0941)' {
+            $noCert = @{
+                tenantId   = 'tenant-a'
+                credential = @{
+                    credentialRef = 'tenants/tenant-a/credential'
+                    record        = @{ tenantId = 'tenant-a'; authMethod = 'client-secret'; clientId = 'app-1'; secretRef = 'ref://tenant-a/secret' }
+                }
+            }
+            { Connect-WorkerTenant -JobFile (New-JobFile -Job $noCert) -Service Teams -CredentialStore { 'x' } -ConnectScript $script:connectScript } |
+                Should -Throw
+        }
+
         It 'disconnects what it already opened when a later service fails' {
             Mock Disconnect-MgGraph { }
             $global:FailService = 'ExchangeOnline'
@@ -161,11 +191,14 @@ Describe 'Connect-WorkerTenant (T-0826)' {
         It 'disconnects each connected service once' {
             Mock Disconnect-MgGraph { }
             Mock Disconnect-ExchangeOnline { }
-            $session = Connect-WorkerTenant -JobFile (New-JobFile -Job $script:thumbprintJob) -Service Graph, ExchangeOnline -ConnectScript $script:connectScript
+            Mock Disconnect-MicrosoftTeams { }
+            $teams = { param($p) return $true }
+            $session = Connect-WorkerTenant -JobFile (New-JobFile -Job $script:thumbprintJob) -Service Graph, ExchangeOnline, Teams -TeamsConnect $teams -ConnectScript $script:connectScript
             Disconnect-WorkerTenant -Session $session
             Disconnect-WorkerTenant -Session $session
             Should -Invoke Disconnect-MgGraph -Times 1
             Should -Invoke Disconnect-ExchangeOnline -Times 1
+            Should -Invoke Disconnect-MicrosoftTeams -Times 1
         }
     }
 
@@ -247,4 +280,5 @@ New-Item -Path $OutputFolder -ItemType Directory -Force | Out-Null
 AfterAll {
     Remove-Item -Path 'Function:\Disconnect-MgGraph' -ErrorAction SilentlyContinue
     Remove-Item -Path 'Function:\Disconnect-ExchangeOnline' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Disconnect-MicrosoftTeams' -ErrorAction SilentlyContinue
 }

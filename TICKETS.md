@@ -126,7 +126,7 @@ counts below in the same commit. The ticket file is the source of truth._
 | [T-0935](ISSUES/T-0935.md) | medium | fixed-unverified | 5 | Licence gating doesn't reach finding status, so unlicensed checks report Fail |
 | [T-0936](ISSUES/T-0936.md) | medium | fixed-unverified | 1 | All 11 Power BI checks are Review after a 404, and the message blames the wrong cause |
 | [T-0937](ISSUES/T-0937.md) | medium | fixed-unverified | 10 | Collectors that skipped or failed are logged as `Complete` |
-| [T-0941](ISSUES/T-0941.md) | medium | open | 4 | Prove the runbook W rows with the operator app |
+| [T-0941](ISSUES/T-0941.md) | medium | open | 6 | Prove the runbook W rows with the operator app |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |

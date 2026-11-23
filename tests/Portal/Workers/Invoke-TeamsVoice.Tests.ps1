@@ -34,6 +34,11 @@ Describe 'Invoke-TeamsVoice worker (T-0508)' {
             (Get-Command Invoke-TeamsVoice -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Read-TeamsVoiceJob -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Test-TeamsVoiceInput -CommandType Function) | Should -Not -BeNullOrEmpty
+        }
+
+        It 'connects Graph and Teams for the voice worker (T-0941)' {
+            $source = Get-Content -LiteralPath $script:entrypoint -Raw
+            $source | Should -Match 'Connect-WorkerTenant -JobFile \$JobFile -Service Graph, Teams'
             (Get-Command Get-TeamsVoiceLicenseState -CommandType Function) | Should -Not -BeNullOrEmpty
         }
     }

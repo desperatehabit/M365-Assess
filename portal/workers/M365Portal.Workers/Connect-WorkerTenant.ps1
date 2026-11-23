@@ -56,6 +56,57 @@ function Read-WorkerCredentialBlock {
     }
 }
 
+function Connect-WorkerTeamsSession {
+    <#
+    .SYNOPSIS
+        Opens an app-only MicrosoftTeams session for a voice worker.
+    .DESCRIPTION
+        The MicrosoftTeams module is not part of Connect-Service. Voice cmdlets
+        (*-Cs*) only exist in that session, so Connect-WorkerTenant opens it here
+        with the same certificate the worker resolved. Certificate-thumbprint auth
+        is Windows-only; pass a certificate object for portable workers.
+    .PARAMETER Auth
+        Resolved auth hashtable from Resolve-TenantCredential.
+    .PARAMETER TenantId
+        Tenant the job targets.
+    .PARAMETER TeamsConnect
+        Test seam: replaces Connect-MicrosoftTeams. Receives the parameter hashtable.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [hashtable]$Auth,
+
+        [Parameter(Mandatory)]
+        [string]$TenantId,
+
+        [scriptblock]$TeamsConnect
+    )
+
+    $params = @{
+        ApplicationId = [string]$Auth.ClientId
+        TenantId      = $TenantId
+    }
+    if ($Auth.CertificateThumbprint) {
+        $params['CertificateThumbprint'] = [string]$Auth.CertificateThumbprint
+    }
+    elseif ($Auth.Certificate) {
+        $params['Certificate'] = $Auth.Certificate
+    }
+    else {
+        throw "Teams app-only auth requires a certificate (code: worker.credential_invalid)."
+    }
+
+    if ($TeamsConnect) {
+        & $TeamsConnect $params
+        return
+    }
+    if (-not (Get-Module -Name MicrosoftTeams -ListAvailable)) {
+        throw "Required module 'MicrosoftTeams' is not installed. Run: Install-Module -Name MicrosoftTeams -Scope CurrentUser (code: worker.connect_failed)"
+    }
+    Connect-MicrosoftTeams @params
+}
+
 function Connect-WorkerTenant {
     <#
     .SYNOPSIS
@@ -67,7 +118,8 @@ function Connect-WorkerTenant {
     .PARAMETER JobFile
         Path to the job envelope JSON (tenantId plus credential { credentialRef, record }).
     .PARAMETER Service
-        Services to connect: Graph (default) and/or ExchangeOnline.
+        Services to connect: Graph (default), ExchangeOnline, Purview
+        (Security & Compliance) and/or Teams (MicrosoftTeams module).
     .PARAMETER CredentialStore
         Secret lookup for client-secret and PFX credentials (T-0827). Certificate-thumbprint
         credentials need none.
@@ -83,12 +135,14 @@ function Connect-WorkerTenant {
         [ValidateNotNullOrEmpty()]
         [string]$JobFile,
 
-        [ValidateSet('Graph', 'ExchangeOnline')]
+        [ValidateSet('Graph', 'ExchangeOnline', 'Purview', 'Teams')]
         [string[]]$Service = @('Graph'),
 
         [scriptblock]$CredentialStore,
 
-        [string]$ConnectScript = ''
+        [string]$ConnectScript = '',
+
+        [scriptblock]$TeamsConnect
     )
 
     $block = Read-WorkerCredentialBlock -JobFile $JobFile
@@ -97,8 +151,9 @@ function Connect-WorkerTenant {
         CredentialRef    = $block.CredentialRef
         CredentialRecord = $block.Record
         # The resolver's secret-auth check speaks assessment sections; 'Email' is the one
-        # that needs Exchange Online, so it trips the same client-secret rejection.
-        Sections         = @(if ($Service -contains 'ExchangeOnline') { 'Email' })
+        # that needs Exchange Online. Purview and Teams are also certificate-only for
+        # app-only use, so they trip the same client-secret rejection.
+        Sections         = @(if ($Service -contains 'ExchangeOnline' -or $Service -contains 'Purview' -or $Service -contains 'Teams') { 'Email' })
     }
     if ($block.Purpose) { $resolveParams['Purpose'] = [string]$block.Purpose }
     if ($CredentialStore) { $resolveParams['CredentialStore'] = $CredentialStore }
@@ -118,7 +173,7 @@ function Connect-WorkerTenant {
     # filters, permissions) must therefore connect Graph first; the extra session is tracked
     # and closed by Disconnect-WorkerTenant.
     $orderedServices = @()
-    if ($Service -contains 'ExchangeOnline') { $orderedServices += 'Graph' }
+    if ($Service -contains 'ExchangeOnline' -or $Service -contains 'Purview') { $orderedServices += 'Graph' }
     foreach ($svc in $Service) { if ($orderedServices -notcontains $svc) { $orderedServices += $svc } }
 
     foreach ($svc in $orderedServices) {
@@ -127,7 +182,15 @@ function Connect-WorkerTenant {
             if ($null -ne $auth[$key] -and [string]$auth[$key] -ne '') { $connectParams[$key] = $auth[$key] }
         }
         try {
-            $connected = & $ConnectScript @connectParams
+            if ($svc -eq 'Teams') {
+                # MicrosoftTeams is not part of Connect-Service; connect it app-only
+                # here so voice workers get a *-Cs* session in this child process.
+                Connect-WorkerTeamsSession -Auth $auth -TenantId $block.TenantId -TeamsConnect $TeamsConnect
+                $connected = $true
+            }
+            else {
+                $connected = & $ConnectScript @connectParams
+            }
             if ($connected -eq $false) { throw "Connect-Service returned false" }
             $session.Services.Add($svc)
         }
@@ -159,8 +222,11 @@ function Disconnect-WorkerTenant {
             if ($svc -eq 'Graph' -and (Get-Command -Name 'Disconnect-MgGraph' -ErrorAction SilentlyContinue)) {
                 $null = Disconnect-MgGraph -ErrorAction SilentlyContinue
             }
-            elseif ($svc -eq 'ExchangeOnline' -and (Get-Command -Name 'Disconnect-ExchangeOnline' -ErrorAction SilentlyContinue)) {
+            elseif ($svc -in @('ExchangeOnline', 'Purview') -and (Get-Command -Name 'Disconnect-ExchangeOnline' -ErrorAction SilentlyContinue)) {
                 Disconnect-ExchangeOnline -Confirm:$false -ErrorAction SilentlyContinue
+            }
+            elseif ($svc -eq 'Teams' -and (Get-Command -Name 'Disconnect-MicrosoftTeams' -ErrorAction SilentlyContinue)) {
+                Disconnect-MicrosoftTeams -Confirm:$false -ErrorAction SilentlyContinue
             }
         }
         catch {

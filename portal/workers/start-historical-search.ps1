@@ -83,7 +83,9 @@ $ErrorActionPreference = 'Stop'
 # Sign in to the job's tenant (T-0826). Direct-parameter runs manage their own session.
 $tenantSession = $null
 if ($JobFile) {
-    $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service ExchangeOnline
+    # New-ComplianceSearch / Start-ComplianceSearch exist only in a Security &
+    # Compliance (IPPSSession) session, not in Exchange Online (T-0941).
+    $tenantSession = Connect-WorkerTenant -JobFile $JobFile -Service Purview
 }
 try {
     if ($PSCmdlet.ParameterSetName -eq 'ByJobFile') {
