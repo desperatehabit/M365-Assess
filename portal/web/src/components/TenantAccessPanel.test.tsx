@@ -214,6 +214,31 @@ describe("TenantAccessPanel (T-0942)", () => {
     expect(screen.getByTestId("write-access-result").textContent).toContain("operator-new");
   });
 
+  it("warns when an Exchange role group could not be confirmed but write access is enabled", async () => {
+    stubFetch((call) => {
+      if (call.url === ONBOARD_PATH) {
+        return json(201, {
+          onboarding: {
+            operatorClientId: "operator-new",
+            operatorExoRoleGroups: [{ roleGroup: "Exchange Administrator", status: "Warning" }],
+          },
+        });
+      }
+      return undefined;
+    });
+    render(<Harness initial={[READER]} reloaded={[READER, OPERATOR]} />);
+
+    openGrantDialog();
+    fillAdminUpn();
+    fireEvent.click(screen.getByTestId("write-group-checkbox-security"));
+    fireEvent.click(screen.getByTestId("submit-write-access"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("write-access-warning").textContent).toContain("Exchange Administrator"),
+    );
+    expect(screen.getByTestId("write-access-status").textContent).toBe("Enabled");
+  });
+
   it("shows each device code and verification URL, then clears them when sign-in completes", async () => {
     let release: (response: Response) => void = () => {};
     const gate = new Promise<Response>((resolve) => {
