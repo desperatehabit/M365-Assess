@@ -282,13 +282,64 @@ catch {
 $allAppRegistrations = @()
 try {
     Write-Verbose "Fetching app registrations..."
-    $appUri = "/v1.0/applications?`$select=id,appId,displayName,signInAudience,web,spa,publicClient&`$top=999"
+    $appUri = "/v1.0/applications?`$select=id,appId,displayName,signInAudience,web,spa,publicClient,passwordCredentials,keyCredentials&`$top=999"
     $appResponse = Invoke-SafeGraphRequest -Uri $appUri
     $allAppRegistrations = @(if ($appResponse -and $appResponse['value']) { $appResponse['value'] })
     Write-Verbose "Fetched $($allAppRegistrations.Count) app registrations"
 }
 catch {
     Write-Warning "Could not fetch app registrations: $_"
+}
+
+# ------------------------------------------------------------------
+# Credential holders (T-0955): client secrets and certificates are normally
+# added to the app registration (/applications), and only sometimes to the
+# service principal. ENTRA-ENTAPP-001/012/013/014/018 evaluate both objects;
+# each holder is labelled with the object that carries the credential.
+# ------------------------------------------------------------------
+$spByAppId = @{}
+foreach ($sp in $regularApps) {
+    if ($sp['appId']) { $spByAppId[[string]$sp['appId']] = $sp }
+}
+
+function ConvertTo-CredentialHolder {
+    param($Object, [string]$Kind, [bool]$Enabled, [string]$OwnersUri, [bool]$FirstParty)
+    [PSCustomObject]@{
+        Name       = "$($Object['displayName']) ($Kind)"
+        Kind       = $Kind
+        Passwords  = @(@($Object['passwordCredentials']) | Where-Object { $null -ne $_ })
+        Keys       = @(@($Object['keyCredentials']) | Where-Object { $null -ne $_ })
+        Enabled    = $Enabled
+        OwnersUri  = $OwnersUri
+        FirstParty = $FirstParty
+    }
+}
+
+$credentialHolders = [System.Collections.Generic.List[object]]::new()
+foreach ($app in $allAppRegistrations) {
+    # An app registration has no enabled flag of its own; use its service principal in
+    # this tenant when there is one. Without one, the credential is still usable.
+    $localSp = $spByAppId[[string]$app['appId']]
+    $holderParams = @{
+        Object     = $app
+        Kind       = 'app registration'
+        Enabled    = $(if ($localSp) { $localSp['accountEnabled'] -eq $true } else { $true })
+        OwnersUri  = "/v1.0/applications/$($app['id'])/owners?`$select=id"
+        FirstParty = $false
+    }
+    $holder = ConvertTo-CredentialHolder @holderParams
+    if (($holder.Passwords.Count + $holder.Keys.Count) -gt 0) { $credentialHolders.Add($holder) }
+}
+foreach ($sp in $regularApps) {
+    $holderParams = @{
+        Object     = $sp
+        Kind       = 'service principal'
+        Enabled    = ($sp['accountEnabled'] -eq $true)
+        OwnersUri  = "/v1.0/servicePrincipals/$($sp['id'])/owners?`$select=id"
+        FirstParty = [bool](Test-MicrosoftFirstPartyApp -ServicePrincipal $sp)
+    }
+    $holder = ConvertTo-CredentialHolder @holderParams
+    if (($holder.Passwords.Count + $holder.Keys.Count) -gt 0) { $credentialHolders.Add($holder) }
 }
 
 # ------------------------------------------------------------------
@@ -311,18 +362,22 @@ function Get-SpOAuth2Grants {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking enabled apps with client credentials..."
+    # Service principals with credentials: ENTRA-ENTAPP-002 reads their sign-in activity.
     $appsWithCreds = @($regularApps | Where-Object {
         $_['accountEnabled'] -eq $true -and
         (($_['keyCredentials'] -and @($_['keyCredentials']).Count -gt 0) -or
          ($_['passwordCredentials'] -and @($_['passwordCredentials']).Count -gt 0))
     })
+    $enabledHolders = @($credentialHolders | Where-Object { $_.Enabled })
+    $appRegHolderCount = @($enabledHolders | Where-Object { $_.Kind -eq 'app registration' }).Count
+    $spHolderCount = @($enabledHolders | Where-Object { $_.Kind -eq 'service principal' }).Count
 
     $settingParams = @{
         Category         = 'Enterprise Applications'
         Setting          = 'Apps with Client Credentials'
-        CurrentValue     = "$($appsWithCreds.Count) enabled app(s) have secrets or certificates"
+        CurrentValue     = "$($enabledHolders.Count) enabled app(s) have secrets or certificates ($appRegHolderCount app registration(s), $spHolderCount service principal(s))"
         RecommendedValue = 'Review all apps with credentials; remove unused'
-        Status           = $(if ($appsWithCreds.Count -eq 0) { 'Pass' } elseif ($appsWithCreds.Count -le 10) { 'Info' } else { 'Warning' })
+        Status           = $(if ($enabledHolders.Count -eq 0) { 'Pass' } elseif ($enabledHolders.Count -le 10) { 'Info' } else { 'Warning' })
         CheckId          = 'ENTRA-ENTAPP-001'
         Remediation      = 'Entra admin center > Enterprise applications > review each app with credentials. Remove secrets/certificates from apps that no longer need them.'
     }
@@ -698,11 +753,9 @@ catch {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking apps using secrets instead of certificates..."
-    $secretOnlyApps = @($regularApps | Where-Object {
-        $_['accountEnabled'] -eq $true -and
-        $_['passwordCredentials'] -and @($_['passwordCredentials']).Count -gt 0 -and
-        (-not $_['keyCredentials'] -or @($_['keyCredentials']).Count -eq 0)
-    } | ForEach-Object { $_['displayName'] })
+    $secretOnlyApps = @($credentialHolders | Where-Object {
+        $_.Enabled -and $_.Passwords.Count -gt 0 -and $_.Keys.Count -eq 0
+    } | ForEach-Object { $_.Name })
 
     $settingParams = @{
         Category         = 'Credential Hygiene'
@@ -727,17 +780,11 @@ try {
     $now = Get-Date
     $expiredCredApps = @()
 
-    foreach ($sp in $regularApps) {
-        $hasExpired = $false
-        foreach ($passCred in @($sp['passwordCredentials'])) {
-            if ($passCred -and $passCred['endDateTime'] -and [datetime]$passCred['endDateTime'] -lt $now) { $hasExpired = $true; break }
-        }
-        if (-not $hasExpired) {
-            foreach ($key in @($sp['keyCredentials'])) {
-                if ($key -and $key['endDateTime'] -and [datetime]$key['endDateTime'] -lt $now) { $hasExpired = $true; break }
-            }
-        }
-        if ($hasExpired) { $expiredCredApps += $sp['displayName'] }
+    foreach ($holder in $credentialHolders) {
+        $expired = @(@($holder.Passwords) + @($holder.Keys) | Where-Object {
+            $_['endDateTime'] -and [datetime]$_['endDateTime'] -lt $now
+        })
+        if ($expired.Count -gt 0) { $expiredCredApps += $holder.Name }
     }
 
     $settingParams = @{
@@ -760,10 +807,9 @@ catch {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking apps with multiple credential types..."
-    $dualCredApps = @($regularApps | Where-Object {
-        $_['passwordCredentials'] -and @($_['passwordCredentials']).Count -gt 0 -and
-        $_['keyCredentials'] -and @($_['keyCredentials']).Count -gt 0
-    } | ForEach-Object { $_['displayName'] })
+    $dualCredApps = @($credentialHolders | Where-Object {
+        $_.Passwords.Count -gt 0 -and $_.Keys.Count -gt 0
+    } | ForEach-Object { $_.Name })
 
     $settingParams = @{
         Category         = 'Credential Hygiene'
@@ -906,22 +952,19 @@ catch {
 try {
     Write-Verbose "Checking for orphaned apps with no owners..."
     $orphanedApps = @()
-    $appsWithCreds = @($regularApps | Where-Object {
-        ($_['passwordCredentials'] -and @($_['passwordCredentials']).Count -gt 0) -or
-        ($_['keyCredentials'] -and @($_['keyCredentials']).Count -gt 0)
-    })
 
-    foreach ($sp in $appsWithCreds) {
+    # Microsoft first-party service principals cannot be given owners in the tenant, so
+    # they are not counted as orphaned.
+    foreach ($holder in @($credentialHolders | Where-Object { -not $_.FirstParty })) {
         try {
-            $ownersUri = "/v1.0/servicePrincipals/$($sp['id'])/owners?`$select=id"
-            $ownersResp = Invoke-MgGraphRequest -Method GET -Uri $ownersUri -ErrorAction Stop
+            $ownersResp = Invoke-MgGraphRequest -Method GET -Uri $holder.OwnersUri -ErrorAction Stop
             $owners = @(if ($ownersResp -and $ownersResp['value']) { $ownersResp['value'] })
             if ($owners.Count -eq 0) {
-                $orphanedApps += $sp['displayName']
+                $orphanedApps += $holder.Name
             }
         }
         catch {
-            Write-Verbose "Could not fetch owners for $($sp['displayName']): $_"
+            Write-Verbose "Could not fetch owners for $($holder.Name): $_"
         }
     }
 

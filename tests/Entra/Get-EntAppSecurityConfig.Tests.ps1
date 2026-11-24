@@ -216,6 +216,96 @@ Describe 'Get-EntAppSecurityConfig - ENTRA-ENTAPP-020 Microsoft tenant exclusion
     }
 }
 
+Describe 'Get-EntAppSecurityConfig - app registration credentials (T-0955)' {
+    BeforeAll {
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+        function Get-MgContext { return @{ TenantId = 'test-tenant-id' } }
+        Mock Import-Module { }
+
+        # Secrets and certificates sit on the app registrations, not on their service
+        # principals. A Microsoft first-party SP also carries a secret on the SP itself.
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            $past = (Get-Date).AddDays(-30).ToString('o')
+            $future = (Get-Date).AddDays(300).ToString('o')
+            # Owner routes first: in -Wildcard, '?' matches any character, so the list
+            # routes below would also match the owners URIs.
+            switch -Wildcard ($Uri) {
+                '*/applications/*/owners*'      { return @{ value = @() } }
+                '*/servicePrincipals/*/owners*' { return @{ value = @() } }
+                '*/organization' {
+                    return @{ value = @(@{ id = 'tenant-id-001' }) }
+                }
+                '*/applications?*' {
+                    return @{ value = @(
+                        @{ id = 'app-obj-1'; appId = 'app-secret'; displayName = 'Secret Only App'
+                           passwordCredentials = @(@{ keyId = 'p1'; endDateTime = $past }); keyCredentials = @() }
+                        @{ id = 'app-obj-2'; appId = 'app-cert'; displayName = 'Cert App'
+                           passwordCredentials = @(); keyCredentials = @(@{ keyId = 'k1'; endDateTime = $future }) }
+                        @{ id = 'app-obj-3'; appId = 'app-dual'; displayName = 'Dual App'
+                           passwordCredentials = @(@{ keyId = 'p2'; endDateTime = $future })
+                           keyCredentials = @(@{ keyId = 'k2'; endDateTime = $future }) }
+                    )}
+                }
+                '*/servicePrincipals?*' {
+                    return @{ value = @(
+                        foreach ($appId in 'app-secret', 'app-cert', 'app-dual') {
+                            @{ id = "sp-$appId"; appId = $appId; displayName = "SP $appId"
+                               appOwnerOrganizationId = 'tenant-id-001'; servicePrincipalType = 'Application'
+                               accountEnabled = $true; keyCredentials = @(); passwordCredentials = @() }
+                        }
+                        @{ id = 'sp-ms-fp'; appId = 'ms-fp-app'; displayName = 'Microsoft First Party'
+                           appOwnerOrganizationId = 'f8cdef31-a31e-4b4a-93e4-5f571e91255a'; servicePrincipalType = 'Application'
+                           accountEnabled = $true; keyCredentials = @()
+                           passwordCredentials = @(@{ keyId = 'p3'; endDateTime = $future }) }
+                    )}
+                }
+                '*/roleManagement/directory/roleAssignments*' { return @{ value = @() } }
+                '*/policies/defaultAppManagementPolicy'       { return @{ isEnabled = $false } }
+                default                                       { return @{ value = @() } }
+            }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Entra/Get-EntAppSecurityConfig.ps1"
+    }
+
+    It 'ENTRA-ENTAPP-001 counts credentials on app registrations and service principals' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Apps with Client Credentials' }
+        $check.CurrentValue | Should -Match '^4 enabled app\(s\)'
+        $check.CurrentValue | Should -Match '3 app registration\(s\), 1 service principal\(s\)'
+    }
+
+    It 'ENTRA-ENTAPP-012 flags an app registration that uses only a client secret' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Apps Using Secrets Instead of Certificates' }
+        $check.Status | Should -Be 'Warning'
+        $check.CurrentValue | Should -Match ([regex]::Escape('Secret Only App (app registration)'))
+        $check.CurrentValue | Should -Not -Match 'Cert App'
+    }
+
+    It 'ENTRA-ENTAPP-013 flags an app registration with an expired secret' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Apps with Expired Credentials' }
+        $check.Status | Should -Be 'Warning'
+        $check.CurrentValue | Should -Match ([regex]::Escape('1 app(s): Secret Only App (app registration)'))
+    }
+
+    It 'ENTRA-ENTAPP-014 flags an app registration with both a secret and a certificate' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Apps with Both Secrets and Certificates' }
+        $check.CurrentValue | Should -Match ([regex]::Escape('1 app(s): Dual App (app registration)'))
+    }
+
+    It 'ENTRA-ENTAPP-018 checks app registration owners and skips Microsoft first-party service principals' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Credentialed Apps with No Owners' }
+        $check.CurrentValue | Should -Match '^3 orphaned app\(s\)'
+        $check.CurrentValue | Should -Not -Match 'Microsoft First Party'
+        Should -Invoke Invoke-MgGraphRequest -Scope Describe -ParameterFilter { $Uri -like '*/applications/app-obj-1/owners*' }
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
 Describe 'Get-EntAppSecurityConfig - ENTRA-ENTAPP-003 first-party classification (#1001)' {
     BeforeAll {
         function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
