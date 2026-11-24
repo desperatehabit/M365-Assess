@@ -2,18 +2,18 @@
 
 _Maintained by hand (last regenerated 2026-11-22; T-0909 to T-0913 added 2026-11-17;
 T-0914 to T-0916 added 2026-11-18; T-0917 to T-0939 added 2026-11-19; T-0940 and
-T-0941 added 2026-11-20; T-0943 and T-0944 added 2026-11-23; T-0945 to T-0949 added 2026-11-24;
+T-0941 added 2026-11-20; T-0943 and T-0944 added 2026-11-23; T-0945 to T-0956 added 2026-11-24;
 T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
 2026-11-22). When a ticket's `status` changes, update its row and the counts below in
 the same commit. The ticket file is the source of truth._
 
-**126 open · 462 closed**
+**133 open · 462 closed**
 
 | Status | Count |
 |---|---|
 | epic | 40 |
 | fixed-unverified | 70 |
-| open | 8 |
+| open | 15 |
 | closed | 8 |
 
 ## Open
@@ -60,6 +60,9 @@ the same commit. The ticket file is the source of truth._
 | [T-0943](ISSUES/T-0943.md) | high | open | 8 | Run progress never receives live section events, so the bar is static and shows no step counts |
 | [T-0944](ISSUES/T-0944.md) | high | open | 5 | A partial or failed run is rendered as 100% and "Completed" |
 | [T-0945](ISSUES/T-0945.md) | high | fixed-unverified | 3 | Run detail and report builder show only the first 100 findings |
+| [T-0950](ISSUES/T-0950.md) | high | open | 9 | A single-item Graph result unrolls to a hashtable, so counts and indexing are wrong |
+| [T-0951](ISSUES/T-0951.md) | high | open | 1 | ENTRA-DEVICE-004 always passes because it reads a property Graph does not return |
+| [T-0955](ISSUES/T-0955.md) | high | open | 1 | App credential checks read only service principals and miss app registration secrets and certificates |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
 | [EPIC-017](ISSUES/epics/EPIC-017.md) | medium | closed | 0 | Intune Apps & Autopilot |
@@ -133,6 +136,8 @@ the same commit. The ticket file is the source of truth._
 | [T-0942](ISSUES/T-0942.md) | medium | fixed-unverified | 20 | Manage portal write access for an already-onboarded tenant |
 | [T-0946](ISSUES/T-0946.md) | medium | open | 3 | Run artifacts list is empty because the assessment writes into a subfolder |
 | [T-0947](ISSUES/T-0947.md) | medium | open | 2 | An onboarded tenant is named after the app registration |
+| [T-0952](ISSUES/T-0952.md) | medium | open | 1 | DEFENDER-ZAP-001 reports NotLicensed because it reads Teams ZAP from the wrong policy |
+| [T-0953](ISSUES/T-0953.md) | medium | open | 1 | COMPLIANCE-COMMS-001 can never run: it calls a cmdlet that does not exist |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |
@@ -146,6 +151,8 @@ the same commit. The ticket file is the source of truth._
 | [T-0939](ISSUES/T-0939.md) | low | fixed-unverified | 6 | Small check-logic and label problems in Entra and CA findings |
 | [T-0948](ISSUES/T-0948.md) | low | open | 2 | SOC2 Graph failures report the request URL but not the HTTP status or reason |
 | [T-0949](ISSUES/T-0949.md) | low | open | 2 | A missing ActiveDirectory module logs one identical issue per collector |
+| [T-0954](ISSUES/T-0954.md) | low | open | 1 | COMPLIANCE-DLP-001 counts simulation-mode DLP policies as enabled |
+| [T-0956](ISSUES/T-0956.md) | low | open | 4 | Status and wording fixes from the live result validation |
 
 ## Closed
 
