@@ -13,10 +13,10 @@ Get-ChildItem -Path 'src/M365-Assess' -Recurse -Filter '*.ps1' |
 
 | Status | Emissions | What it should mean |
 |---|---|---|
-| `Review` | 86 | Data was collected but a human needs to interpret the result. |
+| `Review` | 88 | Data was collected but a human needs to interpret the result. |
 | `Skipped` | 33 | The check did not run (license-gated, permission-gated, or env-not-applicable). |
 | `Unknown` | 1 | Data could not be collected; this is different from "Skipped". |
-| **Total** | **120** | |
+| **Total** | **122** | |
 
 Per-collector breakdown:
 
@@ -65,6 +65,7 @@ For each emission site, the question is one of three things:
 - **Teams client-config + meeting-policy Skipped emissions** (#940, ceiling 29 -> 31) — `/beta/teamwork/teamsClientConfiguration` (6 checks: TEAMS-EXTACCESS-001/002/003/004, TEAMS-CLIENT-001/002) and `/beta/teamwork/teamsMeetingPolicy` (9 checks: TEAMS-MEETING-001..009) are beta-only with no v1.0 equivalent (confirmed against Microsoft's Graph v1.0 Teams API reference) and 400 in sovereign clouds. The collector now emits Skipped for the 15 dependent checks via two data-driven loops (so +2 static emissions, not +15) instead of WARN-and-omit. Genuine limitation; the underlying data is only reachable via the MicrosoftTeams PS module (Get-CsTeamsClientConfiguration / Get-CsTeamsMeetingPolicy), a separate dependency out of scope here.
 - **Forms and SharePoint unverifiable-property Review emissions** (T-0932/T-0933/T-0934, ceiling 70 -> 86) - the Forms collector reads two beta `formsSettings` properties and the SharePoint collector reads settings that `/admin/sharepoint/settings` (or the `site` resource) does not expose. Previously a missing property produced false Pass/Fail (or Warning for "could not verify"). These collectors now read both the documented and legacy property names and emit Review when neither is present, so an unverifiable setting is never scored as compliant. +16 static Review sites: 2 in `Get-FormsSecurityConfig.ps1`, 14 in `Get-SharePointSecurityConfig.ps1` (the SharePoint count includes the previously Warning-only unverifiable paths, now Review). Genuine limitation: the API response does not carry the property.
 - **Teams app-only and operator-role Skipped emissions** (T-0937, ceiling 31 -> 33) - the Teams collectors run app-only with no `MicrosoftTeams` module dependency, so they now emit every Teams check as Skipped with "app-only not supported" instead of logging a Complete section with `N/A` rows (+1 static site, 19 checks). Onboarding also records a skipped operator Exchange role group when write access is requested without the exchange group (+1 static site). Both are genuine limitations and are surfaced in the run's issues/sections.
+- **ENTRA-DEVICE-004 registering-user local admin Review emissions** (T-0951, ceiling 86 -> 88) - the check previously read a property Graph does not return and passed on every tenant. It now evaluates `azureADJoin.localAdmins.registeringUsers`: None is Pass and All is Fail. Two outcomes emit Review (+2 static sites): "Selected" users/groups, because whether that set is appropriate is an operator judgment, and a response without `registeringUsers`, so a missing setting is never scored as compliant. Genuine limitation in both cases.
 - **CA-MFA-ADMIN-001 All-Users-with-exclusions Review emission** (#1000, ceiling 69 -> 70) — the "MFA Required for Admin Roles" check now accepts an All-Users MFA policy as admin coverage (community request #1000). When such a policy carries `excludeUsers` / `excludeGroups`, group/user membership is not resolved here (that would need a per-group directory lookup), so the collector cannot prove the administrators are not carved out. Rather than guess Pass (a false negative if admins are excluded) or Fail (a false positive for a benign break-glass exclusion), it emits Review naming the policy and asking the operator to verify. Genuine limitation: confirming exclusion membership is out of scope for this collector; explicit admin-role-targeted coverage and clean All-Users coverage still resolve to Pass.
 
 ### Triage pending (representative — not exhaustive)
@@ -75,7 +76,7 @@ For each emission site, the question is one of three things:
 
 ## Lock-down regression
 
-`tests/Behavior/Status-Emission-Audit.Tests.ps1` asserts the count of Review / Unknown / Skipped emissions stays at or below the current ceiling (86 / 33 / 1 = 120 total). When a new emission is added the test fails, forcing the contributor to:
+`tests/Behavior/Status-Emission-Audit.Tests.ps1` asserts the count of Review / Unknown / Skipped emissions stays at or below the current ceiling (88 / 33 / 1 = 122 total). When a new emission is added the test fails, forcing the contributor to:
 
 1. Justify the new emission (genuine limitation? collector bug?)
 2. Update this doc to add the new site to the audit catalogue
