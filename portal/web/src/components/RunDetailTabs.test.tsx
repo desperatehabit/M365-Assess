@@ -9,6 +9,7 @@ import {
   calculateComplianceScore,
   deriveFindingRemediationState,
   isRunCancellable,
+  sectionBadgeTone,
   isRunRetryable,
   type RunDetailData,
   type RunFindingDetail,
@@ -448,8 +449,30 @@ describe("RunDetailTabs", () => {
       expect(screen.getByTestId("issues-partial-banner")).toBeDefined();
       expect(screen.getByTestId("tab-issues").textContent).toBe("Issues (2)");
       const badge = screen.getByTestId("run-detail-status-badge");
-      expect(badge.textContent).toBe("partial");
+      // T-0944: the badge uses the same words as the Runs list and dashboard.
+      expect(badge.textContent).toBe("Completed with issues");
       expect((badge as HTMLElement).style.background).toContain("--warn-soft");
+      expect(screen.getByTestId("run-detail-issue-count").textContent).toBe("2 issues");
+    });
+
+    it("labels a succeeded run Completed and a failed run Failed, and opens Issues from the count (T-0944)", () => {
+      const { unmount } = render(
+        <RunDetailTabs run={{ ...SAMPLE_RUN_FAILED, status: "succeeded", issueCount: 0 }} streamEvents={false} />
+      );
+      expect(screen.getByTestId("run-detail-status-badge").textContent).toBe("Completed");
+      expect(screen.queryByTestId("run-detail-issue-count")).toBeNull();
+      unmount();
+
+      render(<RunDetailTabs run={{ ...SAMPLE_RUN_FAILED, status: "failed", issueCount: 1 }} streamEvents={false} />);
+      expect(screen.getByTestId("run-detail-status-badge").textContent).toBe("Failed");
+      fireEvent.click(screen.getByTestId("run-detail-issue-count"));
+      expect(screen.getByTestId("tabpanel-issues")).toBeDefined();
+    });
+
+    it("gives a partial section the warn tone instead of the failed tone (T-0944)", () => {
+      expect(sectionBadgeTone("partial").background).toBe("var(--warn-soft)");
+      expect(sectionBadgeTone("failed").background).toBe("var(--danger-soft)");
+      expect(sectionBadgeTone("succeeded").background).toBe("var(--success-soft)");
     });
   });
 

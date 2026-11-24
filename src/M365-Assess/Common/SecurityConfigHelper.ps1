@@ -128,12 +128,14 @@ function Get-CheckLicensingGate {
     }
 
     $gate = $skipped[$baseCheckId]
-    $requiredPlans = if ($gate -is [hashtable] -and $gate.ContainsKey('RequiredPlans')) {
-        @($gate['RequiredPlans'])
-    }
-    else {
-        @($gate)
-    }
+    # Wrap the whole statement: an `if` used as a value unrolls a one-item array (T-0950).
+    # .Where() drops a null gate so a missing plan list still means "no gate".
+    $requiredPlans = @(if ($gate -is [hashtable] -and $gate.ContainsKey('RequiredPlans')) {
+            $gate['RequiredPlans']
+        }
+        else {
+            $gate
+        }).Where({ $null -ne $_ })
     if ($requiredPlans.Count -eq 0) { return $null }
 
     $name = if ($gate -is [hashtable] -and $gate.ContainsKey('Name')) { [string]$gate['Name'] } else { '' }

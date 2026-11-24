@@ -349,3 +349,68 @@ Describe 'EntraAdminRoleChecks - PIM approval via roleManagementPolicyAssignment
         Remove-Item Function:\Add-Setting -ErrorAction SilentlyContinue
     }
 }
+
+Describe 'EntraAdminRoleChecks - single Global Admin (T-0950)' {
+    # Graph returns one member. An `if` used as an assignment value unrolled the one-item
+    # array to the member hashtable, so .Count reported its key count (4) instead of 1.
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        function global:Get-MgContext {
+            return @{ TenantId = 'test-tenant-id' }
+        }
+
+        Mock Import-Module { }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri, $Headers, $ErrorAction)
+            switch -Wildcard ($Uri) {
+                '*/directoryRoles/roleTemplateId=62e90394*/members?*onPremisesSyncEnabled*' {
+                    return @{ value = @(
+                        @{ '@odata.type' = '#microsoft.graph.user'; displayName = 'Only Admin'; userPrincipalName = 'admin@contoso.com'; onPremisesSyncEnabled = $null }
+                    )}
+                }
+                default {
+                    return @{ value = @() }
+                }
+            }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Common/SecurityConfigHelper.ps1"
+
+        $ctx            = Initialize-SecurityConfig
+        $settings       = $ctx.Settings
+        $checkIdCounter = $ctx.CheckIdCounter
+
+        function Add-Setting {
+            param([string]$Category, [string]$Setting, [string]$CurrentValue,
+                  [string]$RecommendedValue, [string]$Status,
+                  [string]$CheckId = '', [string]$Remediation = '')
+            Add-SecuritySetting -Settings $settings -CheckIdCounter $checkIdCounter `
+                -Category $Category -Setting $Setting -CurrentValue $CurrentValue `
+                -RecommendedValue $RecommendedValue -Status $Status `
+                -CheckId $CheckId -Remediation $Remediation
+        }
+
+        $authPolicy = @{ restrictNonAdminUsers = $true }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Entra/EntraHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Entra/EntraAdminRoleChecks.ps1"
+    }
+
+    It 'counts one cloud-only Global Admin as 1, not the member key count' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Cloud-Only Global Admins' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Be 'All 1 GA accounts are cloud-only'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+        Remove-Item Function:\Get-MgContext -ErrorAction SilentlyContinue
+        Remove-Item Function:\Add-Setting -ErrorAction SilentlyContinue
+    }
+}

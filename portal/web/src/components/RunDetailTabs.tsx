@@ -16,6 +16,7 @@ import React, {
   type ReactElement,
 } from "react";
 import { useRunEvents } from "../lib/useRunEvents";
+import { getRunStatusLabel } from "./RunsTable";
 import type { ProgressEvent } from "@m365-assess/contracts/events";
 import { ApplyActionDialog } from "./remediation/ApplyActionDialog";
 import { FindingRemediationPanel } from "./remediation/FindingRemediationPanel";
@@ -175,6 +176,22 @@ export function formatTimestamp(isoString?: string | null): string {
     });
   } catch {
     return isoString;
+  }
+}
+
+/** Badge colours for a run section; partial means it finished with skips or partial collectors (T-0944). */
+export function sectionBadgeTone(status: string): Pick<CSSProperties, "background" | "color" | "border"> {
+  switch (status) {
+    case "succeeded":
+      return { background: "var(--success-soft)", color: "var(--success-text)", border: "1px solid var(--success)" };
+    case "failed":
+      return { background: "var(--danger-soft)", color: "var(--danger-text)", border: "1px solid var(--danger)" };
+    case "partial":
+      return { background: "var(--warn-soft)", color: "var(--warn-text)", border: "1px solid var(--warn)" };
+    case "running":
+      return { background: "var(--accent-soft)", color: "var(--accent-text)", border: "1px solid var(--accent)" };
+    default:
+      return { background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)" };
   }
 }
 
@@ -986,7 +1003,7 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                 borderRadius: "999px",
                 fontSize: "12px",
                 fontWeight: 600,
-                textTransform: "capitalize",
+                whiteSpace: "nowrap",
                 background:
                   run.status === "succeeded"
                     ? "var(--success-soft)"
@@ -1019,8 +1036,27 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                           : "1px solid var(--border)",
               }}
             >
-              {run.status}
+              {getRunStatusLabel(run.status)}
             </span>
+            {issueCount > 0 && (
+              <button
+                type="button"
+                data-testid="run-detail-issue-count"
+                onClick={() => handleSelectTab("issues")}
+                style={{
+                  padding: "2px 10px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background: "var(--surface)",
+                  color: "var(--text-soft)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {issueCount} {issueCount === 1 ? "issue" : "issues"}
+              </button>
+            )}
           </div>
 
           <div
@@ -1445,30 +1481,7 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                               fontSize: "12px",
                               fontWeight: 600,
                               textTransform: "capitalize",
-                              background:
-                                sec.status === "succeeded"
-                                  ? "var(--success-soft)"
-                                  : sec.status === "failed"
-                                    ? "var(--danger-soft)"
-                                    : sec.status === "running"
-                                      ? "var(--accent-soft)"
-                                      : "var(--surface)",
-                              color:
-                                sec.status === "succeeded"
-                                  ? "var(--success-text)"
-                                  : sec.status === "failed"
-                                    ? "var(--danger-text)"
-                                    : sec.status === "running"
-                                      ? "var(--accent-text)"
-                                      : "var(--muted)",
-                              border:
-                                sec.status === "succeeded"
-                                  ? "1px solid var(--success)"
-                                  : sec.status === "failed"
-                                    ? "1px solid var(--danger)"
-                                    : sec.status === "running"
-                                      ? "1px solid var(--accent)"
-                                      : "1px solid var(--border)",
+                              ...sectionBadgeTone(sec.status),
                             }}
                           >
                             {sec.status}

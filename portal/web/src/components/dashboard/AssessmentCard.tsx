@@ -2,11 +2,13 @@
 
 // AssessmentCard widget (EPIC-004 SPEC.md §3.1, T-0064).
 // Displays headline score for latest completed run, status, and pass/fail summary counts.
+// A partial run is labelled "Completed with issues" with its issue count (T-0944).
 // Renders empty-state affordance prompting an assessment run when no data exists.
 // Strictly uses report theme tokens with zero colour literals.
 
 import React, { type CSSProperties, type ReactElement } from "react";
 import { WidgetCard } from "./WidgetCard";
+import { getRunStatusLabel } from "../RunsTable";
 
 export interface AssessmentSummaryCounts {
   readonly pass: number;
@@ -24,6 +26,11 @@ export interface AssessmentCardWidget {
   readonly status?: string;
   readonly headlineScore: number;
   readonly summaryCounts: AssessmentSummaryCounts;
+  /** Issues logged for the run; a partial run is not a clean completion (T-0944). */
+  readonly issueCount?: number;
+  readonly errorCount?: number;
+  /** The first ERROR-level issue, as "Section: message". */
+  readonly firstError?: string | null;
 }
 
 export interface AssessmentCardProps {
@@ -49,11 +56,26 @@ function formatTimestamp(isoString?: string | null): string {
   }
 }
 
+/** Colour for the status line: only a succeeded run reads as a neutral completion. */
+function statusLineColor(status?: string): string {
+  if (status === "partial") return "var(--warn-text)";
+  if (status === "failed") return "var(--danger-text)";
+  return "var(--muted)";
+}
+
+function pluralize(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? "" : "s"}`;
+}
+
 export function AssessmentCard(props: AssessmentCardProps): ReactElement {
   const { assessment, isEmpty = false, onDrillDown, onRunAssessment, className, style } = props;
 
   const counts = assessment?.summaryCounts;
   const score = assessment?.headlineScore ?? 0;
+  // T-0944: "Completed" only for a succeeded run; partial reads "Completed with issues".
+  const statusLabel = getRunStatusLabel(assessment?.status ?? "succeeded");
+  const issueCount = assessment?.issueCount ?? 0;
+  const errorCount = assessment?.errorCount ?? 0;
 
   return (
     <WidgetCard
@@ -94,9 +116,39 @@ export function AssessmentCard(props: AssessmentCardProps): ReactElement {
           >
             {score}%
           </div>
-          <div style={{ fontSize: "12px", color: "var(--muted)", marginTop: "4px" }}>
-            Completed {formatTimestamp(assessment?.finishedAt)}
+          <div
+            data-testid="assessment-status-line"
+            style={{ fontSize: "12px", color: statusLineColor(assessment?.status), marginTop: "4px" }}
+          >
+            {statusLabel} {formatTimestamp(assessment?.finishedAt)}
           </div>
+          {assessment && issueCount > 0 && (
+            <a
+              data-testid="assessment-issues-link"
+              href={`/runs/${encodeURIComponent(assessment.runId)}`}
+              style={{ fontSize: "12px", color: "var(--accent-text, var(--accent))", marginTop: "4px" }}
+            >
+              {pluralize(issueCount, "issue")}
+              {errorCount > 0 ? ` (${pluralize(errorCount, "error")})` : ""} — view run issues
+            </a>
+          )}
+          {assessment?.firstError && (
+            <div
+              data-testid="assessment-first-error"
+              title={assessment.firstError}
+              style={{
+                fontSize: "11px",
+                color: "var(--danger-text)",
+                marginTop: "4px",
+                maxWidth: "100%",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {assessment.firstError}
+            </div>
+          )}
         </div>
 
         {/* Pass / Fail / Warning summary chips */}

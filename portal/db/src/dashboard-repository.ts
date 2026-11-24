@@ -35,6 +35,23 @@ function asNumber(val: unknown, fallback = 0): number {
   return fallback;
 }
 
+/** Issue totals from a run's provenance.issues, which ingestion parses from _Assessment-Issues. */
+function summarizeRunIssues(
+  provenance: Record<string, unknown> | null,
+): { issueCount: number; errorCount: number; firstError: string | null } {
+  const raw = provenance?.["issues"];
+  const issues = Array.isArray(raw) ? (raw as Record<string, unknown>[]) : [];
+  const errors = issues.filter((issue) => String(issue?.["level"] ?? "").toUpperCase() === "ERROR");
+  const first = errors[0];
+  let firstError: string | null = null;
+  if (first) {
+    const section = asNullableString(first["section"]);
+    const message = asString(first["message"]);
+    firstError = section ? `${section}: ${message}` : message;
+  }
+  return { issueCount: issues.length, errorCount: errors.length, firstError };
+}
+
 function parseJsonRecord(val: unknown): Record<string, unknown> | null {
   if (typeof val !== "string" || val.trim().length === 0) return null;
   try {
@@ -95,6 +112,11 @@ export interface AssessmentCardWidget {
   readonly status: string;
   readonly headlineScore: number;
   readonly summaryCounts: AssessmentSummaryCounts;
+  /** Issues logged for the run (T-0929); a partial run is not shown as a clean completion (T-0944). */
+  readonly issueCount?: number;
+  readonly errorCount?: number;
+  /** The first ERROR-level issue, as "Section: message", or null. */
+  readonly firstError?: string | null;
 }
 
 export interface TenantMetricItem {
@@ -275,10 +297,12 @@ export class SqliteDashboardRepository implements DashboardRepository {
         };
 
     // 3. Find latest completed run for this tenant
-    // Only runs with status 'succeeded' or 'partial' count as completed assessment data
+    // Runs with status 'succeeded' or 'partial' are usable assessment data. A partial
+    // run stays eligible, but its status and issues are carried so the card does not
+    // call it a clean completion (T-0944).
     const runRow = this.db
       .prepare(
-        `SELECT id, tenantId, status, finishedAt, createdAt, summaryCounts
+        `SELECT id, tenantId, status, finishedAt, createdAt, summaryCounts, provenance
          FROM runs
          WHERE tenantId = ? AND status IN ('succeeded', 'partial')
          ORDER BY datetime(COALESCE(finishedAt, createdAt)) DESC, id DESC
@@ -427,6 +451,7 @@ export class SqliteDashboardRepository implements DashboardRepository {
       status: asString(runRow["status"]),
       headlineScore,
       summaryCounts,
+      ...summarizeRunIssues(parseJsonRecord(runRow["provenance"])),
     };
 
     const totalAlerts = criticalAlerts + highAlerts + mediumAlerts + lowAlerts;

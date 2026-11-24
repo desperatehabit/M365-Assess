@@ -16,7 +16,7 @@ param()
 try {
     Write-Verbose "Counting conditional access policies..."
     $caPolicies = Invoke-SafeGraphRequest -Uri '/v1.0/identity/conditionalAccess/policies'
-    $policyList = if ($caPolicies -and $caPolicies['value']) { @($caPolicies['value']) } else { @() }
+    $policyList = @(if ($caPolicies -and $caPolicies['value']) { $caPolicies['value'] })
     $caCount = $policyList.Count
     $enabledCount = @($policyList | Where-Object { $_['state'] -eq 'enabled' }).Count
 
@@ -128,19 +128,36 @@ try {
     $devicePolicyBeta = Invoke-MgGraphRequest @graphParams
 
     if ($devicePolicyBeta) {
-        # CIS 5.1.4.4 -- Local admin assignment limited during Entra join
+        # CIS 5.1.4.4 -- "Registering user is added as local administrator on the device
+        # during Microsoft Entra join" should be None (T-0951). Graph reports it as the
+        # @odata.type of azureADJoin.localAdmins.registeringUsers.
         $localAdminSettings = $devicePolicyBeta['azureADJoin']['localAdmins']
-        $additionalAdmins = if ($localAdminSettings -and $localAdminSettings['registeredUsers']) {
-            $localAdminSettings['registeredUsers']['additionalLocalAdminsCount']
-        } else { 0 }
+        $registeringUsers = if ($localAdminSettings) { $localAdminSettings['registeringUsers'] } else { $null }
+        $membershipType = if ($registeringUsers) { [string]$registeringUsers['@odata.type'] } else { '' }
+
+        $deviceAdminResult = switch -Wildcard ($membershipType) {
+            '*noDeviceRegistrationMembership' {
+                @{ Value = 'Registering user is local admin: None'; Status = 'Pass' }
+            }
+            '*enumeratedDeviceRegistrationMembership' {
+                $selectedCount = @($registeringUsers['users']).Where({ $_ }).Count + @($registeringUsers['groups']).Where({ $_ }).Count
+                @{ Value = "Registering user is local admin: Selected ($selectedCount users/groups)"; Status = 'Review' }
+            }
+            '*allDeviceRegistrationMembership' {
+                @{ Value = 'Registering user is local admin: All'; Status = 'Fail' }
+            }
+            default {
+                @{ Value = 'Registering user local admin setting not returned by Graph'; Status = 'Review' }
+            }
+        }
         $settingParams = @{
             Category         = 'Device Management'
             Setting          = 'Local Admin Assignment on Entra Join'
-            CurrentValue     = "Additional local admins configured: $additionalAdmins"
-            RecommendedValue = 'Minimal local admin assignment'
-            Status           = $(if ($additionalAdmins -le 0) { 'Pass' } else { 'Review' })
+            CurrentValue     = $deviceAdminResult.Value
+            RecommendedValue = 'None (registering users are not local admins)'
+            Status           = $deviceAdminResult.Status
             CheckId          = 'ENTRA-DEVICE-004'
-            Remediation      = 'Entra admin center > Devices > Device settings > Manage Additional local administrators on all Microsoft Entra joined devices. Minimize additional local admins.'
+            Remediation      = 'Entra admin center > Devices > Device settings > Local administrator settings > Registering user is added as local administrator on the device during Microsoft Entra join: None.'
         }
         Add-Setting @settingParams
 

@@ -95,7 +95,7 @@ try {
     $failedSignIns = Invoke-MgGraphRequest -Method GET `
         -Uri "/v1.0/auditLogs/signIns?`$filter=createdDateTime ge $startDate and status/errorCode ne 0&`$top=100&`$orderby=createdDateTime desc" `
         -ErrorAction Stop
-    $events = if ($failedSignIns -and $failedSignIns['value']) { @($failedSignIns['value']) } else { @() }
+    $events = @(if ($failedSignIns -and $failedSignIns['value']) { $failedSignIns['value'] })
     $sampleCapped = $events.Count -ge 100
 
     $summary = if ($events.Count -eq 0) {
@@ -131,7 +131,7 @@ try {
     $riskDetections = Invoke-MgGraphRequest -Method GET `
         -Uri "/v1.0/identityProtection/riskDetections?`$filter=activityDateTime ge $startDate&`$top=100&`$orderby=activityDateTime desc" `
         -ErrorAction Stop
-    $events = if ($riskDetections -and $riskDetections['value']) { @($riskDetections['value']) } else { @() }
+    $events = @(if ($riskDetections -and $riskDetections['value']) { $riskDetections['value'] })
     $sampleCapped = $events.Count -ge 100
 
     $summary = if ($events.Count -eq 0) {
@@ -168,7 +168,7 @@ try {
     $alerts = Invoke-MgGraphRequest -Method GET `
         -Uri "/v1.0/security/alerts_v2?`$top=100&`$orderby=createdDateTime desc" `
         -ErrorAction Stop
-    $events = if ($alerts -and $alerts['value']) { @($alerts['value']) } else { @() }
+    $events = @(if ($alerts -and $alerts['value']) { $alerts['value'] })
     $sampleCapped = $events.Count -ge 100
 
     $newAlerts = @($events | Where-Object { $_['status'] -eq 'new' })
@@ -206,7 +206,7 @@ try {
     $roleAudits = Invoke-MgGraphRequest -Method GET `
         -Uri "/v1.0/auditLogs/directoryAudits?`$filter=activityDateTime ge $startDate and category eq 'RoleManagement'&`$top=100&`$orderby=activityDateTime desc" `
         -ErrorAction Stop
-    $events = if ($roleAudits -and $roleAudits['value']) { @($roleAudits['value']) } else { @() }
+    $events = @(if ($roleAudits -and $roleAudits['value']) { $roleAudits['value'] })
     $sampleCapped = $events.Count -ge 100
 
     $summary = if ($events.Count -eq 0) {

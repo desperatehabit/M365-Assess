@@ -261,7 +261,7 @@ function Build-ReportDataJson {
     # ------------------------------------------------------------------
     # 3. Compute mfaStats
     # ------------------------------------------------------------------
-    $mfaRows = if ($SectionData.ContainsKey('mfa')) { @($SectionData['mfa']) } else { @() }
+    $mfaRows = @(if ($SectionData.ContainsKey('mfa')) { $SectionData['mfa'] })
 
     $mfaStats = [ordered]@{
         phishResistant   = @($mfaRows | Where-Object { $_.MfaStrength -eq 'Phishing-Resistant' }).Count
