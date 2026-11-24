@@ -32,8 +32,12 @@ export interface RunItem {
     readonly completed: number;
     readonly total: number;
     readonly percentage?: number;
+    /** The BFF names the derived percentage `percent` (T-0944). */
+    readonly percent?: number;
   } | number | null;
   readonly summaryCounts?: RunItemSummaryCounts | null;
+  /** Issues logged for the run (T-0929/T-0944). */
+  readonly issueCount?: number;
   readonly artifactPath?: string | null;
   readonly createdAt: string;
   readonly updatedAt?: string;
@@ -84,22 +88,63 @@ export function formatDateTime(isoString?: string | null): string {
   }
 }
 
+/**
+ * The words used for a run status in the Runs list, run detail and dashboard, so all
+ * three agree (T-0944). Only a succeeded run is "Completed"; a partial run finished
+ * but some sections errored or did not run.
+ */
+export function getRunStatusLabel(status: string): string {
+  switch (status.toLowerCase()) {
+    case "succeeded":
+      return "Completed";
+    case "partial":
+      return "Completed with issues";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "running":
+      return "Running";
+    case "queued":
+      return "Queued";
+    default:
+      return status;
+  }
+}
+
+const clampPercent = (value: number): number => Math.min(100, Math.max(0, value));
+
 export function calculateProgressPercentage(run: RunItem): number {
   if (typeof run.progress === "number") {
-    return Math.min(100, Math.max(0, run.progress));
+    return clampPercent(run.progress);
   }
   if (run.progress && typeof run.progress === "object") {
-    if (typeof run.progress.percentage === "number") {
-      return Math.min(100, Math.max(0, run.progress.percentage));
+    const explicit = run.progress.percentage ?? run.progress.percent;
+    if (typeof explicit === "number") {
+      return clampPercent(explicit);
     }
     if (run.progress.total > 0) {
-      return Math.min(100, Math.max(0, Math.round((run.progress.completed / run.progress.total) * 100)));
+      return clampPercent(Math.round((run.progress.completed / run.progress.total) * 100));
     }
   }
   if (run.status === "succeeded") return 100;
   if (run.status === "queued") return 0;
   if (run.status === "running") return 50;
-  return 100;
+  // A finished run that did not succeed is never painted full (T-0944). A multi-tenant
+  // parent counts the children that succeeded; anything else with no section data is 0.
+  if (run.children && run.children.length > 0) {
+    const succeeded = run.children.filter((child) => child.status === "succeeded").length;
+    return clampPercent(Math.round((succeeded / run.children.length) * 100));
+  }
+  return 0;
+}
+
+/** "3 / 13 sections" when the run carries a section count, else null. */
+export function getProgressCaption(run: RunItem): string | null {
+  if (run.progress && typeof run.progress === "object" && run.progress.total > 0) {
+    return `${run.progress.completed} / ${run.progress.total} sections`;
+  }
+  return null;
 }
 
 /** Main tenant text: the display name, else the ID (or a multi-tenant label). */
@@ -119,7 +164,7 @@ export function getStatusBadgeStyle(status: string): CSSProperties {
     borderRadius: "999px",
     fontSize: "12px",
     fontWeight: 600,
-    textTransform: "capitalize",
+    whiteSpace: "nowrap",
     fontFamily: "var(--font-sans, system-ui, sans-serif)",
   };
 
@@ -288,12 +333,19 @@ const progressBarTrackStyle: CSSProperties = {
   position: "relative",
 };
 
+const progressCaptionStyle: CSSProperties = {
+  marginTop: "4px",
+  fontSize: "11px",
+  color: "var(--text-soft)",
+  whiteSpace: "nowrap",
+};
+
 const progressBarStyle = (percent: number, status: string): CSSProperties => {
   let bg = "var(--accent)";
   if (status === "succeeded") bg = "var(--success)";
   else if (status === "failed") bg = "var(--danger)";
   else if (status === "cancelled") bg = "var(--text-soft)";
-  else if (status === "partial") bg = "var(--warning)";
+  else if (status === "partial") bg = "var(--warn)";
 
   return {
     width: `${Math.min(100, Math.max(0, percent))}%`,
@@ -697,14 +749,17 @@ export function RunsTable({
                         style={getStatusBadgeStyle(run.status)}
                         data-testid={`status-badge-${run.id}`}
                       >
-                        {run.status}
+                        {getRunStatusLabel(run.status)}
                       </span>
                     </td>
 
-                    {/* Progress bar */}
+                    {/* Progress bar with percentage and section count (T-0944) */}
                     <td style={tdStyle}>
                       <div style={progressBarTrackStyle} title={`${percent}%`}>
                         <div style={progressBarStyle(percent, run.status)} />
+                      </div>
+                      <div style={progressCaptionStyle} data-testid={`progress-label-${run.id}`}>
+                        {[`${percent}%`, getProgressCaption(run)].filter(Boolean).join(" · ")}
                       </div>
                     </td>
 
@@ -845,12 +900,15 @@ export function RunsTable({
                               style={getStatusBadgeStyle(child.status)}
                               data-testid={`status-badge-${child.id}`}
                             >
-                              {child.status}
+                              {getRunStatusLabel(child.status)}
                             </span>
                           </td>
                           <td style={tdStyle}>
                             <div style={progressBarTrackStyle} title={`${childPercent}%`}>
                               <div style={progressBarStyle(childPercent, child.status)} />
+                            </div>
+                            <div style={progressCaptionStyle} data-testid={`progress-label-${child.id}`}>
+                              {[`${childPercent}%`, getProgressCaption(child)].filter(Boolean).join(" · ")}
                             </div>
                           </td>
                           <td style={tdStyle}>
@@ -908,7 +966,7 @@ export function RunsTable({
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={monoStyle}>{run.id.slice(0, 12)}…</span>
                   <span className="status-badge" style={getStatusBadgeStyle(run.status)}>
-                    {run.status}
+                    {getRunStatusLabel(run.status)}
                   </span>
                 </div>
 
@@ -943,7 +1001,7 @@ export function RunsTable({
                         <ul style={{ margin: "8px 0 0", paddingLeft: "18px", fontSize: "12px", color: "var(--text-soft)" }}>
                           {run.children.map((child) => (
                             <li key={child.id} data-testid={`run-card-child-${child.id}`}>
-                              {getTenantLabel(child, false)} — {child.status}
+                              {getTenantLabel(child, false)} — {getRunStatusLabel(child.status)}
                             </li>
                           ))}
                         </ul>
@@ -956,7 +1014,9 @@ export function RunsTable({
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "4px" }}>
                     <span style={{ color: "var(--text-soft)" }}>Progress</span>
-                    <span>{percent}%</span>
+                    <span data-testid={`card-progress-label-${run.id}`}>
+                      {[`${percent}%`, getProgressCaption(run)].filter(Boolean).join(" · ")}
+                    </span>
                   </div>
                   <div style={{ ...progressBarTrackStyle, width: "100%" }}>
                     <div style={progressBarStyle(percent, run.status)} />

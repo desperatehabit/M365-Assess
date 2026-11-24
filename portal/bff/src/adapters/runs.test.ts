@@ -14,6 +14,7 @@ import {
   createRunGroupResolver,
   createRunQueue,
   createRunStore,
+  deriveRunProgress,
   parseAssessmentIssues,
   parseAssessmentSummary,
   RUN_OUTPUT_UNREADABLE,
@@ -575,5 +576,58 @@ describe("findings ingestion (T-0833)", () => {
     const other = { ...env, jobType: "remediation" } as JobEnvelope;
     const passthrough = withFindingsIngestion(async (e) => result(e, "succeeded", []), { repo, storageRoot: root });
     expect(await passthrough(other, new AbortController().signal)).toMatchObject({ status: "succeeded" });
+  });
+});
+
+describe("section and run completion status (T-0944)", () => {
+  it("classifies a section with Complete and Skipped collectors as partial, not failed", () => {
+    const csv = [
+      '"Section","Collector","FileName","Status","Items","Duration","Error"',
+      '"Collaboration","SharePoint","21-SPO.csv","Complete","8","00:05",""',
+      '"Collaboration","Teams","21b-Teams.csv","Skipped","4","00:01","Teams checks need delegated auth"',
+      '"Identity","Entra","03-MFA.csv","Complete","3","00:02",""',
+      '"Identity","CA","04-CA.csv","Partial","2","00:02","Throttled"',
+      '"Power BI","PowerBI","22-PowerBI.csv","Complete","1","00:01",""',
+      '"Power BI","Fabric","22b-Fabric.csv","Failed","0","00:01","403 /admin/tenantsettings"',
+    ].join("\n");
+    expect(parseAssessmentSummary(csv).map((s) => [s.section, s.status])).toEqual([
+      ["Collaboration", "partial"],
+      ["Identity", "partial"],
+      ["Power BI", "failed"],
+    ]);
+  });
+
+  it("derives progress from persisted sections without painting a partial or failed run as full", () => {
+    const rows = [
+      { section: "Identity", status: "succeeded" },
+      { section: "Collaboration", status: "partial" },
+      { section: "Power BI", status: "failed" },
+    ];
+    const requested = ["Identity", "Collaboration", "Power BI", "Email"];
+    expect(deriveRunProgress("partial", requested, rows)).toEqual({ completed: 1, total: 4, percent: 25 });
+    expect(deriveRunProgress("failed", requested, rows)).toEqual({ completed: 1, total: 4, percent: 25 });
+    expect(deriveRunProgress("running", requested, rows)).toEqual({ completed: 3, total: 4, percent: 75 });
+    // The latest row for a section wins.
+    expect(deriveRunProgress("partial", ["Identity"], [{ section: "Identity", status: "running" }, { section: "Identity", status: "succeeded" }]))
+      .toEqual({ completed: 1, total: 1, percent: 100 });
+    expect(deriveRunProgress("succeeded", requested, rows)).toBeNull();
+    expect(deriveRunProgress("queued", requested, [])).toBeNull();
+    expect(deriveRunProgress("failed", requested, [])).toBeNull();
+  });
+
+  it("lists a partial run with section-derived progress and its issue count", async () => {
+    const { store } = await setup();
+    await store.createRun!(run("r-p", "t-a", {
+      status: "partial",
+      sections: ["Identity", "Collaboration"],
+      provenance: { partial: true, issues: [{ level: "ERROR", message: "403" }, { level: "WARNING", message: "skipped" }] },
+    }));
+    const base = { runId: "r-p", tenantId: "t-a", startedAt: null, finishedAt: "2026-09-26T00:01:00.000Z", createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:01:00.000Z" };
+    await store.recordRunSection!({ ...base, id: "s-1", section: "Identity", status: "succeeded" });
+    await store.recordRunSection!({ ...base, id: "s-2", section: "Collaboration", status: "partial" });
+
+    const [listed] = await store.listRuns("t-a");
+    expect(listed).toMatchObject({ progress: { completed: 1, total: 2, percent: 50 }, issueCount: 2 });
+    expect(await store.getRunById("r-p")).toMatchObject({ progress: { completed: 1, total: 2, percent: 50 }, issueCount: 2 });
   });
 });

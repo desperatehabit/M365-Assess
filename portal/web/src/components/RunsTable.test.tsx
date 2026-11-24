@@ -9,6 +9,8 @@ import {
   formatDuration,
   formatDateTime,
   calculateProgressPercentage,
+  getProgressCaption,
+  getRunStatusLabel,
   getStatusBadgeStyle,
   type RunItem,
 } from "./RunsTable";
@@ -125,6 +127,42 @@ describe("RunsTable component", () => {
       expect(calculateProgressPercentage(SAMPLE_RUNS[0]!)).toBe(100);
       expect(calculateProgressPercentage(SAMPLE_RUNS[1]!)).toBe(50);
       expect(calculateProgressPercentage(SAMPLE_RUNS[3]!)).toBe(0);
+    });
+
+    it("never paints a partial or failed run without section data as 100% (T-0944)", () => {
+      const base = { id: "r", tenantId: "t", trigger: "manual", sections: ["Identity", "Email"], createdAt: "2026-11-23T00:00:00.000Z" };
+      expect(calculateProgressPercentage({ ...base, status: "succeeded" })).toBe(100);
+      expect(calculateProgressPercentage({ ...base, status: "partial" })).toBe(0);
+      expect(calculateProgressPercentage({ ...base, status: "failed" })).toBe(0);
+      // Section-derived progress from the BFF, which names the field `percent`.
+      expect(calculateProgressPercentage({ ...base, status: "partial", progress: { completed: 11, total: 13, percent: 85 } })).toBe(85);
+      expect(calculateProgressPercentage({ ...base, status: "failed", progress: { completed: 0, total: 2 } })).toBe(0);
+      // A multi-tenant parent counts children that succeeded.
+      expect(calculateProgressPercentage({ ...base, status: "partial", children: [
+        { ...base, id: "c1", status: "succeeded" },
+        { ...base, id: "c2", status: "failed" },
+      ] })).toBe(50);
+    });
+
+    it("labels run statuses so only a succeeded run reads Completed (T-0944)", () => {
+      expect(getRunStatusLabel("succeeded")).toBe("Completed");
+      expect(getRunStatusLabel("partial")).toBe("Completed with issues");
+      expect(getRunStatusLabel("failed")).toBe("Failed");
+      expect(getProgressCaption({ id: "r", tenantId: "t", trigger: "manual", sections: [], status: "partial", createdAt: "", progress: { completed: 11, total: 13 } })).toBe("11 / 13 sections");
+    });
+
+    it("shows the status label, percentage and section count in the Progress cell (T-0944)", () => {
+      render(
+        <RunsTable
+          runs={[{
+            id: "run-partial", tenantId: "t-p", trigger: "manual", sections: ["Identity", "Collaboration"],
+            status: "partial", createdAt: "2026-11-23T00:00:00.000Z", progress: { completed: 1, total: 2, percent: 50 },
+          }]}
+          defaultViewMode="table"
+        />
+      );
+      expect(screen.getByTestId("status-badge-run-partial").textContent).toBe("Completed with issues");
+      expect(screen.getByTestId("progress-label-run-partial").textContent).toBe("50% · 1 / 2 sections");
     });
 
     it("returns theme token styles for status badges without color literals", () => {
