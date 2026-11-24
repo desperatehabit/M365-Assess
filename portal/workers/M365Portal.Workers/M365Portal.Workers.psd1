@@ -12,7 +12,21 @@
         'Read-WorkerRunContext',
         'Get-WorkerArtifacts',
         'Write-WorkerResult',
-        'Invoke-WorkerAssessment'
+        'Invoke-WorkerAssessment',
+        'ConvertTo-QuarantineTab',
+        'ConvertTo-QuarantineRow',
+        'Get-Quarantine',
+        'Read-QuarantineJob',
+        'ConvertTo-AllowBlockType',
+        'ConvertTo-AllowBlockAction',
+        'ConvertTo-ExoAllowBlockListType',
+        'ConvertTo-AllowBlockRow',
+        'Get-AllowBlock',
+        'Read-AllowBlockJob',
+        'ConvertTo-QuarantinePolicyType',
+        'ConvertTo-QuarantinePolicyRow',
+        'Get-QuarantinePolicies',
+        'Read-QuarantinePoliciesJob'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

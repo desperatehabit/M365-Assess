@@ -6,6 +6,9 @@
 // Strictly uses report theme tokens with zero colour literals.
 
 import React, { useEffect, useState, use, type CSSProperties, type ReactElement } from "react";
+import { useSearchParams } from "next/navigation";
+import { DemoDataBanner } from "../../../components/dashboard/DemoDataBanner";
+import { DemoDashboard } from "../../../data/dashboard-demo";
 import { DashboardGrid } from "../../../components/dashboard/DashboardGrid";
 import { TenantInfoCard } from "../../../components/dashboard/TenantInfoCard";
 import { TenantMetricsGrid } from "../../../components/dashboard/TenantMetricsGrid";
@@ -70,6 +73,9 @@ export default function TenantDashboardPage(props: TenantDashboardPageProps): Re
       : (props.params as { tenantId: string });
 
   const tenantId = resolvedParams.tenantId;
+  const searchParams = useSearchParams();
+  // Demo mode is opt-in only (?demo=1) and never selected implicitly.
+  const demo = searchParams.get("demo") === "1";
 
   const [payload, setPayload] = useState<DashboardPayloadData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -95,8 +101,18 @@ export default function TenantDashboardPage(props: TenantDashboardPageProps): Re
   };
 
   useEffect(() => {
+    if (demo) return;
     void fetchDashboard();
-  }, [tenantId]);
+  }, [tenantId, demo]);
+
+  if (demo) {
+    return (
+      <div style={pageStyle} data-testid="tenant-dashboard-page">
+        <DemoDataBanner />
+        <DemoDashboard />
+      </div>
+    );
+  }
 
   if (loading) {
     return (

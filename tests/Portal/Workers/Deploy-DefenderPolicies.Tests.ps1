@@ -187,3 +187,7 @@ Describe 'Deploy-DefenderPolicies worker (T-0364)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

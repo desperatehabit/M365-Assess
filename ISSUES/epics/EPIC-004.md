@@ -3,7 +3,7 @@ id: "EPIC-004"
 source: "docs/portal-specs/01-feature-epics/EPIC-004-dashboard-widgets/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,9 @@ children:
   - T-0068
   - T-0069
   - T-0070
+  - T-0891
+  - T-0892
+  - T-0944
 scope_kind: "epic"
 scope_note: "Rollup for Dashboard & Widgets. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -45,4 +48,11 @@ and real `scope:` paths can be named.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0891 — `fixed-unverified`
+- T-0892 — `fixed-unverified`

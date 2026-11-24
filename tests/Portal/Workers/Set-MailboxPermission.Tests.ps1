@@ -105,14 +105,14 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             $plan.principal | Should -Be 'delegate'
             $plan.after['permissionType'] | Should -Be 'FullAccess'
             $plan.diff[0] | Should -Match 'FullAccess'
-            Assert-MockCalled Add-MailboxPermission -Times 0
+            Should -Invoke Add-MailboxPermission -Times 0
         }
 
         It 'add apply without confirmation is refused' {
             {
                 Invoke-SetMailboxPermission -TenantId 'tenant-test' -Action 'add' -MailboxId 'mbx-1' -Scope 'mailbox' -PermissionType 'FullAccess' -Principal 'delegate' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Add-MailboxPermission -Times 0
+            Should -Invoke Add-MailboxPermission -Times 0
         }
 
         It 'add apply captures before/after and produces an audit record' {
@@ -124,14 +124,14 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             $res.auditEvent.action | Should -Be 'mailbox.permission.grant'
             $res.auditEvent.before | Should -BeNullOrEmpty
             $res.auditEvent.after['principal'] | Should -Be 'delegate'
-            Assert-MockCalled Add-MailboxPermission -Times 1
+            Should -Invoke Add-MailboxPermission -Times 1
         }
 
         It 'add with an invalid permission type throws before any write' {
             {
                 Invoke-SetMailboxPermission -TenantId 'tenant-test' -Action 'add' -MailboxId 'mbx-1' -Scope 'mailbox' -PermissionType 'Owner' -Principal 'delegate' -DryRun $true
             } | Should -Throw '*ValidationFailed*'
-            Assert-MockCalled Add-MailboxPermission -Times 0
+            Should -Invoke Add-MailboxPermission -Times 0
         }
     }
 
@@ -156,7 +156,7 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             $res.auditEvent.action | Should -Be 'mailbox.permission.remove'
             $res.auditEvent.before['principal'] | Should -Be 'delegate'
             $res.auditEvent.after | Should -BeNullOrEmpty
-            Assert-MockCalled Remove-MailboxPermission -Times 1
+            Should -Invoke Remove-MailboxPermission -Times 1
         }
 
         It 'remove of a missing grant throws NotFound' {
@@ -164,7 +164,7 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             {
                 Invoke-SetMailboxPermission -TenantId 'tenant-test' -Action 'remove' -MailboxId 'mbx-1' -Scope 'mailbox' -PermissionType 'FullAccess' -Principal 'nobody' -DryRun $true
             } | Should -Throw '*NotFound*'
-            Assert-MockCalled Remove-MailboxPermission -Times 0
+            Should -Invoke Remove-MailboxPermission -Times 0
         }
     }
 
@@ -187,7 +187,7 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             $plan.before['accessRights'] | Should -Be @('Reviewer')
             $plan.after['accessRights'] | Should -Be @('Editor')
             $plan.diff[0] | Should -Match 'calendar rights'
-            Assert-MockCalled Set-MailboxFolderPermission -Times 0
+            Should -Invoke Set-MailboxFolderPermission -Times 0
         }
 
         It 'edit apply replaces the grant and audits before/after' {
@@ -196,7 +196,7 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             $res.auditEvent.action | Should -Be 'mailbox.permission.grant'
             $res.auditEvent.before['accessRights'] | Should -Be @('Reviewer')
             $res.auditEvent.after['accessRights'] | Should -Be @('Editor')
-            Assert-MockCalled Set-MailboxFolderPermission -Times 1
+            Should -Invoke Set-MailboxFolderPermission -Times 1
         }
     }
 
@@ -235,4 +235,19 @@ Describe 'Set-MailboxPermission worker (T-0384)' {
             } | Should -Throw '*job envelope not found*'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-EXOMailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MailboxPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-RecipientPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Add-MailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-MailboxFolderPermission' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
 }

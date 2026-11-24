@@ -114,3 +114,7 @@ Describe 'Deploy-ApplicationTemplate worker (T-0327)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

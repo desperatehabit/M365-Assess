@@ -88,7 +88,15 @@ function Connect-RequiredService {
             }
 
             $connectParams = @{ Service = $svc }
-            if ($ctx.Tenant.TenantId) { $connectParams['TenantId'] = $ctx.Tenant.TenantId }
+            # Exchange Online / Purview need a tenant domain, never the tenant GUID, as
+            # -Organization. Prefer a domain the context already resolved (Graph / the portal
+            # context), and only fall back to the caller's tenant id when neither is known.
+            $tenantIdArg = $ctx.Tenant.TenantId
+            if ($svc -eq 'ExchangeOnline' -or $svc -eq 'Purview') {
+                if ($ctx.Tenant.InitialDomain) { $tenantIdArg = $ctx.Tenant.InitialDomain }
+                elseif ($ctx.Tenant.DefaultDomain) { $tenantIdArg = $ctx.Tenant.DefaultDomain }
+            }
+            if ($tenantIdArg) { $connectParams['TenantId'] = $tenantIdArg }
             if ($ctx.Auth.ClientId) { $connectParams['ClientId'] = $ctx.Auth.ClientId }
             if ($ctx.Auth.CertificateThumbprint) { $connectParams['CertificateThumbprint'] = $ctx.Auth.CertificateThumbprint }
             # Portable app-only certificate inputs (cross-platform Exchange/Purview/Graph).
@@ -192,9 +200,15 @@ function Connect-RequiredService {
                     $initialDomain = $orgInfo.VerifiedDomains | Where-Object { $_.IsInitial -eq $true } | Select-Object -First 1
                     if ($initialDomain) {
                         $ctx.Tenant.InitialDomain = $initialDomain.Name
-                        $ctx.Tenant.TenantId = $orgInfo.Id
                         $ctx.Tenant.DisplayName = $orgInfo.DisplayName
-                        Write-AssessmentLog -Level INFO -Message "Connected tenant: $($ctx.Tenant.DisplayName) ($($ctx.Tenant.InitialDomain)) [ID: $($ctx.Tenant.TenantId)]" -Section $SectionName
+                        # Keep the caller-supplied tenant id; replacing it with the GUID here
+                        # made later Exchange Online / Purview connections receive a GUID as
+                        # -Organization (T-0926).
+                        if (-not $ctx.Tenant.DefaultDomain) {
+                            $defaultDomain = $orgInfo.VerifiedDomains | Where-Object { $_.IsDefault -eq $true } | Select-Object -First 1
+                            if ($defaultDomain) { $ctx.Tenant.DefaultDomain = [string]$defaultDomain.Name }
+                        }
+                        Write-AssessmentLog -Level INFO -Message "Connected tenant: $($ctx.Tenant.DisplayName) ($($ctx.Tenant.InitialDomain)) [ID: $($orgInfo.Id)]" -Section $SectionName
 
                         # Prefetch DNS records for all verified domains in background
                         # (runs while auth and other collectors proceed)

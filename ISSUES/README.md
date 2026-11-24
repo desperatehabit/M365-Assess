@@ -1,36 +1,30 @@
-# ISSUES — Fleet Ticket Store
+# ISSUES — Ticket Store
 
-> **Status:** Scaffolded (Session 1). No tickets yet. This is the store the DAXX fleet tool
-> will dispatch from once the portal SPECs are approved and child tickets are authored.
-
-The ticket store contract is defined in
-[`../docs/portal-specs/99-reference/fleet-conventions.md`](../docs/portal-specs/99-reference/fleet-conventions.md).
+The ticket format is defined in
+[`../docs/portal-specs/99-reference/ticket-conventions.md`](../docs/portal-specs/99-reference/ticket-conventions.md).
 Read that before authoring a ticket.
 
 ## Layout
 
 | Location | Meaning |
 |---|---|
-| `ISSUES/*.md` | Open tickets — real work, not yet done |
-| `ISSUES/epics/` | Epic rollups (`status: epic`). Not dispatchable; children carry the code |
+| `ISSUES/*.md` | Open tickets: real work, not yet verified |
+| `ISSUES/epics/` | Epic rollups (`status: epic`). Children carry the code |
 | `ISSUES/parked/` | Blocked on a decision, or not a code change |
-| `ISSUES_CLOSED/` | Landed and archived. `fleet.py close` moves them here |
-| `TICKETS.md` | Generated register (`fleet.py index`) — read this, not the folders |
+| `ISSUES_CLOSED/` | Verified and archived |
+| `TICKETS.md` | Register of every ticket, maintained by hand. Read this, not the folders |
 
-`fleet.py` finds tickets recursively, so a ticket can move between folders without breaking
-anything. **Status lives in each ticket's `status:` front matter and is the source of truth;
-the folder is a view of it.**
+**Status lives in each ticket's `status:` front matter and is the source of truth; the
+folder is a view of it.** When a status changes, update the ticket's row and the counts in
+`TICKETS.md` in the same commit.
 
 ## Lifecycle
 
 ```
-open → in-progress → fixed-unverified → qa-pass → landed
-                                                   │ fleet.py close
-                                                   ▼
-                                          status: closed (ISSUES_CLOSED/)
+open → fixed-unverified → closed (moved to ISSUES_CLOSED/)
 ```
 
-Side states: `needs-attention`, `epic`, `not-dispatchable`, `qa-fail`.
+Side states: `needs-attention`, `epic`, `not-dispatchable`.
 
 ## Minimum viable ticket
 
@@ -69,42 +63,13 @@ scope_note: ""
 - [ ] No file outside `scope` is modified.
 ```
 
-## Rules the tool enforces
-
-- One markdown file per ticket, flat YAML front matter **first**, no nested maps or
-  multi-line strings.
-- `id` unique across open + closed.
-- H1 exactly `<ID> — <Title>` (em dash).
-- `severity` ∈ `critical|high|medium|low`.
-- `scope:` non-empty for dispatch; directory entries end in `/`.
-- Epics are never dispatched (`status: epic`); `close` refuses them.
-
 ## Mapping to portal specs
 
 | Portal spec | Ticket store |
 |---|---|
 | `docs/portal-specs/01-feature-epics/EPIC-NNN-<slug>/SPEC.md` | the "what" |
-| `docs/portal-specs/01-feature-epics/EPIC-NNN-<slug>/epic.md` | authoring copy; synced into `ISSUES/epics/EPIC-NNN.md` |
-| `docs/portal-specs/01-feature-epics/EPIC-NNN-<slug>/tickets/T-NNNN.md` | child tickets (authored into `ISSUES/` at authoring time) |
+| `ISSUES/epics/EPIC-NNN.md` | the epic ticket (the only copy) |
 
-The canonical epic ticket for the fleet is `ISSUES/epics/EPIC-NNN.md`. Refresh it from
-the SPEC-side `epic.md` with `bash fleet/sync-epics.sh`. Children are authored directly
-into `ISSUES/` with `parent: "EPIC-NNN"`.
-
-## Fleet tool
-
-The fleet tool is committed at [`fleet/`](../fleet/README.md) — orchestrator, prompts,
-commands, and the Pester→JUnit QA bridge. Read [`fleet/README.md`](../fleet/README.md)
-for the full workflow. Config: [`fleet/config.toml`](../fleet/config.toml).
-
-## Bootstrap before first dispatch
-
-```bash
-bash fleet/sync-epics.sh           # seed ISSUES/epics/ from the SPEC-side rollups
-python3 fleet/fleet.py baseline    # REQUIRED — QA is baseline-relative; needs `pwsh`
-python3 fleet/fleet.py plan -v
-python3 fleet/fleet.py run --severity high --limit 3 --dry-run
-```
-
-`baseline` runs the full Pester suite, so `pwsh` (PowerShell 7) must be on the host
-running the fleet. The fleet tool itself is committed in this repo — no copy step.
+Children are authored directly into `ISSUES/` with `parent: "EPIC-NNN"`. An epic is
+`closed` only when every child is closed; otherwise its status is `epic`. Closed epics stay in
+`ISSUES/epics/`.

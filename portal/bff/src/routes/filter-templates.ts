@@ -455,7 +455,6 @@ export function createFilterTemplateRoutes(options: FilterTemplatesRouteOptions)
       filterType,
       policyJson,
       variables,
-      source: "local",
       createdBy: caller.userId ?? null,
       actorUserId: caller.userId ?? null,
       correlationId: ctx.correlationId,

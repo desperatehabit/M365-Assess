@@ -37,6 +37,29 @@ $ErrorActionPreference = 'Stop'
 # Verify Graph connection
 if (-not (Assert-GraphConnection)) { return }
 
+# T-0937: the Teams Graph APIs (/teamwork/*) reject application-only tokens with
+# HTTP 412, so an app-only run cannot read any access setting. Report the collector
+# as Skipped with the reason instead of emitting a row of N/A that is then logged
+# as Complete.
+$isAppOnly = $false
+if (Get-Command -Name Get-MgContext -ErrorAction SilentlyContinue) {
+    $graphContext = Get-MgContext
+    if ($graphContext) {
+        $isAppOnly = $graphContext.AuthType -eq 'AppOnly' -or
+                     (-not $graphContext.Account -and $graphContext.AppName)
+    }
+}
+if ($isAppOnly) {
+    $appOnlyReason = 'app-only not supported: Teams access settings are read from Graph /teamwork/* endpoints, which reject application-only (certificate) tokens with HTTP 412. Re-run with delegated auth.'
+    Write-Warning "Teams access report skipped: app-only auth is not supported by the Teams Graph APIs."
+    [PSCustomObject]@{
+        PSTypeName = 'M365Assess.CollectorOutcome'
+        Outcome    = 'Skipped'
+        Reason     = $appOnlyReason
+    }
+    return
+}
+
 # Initialize result properties with defaults
 $allowGuestAccess = $null
 $allowGuestCreateUpdateChannels = $null

@@ -33,6 +33,7 @@ import {
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const TENANT_USERS_PATH = "/v1/tenants/:tenantId/users";
+export const TENANT_USER_PATH = "/v1/tenants/:tenantId/users/:userId";
 export const USER_ACTION_PATH = "/v1/tenants/:tenantId/users/:userId/actions/:action";
 export const USERS_PERMISSION = "Identity.User.Read";
 export const USERS_WRITE_PERMISSION = "Identity.User.ReadWrite";
@@ -135,6 +136,16 @@ function requireTenantParam(ctx: RequestContext): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     throw new AppError(ErrorCodes.validationFailed, "tenantId is required", 400, [
       { field: "tenantId", reason: "required" },
+    ]);
+  }
+  return value.trim();
+}
+
+function requireUserParam(ctx: RequestContext): string {
+  const value = ctx.params["userId"];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    throw new AppError(ErrorCodes.validationFailed, "userId is required", 400, [
+      { field: "userId", reason: "required" },
     ]);
   }
   return value.trim();
@@ -297,9 +308,21 @@ export function createTenantUsersRoute(options: TenantUsersRouteOptions): Route[
     const result = await postUsersBulkPatch(options, ctx, tenantId, caller);
     return { status: result.status, body: result.body };
   };
+  const patchUserHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requireCaller(options.resolveCaller, ctx);
+    if (options.authorize) {
+      await options.authorize(caller, USERS_WRITE_PERMISSION);
+    }
+    const tenantId = requireTenantParam(ctx);
+    requireTenantInScope(caller, tenantId);
+    const userId = requireUserParam(ctx);
+    const result = await patchTenantUser(options, ctx, tenantId, caller, userId);
+    return { status: result.status, body: result.body };
+  };
   return [
     { method: "GET", path: TENANT_USERS_PATH, handler: getHandler },
     { method: "POST", path: TENANT_USERS_PATH, handler: postHandler },
+    { method: "PATCH", path: TENANT_USER_PATH, handler: patchUserHandler },
     { method: "POST", path: USER_ACTION_PATH, handler: postActionHandler },
     { method: "POST", path: USERS_BULK_PATCH_PATH, handler: postPatchHandler },
   ];
@@ -997,6 +1020,72 @@ export async function postUsersBulkPatch(
   };
 }
 
+// Single-user edit (EPIC-011 SPEC §6 PATCH /v1/tenants/{id}/users/{userId};
+// T-0880). It shares the bulk wizard's property catalogue and diff so a single
+// edit and a bulk edit validate and report identically.
+export async function patchTenantUser(
+  options: TenantUsersRouteOptions,
+  ctx: RequestContext,
+  tenantId: string,
+  caller: UsersCaller,
+  userId: string,
+): Promise<{ status: number; body: UserPatchRowResult }> {
+  const body = readCreateBody(ctx, options.readBody) as Record<string, unknown>;
+  const previewRaw = body["preview"];
+  if (previewRaw !== undefined && typeof previewRaw !== "boolean") {
+    throw validationError("preview must be a boolean", "preview");
+  }
+  const preview = previewRaw === true;
+  const { errors, properties } = validatePatchProperties(body["properties"]);
+  if (errors.length > 0) {
+    throw new AppError(ErrorCodes.validationFailed, errors.join("; "), 400, [
+      { field: "properties", reason: "invalid" },
+    ]);
+  }
+  if (options.patch === undefined) {
+    throw new AppError(USERS_CREATE_UNAVAILABLE, "user patch is not wired for this tenant", 501);
+  }
+  const [outcome] = await options.patch.patchUsers(tenantId, [{ userId, properties }], { preview });
+  const now = options.now ?? (() => new Date().toISOString());
+  if (outcome === undefined || outcome.status === "failed") {
+    const error = outcome?.error ?? "patch failed without a provider result";
+    if (!preview && options.recordAudit) {
+      await options.recordAudit({
+        tenantId,
+        action: "users.patch",
+        targetId: userId,
+        result: "failure",
+        before: outcome?.before ?? null,
+        after: outcome?.after ?? null,
+        error,
+        actorUserId: caller.userId ?? null,
+        correlationId: ctx.correlationId,
+        createdAt: now(),
+      });
+    }
+    return { status: 200, body: { userId, status: "failed", diffs: [], error } };
+  }
+  const diffs = computeUserPatchDiff(outcome.before ?? {}, outcome.after ?? {});
+  if (preview) {
+    return { status: 200, body: { userId, status: "previewed", diffs, error: null } };
+  }
+  if (options.recordAudit) {
+    await options.recordAudit({
+      tenantId,
+      action: "users.patch",
+      targetId: userId,
+      result: "success",
+      before: outcome.before ?? null,
+      after: outcome.after ?? null,
+      error: null,
+      actorUserId: caller.userId ?? null,
+      correlationId: ctx.correlationId,
+      createdAt: now(),
+    });
+  }
+  return { status: 200, body: { userId, status: "patched", diffs, error: null } };
+}
+
 // Route modules own their OpenAPI path items (portal.v1.yaml `paths` is empty
 // by design); a wiring ticket merges this fragment into the served document.
 export const USERS_OPENAPI = {
@@ -1071,6 +1160,25 @@ export const USERS_OPENAPI = {
           "401": { description: "Authentication required." },
           "403": { description: "The caller lacks users.write or the tenant is out of scope." },
           "501": { description: "User create is not wired for this tenant." },
+        },
+      },
+    },
+    "/tenants/{tenantId}/users/{userId}": {
+      patch: {
+        operationId: "patchTenantUser",
+        summary: "Edit one user's patchable properties (preview optional)",
+        permission: USERS_WRITE_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          { name: "userId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        responses: {
+          "200": { description: "The patched (or previewed) user with the before/after diff." },
+          "400": { description: "The request shape or a property value is invalid." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks users.write or the tenant is out of scope." },
+          "501": { description: "User patch is not wired for this tenant." },
         },
       },
     },

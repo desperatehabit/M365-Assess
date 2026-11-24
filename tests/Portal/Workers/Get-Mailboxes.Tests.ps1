@@ -418,3 +418,8 @@ Describe 'Get-Mailboxes worker (T-0381)' {
         }
     }
 }
+
+AfterAll {
+    # Remove the global cmdlet stubs so later files see these cmdlets as unavailable again.
+    Remove-Item -Path 'Function:\Get-EXOMailbox', 'Function:\Get-EXOMailboxStatistics', 'Function:\Get-MailboxPermission', 'Function:\Get-RecipientPermission', 'Function:\Get-EXOMailboxFolderPermission', 'Function:\Get-InboxRule' -ErrorAction SilentlyContinue
+}

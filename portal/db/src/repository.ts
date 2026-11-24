@@ -70,6 +70,13 @@ export interface Tenant {
   deletedAt: string | null;
 }
 
+/**
+ * Credential purpose (T-0917). `reader` is the assessment/reader app credential
+ * stored by onboarding today; `operator` is the opt-in write app credential.
+ * A tenant may hold one of each; writes resolve `operator` and reads `reader`.
+ */
+export type TenantCredentialPurpose = "reader" | "operator";
+
 export interface TenantCredential {
   id: string;
   tenantId: string;
@@ -80,6 +87,13 @@ export interface TenantCredential {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  purpose?: TenantCredentialPurpose;
+  /**
+   * Write-permission groups granted to the opt-in operator app (T-0942), for
+   * example ["identity", "exchange"]. NULL for the reader credential and for
+   * operator rows created before migration 0134.
+   */
+  permissionGroups: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -95,22 +109,31 @@ export class CredentialRefError extends Error {
   readonly code = "credential.invalid_ref";
 
   constructor(ref: string) {
-    super(`credential reference '${ref}' is not of the form tenants/{tenantId}/credential`);
+    super(
+      `credential reference '${ref}' is not of the form tenants/{tenantId}/credential or tenants/{tenantId}/operator-credential`,
+    );
     this.name = "CredentialRefError";
   }
 }
 
-export function formatCredentialRef(tenantId: string): CredentialRef {
-  return `tenants/${tenantId}/credential` as CredentialRef;
+export function formatCredentialRef(
+  tenantId: string,
+  purpose: TenantCredentialPurpose = "reader",
+): CredentialRef {
+  const suffix = purpose === "operator" ? "operator-credential" : "credential";
+  return `tenants/${tenantId}/${suffix}` as CredentialRef;
 }
 
-export function parseCredentialRef(ref: string): { tenantId: string } {
-  const match = /^tenants\/([^/]+)\/credential$/.exec(ref);
+export function parseCredentialRef(ref: string): {
+  tenantId: string;
+  purpose: TenantCredentialPurpose;
+} {
+  const match = /^tenants\/([^/]+)\/(operator-)?credential$/.exec(ref);
   const tenantId = match?.[1];
   if (!tenantId) {
     throw new CredentialRefError(ref);
   }
-  return { tenantId };
+  return { tenantId, purpose: match[2] ? "operator" : "reader" };
 }
 
 export function isCredentialRefForTenant(ref: string, tenantId: string): boolean {
@@ -307,8 +330,11 @@ export type TenantInput = Omit<
       | "lastError"
     >
   >;
-export type TenantCredentialInput = Omit<TenantCredential, "createdAt" | "updatedAt"> &
-  Partial<Pick<TenantCredential, "createdAt" | "updatedAt">>;
+export type TenantCredentialInput = Omit<
+  TenantCredential,
+  "createdAt" | "updatedAt" | "permissionGroups"
+> &
+  Partial<Pick<TenantCredential, "createdAt" | "updatedAt" | "permissionGroups">>;
 export type TenantGroupInput = Omit<TenantGroup, "createdAt" | "updatedAt" | "deletedAt"> &
   Partial<Pick<TenantGroup, "createdAt" | "updatedAt" | "deletedAt">>;
 export type TenantGroupMemberInput = Omit<TenantGroupMember, "createdAt" | "updatedAt"> &
@@ -369,6 +395,12 @@ export interface WebhookSubscription {
   expiresOn: string | null;
   state: string;
   notificationUrl: string;
+  /**
+   * SHA-256 hex of the Graph clientState the subscription was created with
+   * (T-0905). Only the hash is stored; the receiver hashes the callback's
+   * clientState and compares. NULL for rows created before 0131.
+   */
+  clientStateHash: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -391,8 +423,14 @@ export type AuditSearchUpdate = Partial<
 >;
 export type AuditCoverageInput = Omit<AuditCoverage, "createdAt" | "updatedAt"> &
   Partial<Pick<AuditCoverage, "createdAt" | "updatedAt">>;
-export type WebhookSubscriptionInput = Omit<WebhookSubscription, "createdAt" | "updatedAt"> &
-  Partial<Pick<WebhookSubscription, "createdAt" | "updatedAt">>;
+export type WebhookSubscriptionInput = Omit<
+  WebhookSubscription,
+  "createdAt" | "updatedAt" | "clientStateHash"
+> &
+  Partial<Pick<WebhookSubscription, "createdAt" | "updatedAt">> & {
+    /** Plaintext clientState from the worker; hashed at rest, never stored. */
+    clientState?: string;
+  };
 export type AuditExclusionWindowInput = Omit<
   AuditExclusionWindow,
   "createdAt" | "updatedAt" | "deletedAt"
@@ -1353,6 +1391,22 @@ export interface GraphPresetListOptions {
   createdBy?: string;
 }
 
+// Application approval decisions (EPIC-040 SPEC.md §3.3, §5; T-0786). The
+// tenant read model holds pending consent requests; only the auditable
+// approve/deny decision is persisted. `by` is the deciding actor and `at` the
+// decision instant; deny requires a reason, approve stores null.
+export type ConsentDecisionValue = "approve" | "deny";
+
+export interface ConsentDecisionRecord {
+  id: string;
+  tenantId: string;
+  appId: string;
+  decision: ConsentDecisionValue;
+  by: string;
+  at: string;
+  reason: string | null;
+}
+
 /**
  * The only surface feature code may depend on. Tenant-scoped reads require the
  * tenant id, rows with `deletedAt` set are hidden unless explicitly requested,
@@ -1368,8 +1422,16 @@ export interface Repository {
   upsertTenant(input: TenantInput): Promise<Tenant>;
   softDeleteTenant(tenantId: string, options?: { now?: string }): Promise<boolean>;
 
-  getTenantCredential(tenantId: string): Promise<TenantCredential | undefined>;
+  getTenantCredential(
+    tenantId: string,
+    purpose?: TenantCredentialPurpose,
+  ): Promise<TenantCredential | undefined>;
   listTenantCredentials(tenantId: string): Promise<TenantCredential[]>;
+  /** Removes one purpose's credential row; the Entra app and grants are left in place (T-0942). */
+  deleteTenantCredential(
+    tenantId: string,
+    purpose: TenantCredentialPurpose,
+  ): Promise<boolean>;
   upsertTenantCredential(input: TenantCredentialInput): Promise<TenantCredential>;
 
   getTenantGroup(groupId: string, options?: ListOptions): Promise<TenantGroup | undefined>;
@@ -1550,6 +1612,14 @@ export interface Repository {
     value: unknown,
     options?: { updatedBy?: string | null; scope?: SettingScope },
   ): Promise<AppSetting>;
+  /**
+   * Apply a validated batch atomically: every row and its audit event lands in
+   * one transaction, so a failure leaves no key written (EPIC-037 §4.1).
+   */
+  applySettings(
+    changes: readonly { key: string; value: unknown }[],
+    options?: { updatedBy?: string | null },
+  ): Promise<AppSetting[]>;
   getFeatureFlags(): Promise<FeatureFlag[]>;
   getFeatureFlag(key: string): Promise<FeatureFlag | undefined>;
   upsertFeatureFlag(input: FeatureFlagInput): Promise<FeatureFlag>;

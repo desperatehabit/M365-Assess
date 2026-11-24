@@ -96,3 +96,7 @@ Describe 'Invoke-DeviceWipe worker (T-0345)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

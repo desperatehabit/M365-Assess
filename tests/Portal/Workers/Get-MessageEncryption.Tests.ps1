@@ -52,9 +52,9 @@ Describe 'Get-MessageEncryption worker (T-0469)' {
 
             $null = Get-MessageEncryption -TenantId 'tenant-a'
 
-            Assert-MockCalled Get-IRMConfiguration -Exactly 1
-            Assert-MockCalled Get-OMEConfiguration -Exactly 1
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Get-IRMConfiguration -Times 1 -Exactly
+            Should -Invoke Get-OMEConfiguration -Times 1 -Exactly
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
 
         It 'entrypoint delegates to the worker and emits the response as JSON' {
@@ -117,13 +117,13 @@ Describe 'Get-MessageEncryption worker (T-0469)' {
             $plan.before.portalText | Should -Be 'This message is confidential.'
             $plan.after.portalText | Should -Be 'Updated portal text.'
             $plan.diff -join ';' | Should -Match 'portalText'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
 
         It 'apply without confirmation throws a structured error' {
             { Invoke-MessageEncryptionTemplate -TenantId 'tenant-a' -TemplateId 'Default' -Settings @{ portalText = 'Updated portal text.' } } |
                 Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
 
         It 'apply with confirmation writes the change and captures before/after plus audit' {
@@ -139,25 +139,25 @@ Describe 'Get-MessageEncryption worker (T-0469)' {
             $result.auditEvent.targetId | Should -Be 'Default'
             $result.auditEvent.before.portalText | Should -Be 'This message is confidential.'
             $result.auditEvent.after.portalText | Should -Be 'Updated portal text.'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 1
+            Should -Invoke Set-OMEConfiguration -Times 1 -Exactly
         }
 
         It 'apply validates the external mail expiry as a non-negative integer' {
             { Invoke-MessageEncryptionTemplate -TenantId 'tenant-a' -TemplateId 'Default' -Settings @{ externalMailExpiryInDays = 'soon' } -Confirmed:$true } |
                 Should -Throw '*invalid_setting*'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
 
         It 'apply rejects unsupported settings' {
             { Invoke-MessageEncryptionTemplate -TenantId 'tenant-a' -TemplateId 'Default' -Settings @{ bogus = 'x' } -Confirmed:$true } |
                 Should -Throw '*unsupported_setting*'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
 
         It 'apply without settings throws a structured error' {
             { Invoke-MessageEncryptionTemplate -TenantId 'tenant-a' -TemplateId 'Default' -Settings @{} -Confirmed:$true } |
                 Should -Throw '*no_settings*'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
 
         It 'apply for an unknown template throws a structured NotFound error' {
@@ -165,7 +165,7 @@ Describe 'Get-MessageEncryption worker (T-0469)' {
 
             { Invoke-MessageEncryptionTemplate -TenantId 'tenant-a' -TemplateId 'Nope' -Settings @{ portalText = 'Updated portal text.' } -Confirmed:$true } |
                 Should -Throw '*template_not_found*'
-            Assert-MockCalled Set-OMEConfiguration -Exactly 0
+            Should -Invoke Set-OMEConfiguration -Times 0 -Exactly
         }
     }
 
@@ -231,4 +231,10 @@ Describe 'Get-MessageEncryption worker (T-0469)' {
             }
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-IRMConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-OMEConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-OMEConfiguration' -ErrorAction SilentlyContinue
 }

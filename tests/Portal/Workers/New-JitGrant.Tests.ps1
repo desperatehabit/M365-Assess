@@ -45,7 +45,7 @@ Describe 'New-JitGrant worker (T-0246)' {
             $result.durationHours | Should -Be 4
             $result.startsAt | Should -Not -BeNullOrEmpty
             $result.endsAt | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
         }
 
         It 'enforces maximum duration on grant' {
@@ -59,7 +59,7 @@ Describe 'New-JitGrant worker (T-0246)' {
 
             $result.state | Should -Be 'revoked'
             $result.revokedAt | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1
+            Should -Invoke Invoke-MgGraphRequest -Times 1
         }
 
         It 'extends a JIT grant within max duration' {
@@ -93,4 +93,8 @@ Describe 'New-JitGrant worker (T-0246)' {
             } | Should -Throw '*exceeds maximum allowed duration*'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

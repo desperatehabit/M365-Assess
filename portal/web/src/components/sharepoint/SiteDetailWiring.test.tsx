@@ -113,7 +113,40 @@ function installFetch(overrides: Record<string, () => Response> = {}): void {
       return jsonResponse((init?.body ? JSON.parse(String(init.body)) : {}).preview === false ? APPLY : PLAN);
     }
     if (key === "GET /v1/tenants/t-a/sharepoint/sites?limit=100") {
-      return jsonResponse({ items: [{ id: SITE_ID, name: "Team Alpha" }] });
+      return jsonResponse({ items: [{ id: SITE_ID, name: "Team Alpha", sharing: "disabled" }] });
+    }
+    if (key === `PATCH ${BASE}`) {
+      const payload = (init?.body ? JSON.parse(String(init.body)) : {}) as {
+        displayName?: string;
+        sharing?: string;
+        lockState?: string;
+        owners?: string[];
+        preview?: boolean;
+      };
+      if (payload.preview) {
+        return jsonResponse({
+          action: "edit",
+          siteId: SITE_ID,
+          targetName: payload.displayName ?? "Team Alpha",
+          diff: [`displayName: Team Alpha -> ${payload.displayName ?? "Team Alpha"}`],
+          valid: true,
+          dryRun: true,
+          requiresConfirmation: false,
+        });
+      }
+      if (payload.displayName === "TRIGGER_ERROR") {
+        return jsonResponse({ message: "Graph update failed" }, 502);
+      }
+      return jsonResponse({
+        success: true,
+        state: "succeeded",
+        operation: "edit",
+        siteId: SITE_ID,
+        targetName: payload.displayName ?? "Team Alpha",
+        before: { displayName: "Team Alpha" },
+        after: { displayName: payload.displayName ?? "Team Alpha" },
+        error: null,
+      });
     }
     if (key === "GET /v1/tenants/t-a/sharepoint/recyclebin") {
       return jsonResponse({
@@ -233,6 +266,67 @@ describe("site edit page (T-0855)", () => {
       expect(del?.body).toEqual({ confirm: true });
     });
     await waitFor(() => expect(push).toHaveBeenCalledWith("/sharepoint/sites"));
+  });
+
+  it("hydrates site properties, previews changes, and saves property updates via PATCH", async () => {
+    render(<EditPage />);
+    const displayNameInput = (await screen.findByTestId("site-edit-display-name")) as HTMLInputElement;
+    await waitFor(() => expect(displayNameInput.value).toBe("Team Alpha"));
+
+    fireEvent.change(displayNameInput, { target: { value: "Team Beta" } });
+    fireEvent.change(screen.getByTestId("site-edit-sharing"), {
+      target: { value: "externalUserSharingOnly" },
+    });
+    fireEvent.change(screen.getByTestId("site-edit-lock-state"), {
+      target: { value: "ReadOnly" },
+    });
+    fireEvent.change(screen.getByTestId("site-edit-owners"), {
+      target: { value: "owner@contoso.example.com" },
+    });
+
+    fireEvent.click(screen.getByTestId("site-edit-preview"));
+    const planBox = await screen.findByTestId("site-edit-plan");
+    expect(planBox.textContent).toContain("displayName: Team Alpha -> Team Beta");
+
+    fireEvent.click(screen.getByTestId("site-edit-save"));
+    const savedNotice = await screen.findByTestId("site-edit-saved");
+    expect(savedNotice.textContent).toContain("Site properties updated.");
+
+    const previewCall = calls.find(
+      (call) => call.method === "PATCH" && (call.body as { preview?: boolean })?.preview === true,
+    );
+    expect(previewCall?.url).toBe(BASE);
+    expect(previewCall?.body).toMatchObject({
+      displayName: "Team Beta",
+      sharing: "externalUserSharingOnly",
+      lockState: "ReadOnly",
+      owners: ["owner@contoso.example.com"],
+      preview: true,
+    });
+
+    const saveCall = calls.find(
+      (call) => call.method === "PATCH" && (call.body as { preview?: boolean })?.preview === false,
+    );
+    expect(saveCall?.url).toBe(BASE);
+    expect(saveCall?.body).toMatchObject({
+      displayName: "Team Beta",
+      sharing: "externalUserSharingOnly",
+      lockState: "ReadOnly",
+      owners: ["owner@contoso.example.com"],
+      preview: false,
+    });
+  });
+
+  it("shows an error banner when saving site properties fails", async () => {
+    render(<EditPage />);
+    const displayNameInput = (await screen.findByTestId("site-edit-display-name")) as HTMLInputElement;
+    await waitFor(() => expect(displayNameInput.value).toBe("Team Alpha"));
+
+    fireEvent.change(displayNameInput, { target: { value: "TRIGGER_ERROR" } });
+    fireEvent.click(screen.getByTestId("site-edit-save"));
+
+    const errorBanner = await screen.findByTestId("site-edit-save-error");
+    expect(errorBanner.textContent).toContain("Graph update failed");
   });
 });
 

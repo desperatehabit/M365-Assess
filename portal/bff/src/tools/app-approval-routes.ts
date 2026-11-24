@@ -3,7 +3,7 @@
 //   GET  /v1/tenants/:tenantId/consent-requests  — list pending consent requests
 //   POST /v1/tenants/:tenantId/consent-requests  — approve or deny a request
 //
-// Approve/deny are tenant writes: they require the CIPP.Admin.* scope (SPEC §7),
+// Approve/deny are tenant writes: they require the admin permissions (SPEC §7),
 // route through the EPIC-006 write boundary (the service's write port), and are
 // audited with before/after state. Deny requires a reason.
 
@@ -21,7 +21,7 @@ import {
 
 export const CONSENT_REQUESTS_PATH = "/v1/tenants/:tenantId/consent-requests";
 
-export const APPROVAL_ADMIN_SCOPE = "CIPP.Admin.*";
+export const APPROVAL_ADMIN_SCOPE = "CIPP.Admin.Approval";
 
 export const APPROVAL_UNAUTHENTICATED = "request.unauthenticated";
 export const APPROVAL_FORBIDDEN = "auth.forbidden";

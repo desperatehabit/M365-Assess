@@ -27,25 +27,20 @@ export default function BlockControls({
   onRefresh,
   onRevert,
 }: BlockControlsProps) {
-  const controlStyle: Record<string, string> = {
-    background: "var(--surface)",
-    border: "1px solid var(--border)",
-    borderRadius: "6px",
-    color: "var(--text)",
-  };
   const button = (
     label: string,
     action: () => void,
     isDisabled: boolean,
     testId: string,
+    tone: "default" | "danger" = "default",
   ) => (
     <button
       type="button"
+      className={`report-control-button${tone === "danger" ? " danger" : ""}`}
       aria-label={`${label}: ${blockTitle}`}
       data-testid={`${testId}-${blockId}`}
       disabled={disabled || isDisabled}
       onClick={action}
-      style={controlStyle}
     >
       {label}
     </button>
@@ -53,20 +48,20 @@ export default function BlockControls({
 
   return (
     <div
+      className="report-block-controls"
       role="toolbar"
       aria-label={`Block controls: ${blockTitle}`}
       data-testid={`block-controls-${blockId}`}
-      style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}
     >
       {button("Move up", onMoveUp, isFirst, "block-move-up")}
       {button("Move down", onMoveDown, isLast, "block-move-down")}
-      {button("Remove", onRemove, false, "block-remove")}
       {isLive
         ? button("Refresh data", onRefresh, false, "block-refresh")
         : null}
       {canRevert && !isLive
         ? button("Revert to live data", onRevert, false, "block-revert")
         : null}
+      {button("Remove", onRemove, false, "block-remove", "danger")}
     </div>
   );
 }

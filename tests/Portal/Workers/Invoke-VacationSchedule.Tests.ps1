@@ -113,15 +113,15 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $plan.after['autoReplyState'] | Should -Be 'Enabled'
             $plan.after['forwardingSmtpAddress'] | Should -Be 'cover@example.invalid'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'enable apply without confirmation is refused' {
             {
                 Invoke-VacationSchedule -TenantId 'tenant-test' -Phase 'enable' -ScheduleId 'vac-1' -MailboxId 'mbx-1' -StartsAt $script:start -EndsAt $script:end -OooMessage 'Out.' -NotAfter $script:futureBound -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
         }
 
         It 'enable apply writes OoO + forwarding and produces audit and operation records' {
@@ -138,8 +138,8 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $res.mailboxOperation | Should -Not -BeNullOrEmpty
             $res.mailboxOperation.operation | Should -Be 'enable'
             $res.mailboxOperation.state | Should -Be 'applied'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 1 -ParameterFilter { $AutoReplyState -eq 'Enabled' }
-            Assert-MockCalled Set-Mailbox -Times 1
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 1 -ParameterFilter { $AutoReplyState -eq 'Enabled' }
+            Should -Invoke Set-Mailbox -Times 1
         }
 
         It 'enable of an already-enabled mailbox with the same message is a structured no-op' {
@@ -150,8 +150,8 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $res.success | Should -BeTrue
             $res.noop | Should -BeTrue
             $res.scheduleState | Should -Be 'active'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'enable past NotAfter is an expired skip with no write' {
@@ -159,8 +159,8 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $res.success | Should -BeTrue
             $res.expired | Should -BeTrue
             $res.scheduleState | Should -Be 'ended'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
     }
 
@@ -205,15 +205,15 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $plan.before['autoReplyState'] | Should -Be 'Enabled'
             $plan.after['autoReplyState'] | Should -Be 'Disabled'
             $plan.after['forwardingSmtpAddress'] | Should -Be ''
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'revert apply without confirmation is refused' {
             {
                 Invoke-VacationSchedule -TenantId 'tenant-test' -Phase 'revert' -ScheduleId 'vac-1' -MailboxId 'mbx-1' -StartsAt $script:start -EndsAt $script:end -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
         }
 
         It 'revert apply captures before/after and produces audit and operation records' {
@@ -231,8 +231,30 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $res.mailboxOperation | Should -Not -BeNullOrEmpty
             $res.mailboxOperation.operation | Should -Be 'revert'
             $res.mailboxOperation.state | Should -Be 'applied'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 1 -ParameterFilter { $AutoReplyState -eq 'Disabled' }
-            Assert-MockCalled Set-Mailbox -Times 1
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 1 -ParameterFilter { $AutoReplyState -eq 'Disabled' }
+            Should -Invoke Set-Mailbox -Times 1
+        }
+
+        It 'revert restores the prior OoO and forwarding snapshot instead of clearing it' {
+            $prior = @{
+                autoReplyState             = 'Enabled'
+                internalMessage            = 'Back next week'
+                externalMessage            = 'Back next week'
+                forwardingAddress          = ''
+                forwardingSmtpAddress      = 'delegate@example.invalid'
+                deliverToMailboxAndForward = $true
+            }
+            $res = Invoke-VacationSchedule -TenantId 'tenant-test' -Phase 'revert' -ScheduleId 'vac-1' -MailboxId 'mbx-1' -StartsAt $script:start -EndsAt $script:end -PriorState $prior -DryRun $false -Confirmed $true
+            $res.success | Should -BeTrue
+            $res.plan.after['autoReplyState'] | Should -Be 'Enabled'
+            $res.plan.after['forwardingSmtpAddress'] | Should -Be 'delegate@example.invalid'
+            ($res.plan.diff -join '; ') | Should -Match 'Restore pre-vacation'
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 1 -ParameterFilter {
+                $AutoReplyState -eq 'Enabled' -and $InternalMessage -eq 'Back next week'
+            }
+            Should -Invoke Set-Mailbox -Times 1 -ParameterFilter {
+                $ForwardingSmtpAddress -eq 'delegate@example.invalid'
+            }
         }
 
         It 'revert of an already-reverted mailbox is a structured no-op with no write' {
@@ -242,8 +264,8 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             $res.success | Should -BeTrue
             $res.noop | Should -BeTrue
             $res.scheduleState | Should -Be 'ended'
-            Assert-MockCalled Set-MailboxAutoReplyConfiguration -Times 0
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-MailboxAutoReplyConfiguration -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'a failed revert is recorded as failed and raises an alert rather than silently ending' {
@@ -280,14 +302,20 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
                     oooMessage = ''
                     forwardTo  = ''
                     notAfter   = $script:futureBound
+                    priorState = @{
+                        autoReplyState        = 'Disabled'
+                        forwardingSmtpAddress = 'delegate@example.invalid'
+                    }
                     confirmed  = $true
                     dryRun     = $true
-                } | ConvertTo-Json -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
+                } | ConvertTo-Json -Depth 6 -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
                 $job = Read-VacationScheduleJob -Path $jobPath
                 $job['TenantId'] | Should -Be 'tenant-test'
                 $job['ScheduleId'] | Should -Be 'vac-1'
                 $job['Phase'] | Should -Be 'revert'
                 $job['MailboxId'] | Should -Be 'mbx-1'
+                $job['PriorState']['autoReplyState'] | Should -Be 'Disabled'
+                $job['PriorState']['forwardingSmtpAddress'] | Should -Be 'delegate@example.invalid'
                 $job['Confirmed'] | Should -BeTrue
                 $job['DryRun'] | Should -BeTrue
             }
@@ -302,4 +330,11 @@ Describe 'Invoke-VacationSchedule worker (T-0386)' {
             } | Should -Throw '*job envelope not found*'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MailboxAutoReplyConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-MailboxAutoReplyConfiguration' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-Mailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
 }

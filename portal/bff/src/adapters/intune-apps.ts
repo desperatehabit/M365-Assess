@@ -62,26 +62,36 @@ export function createIntuneAppProviders(call: TenantWorkerCall): IntuneAppProvi
     crud: {
       getApp: (tenantId, appId) => call("set-intune-app.ps1", tenantId, { action: "get", appId }),
       changeApp: (tenantId, appId, request) =>
-        call("set-intune-app.ps1", tenantId, {
-          action: request.action,
-          appId,
-          ...(request.changes ? { changes: request.changes } : {}),
-          ...(request.confirmName !== undefined ? { confirmName: request.confirmName } : {}),
-          preview: request.preview,
-          actor: request.actor,
-        }),
+        call(
+          "set-intune-app.ps1",
+          tenantId,
+          {
+            action: request.action,
+            appId,
+            ...(request.changes ? { changes: request.changes } : {}),
+            ...(request.confirmName !== undefined ? { confirmName: request.confirmName } : {}),
+            preview: request.preview,
+            actor: request.actor,
+          },
+          request.preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     assign: {
       assign: (tenantId, appId, request) =>
-        call<AppAssignmentWorkerResult>("set-intune-app-assignment.ps1", tenantId, {
-          appId,
-          assignments: request.assignments,
-          mode: request.mode,
-          preview: request.preview,
-          ...(request.confirmPlan ? { confirmPlan: request.confirmPlan } : {}),
-          actor: request.actor,
-        }),
+        call<AppAssignmentWorkerResult>(
+          "set-intune-app-assignment.ps1",
+          tenantId,
+          {
+            appId,
+            assignments: request.assignments,
+            mode: request.mode,
+            preview: request.preview,
+            ...(request.confirmPlan ? { confirmPlan: request.confirmPlan } : {}),
+            actor: request.actor,
+          },
+          request.preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     templatePreflight: {
@@ -109,28 +119,38 @@ export function createIntuneAppProviders(call: TenantWorkerCall): IntuneAppProvi
         return { totalCount: page.totalCount, items: asArray(page.items as never) };
       },
       importDevices: (tenantId, request) =>
-        call("import-autopilot-devices.ps1", tenantId, {
-          action: "import",
-          source: request.source,
-          ...(request.rows ? { rows: request.rows } : {}),
-          ...(request.csv !== undefined ? { csv: request.csv } : {}),
-          preview: request.preview,
-          actor: request.actor,
-        }),
+        call(
+          "import-autopilot-devices.ps1",
+          tenantId,
+          {
+            action: "import",
+            source: request.source,
+            ...(request.rows ? { rows: request.rows } : {}),
+            ...(request.csv !== undefined ? { csv: request.csv } : {}),
+            preview: request.preview,
+            actor: request.actor,
+          },
+          request.preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     autopilotWrite: {
       write: (tenantId, request) =>
-        call("set-autopilot-profile.ps1", tenantId, {
-          action: request.action,
-          ...(request.profileId ? { profileId: request.profileId } : {}),
-          ...(request.profile ? { profile: request.profile } : {}),
-          ...(request.addGroupIds ? { addGroupIds: request.addGroupIds } : {}),
-          ...(request.removeGroupIds ? { removeGroupIds: request.removeGroupIds } : {}),
-          ...(request.confirmName !== undefined ? { confirmName: request.confirmName } : {}),
-          preview: request.preview,
-          actor: request.actor,
-        }),
+        call(
+          "set-autopilot-profile.ps1",
+          tenantId,
+          {
+            action: request.action,
+            ...(request.profileId ? { profileId: request.profileId } : {}),
+            ...(request.profile ? { profile: request.profile } : {}),
+            ...(request.addGroupIds ? { addGroupIds: request.addGroupIds } : {}),
+            ...(request.removeGroupIds ? { removeGroupIds: request.removeGroupIds } : {}),
+            ...(request.confirmName !== undefined ? { confirmName: request.confirmName } : {}),
+            preview: request.preview,
+            actor: request.actor,
+          },
+          request.preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     enrollment: {
@@ -140,17 +160,22 @@ export function createIntuneAppProviders(call: TenantWorkerCall): IntuneAppProvi
         return { profiles: asArray(list.profiles), tokens: asArray(list.tokens) };
       },
       write: (tenantId, request) =>
-        call("set-enrollment-profile.ps1", tenantId, {
-          action: request.action,
-          platform: request.platform,
-          ...(request.depOnboardingSettingId ? { depOnboardingSettingId: request.depOnboardingSettingId } : {}),
-          ...(request.profileId ? { profileId: request.profileId } : {}),
-          ...(request.profile ? { profile: request.profile } : {}),
-          ...(request.serialNumbers ? { serialNumbers: request.serialNumbers } : {}),
-          ...(request.confirmName !== undefined ? { confirmName: request.confirmName } : {}),
-          preview: request.preview,
-          actor: request.actor,
-        }),
+        call(
+          "set-enrollment-profile.ps1",
+          tenantId,
+          {
+            action: request.action,
+            platform: request.platform,
+            ...(request.depOnboardingSettingId ? { depOnboardingSettingId: request.depOnboardingSettingId } : {}),
+            ...(request.profileId ? { profileId: request.profileId } : {}),
+            ...(request.profile ? { profile: request.profile } : {}),
+            ...(request.serialNumbers ? { serialNumbers: request.serialNumbers } : {}),
+            ...(request.confirmName !== undefined ? { confirmName: request.confirmName } : {}),
+            preview: request.preview,
+            actor: request.actor,
+          },
+          request.preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     status: {
@@ -214,9 +239,12 @@ export function createAppUploadQueue(queue: { enqueue(envelope: unknown): Promis
         payload: {
           contextRef: `app-deployments/${job.deploymentId}`,
           outputRef: `app-deployments/${job.deploymentId}`,
-          credentialRef: `tenants/${job.tenantId}/credential`,
+          // An app upload creates and assigns Graph apps, so the job rides the
+          // operator credential (T-0940).
+          credentialRef: `tenants/${job.tenantId}/operator-credential`,
           sectionRefs: [],
           artifactRefs: [],
+          purpose: "operator",
         },
       }),
   };
@@ -245,7 +273,7 @@ export function createAppUploadRunner(options: AppUploadRunnerOptions): RunWorke
         packageBaseUrl: options.packageBaseUrl,
         runWorker: (entrypoint, job) => {
           const { tenantId: _tenant, ...fields } = job;
-          return options.call(entrypoint, envelope.tenantId, fields);
+          return options.call(entrypoint, envelope.tenantId, fields, { purpose: "operator" });
         },
         ...(options.recordAudit ? { recordAudit: options.recordAudit } : {}),
         signal,

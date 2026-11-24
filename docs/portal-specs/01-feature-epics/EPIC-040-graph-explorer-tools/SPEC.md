@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #53,#55,#56; CIPP `Tenant/Tools/`, `Tools/Breach-Lookup/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-040.md`](../../../../ISSUES/epics/EPIC-040.md)
 
 ## 1. Purpose
 
@@ -149,4 +149,4 @@ confirmation, before/after, and audit. Read methods are audited for privacy.
 - [`../EPIC-034-domains-dns/SPEC.md`](../EPIC-034-domains-dns/SPEC.md) — domain check overlap
 - [`../EPIC-038-rbac-api-clients/SPEC.md`](../EPIC-038-rbac-api-clients/SPEC.md) — permissions
 - [`../EPIC-041-integrations-copilot/SPEC.md`](../EPIC-041-integrations-copilot/SPEC.md) — breach source
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-040.md`](../../../../ISSUES/epics/EPIC-040.md) — epic ticket

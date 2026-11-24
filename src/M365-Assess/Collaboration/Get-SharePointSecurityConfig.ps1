@@ -41,6 +41,34 @@ if (-not (Assert-GraphConnection)) { return }
 $_scriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { $PSScriptRoot }
 . (Join-Path -Path $_scriptDir -ChildPath '..\Common\SecurityConfigHelper.ps1')
 
+# Resolve a SharePoint tenant setting that the API may expose under more than one
+# property name. Returns a hashtable so a present-but-false value is distinguishable
+# from an absent property (which must be reported as Review, not Pass or Fail).
+function Get-SettingProperty {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [object]$Settings,
+
+        [Parameter(Mandatory)]
+        [string[]]$Name
+    )
+
+    foreach ($candidate in $Name) {
+        if ($Settings -is [System.Collections.IDictionary]) {
+            if ($Settings.Contains($candidate)) {
+                return @{ Found = $true; Name = $candidate; Value = $Settings[$candidate] }
+            }
+        }
+        elseif ($Settings.PSObject.Properties.Name -contains $candidate) {
+            return @{ Found = $true; Name = $candidate; Value = $Settings.$candidate }
+        }
+    }
+
+    return @{ Found = $false; Name = $null; Value = $null }
+}
+
 # Initialize-SecurityConfig records the active context; the shared Add-Setting from
 # SecurityConfigHelper.ps1 reads it, so no local wrapper is needed (#958).
 $ctx = Initialize-SecurityConfig
@@ -81,10 +109,22 @@ if (-not $spoSettings) {
 # ------------------------------------------------------------------
 # Pre-fetch: Site list (for site-level checks)
 # ------------------------------------------------------------------
+# The Graph site resource does not expose sharingCapability, so it must not be
+# requested in $select (Graph rejects unknown select properties, which is why the
+# site list previously came back empty). Site sharing is evaluated only when a
+# response happens to include the property; otherwise SPO-SITE-001 stays Review.
 $sites = @()
+$siteListReadSucceeded = $false
 try {
-    $siteResponse = Invoke-MgGraphRequest -Method GET -Uri '/v1.0/sites?$select=id,displayName,sharingCapability,webUrl&$top=100'
-    $sites = $siteResponse.value
+    $siteResponse = Invoke-MgGraphRequest -Method GET -Uri '/v1.0/sites?$select=id,displayName,webUrl&$top=100' -ErrorAction Stop
+    if ($null -ne $siteResponse -and $siteResponse -is [System.Collections.IDictionary] -and $siteResponse.Contains('value')) {
+        $sites = @($siteResponse['value'])
+        $siteListReadSucceeded = $true
+    }
+    elseif ($null -ne $siteResponse -and $siteResponse.PSObject.Properties.Name -contains 'value') {
+        $sites = @($siteResponse.value)
+        $siteListReadSucceeded = $true
+    }
 }
 catch {
     Write-Verbose "Could not retrieve site list: $($_.Exception.Message)"
@@ -93,10 +133,20 @@ catch {
 # ------------------------------------------------------------------
 # Pre-fetch: Conditional Access policies (for CA coverage check)
 # ------------------------------------------------------------------
+# Track whether the read itself succeeded so zero policies can be reported as
+# "not covered" rather than "unavailable".
 $caPolicies = @()
+$caReadSucceeded = $false
 try {
-    $caResponse = Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identity/conditionalAccess/policies'
-    $caPolicies = $caResponse.value
+    $caResponse = Invoke-MgGraphRequest -Method GET -Uri '/v1.0/identity/conditionalAccess/policies' -ErrorAction Stop
+    if ($null -ne $caResponse -and $caResponse -is [System.Collections.IDictionary] -and $caResponse.Contains('value')) {
+        $caPolicies = @($caResponse['value'])
+        $caReadSucceeded = $true
+    }
+    elseif ($null -ne $caResponse -and $caResponse.PSObject.Properties.Name -contains 'value') {
+        $caPolicies = @($caResponse.value)
+        $caReadSucceeded = $true
+    }
 }
 catch {
     Write-Verbose "Could not retrieve CA policies: $($_.Exception.Message)"
@@ -113,7 +163,7 @@ try {
         'externalUserSharingOnly'     { 'External users only (require sign-in)' }
         'externalUserAndGuestSharing' { 'External users and guests (anyone with link)' }
         'existingExternalUserSharingOnly' { 'Existing external users only' }
-        default { $sharingCapability }
+        default { if ($null -ne $sharingCapability) { $sharingCapability } else { 'Not returned by API' } }
     }
 
     $sharingStatus = switch ($sharingCapability) {
@@ -147,13 +197,15 @@ catch {
 # 2. Resharing by External Users
 # ------------------------------------------------------------------
 try {
-    $resharing = $spoSettings['isResharingByExternalUsersEnabled']
+    $resharing = Get-SettingProperty -Settings $spoSettings -Name @('isResharingByExternalUsersEnabled')
     $settingParams = @{
         Category         = 'External Sharing'
         Setting          = 'Resharing by External Users'
-        CurrentValue     = "$resharing"
+        CurrentValue     = if ($resharing.Found -and $null -ne $resharing.Value) { "$($resharing.Value)" } else { 'Not returned by API' }
         RecommendedValue = 'False'
-        Status           = if (-not $resharing) { 'Pass' } else { 'Warning' }
+        Status           = if (-not ($resharing.Found -and $null -ne $resharing.Value)) { 'Review' }
+                           elseif (-not $resharing.Value) { 'Pass' }
+                           else { 'Warning' }
         CheckId          = 'SPO-SHARING-002'
         Remediation      = 'Run: Set-SPOTenant -PreventExternalUsersFromResharing $true. SharePoint admin center > Policies > Sharing.'
     }
@@ -173,7 +225,7 @@ try {
         'none'       { 'No restriction' }
         'allowList'  { 'Allow list (specific domains only)' }
         'blockList'  { 'Block list (block specific domains)' }
-        default { $domainRestriction }
+        default { if ($null -ne $domainRestriction) { $domainRestriction } else { 'Not returned by API' } }
     }
 
     $restrictStatus = switch ($domainRestriction) {
@@ -202,13 +254,21 @@ catch {
 # 4. Unmanaged Sync Client Restriction
 # ------------------------------------------------------------------
 try {
-    $unmanagedSync = $spoSettings['isUnmanagedSyncClientRestricted']
+    # v1.0 sharepointSettings exposes isUnmanagedSyncAppForTenantRestricted;
+    # isUnmanagedSyncClientRestricted is accepted as a fallback for older responses.
+    $unmanagedSync = Get-SettingProperty -Settings $spoSettings -Name @(
+        'isUnmanagedSyncAppForTenantRestricted',
+        'isUnmanagedSyncClientRestricted'
+    )
+    $unmanagedSyncKnown = $unmanagedSync.Found -and $null -ne $unmanagedSync.Value
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Block Sync from Unmanaged Devices'
-        CurrentValue     = if ($null -ne $unmanagedSync) { "$unmanagedSync" } else { 'Not configured' }
+        CurrentValue     = if ($unmanagedSyncKnown) { "$($unmanagedSync.Value)" } else { 'Not returned by API' }
         RecommendedValue = 'True'
-        Status           = if ($unmanagedSync) { 'Pass' } else { 'Warning' }
+        Status           = if (-not $unmanagedSyncKnown) { 'Review' }
+                           elseif ($unmanagedSync.Value) { 'Pass' }
+                           else { 'Warning' }
         CheckId          = 'SPO-SYNC-001'
         Remediation      = 'Run: Set-SPOTenantSyncClientRestriction -Enable. SharePoint admin center > Settings > Sync > Allow syncing only on computers joined to specific domains.'
     }
@@ -222,13 +282,16 @@ catch {
 # 5. Mac Sync App
 # ------------------------------------------------------------------
 try {
-    $macSync = $spoSettings['isMacSyncAppEnabled']
+    $macSync = Get-SettingProperty -Settings $spoSettings -Name @('isMacSyncAppEnabled')
+    $macSyncKnown = $macSync.Found -and $null -ne $macSync.Value
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Mac Sync App Enabled'
-        CurrentValue     = "$macSync"
+        CurrentValue     = if ($macSyncKnown) { "$($macSync.Value)" } else { 'Not returned by API' }
         RecommendedValue = 'False'
-        Status           = if ($macSync) { 'Warning' } else { 'Pass' }
+        Status           = if (-not $macSyncKnown) { 'Review' }
+                           elseif ($macSync.Value) { 'Warning' }
+                           else { 'Pass' }
         CheckId          = 'SPO-SYNC-002'
         Remediation      = 'SharePoint admin center > Settings > Sync > disable Mac sync app if not required by organizational policy.'
     }
@@ -242,13 +305,16 @@ catch {
 # 6. Loop Enabled
 # ------------------------------------------------------------------
 try {
-    $loopEnabled = $spoSettings['isLoopEnabled']
+    $loopEnabledSetting = Get-SettingProperty -Settings $spoSettings -Name @('isLoopEnabled')
+    $loopEnabledKnown = $loopEnabledSetting.Found -and $null -ne $loopEnabledSetting.Value
     $settingParams = @{
         Category         = 'Collaboration Features'
         Setting          = 'Loop Components Enabled'
-        CurrentValue     = "$loopEnabled"
+        CurrentValue     = if ($loopEnabledKnown) { "$($loopEnabledSetting.Value)" } else { 'Not returned by API' }
         RecommendedValue = 'Organization-dependent'
-        Status           = if ($loopEnabled) { 'Review' } else { 'Pass' }
+        Status           = if (-not $loopEnabledKnown) { 'Review' }
+                           elseif ($loopEnabledSetting.Value) { 'Review' }
+                           else { 'Pass' }
         CheckId          = 'SPO-LOOP-001'
         Remediation      = 'Review Loop components usage policy. Disable via SharePoint admin center > Settings if not required by organizational policy.'
     }
@@ -269,7 +335,7 @@ try {
         'externalUserSharingOnly'     { 'External users only' }
         'externalUserAndGuestSharing' { 'External users and guests' }
         'existingExternalUserSharingOnly' { 'Existing external users only' }
-        default { $loopSharing }
+        default { if ($null -ne $loopSharing) { $loopSharing } else { 'Not returned by API' } }
     }
 
     $loopSharingStatus = switch ($loopSharing) {
@@ -303,11 +369,16 @@ try {
     $graphParams = @{
         Method      = 'GET'
         Uri         = '/v1.0/policies/activityBasedTimeoutPolicies'
-        ErrorAction = 'SilentlyContinue'
+        ErrorAction = 'Stop'
     }
     $idlePolicy = Invoke-MgGraphRequest @graphParams
+    $idlePolicies = Get-SettingProperty -Settings $idlePolicy -Name @('value')
 
-    if ($idlePolicy -and $idlePolicy['value'] -and @($idlePolicy['value']).Count -gt 0) {
+    if (-not $idlePolicies.Found) {
+        throw 'Unexpected activity-based timeout policy response'
+    }
+
+    if (@($idlePolicies.Value).Count -gt 0) {
         $settingParams = @{
             Category         = 'Sync & Access'
             Setting          = 'Idle Session Timeout Policy'
@@ -337,9 +408,9 @@ catch {
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Idle Session Timeout Policy'
-        CurrentValue     = 'Could not verify'
+        CurrentValue     = 'Could not verify — the activity-based timeout policy API did not return a usable response'
         RecommendedValue = 'Configured'
-        Status           = 'Warning'
+        Status           = 'Review'
         CheckId          = 'SPO-SESSION-001'
         Remediation      = 'Verify in SharePoint Admin Center. Run: Set-SPOBrowserIdleSignOut -Enabled $true -SignOutAfter ''01:00:00''. M365 admin center > Settings > Org settings > Idle session timeout.'
     }
@@ -385,18 +456,32 @@ catch {
 # 10. Guest Access Expiration (CIS 7.2.9)
 # ------------------------------------------------------------------
 try {
-    $guestExpRequired = $spoSettings['externalUserExpirationRequired']
-    $guestExpDays = $spoSettings['externalUserExpireInDays']
+    $guestExpRequiredSetting = Get-SettingProperty -Settings $spoSettings -Name @('externalUserExpirationRequired')
+    $guestExpDaysSetting = Get-SettingProperty -Settings $spoSettings -Name @('externalUserExpireInDays')
+    $guestExpRequired = $guestExpRequiredSetting.Value
+    $guestExpDays = $guestExpDaysSetting.Value
 
-    if ($null -eq $guestExpRequired) {
+    if (-not $guestExpRequiredSetting.Found -or $null -eq $guestExpRequired) {
         $settingParams = @{
             Category         = 'External Sharing'
             Setting          = 'Guest Access Expiration'
-            CurrentValue     = 'Could not verify'
+            CurrentValue     = 'Not returned by API'
             RecommendedValue = 'Enabled (30 days or less)'
-            Status           = 'Warning'
+            Status           = 'Review'
             CheckId          = 'SPO-SHARING-005'
             Remediation      = 'Run: Set-SPOTenant -ExternalUserExpirationRequired $true -ExternalUserExpireInDays 30. SharePoint admin center > Policies > Sharing > Guest access expiration.'
+        }
+        Add-Setting @settingParams
+    }
+    elseif ($guestExpRequired -and $null -eq $guestExpDays) {
+        $settingParams = @{
+            Category         = 'External Sharing'
+            Setting          = 'Guest Access Expiration'
+            CurrentValue     = 'Enabled, but expiration days not returned by API'
+            RecommendedValue = 'Enabled (30 days or less)'
+            Status           = 'Review'
+            CheckId          = 'SPO-SHARING-005'
+            Remediation      = 'Verify the guest access expiration period in SharePoint admin center > Policies > Sharing > Guest access expiration (30 days or less).'
         }
         Add-Setting @settingParams
     }
@@ -426,18 +511,32 @@ catch {
 # 11. Reauthentication with Verification Code (CIS 7.2.10)
 # ------------------------------------------------------------------
 try {
-    $emailAttestation = $spoSettings['emailAttestationRequired']
-    $emailAttestDays = $spoSettings['emailAttestationReAuthDays']
+    $emailAttestationSetting = Get-SettingProperty -Settings $spoSettings -Name @('emailAttestationRequired')
+    $emailAttestDaysSetting = Get-SettingProperty -Settings $spoSettings -Name @('emailAttestationReAuthDays')
+    $emailAttestation = $emailAttestationSetting.Value
+    $emailAttestDays = $emailAttestDaysSetting.Value
 
-    if ($null -eq $emailAttestation) {
+    if (-not $emailAttestationSetting.Found -or $null -eq $emailAttestation) {
         $settingParams = @{
             Category         = 'External Sharing'
             Setting          = 'Reauthentication with Verification Code'
-            CurrentValue     = 'Could not verify'
+            CurrentValue     = 'Not returned by API'
             RecommendedValue = 'Enabled (30 days or less)'
-            Status           = 'Warning'
+            Status           = 'Review'
             CheckId          = 'SPO-SHARING-006'
             Remediation      = 'Run: Set-SPOTenant -EmailAttestationRequired $true -EmailAttestationReAuthDays 30. SharePoint admin center > Policies > Sharing > Verification code reauthentication.'
+        }
+        Add-Setting @settingParams
+    }
+    elseif ($emailAttestation -and $null -eq $emailAttestDays) {
+        $settingParams = @{
+            Category         = 'External Sharing'
+            Setting          = 'Reauthentication with Verification Code'
+            CurrentValue     = 'Enabled, but reauthentication days not returned by API'
+            RecommendedValue = 'Enabled (30 days or less)'
+            Status           = 'Review'
+            CheckId          = 'SPO-SHARING-006'
+            Remediation      = 'Verify the verification code reauthentication period in SharePoint admin center > Policies > Sharing (30 days or less).'
         }
         Add-Setting @settingParams
     }
@@ -553,8 +652,17 @@ try {
         Write-Verbose "Beta SharePoint settings endpoint not available: $_"
     }
 
-    if ($betaSpoSettings -and $null -ne $betaSpoSettings['isB2BIntegrationEnabled']) {
-        $b2bEnabled = $betaSpoSettings['isB2BIntegrationEnabled']
+    if ($betaSpoSettings) {
+        $b2bSetting = Get-SettingProperty -Settings $betaSpoSettings -Name @('isB2BIntegrationEnabled')
+        $b2bKnown = $b2bSetting.Found -and $null -ne $b2bSetting.Value
+    }
+    else {
+        $b2bSetting = @{ Found = $false; Name = $null; Value = $null }
+        $b2bKnown = $false
+    }
+
+    if ($b2bKnown) {
+        $b2bEnabled = $b2bSetting.Value
         $settingParams = @{
             Category         = 'Authentication'
             Setting          = 'SharePoint B2B Integration'
@@ -570,9 +678,9 @@ try {
         $settingParams = @{
             Category         = 'Authentication'
             Setting          = 'SharePoint B2B Integration'
-            CurrentValue     = 'Could not verify'
+            CurrentValue     = 'Could not verify — isB2BIntegrationEnabled is not returned by the Graph API for this tenant'
             RecommendedValue = 'True'
-            Status           = 'Warning'
+            Status           = 'Review'
             CheckId          = 'SPO-B2B-001'
             Remediation      = 'SharePoint admin center > Policies > Sharing > More external sharing settings > check Enable integration with Microsoft Entra B2B.'
         }
@@ -588,8 +696,16 @@ catch {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking OneDrive sharing capability..."
-    if ($betaSpoSettings -and $null -ne $betaSpoSettings['oneDriveSharingCapability']) {
-        $odSharing = $betaSpoSettings['oneDriveSharingCapability']
+    $odSharingSetting = if ($betaSpoSettings) {
+        Get-SettingProperty -Settings $betaSpoSettings -Name @('oneDriveSharingCapability')
+    }
+    else {
+        @{ Found = $false; Name = $null; Value = $null }
+    }
+    $odSharingKnown = $odSharingSetting.Found -and $null -ne $odSharingSetting.Value
+
+    if ($odSharingKnown) {
+        $odSharing = $odSharingSetting.Value
 
         $odDisplay = switch ($odSharing) {
             'disabled'                    { 'Disabled (no sharing)' }
@@ -640,8 +756,16 @@ catch {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking infected file download blocking..."
-    if ($betaSpoSettings -and $null -ne $betaSpoSettings['disallowInfectedFileDownload']) {
-        $blockInfected = $betaSpoSettings['disallowInfectedFileDownload']
+    $blockInfectedSetting = if ($betaSpoSettings) {
+        Get-SettingProperty -Settings $betaSpoSettings -Name @('disallowInfectedFileDownload')
+    }
+    else {
+        @{ Found = $false; Name = $null; Value = $null }
+    }
+    $blockInfectedKnown = $blockInfectedSetting.Found -and $null -ne $blockInfectedSetting.Value
+
+    if ($blockInfectedKnown) {
+        $blockInfected = $blockInfectedSetting.Value
         $settingParams = @{
             Category         = 'Malware Protection'
             Setting          = 'Infected File Download Blocked'
@@ -657,9 +781,9 @@ try {
         $settingParams = @{
             Category         = 'Malware Protection'
             Setting          = 'Infected File Download Blocked'
-            CurrentValue     = 'Could not verify'
+            CurrentValue     = 'Could not verify — disallowInfectedFileDownload is not returned by the Graph API for this tenant'
             RecommendedValue = 'True'
-            Status           = 'Warning'
+            Status           = 'Review'
             CheckId          = 'SPO-MALWARE-002'
             Remediation      = 'Connect via SharePoint Online Management Shell: Get-SPOTenant | Select DisallowInfectedFileDownload. Set to $true if not already.'
         }
@@ -675,13 +799,13 @@ catch {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking external sharing security group restriction..."
-    # Security group sharing restriction is not exposed via Graph API — always warn
+    # Security group sharing restriction is not exposed via Graph API — report Review
     $settingParams = @{
         Category         = 'Sharing'
         Setting          = 'External Sharing Restricted by Security Group'
         CurrentValue     = 'Could not verify — Graph API does not expose this setting'
         RecommendedValue = 'Enabled (specific security groups only)'
-        Status           = 'Warning'
+        Status           = 'Review'
         CheckId          = 'SPO-SHARING-008'
         Remediation      = 'Verify in SharePoint Admin Center or use Get-SPOTenant. SharePoint admin center > Policies > Sharing > More external sharing settings > "Allow only users in specific security groups to share externally".'
     }
@@ -741,57 +865,91 @@ catch {
 # SPO-SITE-001: Site sharing level within tenant policy
 # ------------------------------------------------------------------
 try {
-    if ($sites.Count -eq 0) {
+    if (-not $siteListReadSucceeded -or $sites.Count -eq 0) {
         $settingParams = @{
             Category         = 'External Sharing'
             Setting          = 'Site Sharing Level vs Tenant Policy'
-            CurrentValue     = 'Could not retrieve site list'
+            CurrentValue     = 'Could not retrieve a usable site list (Sites.Read.All required); site-level sharing cannot be read'
             RecommendedValue = 'All sites at or below tenant sharing level'
-            Status           = 'Warning'
+            Status           = 'Review'
             CheckId          = 'SPO-SITE-001'
-            Remediation      = 'Ensure SharePointTenantSettings.Read.All permission is consented. Review site sharing levels in SharePoint admin center > Active sites.'
+            Remediation      = 'Ensure Sites.Read.All is consented, then review site sharing levels in SharePoint admin center > Active sites.'
         }
         Add-Setting @settingParams
     }
     else {
-        # Sharing hierarchy: most to least permissive
-        $sharingRank = @{
-            'externalUserAndGuestSharing'     = 3
-            'externalUserSharingOnly'         = 2
-            'existingExternalUserSharingOnly' = 1
-            'disabled'                        = 0
-        }
-        $tenantRank = if ($sharingRank.ContainsKey($spoSettings['sharingCapability'])) { $sharingRank[$spoSettings['sharingCapability']] } else { 0 }
+        # The Graph site resource does not normally expose sharingCapability, so
+        # only evaluate sites whose response actually carries the property. Never
+        # Pass when the property is absent.
+        $sitesWithSharing = @($sites | Where-Object {
+            $siteSharing = Get-SettingProperty -Settings $_ -Name @('sharingCapability')
+            $siteSharing.Found -and $null -ne $siteSharing.Value
+        })
 
-        $violatingSites = $sites | Where-Object {
-            $siteRank = if ($sharingRank.ContainsKey($_.sharingCapability)) { $sharingRank[$_.sharingCapability] } else { 0 }
-            $siteRank -gt $tenantRank
-        }
-
-        if ($violatingSites) {
-            $siteNames = ($violatingSites | ForEach-Object { $_.displayName }) -join ', '
+        if ($sitesWithSharing.Count -eq 0) {
             $settingParams = @{
                 Category         = 'External Sharing'
                 Setting          = 'Site Sharing Level vs Tenant Policy'
-                CurrentValue     = "Violating sites: $siteNames"
+                CurrentValue     = 'The Graph site resource does not return sharingCapability; site-level sharing cannot be verified'
                 RecommendedValue = 'All sites at or below tenant sharing level'
-                Status           = 'Fail'
+                Status           = 'Review'
                 CheckId          = 'SPO-SITE-001'
-                Remediation      = 'Review and restrict site-level sharing in SharePoint admin center > Active sites. Site sharing cannot exceed tenant-level sharing policy.'
+                Remediation      = 'Review site sharing levels in SharePoint admin center > Active sites, or use Get-SPOSite in the SharePoint Online Management Shell.'
             }
+            Add-Setting @settingParams
         }
         else {
-            $settingParams = @{
-                Category         = 'External Sharing'
-                Setting          = 'Site Sharing Level vs Tenant Policy'
-                CurrentValue     = "All $($sites.Count) retrieved sites are within tenant policy (capped at 100)"
-                RecommendedValue = 'All sites at or below tenant sharing level'
-                Status           = 'Pass'
-                CheckId          = 'SPO-SITE-001'
-                Remediation      = 'No action required. Note: only first 100 sites retrieved.'
+            # Sharing hierarchy: most to least permissive
+            $sharingRank = @{
+                'externalUserAndGuestSharing'     = 3
+                'externalUserSharingOnly'         = 2
+                'existingExternalUserSharingOnly' = 1
+                'disabled'                        = 0
             }
+            $tenantSharing = Get-SettingProperty -Settings $spoSettings -Name @('sharingCapability')
+            $tenantRank = if ($tenantSharing.Found -and $sharingRank.ContainsKey($tenantSharing.Value)) { $sharingRank[$tenantSharing.Value] } else { 0 }
+
+            $violatingSites = $sitesWithSharing | Where-Object {
+                $siteRank = $sharingRank[$_.sharingCapability]
+                $siteRank -gt $tenantRank
+            }
+
+            if ($violatingSites) {
+                $siteNames = ($violatingSites | ForEach-Object { $_.displayName }) -join ', '
+                $settingParams = @{
+                    Category         = 'External Sharing'
+                    Setting          = 'Site Sharing Level vs Tenant Policy'
+                    CurrentValue     = "Violating sites: $siteNames"
+                    RecommendedValue = 'All sites at or below tenant sharing level'
+                    Status           = 'Fail'
+                    CheckId          = 'SPO-SITE-001'
+                    Remediation      = 'Review and restrict site-level sharing in SharePoint admin center > Active sites. Site sharing cannot exceed tenant-level sharing policy.'
+                }
+            }
+            elseif ($sitesWithSharing.Count -lt $sites.Count) {
+                $settingParams = @{
+                    Category         = 'External Sharing'
+                    Setting          = 'Site Sharing Level vs Tenant Policy'
+                    CurrentValue     = "sharingCapability returned for $($sitesWithSharing.Count) of $($sites.Count) sites; the rest could not be verified"
+                    RecommendedValue = 'All sites at or below tenant sharing level'
+                    Status           = 'Review'
+                    CheckId          = 'SPO-SITE-001'
+                    Remediation      = 'Review the remaining site sharing levels in SharePoint admin center > Active sites.'
+                }
+            }
+            else {
+                $settingParams = @{
+                    Category         = 'External Sharing'
+                    Setting          = 'Site Sharing Level vs Tenant Policy'
+                    CurrentValue     = "All $($sites.Count) retrieved sites are within tenant policy (capped at 100)"
+                    RecommendedValue = 'All sites at or below tenant sharing level'
+                    Status           = 'Pass'
+                    CheckId          = 'SPO-SITE-001'
+                    Remediation      = 'No action required. Note: only first 100 sites retrieved.'
+                }
+            }
+            Add-Setting @settingParams
         }
-        Add-Setting @settingParams
     }
 }
 catch {
@@ -802,13 +960,13 @@ catch {
 # SPO-SITE-002: Sensitive sites have restricted sharing
 # ------------------------------------------------------------------
 try {
-    if ($sites.Count -eq 0) {
+    if (-not $siteListReadSucceeded -or $sites.Count -eq 0) {
         $settingParams = @{
             Category         = 'External Sharing'
             Setting          = 'Sensitive Site External Sharing'
-            CurrentValue     = 'Site list unavailable'
+            CurrentValue     = 'Site list unavailable; sensitive-site sharing cannot be verified'
             RecommendedValue = 'Sensitive sites should have restricted sharing'
-            Status           = 'Info'
+            Status           = 'Review'
             CheckId          = 'SPO-SITE-002'
             Remediation      = 'Review site sharing manually in SharePoint admin center > Active sites.'
         }
@@ -833,7 +991,12 @@ try {
             }
         }
         else {
-            $exposedSites = $sensitiveSites | Where-Object {
+            $sitesWithSharing = @($sensitiveSites | Where-Object {
+                $siteSharing = Get-SettingProperty -Settings $_ -Name @('sharingCapability')
+                $siteSharing.Found -and $null -ne $siteSharing.Value
+            })
+
+            $exposedSites = $sitesWithSharing | Where-Object {
                 $_.sharingCapability -ne 'disabled' -and $_.sharingCapability -ne 'existingExternalUserSharingOnly'
             }
 
@@ -847,6 +1010,28 @@ try {
                     Status           = 'Warning'
                     CheckId          = 'SPO-SITE-002'
                     Remediation      = 'Set sharing to "Only people in your organization" or "Existing guests" for sensitive sites. SharePoint admin center > Active sites > select site > Sharing.'
+                }
+            }
+            elseif ($sitesWithSharing.Count -eq 0) {
+                $settingParams = @{
+                    Category         = 'External Sharing'
+                    Setting          = 'Sensitive Site External Sharing'
+                    CurrentValue     = 'The Graph site resource does not return sharingCapability; sensitive-site sharing cannot be verified'
+                    RecommendedValue = 'Sensitive sites should have restricted sharing'
+                    Status           = 'Review'
+                    CheckId          = 'SPO-SITE-002'
+                    Remediation      = 'Review sharing for sensitive sites in SharePoint admin center > Active sites.'
+                }
+            }
+            elseif ($sitesWithSharing.Count -lt $sensitiveSites.Count) {
+                $settingParams = @{
+                    Category         = 'External Sharing'
+                    Setting          = 'Sensitive Site External Sharing'
+                    CurrentValue     = "sharingCapability returned for $($sitesWithSharing.Count) of $($sensitiveSites.Count) sensitive sites; the rest could not be verified"
+                    RecommendedValue = 'Sensitive sites should have restricted sharing'
+                    Status           = 'Review'
+                    CheckId          = 'SPO-SITE-002'
+                    Remediation      = 'Review the remaining sensitive site sharing levels in SharePoint admin center > Active sites.'
                 }
             }
             else {
@@ -891,15 +1076,29 @@ catch {
 # SPO-ACCESS-001: Conditional Access policy targets SharePoint
 # ------------------------------------------------------------------
 try {
-    if ($caPolicies.Count -eq 0) {
+    if (-not $caReadSucceeded) {
         $settingParams = @{
             Category         = 'Access Control'
             Setting          = 'Conditional Access Coverage for SharePoint'
-            CurrentValue     = 'CA policies unavailable'
+            CurrentValue     = 'CA policies unavailable (the policy list could not be read)'
             RecommendedValue = 'Enabled CA policy targeting SharePoint or All Cloud Apps'
             Status           = 'Info'
             CheckId          = 'SPO-ACCESS-001'
             Remediation      = 'Ensure Policy.Read.All permission is consented. Create a CA policy targeting SharePoint Online (00000003-0000-0ff1-ce00-000000000000) or All Cloud Apps.'
+        }
+        Add-Setting @settingParams
+    }
+    elseif ($caPolicies.Count -eq 0) {
+        # The read succeeded and returned zero policies: SharePoint is not covered.
+        # Score it the same way the CA-* checks score "no matching policy" (Fail).
+        $settingParams = @{
+            Category         = 'Access Control'
+            Setting          = 'Conditional Access Coverage for SharePoint'
+            CurrentValue     = 'No CA policies exist; SharePoint Online is not covered by Conditional Access'
+            RecommendedValue = 'Enabled CA policy targeting SharePoint or All Cloud Apps'
+            Status           = 'Fail'
+            CheckId          = 'SPO-ACCESS-001'
+            Remediation      = 'Create a Conditional Access policy targeting SharePoint Online (app ID: 00000003-0000-0ff1-ce00-000000000000) or All Cloud Apps. Entra admin center > Protection > Conditional Access.'
         }
         Add-Setting @settingParams
     }
@@ -947,13 +1146,21 @@ catch {
 # SPO-ACCESS-002: Unmanaged sync client restriction (enforcement angle)
 # ------------------------------------------------------------------
 try {
-    $unmanagedSyncRestricted = $spoSettings['isUnmanagedSyncClientRestricted']
+    # v1.0 sharepointSettings exposes isUnmanagedSyncAppForTenantRestricted;
+    # isUnmanagedSyncClientRestricted is accepted as a fallback for older responses.
+    $unmanagedSyncRestricted = Get-SettingProperty -Settings $spoSettings -Name @(
+        'isUnmanagedSyncAppForTenantRestricted',
+        'isUnmanagedSyncClientRestricted'
+    )
+    $unmanagedSyncKnown = $unmanagedSyncRestricted.Found -and $null -ne $unmanagedSyncRestricted.Value
     $settingParams = @{
         Category         = 'Sync & Access'
         Setting          = 'Unmanaged Device Sync Restriction'
-        CurrentValue     = if ($null -ne $unmanagedSyncRestricted) { "$unmanagedSyncRestricted" } else { 'Not configured' }
+        CurrentValue     = if ($unmanagedSyncKnown) { "$($unmanagedSyncRestricted.Value)" } else { 'Not returned by API' }
         RecommendedValue = 'True'
-        Status           = if ($unmanagedSyncRestricted) { 'Pass' } else { 'Warning' }
+        Status           = if (-not $unmanagedSyncKnown) { 'Review' }
+                           elseif ($unmanagedSyncRestricted.Value) { 'Pass' }
+                           else { 'Warning' }
         CheckId          = 'SPO-ACCESS-002'
         Remediation      = 'Run: Set-SPOTenantSyncClientRestriction -Enable. Also consider Conditional Access policies with device compliance conditions for defense in depth. SharePoint admin center > Settings > Sync.'
     }

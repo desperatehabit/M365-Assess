@@ -2,10 +2,11 @@
 .SYNOPSIS
     Evaluates separation of duties for critical Entra ID admin roles.
 .DESCRIPTION
-    Checks whether critical admin roles (Global Administrator, Privileged Role
-    Administrator) have at minimum two separate users assigned and that no single
-    user holds both roles simultaneously. Also verifies PIM is in use so that
-    activations require approval.
+    Checks separation of duties between the Global Administrator and Privileged
+    Role Administrator roles: at least one Privileged Role Administrator must be
+    assigned and no single user may hold both roles simultaneously. The minimum
+    Global Administrator count is covered by ENTRA-ADMIN-001. Also verifies PIM
+    is in use so that activations require approval.
 
     Requires an active Microsoft Graph connection with RoleManagement.Read.Directory
     and Directory.Read.All permissions.
@@ -87,8 +88,10 @@ try {
     $praCount = $praPrincipals.Count
     $overlapCount = $overlap.Count
 
-    # Pass criteria: each critical role has >= 2 separate assignees AND no overlap
-    $separated = ($gaCount -ge 2) -and ($praCount -ge 1) -and ($overlapCount -eq 0)
+    # Pass criteria: separation of duties only -- at least one Privileged Role
+    # Administrator is assigned and no user holds both roles. The minimum Global
+    # Administrator count is intentionally not tested here; ENTRA-ADMIN-001 owns it.
+    $separated = ($praCount -ge 1) -and ($overlapCount -eq 0)
 
     $currentValue = "Global Admins: $gaCount, Priv Role Admins: $praCount, Overlap: $overlapCount"
 
@@ -96,7 +99,7 @@ try {
         Category         = 'Separation of Duties'
         Setting          = 'Critical Role Separation (Global Admin vs Privileged Role Admin)'
         CurrentValue     = $currentValue
-        RecommendedValue = 'At least 2 Global Admins, no user holding both roles'
+        RecommendedValue = 'At least 1 Privileged Role Admin, no user holding both Global Admin and Privileged Role Admin'
         Status           = if ($separated) { 'Pass' } else { 'Fail' }
         CheckId          = 'ENTRA-SOD-001'
         Remediation      = 'Ensure Global Administrator and Privileged Role Administrator roles are assigned to separate accounts. Entra admin center > Identity > Roles & admins. Enable PIM approval workflows for role activation.'
@@ -109,7 +112,7 @@ catch {
             Category         = 'Separation of Duties'
             Setting          = 'Critical Role Separation (Global Admin vs Privileged Role Admin)'
             CurrentValue     = 'Insufficient permissions'
-            RecommendedValue = 'At least 2 Global Admins, no user holding both roles'
+            RecommendedValue = 'At least 1 Privileged Role Admin, no user holding both Global Admin and Privileged Role Admin'
             Status           = 'Review'
             CheckId          = 'ENTRA-SOD-001'
             Remediation      = 'Requires RoleManagement.Read.Directory and Directory.Read.All permissions.'

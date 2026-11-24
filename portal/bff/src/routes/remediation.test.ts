@@ -8,6 +8,7 @@ import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import { RbacErrorCodes, type Caller } from "../rbac/authorize.js";
 import type { JobEnvelope } from "@m365-assess/contracts";
 import type { RequestContext } from "../server.js";
+import { ProgressEventHub, type RunProgressStore } from "../sse/hub.js";
 import {
   REMEDIATION_OPENAPI,
   REMEDIATION_PERMISSIONS,
@@ -275,6 +276,86 @@ describe("POST /v1/remediation/plans (T-0105)", () => {
     );
     await expect(route.handler(postContext({ runId: "run-1" }))).rejects.toMatchObject({
       status: 400,
+    });
+  });
+});
+
+describe("remediation jobs keep runId as a link only (T-0928)", () => {
+  it("does not change a completed run when the plan job's lifecycle is published", async () => {
+    const updates: Array<{
+      status?: string;
+      startedAt?: string | null;
+      finishedAt?: string | null;
+    }> = [];
+    const runStore: RunProgressStore = {
+      updateRun: async (_tenantId, _runId, update) => {
+        updates.push(update);
+      },
+    };
+    const hub = new ProgressEventHub({ store: runStore });
+    const queue = new FakeQueue();
+    let seq = 0;
+    const opts = {
+      store: new MemoryPlanStore(),
+      queue,
+      resolveCaller: () => adminCaller(),
+      authorize: allowAll,
+      idGenerator: () => `id-${(seq += 1)}`,
+      now: () => "2026-01-01T00:00:00.000Z",
+    };
+
+    // The assessment job owns the run: running at 00:00, succeeded at 00:05.
+    await hub.publish({
+      runId: "run-1",
+      tenantId: TENANT_1,
+      jobId: "assessment-job",
+      state: "running",
+      at: "2026-01-01T00:00:00.000Z",
+    });
+    await hub.publish({
+      runId: "run-1",
+      tenantId: TENANT_1,
+      jobId: "assessment-job",
+      state: "succeeded",
+      at: "2026-01-01T00:05:00.000Z",
+    });
+    expect(updates).toHaveLength(2);
+
+    const res = await routeFor(opts, "POST", REMEDIATION_PLANS_PATH).handler(
+      postContext({ tenantId: TENANT_1, runId: "run-1" }),
+    );
+    expect(res.status).toBe(202);
+
+    const envelope = queue.enqueued[0]!;
+    expect(envelope.jobType).toBe("remediation");
+    expect(envelope.runId).toBe("run-1");
+
+    // The remediation job links to the same run but its lifecycle fails later.
+    await hub.publish({
+      runId: envelope.runId,
+      tenantId: envelope.tenantId,
+      jobId: envelope.jobId,
+      jobType: envelope.jobType,
+      state: "running",
+      at: "2026-01-01T00:10:00.000Z",
+    });
+    await hub.publish({
+      runId: envelope.runId,
+      tenantId: envelope.tenantId,
+      jobId: envelope.jobId,
+      jobType: envelope.jobType,
+      state: "failed",
+      at: "2026-01-01T00:11:00.000Z",
+    });
+
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toMatchObject({
+      status: "running",
+      startedAt: "2026-01-01T00:00:00.000Z",
+    });
+    expect(updates[1]).toMatchObject({
+      status: "succeeded",
+      finishedAt: "2026-01-01T00:05:00.000Z",
     });
   });
 });

@@ -3,7 +3,7 @@
 //   POST /v1/breach-lookup — query an account/tenant against the registered
 //                            BreachProvider.
 //
-// The query is admin-gated (CIPP.Admin.*) and audited for privacy by the
+// The query is admin-gated (CIPP.Admin.BreachLookup) and audited for privacy by the
 // service. No provider is registered yet — the HIBP integration is EPIC-041 —
 // so the route fails closed with a structured 501 until one is; registering a
 // provider changes no route or page code. The OpenAPI fragment is published
@@ -22,7 +22,7 @@ import {
 
 export const BREACH_LOOKUP_PATH = "/v1/breach-lookup";
 
-export const BREACH_ADMIN_SCOPE = "CIPP.Admin.*";
+export const BREACH_ADMIN_SCOPE = "CIPP.Admin.BreachLookup";
 
 export const BREACH_UNAUTHENTICATED = "request.unauthenticated";
 export const BREACH_FORBIDDEN = "auth.forbidden";
@@ -182,7 +182,7 @@ export const BREACH_LOOKUP_OPENAPI = {
           "200": { description: "The breaches the data source reports for the query." },
           "400": { description: "Neither an account nor a tenantId was supplied." },
           "401": { description: "Authentication is required." },
-          "403": { description: "The caller lacks CIPP.Admin.* or the tenant is outside scope." },
+          "403": { description: "The caller lacks CIPP.Admin.BreachLookup or the tenant is outside scope." },
           "501": { description: "No breach data source is configured (EPIC-041)." },
           "502": { description: "The configured breach data source failed the query." },
         },

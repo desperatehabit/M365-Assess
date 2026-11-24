@@ -1,10 +1,12 @@
 // Root layout: the report's app shell (02-ui-design.md §5) — a sticky sidebar with the
 // portal navigation and a main column — styled by the report theme and shell CSS.
-import type { ReactElement, ReactNode } from "react";
+import { Suspense, type ReactElement, type ReactNode } from "react";
 import "../../../../src/M365-Assess/assets/report-themes.css";
 import "../../../../src/M365-Assess/assets/report-shell.css";
 import "./portal.css";
 import { AppNav } from "../components/shell/AppNav";
+import { DemoBanner } from "../components/shell/DemoBanner";
+import { DemoProvider } from "../components/shell/DemoProvider";
 import { TenantBar } from "../components/shell/TenantBar";
 import { DEFAULT_MODE, DEFAULT_THEME, THEME_BOOT_SCRIPT } from "../lib/theme";
 
@@ -20,13 +22,17 @@ export default function RootLayout({ children }: { children: ReactNode }): React
         <script dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }} />
       </head>
       <body>
-        <div className="app">
-          <AppNav />
-          <div className="main">
-            <TenantBar />
-            {children}
+        <DemoProvider>
+          <div className="app">
+            <AppNav />
+            <div className="main">
+              <TenantBar />
+              <DemoBanner />
+              {/* Pages call useSearchParams(); the production prerender needs a Suspense boundary above them. */}
+              <Suspense fallback={null}>{children}</Suspense>
+            </div>
           </div>
-        </div>
+        </DemoProvider>
       </body>
     </html>
   );

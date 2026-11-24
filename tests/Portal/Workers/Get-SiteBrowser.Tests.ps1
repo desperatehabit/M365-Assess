@@ -271,3 +271,7 @@ Describe 'Get-SiteBrowser worker (T-0488)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

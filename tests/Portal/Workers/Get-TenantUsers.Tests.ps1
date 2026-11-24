@@ -361,3 +361,7 @@ Describe 'Get-TenantUsers worker (T-0201)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

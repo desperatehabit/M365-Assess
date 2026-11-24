@@ -14,6 +14,9 @@ import {
   createRunGroupResolver,
   createRunQueue,
   createRunStore,
+  deriveRunProgress,
+  parseAssessmentIssues,
+  parseAssessmentSummary,
   RUN_OUTPUT_UNREADABLE,
   withFindingsIngestion,
 } from "./runs.js";
@@ -110,6 +113,48 @@ describe("run store (T-0821)", () => {
       expect.objectContaining({ id: "s-1", status: "succeeded", startedAt: "2026-09-26T00:00:01.000Z", finishedAt: "2026-09-26T00:00:09.000Z" }),
     ]);
   });
+
+  it("rejects unknown or non-boolean run options before anything is created", async () => {
+    const { store } = await setup();
+
+    await expect(
+      store.createRun!(run("r-bad", "t-a", { options: { quantum: true } })),
+    ).rejects.toMatchObject({ code: "run.unknown_option", status: 400 });
+    expect(await store.getRunById("r-bad")).toBeUndefined();
+
+    await expect(
+      store.createRunWithChildren!(run("p-bad", "t-a"), [
+        run("c-bad", "t-a", { parentRunId: "p-bad", options: { redact: "yes" } }),
+      ]),
+    ).rejects.toMatchObject({ code: "run.invalid_options", status: 400 });
+    expect(await store.getRunById("p-bad")).toBeUndefined();
+    expect(await store.getRunById("c-bad")).toBeUndefined();
+  });
+
+  it("accepts the template provenance options on a run (T-0922)", async () => {
+    const { store } = await setup();
+    const options = {
+      templateId: "builtin-email-security",
+      templateName: "Email security",
+      templateChanged: true,
+    };
+
+    await store.createRun!(run("r-template", "t-a", { options }));
+
+    expect(await store.getRunById("r-template")).toMatchObject({ options });
+  });
+
+  it("rejects an empty template id or a non-boolean templateChanged", async () => {
+    const { store } = await setup();
+
+    await expect(
+      store.createRun!(run("r-empty-template", "t-a", { options: { templateId: "" } })),
+    ).rejects.toMatchObject({ code: "run.invalid_options", status: 400 });
+
+    await expect(
+      store.createRun!(run("r-bad-changed", "t-a", { options: { templateChanged: "yes" } })),
+    ).rejects.toMatchObject({ code: "run.invalid_options", status: 400 });
+  });
 });
 
 describe("job persistence (T-0821)", () => {
@@ -140,6 +185,21 @@ describe("job persistence (T-0821)", () => {
     await queue.drain();
     expect(await queue.getState(env.jobId)).toBe("succeeded");
     expect((await repo.getJob(env.jobId))!.state).toBe("done");
+  });
+
+  it("stores the all-tenants wildcard as a null tenant so system-timer jobs satisfy the tenant foreign key", async () => {
+    const { repo } = await setup();
+    const persistence = createJobPersistence(repo);
+    await persistence.createJob({
+      id: "job-system",
+      type: "maintenance",
+      tenantId: "all",
+      payload: { outputRef: "schedules/system-cleanup/run-1" },
+      state: "queued",
+      attempts: 0,
+      progress: null,
+    });
+    expect((await repo.getJob("job-system"))?.tenantId).toBeNull();
   });
 });
 
@@ -195,6 +255,96 @@ describe("run queue (T-0821)", () => {
       Output: { OutputFolder: path.join(root, "runs/t-a/r-1") },
     });
     if (process.platform !== "win32") expect(statSync(contextFile).mode & 0o777).toBe(0o600);
+  });
+
+  it("carries every run option into the context and records it in provenance", async () => {
+    const { root, credentials, queue, store } = await queueSetup();
+    await credentials.upsertCredential({
+      id: "cred-a",
+      tenantId: "t-a",
+      authMethod: "certificate-thumbprint",
+      clientId: "app-1",
+      secretRef: "thumbprint://ABC",
+      thumbprint: "ABC",
+      environment: "gcc",
+      expiresOn: null,
+      lastValidated: null,
+      createdAt: "",
+      updatedAt: "",
+    });
+    const options = { quickScan: false, skipPurview: true, redact: false, evidence: true };
+    await store.createRun!(run("r-opt", "t-a", { options }));
+
+    await queue.enqueue(envelope("t-a", "r-opt"));
+
+    const context = JSON.parse(readFileSync(path.join(root, "runs/t-a/r-opt/context.json"), "utf8"));
+    expect(context.Scope).toEqual({ Sections: ["Identity", "Email"], QuickScan: false });
+    expect(context.Options).toEqual({
+      QuickScan: false,
+      SkipPurview: true,
+      Redact: false,
+      Evidence: true,
+    });
+    expect((await store.getRunById("r-opt"))!.provenance).toMatchObject({ assessmentOptions: options });
+  });
+
+  it("sets Scope.QuickScan for a quick scan run", async () => {
+    const { root, credentials, queue, store } = await queueSetup();
+    await credentials.upsertCredential({
+      id: "cred-a",
+      tenantId: "t-a",
+      authMethod: "certificate-thumbprint",
+      clientId: "app-1",
+      secretRef: "thumbprint://ABC",
+      thumbprint: "ABC",
+      environment: "gcc",
+      expiresOn: null,
+      lastValidated: null,
+      createdAt: "",
+      updatedAt: "",
+    });
+    await store.createRun!(run("r-quick", "t-a", { options: { quickScan: true } }));
+
+    await queue.enqueue(envelope("t-a", "r-quick"));
+
+    const context = JSON.parse(readFileSync(path.join(root, "runs/t-a/r-quick/context.json"), "utf8"));
+    expect(context.Scope.QuickScan).toBe(true);
+    expect(context.Options.QuickScan).toBe(true);
+  });
+
+  it("keeps template provenance out of the worker context (T-0922)", async () => {
+    const { root, credentials, queue, store } = await queueSetup();
+    await credentials.upsertCredential({
+      id: "cred-a",
+      tenantId: "t-a",
+      authMethod: "certificate-thumbprint",
+      clientId: "app-1",
+      secretRef: "thumbprint://ABC",
+      thumbprint: "ABC",
+      environment: "gcc",
+      expiresOn: null,
+      lastValidated: null,
+      createdAt: "",
+      updatedAt: "",
+    });
+    await store.createRun!(
+      run("r-template", "t-a", {
+        options: {
+          templateId: "builtin-full-assessment",
+          templateName: "Full assessment",
+          templateChanged: false,
+        },
+      }),
+    );
+
+    await queue.enqueue(envelope("t-a", "r-template"));
+
+    const context = JSON.parse(readFileSync(path.join(root, "runs/t-a/r-template/context.json"), "utf8"));
+    expect(context.Scope).toEqual({ Sections: ["Identity", "Email"] });
+    expect(context.Options).toBeUndefined();
+    expect((await store.getRunById("r-template"))!.provenance).toMatchObject({
+      assessmentOptions: {},
+    });
   });
 
   it("fails the run instead of enqueueing when the tenant has no usable credential", async () => {
@@ -277,6 +427,129 @@ describe("findings ingestion (T-0833)", () => {
     expect(await repo.listFindings("t-a", "r-1")).toHaveLength(4);
   });
 
+  const ISSUE_LOG = [
+    "================================================================================",
+    "  M365 Assessment Issue Report",
+    "  Tenant:    contoso.example",
+    "================================================================================",
+    "",
+    "--- Issue 1 / 2 --------------------------------------------------",
+    "Severity:    ERROR",
+    "Section:     Email",
+    "Collector:   Exchange Online",
+    "Description: Failed to connect to Exchange Online",
+    "Error:       AADSTS700016: application not found",
+    "Action:      Grant admin consent and retry.",
+    "------------------------------------------------------------------------",
+    "",
+    "--- Issue 2 / 2 --------------------------------------------------",
+    "Severity:    WARNING",
+    "Section:     Collaboration",
+    "Collector:   SharePoint",
+    "Description: Graph throttled a request",
+    "Error:       429 Too Many Requests",
+    "Action:      Retry later.",
+    "------------------------------------------------------------------------",
+    "",
+    "================================================================================",
+    "  Summary: 1 errors, 1 warnings, 0 info",
+    "================================================================================",
+  ].join("\n");
+
+  const SUMMARY_CSV = [
+    "# M365-Assess v1.0.0 -- generated 2026-09-27T00:00:00.0000000Z",
+    '"Section","Collector","FileName","Status","Items","Duration","Error"',
+    '"Identity","Entra","Get-TenantInfo.csv","Complete","12","00:10",""',
+    '"Email","Exchange Online","Get-EmailSecurityReport.csv","Skipped","0","00:00","ExchangeOnline not connected"',
+    '"Collaboration","SharePoint","Get-SharePointSecurityConfig.csv","Complete","8","00:05",""',
+  ].join("\n");
+
+  it("parses the issue log and summary CSV into issues, section statuses, and a partial run", async () => {
+    const { repo, store, root, env, outputFolder } = await ingestSetup();
+    const folder = path.join(outputFolder, "Assessment_20260927");
+    mkdirSync(folder, { recursive: true });
+    copyFileSync(FIXTURE, path.join(folder, "_Assessment_fixture.json"));
+    writeFileSync(path.join(folder, "_Assessment-Issues.log"), ISSUE_LOG);
+    writeFileSync(path.join(folder, "_Assessment-Summary.csv"), SUMMARY_CSV);
+    const refs = [
+      "Assessment_20260927/_Assessment_fixture.json",
+      "Assessment_20260927/_Assessment-Issues.log",
+      "Assessment_20260927/_Assessment-Summary.csv",
+    ];
+    const worker = withFindingsIngestion(async (e) => result(e, "succeeded", refs), { repo, storageRoot: root });
+
+    expect(await worker(env, new AbortController().signal)).toMatchObject({ status: "succeeded" });
+
+    const run = await repo.getRun("t-a", "r-1");
+    expect(run).toMatchObject({ status: "partial", provenance: { partial: true } });
+
+    const issues = await store.listRunIssues!("t-a", "r-1");
+    expect(issues.map((issue) => [issue.level, issue.section, issue.message])).toEqual([
+      ["ERROR", "Email", "Failed to connect to Exchange Online"],
+      ["WARNING", "Collaboration", "Graph throttled a request"],
+    ]);
+    expect(issues[0]?.exception).toContain("AADSTS700016");
+
+    const sections = await store.listRunSections("t-a", "r-1");
+    expect(Object.fromEntries(sections.map((section) => [section.section, section.status]))).toEqual({
+      Identity: "succeeded",
+      Email: "skipped",
+      Collaboration: "succeeded",
+    });
+
+    // The queue's terminal succeeded event arrives after ingestion and must not
+    // downgrade the partial run.
+    await store.updateRunById!("r-1", { status: "succeeded", finishedAt: "2026-09-27T00:06:00.000Z" });
+    expect(await repo.getRun("t-a", "r-1")).toMatchObject({
+      status: "partial",
+      finishedAt: "2026-09-27T00:06:00.000Z",
+    });
+  });
+
+  it("does not mark a run partial when the skips come from the operator's own options", async () => {
+    const { repo, root, env, outputFolder } = await ingestSetup();
+    await repo.updateRun("t-a", "r-1", { options: { skipPurview: true } });
+    const folder = path.join(outputFolder, "Assessment_20260927");
+    mkdirSync(folder, { recursive: true });
+    copyFileSync(FIXTURE, path.join(folder, "_Assessment_fixture.json"));
+    writeFileSync(
+      path.join(folder, "_Assessment-Summary.csv"),
+      [
+        '"Section","Collector","FileName","Status","Items","Duration","Error"',
+        '"Identity","Entra","Get-TenantInfo.csv","Complete","12","00:10",""',
+        '"Security","Purview DLP","Get-DlpPolicyReport.csv","Skipped","0","00:00","Purview not connected"',
+      ].join("\n"),
+    );
+    const refs = ["Assessment_20260927/_Assessment_fixture.json", "Assessment_20260927/_Assessment-Summary.csv"];
+    const worker = withFindingsIngestion(async (e) => result(e, "succeeded", refs), { repo, storageRoot: root });
+
+    await worker(env, new AbortController().signal);
+
+    const run = await repo.getRun("t-a", "r-1");
+    expect(run).toMatchObject({ provenance: { partial: false } });
+    expect(run!.status).not.toBe("partial");
+
+    await repo.updateRun("t-a", "r-1", { status: "succeeded" });
+    expect((await repo.getRun("t-a", "r-1"))!.status).toBe("succeeded");
+  });
+
+  it("parses issue blocks and summary rows without depending on the file names", () => {
+    const issues = parseAssessmentIssues(ISSUE_LOG);
+    expect(issues).toHaveLength(2);
+    expect(issues[1]).toMatchObject({
+      level: "WARNING",
+      section: "Collaboration",
+      message: "Graph throttled a request",
+    });
+
+    const sections = parseAssessmentSummary(SUMMARY_CSV);
+    expect(sections).toEqual([
+      { section: "Identity", status: "succeeded", error: null },
+      { section: "Email", status: "skipped", error: "ExchangeOnline not connected" },
+      { section: "Collaboration", status: "succeeded", error: null },
+    ]);
+  });
+
   it("fails a succeeded run whose export is missing or unreadable, with the reason", async () => {
     const { repo, root, env, outputFolder } = await ingestSetup();
     const missing = withFindingsIngestion(async (e) => result(e, "succeeded", ["Assessment_1/report.html"]), { repo, storageRoot: root });
@@ -303,5 +576,58 @@ describe("findings ingestion (T-0833)", () => {
     const other = { ...env, jobType: "remediation" } as JobEnvelope;
     const passthrough = withFindingsIngestion(async (e) => result(e, "succeeded", []), { repo, storageRoot: root });
     expect(await passthrough(other, new AbortController().signal)).toMatchObject({ status: "succeeded" });
+  });
+});
+
+describe("section and run completion status (T-0944)", () => {
+  it("classifies a section with Complete and Skipped collectors as partial, not failed", () => {
+    const csv = [
+      '"Section","Collector","FileName","Status","Items","Duration","Error"',
+      '"Collaboration","SharePoint","21-SPO.csv","Complete","8","00:05",""',
+      '"Collaboration","Teams","21b-Teams.csv","Skipped","4","00:01","Teams checks need delegated auth"',
+      '"Identity","Entra","03-MFA.csv","Complete","3","00:02",""',
+      '"Identity","CA","04-CA.csv","Partial","2","00:02","Throttled"',
+      '"Power BI","PowerBI","22-PowerBI.csv","Complete","1","00:01",""',
+      '"Power BI","Fabric","22b-Fabric.csv","Failed","0","00:01","403 /admin/tenantsettings"',
+    ].join("\n");
+    expect(parseAssessmentSummary(csv).map((s) => [s.section, s.status])).toEqual([
+      ["Collaboration", "partial"],
+      ["Identity", "partial"],
+      ["Power BI", "failed"],
+    ]);
+  });
+
+  it("derives progress from persisted sections without painting a partial or failed run as full", () => {
+    const rows = [
+      { section: "Identity", status: "succeeded" },
+      { section: "Collaboration", status: "partial" },
+      { section: "Power BI", status: "failed" },
+    ];
+    const requested = ["Identity", "Collaboration", "Power BI", "Email"];
+    expect(deriveRunProgress("partial", requested, rows)).toEqual({ completed: 1, total: 4, percent: 25 });
+    expect(deriveRunProgress("failed", requested, rows)).toEqual({ completed: 1, total: 4, percent: 25 });
+    expect(deriveRunProgress("running", requested, rows)).toEqual({ completed: 3, total: 4, percent: 75 });
+    // The latest row for a section wins.
+    expect(deriveRunProgress("partial", ["Identity"], [{ section: "Identity", status: "running" }, { section: "Identity", status: "succeeded" }]))
+      .toEqual({ completed: 1, total: 1, percent: 100 });
+    expect(deriveRunProgress("succeeded", requested, rows)).toBeNull();
+    expect(deriveRunProgress("queued", requested, [])).toBeNull();
+    expect(deriveRunProgress("failed", requested, [])).toBeNull();
+  });
+
+  it("lists a partial run with section-derived progress and its issue count", async () => {
+    const { store } = await setup();
+    await store.createRun!(run("r-p", "t-a", {
+      status: "partial",
+      sections: ["Identity", "Collaboration"],
+      provenance: { partial: true, issues: [{ level: "ERROR", message: "403" }, { level: "WARNING", message: "skipped" }] },
+    }));
+    const base = { runId: "r-p", tenantId: "t-a", startedAt: null, finishedAt: "2026-09-26T00:01:00.000Z", createdAt: "2026-09-26T00:00:00.000Z", updatedAt: "2026-09-26T00:01:00.000Z" };
+    await store.recordRunSection!({ ...base, id: "s-1", section: "Identity", status: "succeeded" });
+    await store.recordRunSection!({ ...base, id: "s-2", section: "Collaboration", status: "partial" });
+
+    const [listed] = await store.listRuns("t-a");
+    expect(listed).toMatchObject({ progress: { completed: 1, total: 2, percent: 50 }, issueCount: 2 });
+    expect(await store.getRunById("r-p")).toMatchObject({ progress: { completed: 1, total: 2, percent: 50 }, issueCount: 2 });
   });
 });

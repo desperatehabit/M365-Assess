@@ -13,11 +13,9 @@
 import { AppError, ErrorCodes } from "../errors.js";
 import {
   isAdmin,
-  requirePermission,
   requireTenantInScope,
   type Caller,
 } from "../rbac/authorize.js";
-import type { Permission } from "../rbac/roles.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 import {
   CopilotSettingsApplyError,
@@ -148,9 +146,13 @@ async function ensureAuthorized(
     return;
   }
   // The integrations.* tokens are not members of the roles.ts Permission union
-  // yet (EPIC-038 wires the full taxonomy). Without an authorize seam a caller
-  // is denied, which is the safe default for a write-adjacent endpoint.
-  requirePermission(caller, permission as Permission);
+  // yet (EPIC-038 wires the full taxonomy). Without an authorize seam the admin
+  // role is the safe gate: reads and writes stay closed to every other role.
+  if (!isAdmin(caller)) {
+    throw new AppError(ErrorCodes.forbidden, "not permitted to perform this action", 403, [
+      { field: "permission", reason: permission },
+    ]);
+  }
 }
 
 async function writeSettingsAudit(

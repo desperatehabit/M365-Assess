@@ -148,7 +148,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope(["other-tenant"]),
-      permissions: [SHAREPOINT_WRITE_PERMISSION],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     await expect(
       postRoute(provider, caller).handler({
@@ -167,7 +167,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: [SHAREPOINT_WRITE_PERMISSION],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     const response = await postRoute(provider, caller).handler({
       method: "POST",
@@ -188,7 +188,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: ["Remediation.Apply"],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     const response = await postRoute(provider, caller).handler({
       method: "POST",
@@ -209,7 +209,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: [SHAREPOINT_WRITE_PERMISSION],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     await expect(
       postRoute(provider, caller).handler({
@@ -228,7 +228,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: [SHAREPOINT_WRITE_PERMISSION],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     const response = await postRoute(provider, caller).handler({
       method: "POST",
@@ -257,7 +257,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: [SHAREPOINT_WRITE_PERMISSION],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     await expect(
       postRoute(provider, caller).handler({
@@ -276,7 +276,7 @@ describe("SharePoint sites create routes (T-0484)", () => {
     const provider = new FakeSharePointSitesCreateProvider();
     const caller: SharePointSitesCreateCaller = {
       tenantScope: tenantScope([TENANT]),
-      permissions: [SHAREPOINT_WRITE_PERMISSION],
+      permissions: [SHAREPOINT_WRITE_PERMISSION, "Remediation.Apply"],
     };
     const csv = "name,alias,type,owners,template,sharing\nAlpha Site,alpha-site,team,owner@example.invalid,,disabled";
     const response = await postRoute(provider, caller).handler({

@@ -133,6 +133,7 @@ describe("audit migration", () => {
         "expiresOn",
         "state",
         "notificationUrl",
+        "deletedAt",
       ]),
     );
     expect(columns(filename, "audit_exclusion_windows")).toEqual(
@@ -210,6 +211,27 @@ describe("audit repository", () => {
       "2026-11-01T00:00:00.000Z",
     );
     expect(expiring.map((sub) => sub.id)).toEqual(["sub-1"]);
+    repo.close();
+  });
+
+  it("updates and soft-deletes a webhook subscription", async () => {
+    const filename = tempDbPath();
+    await seedTenant(filename, TENANT_A);
+
+    const repo = await openSqliteAuditRepository({ filename });
+    const created = await repo.createWebhookSubscription(subscriptionInput());
+    expect(created.state).toBe("active");
+
+    const updated = await repo.updateWebhookSubscription(TENANT_A, "sub-1", {
+      expiresOn: "2026-11-01T00:00:00.000Z",
+      state: "expiring",
+    });
+    expect(updated?.expiresOn).toBe("2026-11-01T00:00:00.000Z");
+    expect(updated?.state).toBe("expiring");
+
+    expect(await repo.softDeleteWebhookSubscription(TENANT_A, "sub-1")).toBe(true);
+    expect(await repo.getWebhookSubscription(TENANT_A, "sub-1")).toBeUndefined();
+    expect(await repo.listWebhookSubscriptions(TENANT_A)).toHaveLength(0);
     repo.close();
   });
 

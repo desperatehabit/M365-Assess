@@ -3,7 +3,7 @@ id: "EPIC-027"
 source: "docs/portal-specs/01-feature-epics/EPIC-027-sharing-permissions-reports/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -22,6 +22,7 @@ children:
   - T-0527
   - T-0528
   - T-0529
+  - T-0857
 scope_kind: "epic"
 scope_note: "Rollup for Sharing & Permissions Reports. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -43,4 +44,10 @@ code. Children are authored into `ISSUES/` (`T-0521`–`T-0529`) with non-empty 
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0857 — `fixed-unverified`

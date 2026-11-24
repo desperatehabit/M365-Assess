@@ -73,12 +73,42 @@ catch {
     }
 }
 
+# Read a tenant setting that may be exposed under more than one property name.
+function Get-SettingValue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [object]$Settings,
+
+        [Parameter(Mandatory)]
+        [string[]]$Name
+    )
+
+    foreach ($candidate in $Name) {
+        if ($Settings -is [System.Collections.IDictionary]) {
+            if ($Settings.Contains($candidate)) {
+                return $Settings[$candidate]
+            }
+        }
+        elseif ($Settings.PSObject.Properties.Name -contains $candidate) {
+            return $Settings.$candidate
+        }
+    }
+
+    return $null
+}
+
 # Build the report from the settings response
 $report = @([PSCustomObject]@{
     SharingCapability                  = $spoSettings.sharingCapability
     SharingDomainRestrictionMode       = $spoSettings.sharingDomainRestrictionMode
     IsResharingByExternalUsersEnabled  = $spoSettings.isResharingByExternalUsersEnabled
-    IsUnmanagedSyncClientRestricted    = $spoSettings.isUnmanagedSyncClientRestricted
+    # v1.0 sharepointSettings exposes isUnmanagedSyncAppForTenantRestricted;
+    # isUnmanagedSyncClientRestricted is accepted as a fallback.
+    IsUnmanagedSyncClientRestricted    = Get-SettingValue -Settings $spoSettings -Name @(
+        'isUnmanagedSyncAppForTenantRestricted',
+        'isUnmanagedSyncClientRestricted'
+    )
     TenantDefaultTimezone              = $spoSettings.tenantDefaultTimezone
     OneDriveLoopSharingCapability      = $spoSettings.oneDriveLoopSharingCapability
     IsMacSyncAppEnabled                = $spoSettings.isMacSyncAppEnabled

@@ -184,3 +184,7 @@ Describe 'Get-OneDriveUsage worker (T-0489)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

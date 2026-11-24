@@ -55,7 +55,7 @@ Describe 'Invoke-GroupMembershipBulk worker (T-0268)' {
             $plan.toAdd | Should -Be 1
             $plan.toSkip | Should -Be 1
             $plan.diff[0] | Should -Be 'Add user-2 to members'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'POST' }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'POST' }
         }
 
         It 'DryRun returns exact remove diff without issuing writes' {
@@ -63,7 +63,7 @@ Describe 'Invoke-GroupMembershipBulk worker (T-0268)' {
             $plan.toRemove | Should -Be 1
             $plan.toSkip | Should -Be 1
             $plan.diff[0] | Should -Be 'Remove user-1 from members'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'DELETE' }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'DELETE' }
         }
 
         It 'applies batched additions, returns per-row status and per-change audit records' {
@@ -79,7 +79,7 @@ Describe 'Invoke-GroupMembershipBulk worker (T-0268)' {
 
             $res.auditEvents.Count | Should -Be 1
             $res.auditEvents[0].action | Should -Be 'group.members.add'
-            Assert-MockCalled Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -ParameterFilter { $Method -eq 'POST' }
         }
 
         It 'works identically for owners' {
@@ -88,4 +88,8 @@ Describe 'Invoke-GroupMembershipBulk worker (T-0268)' {
             $res.auditEvents[0].action | Should -Be 'group.owners.add'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

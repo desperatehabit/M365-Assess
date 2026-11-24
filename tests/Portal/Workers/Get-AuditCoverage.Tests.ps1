@@ -72,7 +72,9 @@ Describe 'Get-AuditCoverage worker (T-0624)' {
 
                 $job = Read-AuditCoverageJob -Path $envelope
                 $job['TenantId'] | Should -Be 'tenant-a'
-                $job['LastSearchAt'] | Should -Be '2026-09-20T10:00:00Z'
+                # The reader round-trips ConvertFrom-Json's DateTime as ISO 8601 ('o'),
+                # so compare the instant rather than the exact string form.
+                [datetimeoffset]::Parse($job['LastSearchAt']) | Should -Be ([datetimeoffset]::Parse('2026-09-20T10:00:00Z'))
                 $job['Finding'] | Should -Not -BeNullOrEmpty
             }
             finally {
@@ -173,4 +175,9 @@ Describe 'Get-AuditCoverage worker (T-0624)' {
             $gap.runId | Should -Be 'run-1'
         }
     }
+}
+
+AfterAll {
+    # Remove the global cmdlet stubs so later files see these cmdlets as unavailable again.
+    Remove-Item -Path 'Function:\Get-AdminAuditLogConfig' -ErrorAction SilentlyContinue
 }

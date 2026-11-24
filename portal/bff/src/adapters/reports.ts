@@ -12,13 +12,14 @@
 // artifactRef, or failed with the reason recorded on the job.
 import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SqliteReportRepository, SqliteRepository } from "@m365-assess/db";
+import type { Finding, SqliteReportRepository, SqliteRepository } from "@m365-assess/db";
 import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
 import type Database from "better-sqlite3";
 import { AppError, ErrorCodes } from "../errors.js";
 import { composeReportHtml } from "../domain/reports/html.js";
 import type { JobQueue, RunWorkerFn } from "../jobs/queue.js";
 import { superviseJob, type SuperviseJobOptions } from "../jobs/supervisor.js";
+import type { SecureScoreRepository } from "../repository/secure-score.js";
 import type {
   ExecutiveRenderPayload,
   GeneratedReportStore,
@@ -27,11 +28,6 @@ import type {
   StoredGeneratedReport,
 } from "../routes/reports.js";
 import type { TemplateRenderPort } from "../routes/report-templates.js";
-
-export const REPORT_RENDER_UNAVAILABLE = "report.render_unavailable";
-
-const RENDER_UNAVAILABLE_MESSAGE =
-  "report rendering is not available yet: no renderer builds report HTML for render-report.ps1";
 
 type ReportRow = Awaited<ReturnType<SqliteReportRepository["getGeneratedReport"]>>;
 type DbReportStatus = NonNullable<ReportRow>["status"];
@@ -139,8 +135,78 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   ".log": "text/plain",
 };
 
+export interface ReportRunReaderOptions {
+  readonly secureScore?: Pick<SecureScoreRepository, "listSnapshots">;
+}
+
+function asFiniteCount(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function summarizeFindings(
+  findings: readonly Finding[],
+  summaryCounts: Record<string, unknown> | null | undefined,
+): { passCount: number; failCount: number; warningCount: number; evaluatedCount: number } {
+  let passCount = 0;
+  let failCount = 0;
+  let warningCount = 0;
+  for (const finding of findings) {
+    const status = finding.status.toLowerCase();
+    if (status === "pass") passCount += 1;
+    else if (status === "fail") failCount += 1;
+    else if (status === "warning") warningCount += 1;
+  }
+  if (summaryCounts) {
+    passCount = asFiniteCount(summaryCounts["pass"], passCount);
+    failCount = asFiniteCount(summaryCounts["fail"], failCount);
+    warningCount = asFiniteCount(summaryCounts["warning"], warningCount);
+  }
+  return {
+    passCount,
+    failCount,
+    warningCount,
+    evaluatedCount: passCount + failCount + warningCount,
+  };
+}
+
+function classifyFailedFindingBucket(
+  finding: Finding,
+): "immediate" | "compliance" | "monitoring" | "training" {
+  const severity = (finding.severity ?? "").toLowerCase();
+  if (severity === "critical" || severity === "high") {
+    return "immediate";
+  }
+  const category = (finding.category ?? "").toLowerCase();
+  if (/(train|awareness|education|adoption)/.test(category)) {
+    return "training";
+  }
+  if (/(monitor|audit|alert|log|report|siem|telemetry|securemon|wipeaudit|vulnscan)/.test(category)) {
+    return "monitoring";
+  }
+  if (/(compl|dlp|retention|label|purview|govern|information protection|cui|tou|policy)/.test(category)) {
+    return "compliance";
+  }
+  if (severity === "low" || severity === "info") {
+    return "training";
+  }
+  return "compliance";
+}
+
+function computeActionBuckets(findings: readonly Finding[]): Record<string, number> {
+  const buckets = { immediate: 0, compliance: 0, monitoring: 0, training: 0 };
+  for (const finding of findings) {
+    if (finding.status.toLowerCase() !== "fail") continue;
+    buckets[classifyFailedFindingBucket(finding)] += 1;
+  }
+  return buckets;
+}
+
 /** Run reads for the reports routes: the latest finished run and its artifacts. */
-export function createReportRunReader(repo: SqliteRepository, artifactRoot: string): RunReadPort {
+export function createReportRunReader(
+  repo: SqliteRepository,
+  artifactRoot: string,
+  options?: ReportRunReaderOptions,
+): RunReadPort {
   return {
     async latestRunId(tenantId) {
       const finished = (await repo.listRuns(tenantId))
@@ -153,14 +219,51 @@ export function createReportRunReader(repo: SqliteRepository, artifactRoot: stri
       return null;
     },
     async executivePayload(tenantId, runId): Promise<ExecutiveRenderPayload> {
-      const [tenant, run] = await Promise.all([repo.getTenant(tenantId), repo.getRun(tenantId, runId)]);
+      const [tenant, run, findings, snapshots] = await Promise.all([
+        repo.getTenant(tenantId),
+        repo.getRun(tenantId, runId),
+        repo.listFindings(tenantId, runId),
+        options?.secureScore ? options.secureScore.listSnapshots(tenantId) : Promise.resolve([]),
+      ]);
+
+      const rawSummary = run?.summaryCounts ?? null;
+      const hasSummary = rawSummary !== null && Object.keys(rawSummary).length > 0;
+      const hasRunData = hasSummary || findings.length > 0;
+      const counts = summarizeFindings(findings, rawSummary);
+
+      let secureScore: Record<string, unknown> | null = null;
+      if (snapshots.length > 0) {
+        const latest = [...snapshots].sort((a, b) => a.at.localeCompare(b.at)).at(-1)!;
+        secureScore = {
+          current: latest.current,
+          max: latest.max,
+          percentage: latest.percentage,
+          evaluatedCount: counts.evaluatedCount,
+        };
+      } else if (hasRunData) {
+        const headlineScore =
+          counts.evaluatedCount > 0
+            ? Math.round((counts.passCount / counts.evaluatedCount) * 100)
+            : counts.passCount > 0
+              ? 100
+              : 0;
+        secureScore = {
+          current: headlineScore,
+          max: 100,
+          percentage: headlineScore,
+          evaluatedCount: counts.evaluatedCount,
+        };
+      }
+
+      const actionBuckets = hasRunData ? computeActionBuckets(findings) : null;
+
       return {
         tenantId,
         runId,
         tenantFacts: tenant ? { displayName: tenant.displayName, defaultDomain: tenant.defaultDomain } : {},
-        compliance: run?.summaryCounts ?? {},
-        secureScore: {},
-        actionBuckets: {},
+        compliance: rawSummary ?? {},
+        secureScore,
+        actionBuckets,
       };
     },
     async runArtifacts(tenantId, runId) {
@@ -186,19 +289,6 @@ export function createReportRunReader(repo: SqliteRepository, artifactRoot: stri
         });
       }
       return artifacts;
-    },
-  };
-}
-
-function renderUnavailable(): AppError {
-  return new AppError(REPORT_RENDER_UNAVAILABLE, RENDER_UNAVAILABLE_MESSAGE, 501);
-}
-
-/** Template renders refuse before anything is recorded. */
-export function createUnavailableTemplateRender(): TemplateRenderPort {
-  return {
-    async enqueue() {
-      throw renderUnavailable();
     },
   };
 }

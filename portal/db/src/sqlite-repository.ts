@@ -100,6 +100,7 @@ import {
   type Tenant,
   type TenantCredential,
   type TenantCredentialInput,
+  type TenantCredentialPurpose,
   type TenantGroup,
   type TenantGroupInput,
   type TenantGroupKind,
@@ -417,6 +418,11 @@ export class SqliteRepository implements Repository {
       environment: asString(row["environment"]),
       expiresOn: asNullableString(row["expiresOn"]),
       lastValidated: asNullableString(row["lastValidated"]),
+      purpose: (asNullableString(row["purpose"]) ?? "reader") as TenantCredentialPurpose,
+      permissionGroups:
+        row["permissionGroups"] === null || row["permissionGroups"] === undefined
+          ? null
+          : parseJsonArray(row["permissionGroups"]),
       createdAt: asString(row["createdAt"]),
       updatedAt: asString(row["updatedAt"]),
     };
@@ -864,10 +870,15 @@ export class SqliteRepository implements Repository {
     return row ? this.mapCredential(row) : undefined;
   }
 
-  async getTenantCredential(tenantId: string): Promise<TenantCredential | undefined> {
+  async getTenantCredential(
+    tenantId: string,
+    purpose: TenantCredentialPurpose = "reader",
+  ): Promise<TenantCredential | undefined> {
     const row = this.db
-      .prepare("SELECT * FROM tenant_credentials WHERE tenantId = ? ORDER BY createdAt LIMIT 1")
-      .get(tenantId) as Row | undefined;
+      .prepare(
+        "SELECT * FROM tenant_credentials WHERE tenantId = ? AND purpose = ? ORDER BY createdAt LIMIT 1",
+      )
+      .get(tenantId, purpose) as Row | undefined;
     return row ? this.mapCredential(row) : undefined;
   }
 
@@ -879,15 +890,25 @@ export class SqliteRepository implements Repository {
     ).map((row) => this.mapCredential(row));
   }
 
+  async deleteTenantCredential(
+    tenantId: string,
+    purpose: TenantCredentialPurpose,
+  ): Promise<boolean> {
+    const result = this.db
+      .prepare("DELETE FROM tenant_credentials WHERE tenantId = ? AND purpose = ?")
+      .run(tenantId, purpose);
+    return result.changes > 0;
+  }
+
   async upsertTenantCredential(input: TenantCredentialInput): Promise<TenantCredential> {
     const createdAt = input.createdAt ?? nowIso();
     const updatedAt = input.updatedAt ?? nowIso();
     this.db
       .prepare(
         `INSERT INTO tenant_credentials
-           (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, createdAt, updatedAt)
+           (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, permissionGroups, createdAt, updatedAt)
          VALUES
-           (@id, @tenantId, @authMethod, @clientId, @secretRef, @thumbprint, @environment, @expiresOn, @lastValidated, @createdAt, @updatedAt)
+           (@id, @tenantId, @authMethod, @clientId, @secretRef, @thumbprint, @environment, @expiresOn, @lastValidated, @purpose, @permissionGroups, @createdAt, @updatedAt)
          ON CONFLICT(id) DO UPDATE SET
            tenantId = excluded.tenantId,
            authMethod = excluded.authMethod,
@@ -897,6 +918,8 @@ export class SqliteRepository implements Repository {
            environment = excluded.environment,
            expiresOn = excluded.expiresOn,
            lastValidated = excluded.lastValidated,
+           purpose = excluded.purpose,
+           permissionGroups = excluded.permissionGroups,
            updatedAt = excluded.updatedAt`,
       )
       .run({
@@ -909,6 +932,11 @@ export class SqliteRepository implements Repository {
         environment: input.environment,
         expiresOn: input.expiresOn ?? null,
         lastValidated: input.lastValidated ?? null,
+        purpose: input.purpose ?? "reader",
+        permissionGroups:
+          input.permissionGroups === undefined || input.permissionGroups === null
+            ? null
+            : JSON.stringify(input.permissionGroups),
         createdAt,
         updatedAt,
       });
@@ -2755,6 +2783,63 @@ export class SqliteRepository implements Repository {
     const persisted = await this.getSetting(settingKey);
     if (!persisted) throw new Error(`setting ${settingKey} was not persisted`);
     return persisted;
+  }
+
+  async applySettings(
+    changes: readonly { key: string; value: unknown }[],
+    options: { updatedBy?: string | null } = {},
+  ): Promise<AppSetting[]> {
+    const updatedBy = options.updatedBy ?? null;
+    const updatedAt = nowIso();
+    const keys: string[] = [];
+    this.db.transaction(() => {
+      for (const change of changes) {
+        const settingKey = assertSettingKey(change.key);
+        assertJsonValue(change.value);
+        keys.push(settingKey);
+        const scope = assertSettingScope("global");
+        const before = this.db
+          .prepare("SELECT * FROM app_settings WHERE key = ?")
+          .get(settingKey) as Row | undefined;
+        this.db
+          .prepare(
+            `INSERT INTO app_settings (key, value, scope, updatedAt, updatedBy)
+             VALUES (@key, @value, @scope, @updatedAt, @updatedBy)
+             ON CONFLICT(key) DO UPDATE SET
+               value = excluded.value,
+               scope = excluded.scope,
+               updatedAt = excluded.updatedAt,
+               updatedBy = excluded.updatedBy`,
+          )
+          .run({ key: settingKey, value: JSON.stringify(change.value), scope, updatedAt, updatedBy });
+        this.db
+          .prepare(
+            `INSERT INTO audit_events
+               (id, timestamp, actorUserId, actorType, tenantId, action, targetType, targetId, before, after, result, error, source, correlationId, createdAt)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run(
+            randomUUID(),
+            updatedAt,
+            updatedBy,
+            updatedBy === null ? "system" : "user",
+            null,
+            "settings.upsert",
+            "app_setting",
+            settingKey,
+            before ? JSON.stringify(this.mapSetting(before)) : null,
+            JSON.stringify({ key: settingKey, value: change.value, scope, updatedAt, updatedBy }),
+            "success",
+            null,
+            "request",
+            null,
+            updatedAt,
+          );
+      }
+    })();
+    const persisted = await this.listSettings();
+    const wanted = new Set(keys);
+    return persisted.filter((setting) => wanted.has(setting.key));
   }
 
   async getFeatureFlags(): Promise<FeatureFlag[]> {

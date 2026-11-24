@@ -14,6 +14,7 @@ import { StandardPicker } from "../../../../components/standards/StandardPicker"
 import {
   fetchStandardTemplate,
   fetchStandardsCatalog,
+  copyStandardTemplate,
   createStandardTemplate,
   updateStandardTemplate,
   type CatalogStandard,
@@ -146,6 +147,7 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
   const [dirty, setDirty] = useState(false);
   const [guardUrl, setGuardUrl] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [builtIn, setBuiltIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -166,6 +168,7 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
     void (async () => {
       try {
         const template = await fetchStandardTemplate(templateId, doFetch);
+        setBuiltIn(template.builtIn === true);
         setName(template.name);
         setStandards(
           template.settings.map((setting) => ({
@@ -237,7 +240,22 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
     setDirty(true);
   };
 
+  const handleMakeCopy = async (): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const copy = await copyStandardTemplate(templateId, {}, doFetch);
+      setDirty(false);
+      navigate(`/standards/${copy.id}/edit`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async (): Promise<void> => {
+    if (builtIn) return;
     setSaving(true);
     setError(null);
     try {
@@ -273,6 +291,18 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
       </aside>
 
       <div style={mainStyle}>
+        {builtIn && (
+          <div
+            style={{ padding: "12px 16px", background: "var(--warning-soft)", border: "1px solid var(--warning)", borderRadius: "6px", color: "var(--warning-text)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}
+            role="status"
+            data-testid="builtin-banner"
+          >
+            <span>This is a built-in template and is read-only. Make a copy to edit it.</span>
+            <button type="button" style={primaryButtonStyle} onClick={() => void handleMakeCopy()} disabled={saving} data-testid="builtin-make-copy">
+              Make a copy to edit
+            </button>
+          </div>
+        )}
         {notice && <div style={{ padding: "10px 14px", background: "var(--accent-soft)", border: "1px solid var(--accent)", borderRadius: "6px", color: "var(--accent-text)", fontSize: "13px" }} data-testid="builder-notice">{notice}</div>}
         {error && <div style={{ padding: "12px", background: "var(--danger-soft)", border: "1px solid var(--danger)", borderRadius: "6px", color: "var(--danger-text)" }} role="alert">{error}</div>}
 
@@ -284,6 +314,7 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
               value={name}
               onChange={(e) => { setName(e.target.value); setDirty(true); }}
               style={inputStyle}
+              disabled={builtIn}
               data-testid="builder-name"
             />
           </label>
@@ -294,6 +325,7 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
               value={assignTo}
               onChange={(e) => { setAssignTo(e.target.value); setDirty(true); }}
               style={inputStyle}
+              disabled={builtIn}
               data-testid="builder-assign"
             />
           </label>
@@ -302,36 +334,46 @@ export default function StandardBuilderPage(props: StandardBuilderPageProps): Re
         <div style={panelStyle}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <strong>Standards ({standards.length})</strong>
-            <button type="button" style={primaryButtonStyle} onClick={() => setShowPicker(true)} data-testid="builder-add-standards">
-              Add standards
-            </button>
+            {!builtIn && (
+              <button type="button" style={primaryButtonStyle} onClick={() => setShowPicker(true)} data-testid="builder-add-standards">
+                Add standards
+              </button>
+            )}
           </div>
           {standards.length === 0 && (
             <div style={{ color: "var(--text-soft)", fontSize: "13px" }} data-testid="builder-empty-standards">
               No standards added yet.
             </div>
           )}
-          {standards.map((standard) => (
-            <StandardAccordion
-              key={standard.key}
-              standard={{ key: standard.key, check: standard.check, name: standard.name, category: standard.category, licenseState: standard.licenseState } as AccordionStandard}
-              actions={standard.actions}
-              autoRemediate={standard.autoRemediate}
-              expanded={expandedKey === standard.key}
-              onToggle={() => setExpandedKey(expandedKey === standard.key ? null : standard.key)}
-              onChange={(next) => updateStandard(standard.key, next)}
-              onRemove={() => { setStandards((prev) => prev.filter((s) => s.key !== standard.key)); setDirty(true); }}
-            />
-          ))}
+          {builtIn
+            ? standards.map((standard) => (
+                <div key={standard.key} style={{ padding: "8px 10px", background: "var(--surface)", border: "1px solid var(--border)", borderRadius: "6px", fontSize: "13px" }} data-testid={`builtin-standard-${standard.key}`}>
+                  {standard.name} <span style={{ color: "var(--text-soft)" }}>({standard.key})</span>
+                </div>
+              ))
+            : standards.map((standard) => (
+                <StandardAccordion
+                  key={standard.key}
+                  standard={{ key: standard.key, check: standard.check, name: standard.name, category: standard.category, licenseState: standard.licenseState } as AccordionStandard}
+                  actions={standard.actions}
+                  autoRemediate={standard.autoRemediate}
+                  expanded={expandedKey === standard.key}
+                  onToggle={() => setExpandedKey(expandedKey === standard.key ? null : standard.key)}
+                  onChange={(next) => updateStandard(standard.key, next)}
+                  onRemove={() => { setStandards((prev) => prev.filter((s) => s.key !== standard.key)); setDirty(true); }}
+                />
+              ))}
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
           <button type="button" style={buttonStyle} onClick={() => attemptNavigate("/standards")} data-testid="builder-cancel">
             Cancel
           </button>
-          <button type="button" style={primaryButtonStyle} disabled={saving} onClick={handleSave} data-testid="builder-save">
-            {saving ? "Saving…" : "Save template"}
-          </button>
+          {!builtIn && (
+            <button type="button" style={primaryButtonStyle} disabled={saving} onClick={handleSave} data-testid="builder-save">
+              {saving ? "Saving…" : "Save template"}
+            </button>
+          )}
         </div>
       </div>
 

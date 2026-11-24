@@ -360,3 +360,7 @@ Describe 'Get-IntunePolicies worker (T-0301)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

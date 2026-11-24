@@ -1,7 +1,9 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import {
   WEBHOOK_NOTIFY_PATH,
   createWebhookNotifyRoute,
+  hashClientState,
   handleWebhookNotify,
   type WebhookDispatchedNotification,
   type WebhookNotifyDispatcher,
@@ -13,11 +15,12 @@ import {
 const TENANT = "tenant-test";
 const SUBSCRIPTION = "sub-1";
 const CLIENT_STATE = "secret-client-state";
+const CLIENT_STATE_HASH = createHash("sha256").update(CLIENT_STATE).digest("hex");
 
 class FakeWebhookNotifyStore implements WebhookNotifyStore {
   readonly records: WebhookNotificationReference[] = [];
-  subscriptions: Record<string, { tenantId: string; clientState: string }> = {
-    [SUBSCRIPTION]: { tenantId: TENANT, clientState: CLIENT_STATE },
+  subscriptions: Record<string, { tenantId: string; clientStateHash: string }> = {
+    [SUBSCRIPTION]: { tenantId: TENANT, clientStateHash: CLIENT_STATE_HASH },
   };
 
   async getSubscription(subscriptionId: string) {
@@ -91,7 +94,7 @@ describe("POST /v1/webhooks/notify", () => {
     ).rejects.toMatchObject({ status: 401 });
   });
 
-  it("dispatches a valid notification and records it by reference", async () => {
+  it("dispatches a valid notification and records it by reference, never forwarding the clientState", async () => {
     const harness = createHarness();
     const route = harness.routes[0]!;
     const res = await route.handler(ctxFor(notificationBody()));
@@ -114,10 +117,10 @@ describe("POST /v1/webhooks/notify", () => {
         tenantId: TENANT,
         resource: "users",
         changeType: "updated",
-        clientState: CLIENT_STATE,
         receivedAt: harness.dispatch.dispatched[0]?.receivedAt,
       },
     ]);
+    expect(harness.dispatch.dispatched[0]).not.toHaveProperty("clientState");
   });
 
   it("stores an encrypted content payload by reference only, without reading it", async () => {
@@ -150,12 +153,20 @@ describe("POST /v1/webhooks/notify", () => {
     await expect(route.handler(ctxFor({}))).rejects.toMatchObject({ status: 400 });
   });
 
-  it("rejects a notification missing clientState", async () => {
+  it("rejects a notification missing clientState as an authentication failure", async () => {
     const harness = createHarness();
     const route = harness.routes[0]!;
     const body = notificationBody();
     delete (body.value[0] as Record<string, unknown>)["clientState"];
-    await expect(route.handler(ctxFor(body))).rejects.toMatchObject({ status: 400 });
+    await expect(route.handler(ctxFor(body))).rejects.toMatchObject({
+      status: 401,
+      code: "webhooks.notify_invalid_client_state",
+    });
+  });
+
+  it("hashes the clientState with SHA-256 before comparing it to storage", () => {
+    expect(hashClientState(CLIENT_STATE)).toBe(CLIENT_STATE_HASH);
+    expect(hashClientState(CLIENT_STATE)).not.toBe(CLIENT_STATE);
   });
 
   it("answers the Graph validation handshake by echoing the validation token", async () => {

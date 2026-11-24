@@ -12,12 +12,16 @@ import { mkdirSync } from "node:fs";
 import path from "node:path";
 import {
   DEFAULT_STANDARDS_REGISTRY_PATH,
+  SqliteAlertingRepository,
   SqliteBaselinesRepository,
   SqliteBecFindingRepository,
   SqliteCustomScriptRepository,
   SqliteDashboardLayoutRepository,
   SqliteDashboardRepository,
   SqliteDriftRepository,
+  SqliteGraphPresetRepository,
+  SqliteConsentDecisionRepository,
+  SqliteIntegrationRepository,
   SqliteJitRepository,
   SqliteJitTemplatesRepository,
   SqliteOffboardingRepository,
@@ -28,10 +32,16 @@ import {
   SqliteReportTemplateRepository,
   SqliteRepository,
   SqliteRoleRequestsRepository,
+  SqliteRunTemplateRepository,
   SqliteScheduleRepository,
   SqliteStandardsRepository,
   SqliteTapRecordRepository,
+  SqliteTemplateRepository,
+  SqliteTransportRuleTemplateRepository,
+  SqliteConnectorTemplateRepository,
   SqliteUserTemplateRepository,
+  SqliteFilterTemplateRepository,
+  SqliteQuarantineActionRepository,
   loadMigrations,
   runMigrations,
 } from "@m365-assess/db";
@@ -57,6 +67,8 @@ import {
   createScheduleJobStateStore,
   createScheduleRunQueue,
   createScriptSandbox,
+  createCustomScriptCommand,
+  createCustomScriptRunner,
   createTickScheduleStore,
   withRemediationPlanIngestion,
   withRemediationVerifyIngestion,
@@ -119,7 +131,11 @@ import {
   withReportCompletion,
 } from "./adapters/reports.js";
 import { createActiveGrantsResolver, createRoleProviders } from "./adapters/roles.js";
-import { createMailboxProviders } from "./adapters/mailboxes.js";
+import {
+  createMailboxProviders,
+  createVacationJobScheduler,
+  createVacationScheduleCommand,
+} from "./adapters/mailboxes.js";
 import {
   createStandardsAlignmentStore,
   createStandardsCatalogStore,
@@ -127,7 +143,8 @@ import {
   createStandardsRunStore,
   createStandardsTemplateStore,
   createStandardsVariableResolver,
-  unavailableTenantLicenses,
+  createTenantLicenseResolver,
+  loadLicensingOverlaySync,
   withStandardsIngestion,
 } from "./adapters/standards.js";
 import {
@@ -169,8 +186,168 @@ import { createJobDispatcher } from "./jobs/dispatch.js";
 import { JobQueue, type RunWorkerFn } from "./jobs/queue.js";
 import { buildJobFileArgs, createSupervisorRunner } from "./jobs/supervisor.js";
 import { createScheduler, type Scheduler } from "./scheduler/scheduler.js";
+import {
+  CREDENTIAL_EXPIRY_COMMAND,
+  PORTAL_CLEANUP_COMMAND,
+  WEBHOOK_RENEWAL_COMMAND,
+  createCleanupCommand,
+  createCleanupPorts,
+  createCredentialExpiryCommand,
+  createMaintenanceRunner,
+  createSystemTimerStateStore,
+  createWebhookRenewalCommand,
+} from "./scheduler/maintenance.js";
+// EPIC-028 Incidents & Alerts providers (T-0858).
+import { createCheckAlertsProvider, createIncidentProviders } from "./adapters/incidents.js";
+// EPIC-029 alerting stores (T-0859).
+import { createAlertingStores } from "./adapters/alerting.js";
+// EPIC-021 Transport & Connectors providers (T-0851).
+import { createTransportProviders } from "./adapters/transport.js";
+import { createTransportRulesRoute, createTransportRulesWriteRoutes, REMEDIATION_APPLY_PERMISSION as TRANSPORT_REMEDIATION_APPLY_PERMISSION } from "./routes/transport-rules.js";
+import { createConnectorRoutes } from "./routes/connectors.js";
+import { createTransportRuleTemplateRoutes } from "./routes/transport-rule-templates.js";
+import { createConnectorTemplateRoutes } from "./routes/connector-templates.js";
+import { createAlertRulesRoutes } from "./routes/alert-rules.js";
+import { createAlertRulesTestRoutes } from "./routes/alert-rules-test.js";
+import { createAlertEventRoutes } from "./routes/alert-events.js";
+import { createNotificationRoutes } from "./routes/notifications.js";
+import { createIncidentsRoutes } from "./routes/incidents.js";
+import { createIncidentsDetailRoute } from "./routes/incidents-detail.js";
+import { createIncidentsActionsRoute } from "./routes/incidents-actions.js";
+import { createAlertActionsRoute, createAlertsRoutes } from "./routes/alerts.js";
+import { createCheckAlertsRoutes } from "./routes/check-alerts.js";
+// EPIC-024 Email Tools (T-0854).
+import { createEmailToolsProviders } from "./adapters/email-tools.js";
+import { createMessageTraceRoutes } from "./routes/message-trace.js";
+import { createHistoricalSearchRoutes } from "./routes/historical-search.js";
+import { createMessageRoutes } from "./routes/messages.js";
+import { createMailRestoreRoutes } from "./routes/mail-restores.js";
+import { createEncryptionRoutes, ENCRYPTION_APPLY_PERMISSION, ENCRYPTION_WRITE_PERMISSION } from "./routes/encryption.js";
+// EPIC-026 Teams & Voice (T-0856).
+import { createTeamsProviders } from "./adapters/teams.js";
+import { createTeamsListRoute } from "./routes/teams.js";
+import { createTeamsCreateRoute } from "./routes/teams-create.js";
+import { createTeamsLifecycleRoutes } from "./routes/teams-lifecycle.js";
+import { createTeamsActivityRoutes } from "./routes/teams-activity.js";
+import { createLisLocationsRoutes } from "./routes/teams-lis.js";
+import { createTeamsVoiceRoutes } from "./routes/teams-voice.js";
+// EPIC-027 Sharing & Permissions (T-0857).
+import { createSharingProviders } from "./adapters/sharing.js";
+import { createSharingReportRoute } from "./routes/sharing-report.js";
+import { createSharingPermissionsRoute } from "./routes/sharing-permissions.js";
+import { createExternalUsersRoutes } from "./routes/sharing-external-users.js";
+import { createSharingLinksRemoveRoutes } from "./routes/sharing-links-remove.js";
+// EPIC-031 Secure Score (T-0861).
+import {
+  SECURE_SCORE_SNAPSHOT_COMMAND,
+  SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
+  SECURE_SCORE_SNAPSHOT_TIMER,
+  createSecureScoreProviders,
+  createSecureScoreSnapshotCommand,
+} from "./adapters/secure-score.js";
+import {
+  createSecureScoreRoutes,
+  type ProviderSecureScoreAction,
+} from "./routes/secure-score.js";
+import { createSecureScoreFleetRoutes } from "./routes/secure-score-fleet.js";
+import { createSecureScorePeersRoutes } from "./routes/secure-score-peers.js";
+import { createSecureScoreTrendRoutes } from "./routes/secure-score-trend.js";
+import { SqliteSecureScoreRepository } from "./repository/secure-score.js";
+import { persistResolvedMapping, resolveFixTarget } from "./domain/secure-score/mapping.js";
+import { SYSTEM_TIMERS } from "./scheduler/system-timers.js";
+// EPIC-032 Audit Logs & Webhooks (T-0862).
+import { createAuditProviders } from "./adapters/audit-logs.js";
+import {
+  createAuditSearchRoutes as createAuditLogSearchRoutes,
+} from "./routes/audit-search.js";
+import {
+  createAuditSearchRoutes as createSavedAuditSearchRoutes,
+} from "./routes/audit-searches.js";
+import { createAuditCoverageRoutes } from "./routes/audit-coverage.js";
+import { createAuditExclusionWindowRoutes } from "./routes/audit-exclusion-windows.js";
+import { createWebhooksRoutes } from "./routes/webhooks.js";
+import {
+  createWebhookNotifyRoute,
+  type WebhookNotifyDispatcher,
+  type WebhookNotifyStore,
+} from "./routes/webhook-notify.js";
+import { SqliteAuditRepository } from "@m365-assess/db";
+// EPIC-033 Licensing (T-0863).
+import { createLicensingProviders } from "./adapters/licensing.js";
+import { createLicensesRoute } from "./routes/licenses.js";
+import { createLicenseAssignRoutes } from "./routes/license-assign.js";
+import { createLicenseOptimizationRoute } from "./routes/licenses-optimization.js";
+import { createLicensePricingRoutes } from "./routes/license-pricing.js";
+import { createLicenseGatesRoutes } from "./routes/license-gates.js";
+import { SqliteLicensingRepository, SqliteDomainRepository, type DomainCheck } from "@m365-assess/db";
+// EPIC-034 Domains & DNS (T-0864).
+import {
+  createDomainsProviders,
+} from "./adapters/domains.js";
+import { createDomainsRoute } from "./routes/domains.js";
+import {
+  createDomainsActionsRoutes,
+  createMemoryDomainActionIdempotencyStore,
+} from "./routes/domains-actions.js";
+import { createDomainsDnsRoutes } from "./routes/domains-dns.js";
+import { createDomainsRecommendationsRoutes } from "./routes/domains-recommendations.js";
+import { createDomainsScheduleRoutes } from "./routes/domains-schedule.js";
+import { DnsResultCache } from "./cache/dns-cache.js";
+// EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+import { createTestPacksRoutes } from "./routes/test-packs.js";
+import { createCustomTestsRoutes } from "./routes/custom-tests.js";
+// EPIC-037 Settings, Branding & Preferences (T-0867).
+import { createSettingsStores } from "./adapters/settings.js";
+import { createSettingsRoutes } from "./routes/settings.js";
+import { createBrandingRoutes } from "./routes/branding.js";
+import { createFeatureFlagRoutes } from "./routes/feature-flags.js";
+import { createPreferencesRoutes } from "./routes/preferences.js";
+import { createLogbookRoutes } from "./routes/logbook.js";
+import { createDiagnosticsRoutes } from "./routes/diagnostics.js";
+// EPIC-039 Template Library & Catalog (T-0869). The route factories live under
+// templates/ and were never imported; the services bind to the SQLite template
+// repository, and save-to-GitHub rides the EPIC-041 GitHub adapter.
+import { createTemplateServices } from "./adapters/templates.js";
+import { createTemplateLibraryRoutes } from "./templates/library-routes.js";
+import { createTemplateRepoRoutes } from "./templates/repo-routes.js";
+import { createTemplateLibraryCloneRoute } from "./templates/clone-routes.js";
+import { createTemplatePackageRoutes } from "./templates/package-routes.js";
+import { createSaveToGitHubRoute } from "./templates/save-to-github.js";
+import { createGithubAdapter } from "./integrations/github/github-adapter.js";
+// EPIC-040 Graph Explorer & Admin Tools (T-0870). The route factories live
+// under tools/ and were never mounted; ConsentDecision now persists through
+// SQLite and the Graph Explorer runs the new invoke-graph-request worker.
+import {
+  createConsentWritePort,
+  createTenantLookupGraphClient,
+} from "./adapters/tools.js";
+import { createGraphExplorerRoutes } from "./tools/graph-explorer-routes.js";
+import { createGraphExplorerWorkerExecutor } from "./tools/graph-explorer-service.js";
+import { createGraphPresetRoutes } from "./tools/graph-preset-routes.js";
+import { createGraphPresetService } from "./tools/graph-preset-service.js";
+import { createTenantLookupRoutes } from "./tools/tenant-lookup-routes.js";
+import { createTenantLookupService } from "./tools/tenant-lookup-service.js";
+import { createAppApprovalRoutes } from "./tools/app-approval-routes.js";
+import { createAppApprovalService } from "./tools/app-approval-service.js";
+import { createBreachLookupRoutes } from "./tools/breach-lookup-routes.js";
+import { createBreachLookupService } from "./tools/breach-lookup-service.js";
+import { createDomainCheckRoutes, createGeoipRoutes } from "./tools/geoip-routes.js";
+// EPIC-019 Defender & Vulnerabilities (T-0849).
+import { createDefenderProviders } from "./adapters/defender.js";
+import { CveExceptionRepository } from "./repository/cve-exceptions.js";
+import { SqliteDefenderDeploymentTemplateRepository } from "./repository/defender-deployment-templates.js";
+import {
+  createDefenderCveExceptionRoutes,
+  DEFENDER_READ_PERMISSION as DEFENDER_CVE_READ_PERMISSION,
+  DEFENDER_WRITE_PERMISSION as DEFENDER_CVE_WRITE_PERMISSION,
+} from "./routes/defender-cve-exceptions.js";
+import { createDefenderDeployRoute, REMEDIATION_APPLY_PERMISSION as DEFENDER_DEPLOY_FALLBACK_PERMISSION } from "./routes/defender-deploy.js";
+import { createMdeOnboardingRoutes } from "./routes/defender-mde-onboarding.js";
+import { createDefenderStatusRoutes } from "./routes/defender-status.js";
+import { createDefenderTemplateRoutes } from "./routes/defender-templates.js";
+import { createDefenderVulnerabilitiesRoutes } from "./routes/defender-vulnerabilities.js";
 import type { BaseRoleId } from "./rbac/base-roles.js";
-import { PermissionRegistry } from "./rbac/permissions.js";
+import { PermissionRegistry, permissionForEndpoint } from "./rbac/permissions.js";
 import { RbacErrorCodes, requireTenantInScope, type Caller } from "./rbac/authorize.js";
 import { isTenantAllowed } from "./rbac/scope.js";
 import { testPortalAccess } from "./rbac/test-portal-access.js";
@@ -233,6 +410,10 @@ import { createGdapRoutes } from "./routes/gdap.js";
 import { createMfaRoutes } from "./routes/mfa.js";
 import { createOffboardingRoutes } from "./routes/offboarding.js";
 import { createOnboardRoutes } from "./routes/onboard.js";
+import {
+  createOnboardingPreflightRoutes,
+  type OnboardingPreflightReport,
+} from "./routes/onboarding-preflight.js";
 import { createPimRequestsRoutes } from "./routes/pim-requests.js";
 import { createPimSettingsTemplatesRoutes } from "./routes/pim-settings-templates.js";
 import { createPimAssignmentsRoute } from "./routes/pim.js";
@@ -248,11 +429,12 @@ import { createRoleAssignmentsRoute, createRolesRoutes } from "./routes/roles.js
 import { createRunsActionsRoutes } from "./routes/runs-actions.js";
 import { createRunsArtifactsRoutes } from "./routes/runs-artifacts.js";
 import { createRunsCreateRoute } from "./routes/runs-create.js";
+import { createRunTemplateRoutes } from "./routes/run-templates.js";
 import { createRunsDetailRoutes } from "./routes/runs-detail.js";
 import { createRunsEventsRoute } from "./routes/runs-events.js";
 import { createRunsListRoute } from "./routes/runs-list.js";
-import { createScheduleRoutes } from "./routes/schedules.js";
-import { createScriptRoutes } from "./routes/scripts.js";
+import { CUSTOM_SCRIPT_COMMAND, createScheduleRoutes } from "./routes/schedules.js";
+import { createScriptRoutes, type ScriptAuditPort } from "./routes/scripts.js";
 import { createStandardsAlignmentRoutes } from "./routes/standards-alignment.js";
 import { createStandardsCatalogRoutes } from "./routes/standards-catalog.js";
 import { createStandardsRunRoutes } from "./routes/standards-run.js";
@@ -283,7 +465,10 @@ import {
 import { createMailboxReportsRoute } from "./routes/mailbox-reports.js";
 import { createMailboxRuleRoutes } from "./routes/mailbox-rules.js";
 import { createRetentionRoutes } from "./routes/retention.js";
-import { createVacationScheduleRoutes } from "./routes/vacation-schedules.js";
+import {
+  VACATION_SCHEDULE_COMMAND,
+  createVacationScheduleRoutes,
+} from "./routes/vacation-schedules.js";
 import { createDeletedMailboxRoutes } from "./routes/deleted-mailboxes.js";
 import { createIntuneTemplateRoutes } from "./routes/intune-templates.js";
 import { createOneDriveUsageRoutes } from "./routes/onedrive.js";
@@ -292,6 +477,44 @@ import { createSharePointSiteLifecycleRoutes } from "./routes/sharepoint-site-li
 import { createSharePointSitesRoute } from "./routes/sharepoint-sites.js";
 import { createSharePointSitesCreateRoutes } from "./routes/sharepoint-sites-create.js";
 import { createSharePointStorageRoutes } from "./routes/sharepoint-storage.js";
+import { createSharePointTemplateRoutes } from "./routes/sharepoint-templates.js";
+// EPIC-023 Contacts & Resources (T-0853).
+import { createContactsResourcesAdapters } from "./adapters/contacts-resources.js";
+import { createContactsRoutes } from "./routes/contacts.js";
+import {
+  createContactsCrudRoutes,
+  REMEDIATION_APPLY_PERMISSION as CONTACTS_REMEDIATION_APPLY_PERMISSION,
+} from "./routes/contacts-crud.js";
+import { createContactsImportRoutes } from "./routes/contacts-import.js";
+import { createContactTemplateRoutes } from "./routes/contact-templates.js";
+import { createContactTemplateDeployRoute } from "./routes/contact-templates-deploy.js";
+import {
+  createResourcesRoutes,
+  CONTACTS_READ_PERMISSION as RESOURCES_CONTACT_READ_PERMISSION,
+} from "./routes/resources.js";
+import { createResourcesCrudRoutes } from "./routes/resources-crud.js";
+// EPIC-035 Backup & Restore (T-0865).
+import {
+  BACKUP_MAINTENANCE_COMMAND,
+  BACKUP_MAINTENANCE_TIMER,
+  createBackupMaintenanceCommand,
+  createBackupsArtifactTier,
+  createBackupsStore,
+} from "./adapters/backups.js";
+import { createBackupRoutes } from "./routes/backups.js";
+import { createBackupSettingsRoutes } from "./routes/backup-settings.js";
+import { createBackupsRestoreRoutes } from "./routes/backups-restore.js";
+// EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+import { createSpamQuarantineAdapters } from "./adapters/spam-quarantine.js";
+import { createQuarantineBulkRoutes } from "./routes/quarantine-bulk.js";
+import {
+  createQuarantineRoutes,
+  REMEDIATION_APPLY_PERMISSION as QUARANTINE_REMEDIATION_APPLY_PERMISSION,
+} from "./routes/quarantine.js";
+import { createQuarantinePoliciesRoutes } from "./routes/quarantine-policies.js";
+import { createAllowBlockRoutes } from "./routes/allow-block.js";
+import { createFilterRoutes } from "./routes/filters.js";
+import { createFilterTemplateRoutes } from "./routes/filter-templates.js";
 import type { RequestAuthenticator, RequestCaller, RequestContext, Route } from "./server.js";
 import { ProgressEventHub } from "./sse/hub.js";
 
@@ -520,6 +743,14 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const offboardingRepo = new SqliteOffboardingRepository(db, schemaVersion);
   const offboarding = createOffboardingRunner(envelope, offboardingRepo);
   const tenantWorker = createTenantWorker(run, credentialRows);
+  // EPIC-028 (T-0858): worker-backed incident/alert providers plus the module
+  // findings read that backs /v1/check-alerts.
+  const incidents = createIncidentProviders(run, credentialRows, repo);
+  const checkAlerts = createCheckAlertsProvider({ tenants: tenantStore, findings: repo });
+  // EPIC-029 (T-0859): the alerting stores over migration 0037/0128. The built-in
+  // catalog and notification channels seed on the first read.
+  const alertingRepo = new SqliteAlertingRepository(db, schemaVersion);
+  const alerting = createAlertingStores({ repo: alertingRepo, findings: repo });
   const mfa = createMfaProviders(envelope);
   const roles = createRoleProviders(tenantWorker);
   // EPIC-020 mailboxes (T-0850): every read and write runs a feature worker for the
@@ -563,6 +794,9 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   // stored before the queue reports it finished.
   const remediationRepo = new SqliteRemediationRepository(db, schemaVersion);
   const runStore = createRunStore(repo, db);
+  // Operator-saved run presets for the New run wizard (T-0922); built-ins live in
+  // the route module and are never stored here.
+  const runTemplates = new SqliteRunTemplateRepository(db, schemaVersion);
   const hub = new ProgressEventHub({ store: runStore });
   const publish = (event: unknown) => void hub.publish(event as Record<string, unknown>);
   const generatedReports = createGeneratedReportStore(
@@ -571,10 +805,211 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     db,
   );
   const scheduleRepo = new SqliteScheduleRepository(db, schemaVersion);
+  // EPIC-020 vacation enable/revert rows ride the EPIC-007 custom-script scheduler (T-0894).
+  const vacationScheduler = createVacationJobScheduler(scheduleRepo);
   const standardsRepo = new SqliteStandardsRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const driftRepo = new SqliteDriftRepository(db, schemaVersion, DEFAULT_STANDARDS_REGISTRY_PATH);
   const baselinesRepo = new SqliteBaselinesRepository(db, schemaVersion);
-  const reportRuns = createReportRunReader(repo, config.artifactPath);
+  const secureScoreRepo = new SqliteSecureScoreRepository(db, schemaVersion);
+  const reportRuns = createReportRunReader(repo, config.artifactPath, {
+    secureScore: secureScoreRepo,
+  });
+  const standardsOverlay = loadLicensingOverlaySync().checks;
+  const contactsResources = createContactsResourcesAdapters(run, credentialRows);
+  const backupsStore = createBackupsStore(db, repo);
+  const backupsArtifacts = createBackupsArtifactTier(config.artifactPath);
+  const backupInstanceVersion = options.version ?? "1.0.0";
+  const authorizeContactsWrite = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, CONTACTS_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  const authorizeResourcesRead = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, RESOURCES_CONTACT_READ_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  const authorizeResourcesWrite = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, CONTACTS_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  const spamQuarantine = createSpamQuarantineAdapters(run, credentialRows);
+  const filterTemplateRepo = new SqliteFilterTemplateRepository(db, schemaVersion);
+  const quarantineActionRepo = new SqliteQuarantineActionRepository(db, schemaVersion);
+  const authorizeQuarantineWrite = (callerArg: unknown, permission: string): void => {
+    if (
+      !canAccess(callerArg as RequestCaller, permission) &&
+      !canAccess(callerArg as RequestCaller, QUARANTINE_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
+  // EPIC-007 scheduled custom scripts (T-0876): the script repository and sandbox are shared
+  // by the script routes and the custom-script job runner.
+  const customScripts = new SqliteCustomScriptRepository(db, schemaVersion);
+  const scriptSandbox = createScriptSandbox({ run });
+  const recordScriptAudit = (event: Parameters<NonNullable<ScriptAuditPort["record"]>>[0]) =>
+    recordAudit({
+      action: event.action,
+      tenantId: event.tenantId ?? null,
+      actorUserId: event.actorUserId,
+      targetType: "script",
+      targetId: event.resourceId,
+      correlationId: event.correlationId,
+    });
+
+  // EPIC-031 Secure Score (T-0861). The current read, peers, trend, and fleet routes
+  // run the Get-SecureScore worker (or the snapshot repository); the daily snapshot
+  // timer records one trend point per tenant and prunes the retention window.
+  // Improvement actions resolve through the shipped registry mapping (T-0603).
+  const secureScore = createSecureScoreProviders(run, credentialRows);
+  const secureScoreMapping = {
+    resolve: (action: ProviderSecureScoreAction) =>
+      resolveFixTarget({ actionId: action.id, name: action.title }),
+    persist: async (target: Parameters<typeof persistResolvedMapping>[1], ctx: RequestContext) => {
+      await persistResolvedMapping(secureScoreRepo, target, { by: actorOf(ctx), source: "request" });
+    },
+  };
+
+  // EPIC-032 Audit Logs & Webhooks (T-0862). Searches, coverage, and directory
+  // audits run their Graph/Purview workers; saved searches, coverage cache, and
+  // exclusion windows persist through the audit repository (migration 0040).
+  // Webhook lifecycle calls manage-webhooks.ps1 and mirrors each result into the
+  // repository so delete/update survive (migration 0129).
+  const auditRepo = new SqliteAuditRepository(db, schemaVersion);
+  const audit = createAuditProviders(run, credentialRows, { webhookStore: auditRepo });
+  const webhookNotificationUrl = `${config.workerBaseUrl}/v1/webhooks/notify`;
+  // The notification receiver is unauthenticated by design (SPEC §4.3): Graph
+  // cannot carry a portal session, so the per-subscription clientState is the
+  // credential. Only its SHA-256 hash is stored (migration 0131); the route
+  // hashes each callback and rejects a mismatch with 401. The app therefore
+  // mounts it without resolveCaller/authorize — the explicit seam the route
+  // module documents.
+  const webhookNotifyStore: WebhookNotifyStore = {
+    async getSubscription(subscriptionId: string) {
+      const subscription = await auditRepo.getWebhookSubscriptionById(subscriptionId);
+      if (
+        subscription === undefined ||
+        subscription.clientStateHash === null ||
+        subscription.clientStateHash.length === 0
+      ) {
+        return undefined;
+      }
+      return {
+        tenantId: subscription.tenantId,
+        clientStateHash: subscription.clientStateHash,
+        resource: subscription.resource,
+      };
+    },
+    async recordNotification(reference) {
+      await recordAudit({
+        action: "webhook.notification.received",
+        tenantId: reference.tenantId,
+        targetType: "webhook_subscription",
+        targetId: reference.subscriptionId,
+        after: {
+          resource: reference.resource,
+          changeType: reference.changeType,
+          receivedAt: reference.receivedAt,
+        },
+      });
+    },
+  };
+  // Content bundles are deferred (SPEC §11.2) and alert/cache fan-out is the
+  // EPIC-029 seam, so acceptance is recorded and dispatch stays a no-op here.
+  const webhookNotifyDispatch: WebhookNotifyDispatcher = {
+    async dispatch() {
+      return undefined;
+    },
+  };
+
+  // EPIC-033 Licensing (T-0863). Consumption, optimization, gates, and per-user
+  // changes run their Graph workers; pricing and the append-only LicenseChange
+  // rows persist through the licensing repository (migration 0056).
+  const licensingRepo = new SqliteLicensingRepository(db, schemaVersion);
+  const licensing = createLicensingProviders(run, credentialRows, {
+    listLicensePricing: (tenantId: string) => licensingRepo.listLicensePricing(tenantId),
+  });
+
+  // EPIC-034 Domains & DNS (T-0864). Inventory and domain writes run their Graph
+  // workers; the DNS analyser resolves publicly and needs no tenant credential.
+  // DomainCheck history and the recommendations cache live over migration 0057,
+  // and the domain-analysis schedule is an ordinary EPIC-007 schedule row.
+  const domainsRepo = new SqliteDomainRepository(db, schemaVersion);
+  const domains = createDomainsProviders(run, credentialRows, { checks: domainsRepo });
+  const domainChecks = new DnsResultCache<DomainCheck>();
+  // The route factory keeps one store per route set so an Idempotency-Key replay
+  // returns the prior outcome; writes persist through their worker, not the store.
+  const domainActionIdempotency = createMemoryDomainActionIdempotencyStore();
+
+  // EPIC-037 Settings, Branding & Preferences (T-0867). The route factories were
+  // never mounted and no adapter bridged the db repositories, so every §6
+  // endpoint 404'd. Settings apply as one atomic audited batch; branding,
+  // feature flags, and preferences persist through the same connection.
+  const settingsStores = createSettingsStores(repo);
+
+  // EPIC-039 Template Library & Catalog (T-0869). The route factories live under
+  // templates/ and were never mounted; nothing bound the SQLite template
+  // repository. Library, repo, clone, and package work persist through it, and
+  // save-to-GitHub rides the EPIC-041 GitHub adapter (failing closed until the
+  // integration row is enabled).
+  const templateRepo = new SqliteTemplateRepository(db, schemaVersion);
+  const integrationRepo = new SqliteIntegrationRepository(db, schemaVersion);
+  const templates = createTemplateServices({
+    repository: templateRepo,
+    integrations: integrationRepo,
+    github: createGithubAdapter({
+      readSecret: (ref) => credentialSecrets.readSecret(ref),
+      recordAudit: (event) => {
+        routeAudit(event);
+        return Promise.resolve();
+      },
+    }),
+    audit: async (event) => {
+      routeAudit(event);
+    },
+  });
+
+  // EPIC-040 Graph Explorer & Admin Tools (T-0870). Presets and consent
+  // decisions persist through SQLite; the Graph Explorer runs the new
+  // invoke-graph-request worker with the tenant credential. Tenant lookup
+  // resolves portal tenants locally and public domains through OpenID
+  // configuration; breach lookup has no provider yet (EPIC-041) so it fails
+  // closed; the domain check reuses the EPIC-034 DNS analyser.
+  const graphPresets = new SqliteGraphPresetRepository(db, schemaVersion);
+  const consentDecisions = new SqliteConsentDecisionRepository(db, schemaVersion);
+  const graphExplorer = createGraphExplorerWorkerExecutor(run, credentialRows);
+  const tenantLookup = createTenantLookupService({
+    graph: createTenantLookupGraphClient({ store: tenantStore }),
+    store: tenantStore,
+  });
+  const appApproval = createAppApprovalService({
+    writePort: createConsentWritePort(),
+    auditPort: { record: (event) => routeAudit(event) },
+    decisions: consentDecisions,
+  });
+  const breachLookup = createBreachLookupService({
+    auditPort: { record: (event) => routeAudit(event) },
+  });
+  const domainCheck = {
+    async checkDomain(domain: string): Promise<Record<string, unknown>> {
+      // The DNS analyser needs no tenant credential; its job envelope still
+      // requires a non-empty tenant id, so use a portal-local marker.
+      const result = await domains.dns.analyse("portal", domain);
+      return { ...result };
+    },
+  };
 
   const workerRunners: Partial<Record<JobType, RunWorkerFn>> = {
     assessment: createSupervisorRunner({
@@ -609,6 +1044,70 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     report: createReportWorkerRunner({
       workersDir: config.workersDir,
       storageRoot: config.artifactPath,
+    }),
+    "custom-script": createCustomScriptRunner({
+      schedules: scheduleRepo,
+      storageRoot: config.artifactPath,
+      handlers: {
+        [CUSTOM_SCRIPT_COMMAND]: createCustomScriptCommand({
+          scripts: customScripts,
+          sandbox: scriptSandbox,
+          tenants: tenantStore,
+          storageRoot: config.artifactPath,
+          audit: { record: recordScriptAudit },
+        }),
+        [VACATION_SCHEDULE_COMMAND]: createVacationScheduleCommand({
+          store: mailboxes.vacationStore,
+          apply: mailboxes.vacationApply,
+          scheduler: vacationScheduler,
+          audit: { record: (event) => routeAudit(event) },
+        }),
+      },
+    }),
+    // EPIC-007 system timers that are not a tenant run (T-0902/T-0903): the tick
+    // copies the timer's command into the job payload and this runner dispatches it.
+    maintenance: createMaintenanceRunner({
+      handlers: {
+        [WEBHOOK_RENEWAL_COMMAND]: createWebhookRenewalCommand({
+          tenants: tenantStore,
+          manage: tenantWorker,
+          onFailure: (failure) =>
+            recordAudit({
+              action: `webhook.${failure.action}_failed`,
+              tenantId: failure.tenantId,
+              targetType: "webhookSubscription",
+              targetId: failure.subscriptionId,
+              result: "failure",
+              error: failure.reason,
+              timestamp: new Date().toISOString(),
+            }),
+        }),
+        [PORTAL_CLEANUP_COMMAND]: createCleanupCommand({
+          retention: {
+            artifactDays: config.cleanupArtifactRetentionDays,
+            jobDays: config.cleanupJobRetentionDays,
+            softDeleteDays: config.cleanupSoftDeleteRetentionDays,
+          },
+          ports: createCleanupPorts(db, config.artifactPath),
+          storageRoot: config.artifactPath,
+        }),
+        [SECURE_SCORE_SNAPSHOT_COMMAND]: createSecureScoreSnapshotCommand({
+          tenants: tenantStore,
+          provider: secureScore.secureScore,
+          store: secureScoreRepo,
+          retentionDays: SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
+        }),
+        [CREDENTIAL_EXPIRY_COMMAND]: createCredentialExpiryCommand({
+          tenants: repo,
+          credentials: repo,
+          alerting: alertingRepo,
+        }),
+        [BACKUP_MAINTENANCE_COMMAND]: createBackupMaintenanceCommand({
+          store: backupsStore,
+          artifacts: backupsArtifacts,
+          audit: recordAudit,
+        }),
+      },
     }),
   };
   const runJobs = new JobQueue({
@@ -662,13 +1161,19 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     credentials: credentialRows,
     runnableTypes: runnableJobTypes,
   });
-  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes);
+  const scheduleStore = createRunnerValidatingScheduleStore(scheduleRepo, runnableJobTypes, customScripts);
   const scheduleJobState = createScheduleJobStateStore(db);
+  // Code-deployed system timers have no Schedule row; their nextRunAt lives here so
+  // each runs on its cron instead of on every tick (T-0902/T-0903).
+  const systemTimerState = createSystemTimerStateStore(db);
   const scheduler = createScheduler({
     queue: scheduleQueue,
-    schedules: createTickScheduleStore(scheduleRepo),
+    schedules: createTickScheduleStore(scheduleRepo, systemTimerState),
     isRunning: (scheduleId) => scheduleJobState.isRunning(scheduleId),
     lastFinishedJob: (scheduleId) => scheduleJobState.lastFinishedJob(scheduleId),
+    systemTimerState: (name) => systemTimerState.get(name),
+    // The registry is code-deployed; EPIC-031 and EPIC-035 add their daily maintenance timers here.
+    systemTimers: [...SYSTEM_TIMERS, SECURE_SCORE_SNAPSHOT_TIMER, BACKUP_MAINTENANCE_TIMER],
     ...(options.schedulerIntervalMs !== undefined ? { intervalMs: options.schedulerIntervalMs } : {}),
   });
   scheduler.start();
@@ -681,6 +1186,80 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
   const purview = createPurviewProviders(run, credentialRows);
   const purviewCompliance = new SqlitePurviewComplianceRepository(db, schemaVersion);
 
+  // EPIC-019 Defender & Vulnerabilities (T-0849). Reads run the Defender/TVM/MDE
+  // workers for the tenant; CVE exceptions and deployment templates are portal-local
+  // records, the latter over migration 0022 rather than an in-memory store.
+  const defender = createDefenderProviders(run, credentialRows);
+  const defenderTemplates = new SqliteDefenderDeploymentTemplateRepository(db);
+  const cveExceptions = new CveExceptionRepository(db);
+  const authorizeDefender = (caller: unknown, permission: string): void => {
+    if (!canAccess(caller as RequestCaller, permission)) throw forbidden(permission);
+  };
+  const authorizeDefenderDeploy = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, DEFENDER_DEPLOY_FALLBACK_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
+  // EPIC-021 Transport & Connectors (T-0851). Reads and writes run their EXO
+  // workers through the connector adapter; transport-rule and connector templates
+  // persist through migrations 0027/0028 rather than an in-memory store.
+  const transport = createTransportProviders(run, credentialRows);
+  const transportRuleTemplates = new SqliteTransportRuleTemplateRepository(db, schemaVersion);
+  const connectorTemplates = new SqliteConnectorTemplateRepository(db, schemaVersion);
+  const authorizeTransport = (caller: unknown, permission: string): void => {
+    if (!canAccess(caller as RequestCaller, permission)) throw forbidden(permission);
+  };
+  const authorizeTransportWrite = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, TRANSPORT_REMEDIATION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
+  // EPIC-024 Email Tools (T-0854). Trace, historical search, message detail, and
+  // encryption reads run their EXO workers; restores persist their RestoreJob
+  // through the shared repository (migration 0032). Message data is never stored.
+  const emailTools = createEmailToolsProviders(run, credentialRows, repo);
+  // Trace reads accept the mail-tools read permission or the elevated search one,
+  // matching the route module's own fallback.
+  const authorizeMessageTrace = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, "Exchange.MailSearch.Execute")
+    ) {
+      throw forbidden(permission);
+    }
+  };
+  // An OME template change may be authorized by the mail-tools write permission or
+  // by Remediation.Apply, as the route's own no-authorizer path allows.
+  const authorizeEncryptionWrite = (caller: unknown, permission: string): void => {
+    if (
+      !canAccess(caller as RequestCaller, permission) &&
+      !canAccess(caller as RequestCaller, ENCRYPTION_APPLY_PERMISSION)
+    ) {
+      throw forbidden(permission);
+    }
+  };
+
+  // EPIC-026 Teams & Voice (T-0856). Reads run the Graph workers live; lifecycle,
+  // LIS, and voice writes run their gated workers directly (the routes record the
+  // TeamOperation and audit event), and the create/LIS routes' queue seams map
+  // their envelopes onto new-team.ps1 / invoke-lis-location.ps1.
+  const teams = createTeamsProviders(run, credentialRows);
+
+  // EPIC-027 Sharing & Permissions (T-0857). Sharing reports read Graph live; bulk
+  // link removal runs the Remove-SharingLinks worker per link and persists its
+  // LinkRemovalJob through the shared repository (migration 0035).
+  const sharing = createSharingProviders(run, credentialRows);
+
+
+
   // EPIC-038 RBAC & API clients (T-0868): portal users, custom roles, and API
   // clients persist through the shared SQLite connection rather than a test-only
   // in-memory store.
@@ -691,6 +1270,16 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
 
   // These routes read the raw body themselves; the server has already parsed it.
   const readBody = async (ctx: RequestContext) => (ctx.body === undefined ? "" : JSON.stringify(ctx.body));
+  // EPIC-036 test-pack runs reuse the already-wired create-run route (T-0043), so
+  // the pack service never duplicates check logic; EPIC-003 supersedes the
+  // EPIC-001 runs module on every path.
+  const runsCreateRoute = createRunsCreateRoute({
+    store: runStore,
+    queue: runQueue,
+    groupResolver: createRunGroupResolver(createTenantGroupStore(repo)),
+    readBody,
+    ...caller,
+  });
 
   const routes: Route[] = [
     ...createHealthRoutes({
@@ -717,17 +1306,15 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     // EPIC-001/003 runs (T-0821). runs.ts, the EPIC-001 version of these routes, is
     // superseded by the EPIC-003 modules on every path and is not mounted.
     createRunsListRoute({ store: runStore, ...caller }),
-    createRunsCreateRoute({
-      store: runStore,
-      queue: runQueue,
-      groupResolver: createRunGroupResolver(createTenantGroupStore(repo)),
-      readBody,
-      ...caller,
-    }),
+    runsCreateRoute,
     ...createRunsDetailRoutes({ store: runStore, ...caller }),
     ...createRunsActionsRoutes({ store: runStore, queue: runQueue, eventHub: hub, readBody, ...caller }),
     ...createRunsArtifactsRoutes({ store: runStore, artifactRoot: config.artifactPath, ...caller }),
     createRunsEventsRoute({ hub, store: runStore, ...caller }),
+
+    // EPIC-003 run starting points (T-0922). Built-in templates are served locked and
+    // saved templates persist through SQLite; no path overlaps /v1/runs.
+    ...createRunTemplateRoutes({ store: runTemplates, ...caller }),
 
     // EPIC-004 dashboards (T-0823). The layout routes come first: /v1/dashboard/:tenantId
     // would otherwise capture /v1/dashboard/layout.
@@ -795,7 +1382,13 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       authorize: authorizeCaller,
       recordAudit: routeAudit,
     }),
-    ...createApiClientRoutes(apiClientStore),
+    ...createApiClientRoutes(apiClientStore).map((route) => {
+      const permission = permissionForEndpoint(route);
+      if (permission === undefined) {
+        throw new Error(`no permission is registered for ${route.method} ${route.path}`);
+      }
+      return guardRoute(route, permission);
+    }),
     // GET /openapi.json and /v1/openapi.json serve the generated OpenAPI 3.1 document
     // (SPEC §3.5/§6); the server keeps serving /v1/openapi.yaml.
     ...createOpenApiRoutes(),
@@ -817,27 +1410,18 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
     ...createScriptRoutes({
-      store: new SqliteCustomScriptRepository(db, schemaVersion),
-      sandbox: createScriptSandbox({ run }),
-      audit: {
-        record: (event) =>
-          recordAudit({
-            action: event.action,
-            tenantId: event.tenantId ?? null,
-            actorUserId: event.actorUserId,
-            targetType: "script",
-            targetId: event.resourceId,
-            correlationId: event.correlationId,
-          }),
-      },
+      store: customScripts,
+      sandbox: scriptSandbox,
+      audit: { record: recordScriptAudit },
       ...caller,
     }),
 
-    // EPIC-008 standards (T-0825). Run-now enqueues a `standards` job (T-0841);
-    // classifying the catalog for a tenant is still refused with 501 (T-0828).
+    // EPIC-008 standards (T-0825, T-0877). Run-now enqueues a `standards` job (T-0841);
+    // catalog resolves per-check tenant licences against licensing-overlay.json.
     ...createStandardsCatalogRoutes({
       catalog: createStandardsCatalogStore(standardsRepo),
-      resolveTenantLicense: unavailableTenantLicenses,
+      resolveTenantLicense: createTenantLicenseResolver(repo),
+      overlay: standardsOverlay,
       ...caller,
     }),
     ...createStandardsTemplateRoutes({ store: createStandardsTemplateStore(standardsRepo), ...caller }),
@@ -916,6 +1500,11 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       ...caller,
     }),
     ...createOnboardRoutes({ tenantStore, credentialStore: credentialRows, secrets: credentialSecrets, runner: createOnboardRunner(run), ...caller }),
+    // Read-only preflight so the wizard reports missing worker modules before onboarding (T-0915).
+    ...createOnboardingPreflightRoutes({
+      runner: () => run<OnboardingPreflightReport>("onboarding-preflight.ps1", { tenantId: "system" }),
+      ...caller,
+    }),
     ...createTestConnectionRoutes({
       tenantStore,
       credentialStore: credentialRows,
@@ -1091,9 +1680,419 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     ...createVacationScheduleRoutes({
       store: mailboxes.vacationStore,
       apply: mailboxes.vacationApply,
+      scheduler: vacationScheduler,
       ...caller,
     }).map(audited),
     ...createDeletedMailboxRoutes({ provider: mailboxes.deletedMailboxes, recordAudit: routeAudit, ...caller }),
+
+    // EPIC-024 Email Tools (T-0854). The factories existed but were never mounted and
+    // no adapter bound them, so every §6 endpoint 404'd. Trace/search/detail/encryption
+    // reads run the EXO workers; restores persist their RestoreJob and record the
+    // worker's audit event. Every message read is audited because it exposes metadata.
+    ...createMessageTraceRoutes({
+      provider: emailTools.messageTrace,
+      resolveCaller,
+      authorize: authorizeMessageTrace,
+      recordAudit: routeAudit,
+    }),
+    ...createHistoricalSearchRoutes({
+      provider: emailTools.historicalSearch,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createMessageRoutes({
+      provider: emailTools.messages,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createMailRestoreRoutes({
+      provider: emailTools.mailRestores,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createEncryptionRoutes({
+      provider: emailTools.encryption,
+      resolveCaller,
+      authorize: (ctxCaller, permission) =>
+        permission === ENCRYPTION_WRITE_PERMISSION
+          ? authorizeEncryptionWrite(ctxCaller, permission)
+          : authorizeCaller(ctxCaller, permission),
+      recordAudit: routeAudit,
+    }),
+
+    // EPIC-026 Teams & Voice (T-0856). The factories existed but were never mounted
+    // and no adapter bound them, so every §6 endpoint 404'd. /teams/activity and
+    // /teams/lis are mounted before /teams/:teamId so the id pattern cannot capture
+    // them. Lifecycle/LIS/voice writes run their gated workers and record the
+    // TeamOperation and audit event; the create and LIS queue seams map their
+    // envelopes onto the real workers.
+    ...createTeamsActivityRoutes({ provider: teams.activity, resolveCaller, authorize: authorizeCaller }),
+    ...createLisLocationsRoutes({
+      provider: teams.lis,
+      queue: { enqueue: teams.enqueueLis },
+      teamOperations: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    createTeamsListRoute({ provider: teams.teams, resolveCaller, authorize: authorizeCaller }),
+    createTeamsCreateRoute({
+      teamTemplates: repo,
+      queue: { enqueue: teams.enqueueCreate },
+      teamOperations: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createTeamsLifecycleRoutes({
+      provider: teams.lifecycle,
+      teamOperations: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createTeamsVoiceRoutes({
+      provider: teams.voice,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+      recordTeamOperation: async (operation) => {
+        await repo.createTeamOperation(operation);
+      },
+    }),
+
+    // EPIC-027 Sharing & Permissions (T-0857). The factories existed but were never
+    // mounted and no adapter bound them, so every §6 endpoint 404'd. Reports run the
+    // Graph workers live; bulk link removal runs Remove-SharingLinks per link, records
+    // one audit event per attempt, and persists the LinkRemovalJob.
+    createSharingReportRoute({ provider: sharing.sharingReport, resolveCaller, authorize: authorizeCaller }),
+    createSharingPermissionsRoute({
+      provider: sharing.permissionsReport,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createExternalUsersRoutes({
+      provider: sharing.externalUsers,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createSharingLinksRemoveRoutes({
+      provider: sharing.linkRemoval,
+      jobs: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: (event) => recordAudit({ ...event }),
+    }),
+
+    // EPIC-031 Secure Score (T-0861). The factories existed but were never mounted
+    // and no adapter bound them, so every §6 endpoint 404'd. Reads run the
+    // Get-SecureScore worker; the trend/snapshot routes persist portal-local
+    // snapshots; actions resolve through the registry mapping and are persisted as
+    // the action→check mapping rows. The fleet route filters to caller scope.
+    ...createSecureScoreRoutes({
+      provider: secureScore.secureScore,
+      resolveCaller,
+      authorize: authorizeCaller,
+      mapping: secureScoreMapping,
+    }),
+    ...createSecureScorePeersRoutes({
+      provider: secureScore.peers,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createSecureScoreTrendRoutes({
+      provider: secureScore.secureScore,
+      store: secureScoreRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+      retentionDays: SECURE_SCORE_SNAPSHOT_RETENTION_DAYS,
+    }),
+    ...createSecureScoreFleetRoutes({
+      repository: secureScoreRepo,
+      tenants: {
+        listTenantIds: async () =>
+          (await tenantStore.listTenants()).map((tenant) => tenant.id),
+      },
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-032 Audit Logs & Webhooks (T-0862). The factories existed but were
+    // never mounted and no adapter bound them, so every §6 endpoint 404'd.
+    // Searches and coverage run their workers; saved searches and windows persist
+    // through the audit repository; webhook writes run manage-webhooks.ps1 with a
+    // configured notification URL (so create no longer answers 501).
+    ...createAuditLogSearchRoutes({
+      provider: audit.search,
+      audit: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createSavedAuditSearchRoutes({
+      store: auditRepo,
+      schedules: scheduleStore,
+      search: audit.savedSearch,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createAuditCoverageRoutes({
+      provider: audit.coverage,
+      store: auditRepo,
+      findings: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createAuditExclusionWindowRoutes({
+      store: auditRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createWebhooksRoutes({
+      provider: audit.webhooks,
+      resolveCaller,
+      authorize: authorizeCaller,
+      notificationUrl: webhookNotificationUrl,
+      readBody,
+    }),
+    ...createWebhookNotifyRoute({
+      store: webhookNotifyStore,
+      dispatch: webhookNotifyDispatch,
+    }),
+
+    // EPIC-033 Licensing (T-0863). The factories existed but were never mounted
+    // and no adapter bound them, so every §6 endpoint 404'd. Consumption,
+    // optimization, gates, and per-user changes run their Graph workers; pricing
+    // and LicenseChange rows persist through the licensing repository.
+    createLicensesRoute({
+      provider: licensing.licenses,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createLicenseAssignRoutes({
+      provider: licensing.licenseChanges,
+      resolveCaller,
+      authorize: (assignCaller, permission) =>
+        canAccess(assignCaller as RequestCaller, permission),
+      recordChange: async (change) => {
+        await licensingRepo.appendLicenseChange(change);
+      },
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    createLicenseOptimizationRoute({
+      provider: licensing.optimization,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createLicensePricingRoutes({
+      repository: licensingRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createLicenseGatesRoutes({
+      provider: licensing.gates,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-034 Domains & DNS (T-0864). The factories existed but were never
+    // mounted and no adapter bound them, so every §6 endpoint 404'd. Inventory
+    // and add/verify/remove/default run their Graph workers (writes require
+    // confirmation and an Idempotency-Key); the DNS analyser resolves publicly
+    // and persists one append-only DomainCheck per check, served from the TTL
+    // cache inside its window; recommendations are derived from the latest
+    // stored records. The analysis schedule is a normal EPIC-007 schedule row.
+    ...createDomainsScheduleRoutes({
+      schedules: scheduleStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    createDomainsRoute({
+      provider: domains.list,
+      db,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createDomainsActionsRoutes({
+      provider: domains.actions,
+      resolveCaller,
+      authorize: (actionCaller, permission) =>
+        canAccess(actionCaller as RequestCaller, permission),
+      recordAudit: async (event) => routeAudit(event),
+      idempotency: domainActionIdempotency,
+    }),
+    ...createDomainsDnsRoutes({
+      analyser: domains.dns,
+      cache: domainChecks,
+      checks: domainsRepo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createDomainsRecommendationsRoutes({
+      provider: domains.recommendations,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-036 Compliance Test Packs and Custom Tests (T-0866). The factories
+    // existed but were never mounted and no adapter bound the SQLite
+    // TestPack/TestRun/CustomTest repository, so every §6 endpoint 404'd. Pack
+    // runs reuse the create-run route; custom tests persist their authoring
+    // records and immutable version history through the shared repository
+    // (migrations 0044/0045).
+    ...createTestPacksRoutes({
+      store: repo,
+      runRoute: runsCreateRoute,
+      detailStore: runStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createCustomTestsRoutes({
+      store: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+
+    // EPIC-037 Settings, Branding & Preferences (T-0867). The factories existed
+    // but were never mounted and no adapter bridged the db repositories, so every
+    // §6 endpoint 404'd. Settings writes apply as one atomic audited batch;
+    // branding, flags, and preferences persist through the same connection.
+    // Logbook and diagnostics are the read-only admin surface; the seeded
+    // diagnostic report is the full one rather than the EPIC-001 stub.
+    ...createSettingsRoutes({
+      store: settingsStores.settings,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createBrandingRoutes({
+      store: settingsStores.branding,
+      artifactRoot: config.artifactPath,
+      resolveCaller,
+      authorize: authorizeCaller,
+      // The repository already audits the config write; only the asset upload
+      // (which has no repository row) needs the route's audit port.
+      audit: {
+        record: (event) =>
+          event["action"] === "branding.asset.upload" ? routeAudit(event) : undefined,
+      },
+    }),
+    ...createFeatureFlagRoutes({
+      store: settingsStores.featureFlags,
+      resolveCaller,
+      authorize: (flagCaller, permission) =>
+        authorizeCaller(flagCaller as RequestCaller, permission),
+    }),
+    ...createPreferencesRoutes({
+      store: settingsStores.preferences,
+      resolveCaller: (ctx) => {
+        const userId = resolveCaller(ctx)?.userId;
+        return userId ? { userId } : undefined;
+      },
+    }),
+    ...createLogbookRoutes({
+      store: settingsStores.logbook,
+      resolveCaller,
+      authorize: (logbookCaller, permission) =>
+        authorizeCaller(logbookCaller as RequestCaller, permission),
+    }),
+    ...createDiagnosticsRoutes({
+      ...(options.version !== undefined ? { version: options.version } : {}),
+      storage: {
+        schemaVersion,
+        checkReachability: () => {
+          try {
+            db.prepare("SELECT 1").get();
+            return true;
+          } catch {
+            return false;
+          }
+        },
+      },
+      queue: { depth: runJobs.depth, poolSize: config.workerPoolSize },
+      workerCount: config.workerPoolSize,
+      resolveCaller,
+      authorize: (diagnosticsCaller, permission) =>
+        authorizeCaller(diagnosticsCaller as RequestCaller, permission),
+      timers: {
+        listTimerState: async () => {
+          const timers = [...SYSTEM_TIMERS, SECURE_SCORE_SNAPSHOT_TIMER];
+          return Promise.all(
+            timers.map(async (timer) => {
+              const state = await systemTimerState.get(timer.name);
+              return {
+                ...timer,
+                lastRunAt: state?.lastRunAt ?? null,
+                nextRunAt: state?.nextRunAt ?? null,
+              };
+            }),
+          );
+        },
+      },
+    }),
+
+    // EPIC-039 Template Library & Catalog (T-0869). The factories existed but
+    // were never mounted and no adapter bound them, so every §6 endpoint 404'd.
+    // Browsing is read-only; clone plans through the owning epic's deploy flow;
+    // package import/export and repo add/remove persist through SQLite;
+    // save-to-GitHub fails closed until the GitHub integration is enabled.
+    ...createTemplateLibraryRoutes(templates.library, { authorize: authorizeContext }),
+    ...createTemplateRepoRoutes({
+      service: templates.repos,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    createTemplateLibraryCloneRoute(templates.clone, { authorize: authorizeContext }),
+    ...createTemplatePackageRoutes({
+      service: templates.packages,
+      resolveCaller,
+      authorize: (packageCaller, permission) =>
+        canAccess(packageCaller as RequestCaller, permission),
+    }),
+    createSaveToGitHubRoute(templates.saveToGitHub, { authorize: authorizeContext }),
+
+    // EPIC-040 Graph Explorer & Admin Tools (T-0870). The factories existed but
+    // were never mounted, so every §6 endpoint 404'd. Graph Explorer runs the
+    // new worker (write methods stay admin-only inside the route); presets and
+    // consent decisions persist through SQLite; tenant lookup uses the portal
+    // store plus public OpenID discovery; breach lookup fails closed until
+    // EPIC-041 registers a provider; the domain check reuses EPIC-034 DNS.
+    ...createGraphExplorerRoutes({
+      executor: graphExplorer,
+      audit: repo,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createGraphPresetRoutes({
+      service: createGraphPresetService({ store: graphPresets }),
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createTenantLookupRoutes({
+      service: tenantLookup,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createAppApprovalRoutes({
+      service: appApproval,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createBreachLookupRoutes({
+      service: breachLookup,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createGeoipRoutes({
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
+    ...createDomainCheckRoutes({
+      provider: domainCheck,
+      resolveCaller,
+      authorize: authorizeCaller,
+    }),
 
     // EPIC-015 Conditional Access (T-0819).
     createCaPoliciesRoute({ provider: ca.policies, ...caller }),
@@ -1177,8 +2176,134 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
       recordAudit: routeAudit,
     }),
 
-    // EPIC-025 SharePoint & OneDrive (T-0855). The factories existed but were never
-    // mounted, so every §6 endpoint 404'd; the providers enqueue the real workers.
+    // EPIC-019 Defender & Vulnerabilities (T-0849). The route factories existed but
+    // were never imported here and no adapter bound them, so every §6 endpoint 404'd.
+    // CVE exceptions and deployment templates are tenant-local repositories; the
+    // template routes carry their own permission, so each is guarded here.
+    ...createDefenderStatusRoutes({
+      provider: defender.status,
+      resolveCaller,
+      authorize: authorizeDefender,
+    }),
+    createDefenderDeployRoute({
+      provider: defender.deploy,
+      resolveCaller,
+      authorize: authorizeDefenderDeploy,
+      recordAudit,
+      templateRepository: defenderTemplates,
+    }),
+    ...createDefenderVulnerabilitiesRoutes({
+      provider: defender.vulnerabilities,
+      resolveCaller,
+      authorize: authorizeDefender,
+    }),
+    ...createMdeOnboardingRoutes({
+      provider: defender.mdeOnboarding,
+      resolveCaller,
+      authorize: authorizeDefender,
+    }),
+    ...createDefenderTemplateRoutes(defenderTemplates).map((route) =>
+      guardRoute(route, route.permission),
+    ),
+    ...createDefenderCveExceptionRoutes({
+      repository: cveExceptions,
+      authorize: (ctx, permission) => authorizeContext(ctx, permission),
+      audit: (event) => recordAudit({ ...event, targetType: "cveException" }),
+      actor: (ctx) => actorOf(ctx),
+    }).map((route) => {
+      const permission =
+        permissionForEndpoint(route) ??
+        (route.method === "GET" ? DEFENDER_CVE_READ_PERMISSION : DEFENDER_CVE_WRITE_PERMISSION);
+      return guardRoute(route, permission);
+    }),
+
+    // EPIC-021 Transport & Connectors (T-0851). The factories existed but were never
+    // mounted and no adapter bound them, so every §6 endpoint 404'd. Reads and
+    // writes run the EXO workers; the template routes persist through SQLite and
+    // deploy one target per worker call through the EPIC-006 apply seam.
+    createTransportRulesRoute({
+      provider: transport.rules,
+      resolveCaller,
+      authorize: authorizeTransport,
+    }),
+    ...createTransportRulesWriteRoutes({
+      provider: transport.rulesWrite,
+      resolveCaller,
+      authorize: authorizeTransportWrite,
+    }),
+    ...createConnectorRoutes({
+      provider: transport.connectors,
+      resolveCaller,
+      authorize: authorizeTransportWrite,
+      secrets: credentialSecrets,
+    }),
+    ...createTransportRuleTemplateRoutes({
+      store: transportRuleTemplates,
+      authorize: (ctx, permission) => authorizeContext(ctx, permission),
+      readBody,
+      resolveCaller,
+      deployExecutor: transport.deploy,
+      recordAudit: routeAudit,
+    }),
+    ...createConnectorTemplateRoutes({
+      store: connectorTemplates,
+      authorize: (ctx, permission) => authorizeContext(ctx, permission),
+      readBody,
+      resolveCaller,
+      deployExecutor: transport.deploy,
+      recordAudit: routeAudit,
+    }),
+
+    // EPIC-029 Alerting & notifications (T-0859). The route factories existed but were
+    // never mounted and the entities had no store. The rules/events/notification
+    // stores persist through SQLite (migrations 0037/0128); the dry-run evaluator
+    // reads the tenant's latest finished run findings.
+    ...createAlertRulesRoutes({
+      store: alerting.rules,
+      audit: { record: routeAudit },
+      ...caller,
+    }),
+    ...createAlertRulesTestRoutes({
+      store: alerting.ruleTests,
+      evaluator: alerting.evaluator,
+      ...caller,
+    }),
+    ...createAlertEventRoutes({
+      store: alerting.events,
+      audit: { record: routeAudit },
+      ...caller,
+    }),
+    ...createNotificationRoutes({
+      store: alerting.notifications,
+      audit: { record: routeAudit },
+      ...caller,
+    }),
+
+    // EPIC-028 Incidents & Alerts (T-0858). The factories existed but were never
+    // mounted, so every §6 endpoint 404'd. The providers run the real workers and
+    // the shared repository persists incident notes and alert state changes
+    // (migration 0055). /v1/check-alerts has no permission in its own fragment, so
+    // mount it behind the same read permission as the tenant alert list.
+    ...createIncidentsRoutes({ provider: incidents.incidents, ...caller }),
+    ...createIncidentsDetailRoute({ provider: incidents.detail, ...caller }),
+    ...createIncidentsActionsRoute({
+      execute: incidents.actions,
+      store: repo,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
+    ...createAlertsRoutes({ provider: incidents.alerts, ...caller }),
+    ...createAlertActionsRoute({
+      execute: incidents.alertActions,
+      store: repo,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
+    ...createCheckAlertsRoutes({ provider: checkAlerts, resolveCaller }).map((route) =>
+      guardRoute(route, "Security.Incident.Read"),
+    ),
+
+    // EPIC-025 SharePoint & OneDrive (T-0855, T-0896).
     createSharePointSitesRoute({ provider: sharepoint.sites, ...caller }),
     ...createSharePointSitesCreateRoutes({ provider: sharepoint.sitesCreate, ...caller }),
     ...createSharePointSiteLifecycleRoutes({
@@ -1189,7 +2314,134 @@ export function createApp(config: BffConfig, options: CreateAppOptions = {}): Ap
     }),
     createSharePointBrowseRoute({ provider: sharepoint.browse, ...caller }),
     ...createSharePointStorageRoutes({ provider: sharepoint.storage, ...caller }),
+    ...createSharePointTemplateRoutes({
+      store: repo,
+      sitesCreate: sharepoint.sitesCreate,
+      recordAudit: routeAudit,
+      ...caller,
+    }),
     ...createOneDriveUsageRoutes({ provider: sharepoint.onedrive, ...caller }),
+
+    // EPIC-023 Contacts & Resources (T-0853).
+    ...createContactsRoutes({ provider: contactsResources.contacts, ...caller }),
+    ...createContactsImportRoutes({
+      provider: contactsResources.contactsImport,
+      resolveCaller,
+      authorize: authorizeContactsWrite,
+    }),
+    ...createContactsCrudRoutes({
+      provider: contactsResources.contactsCrud,
+      resolveCaller,
+      authorize: authorizeContactsWrite,
+    }).map((route) => (route.method === "GET" ? route : audited(route))),
+    ...createContactTemplateRoutes({
+      store: repo,
+      authorize: authorizeContext,
+    }),
+    createContactTemplateDeployRoute({
+      store: repo,
+      provider: contactsResources.contactTemplateDeploy,
+      resolveCaller,
+      authorize: authorizeContactsWrite,
+    }),
+    ...createResourcesRoutes({
+      provider: contactsResources.resources,
+      resolveCaller,
+      authorize: authorizeResourcesRead,
+    }),
+    ...createResourcesCrudRoutes({
+      provider: contactsResources.resourcesCrud,
+      resolveCaller,
+      authorize: authorizeResourcesWrite,
+    }).map((route) => (route.method === "GET" ? route : audited(route))),
+
+    // EPIC-035 Backup & Restore (T-0865).
+    ...createBackupRoutes({
+      store: backupsStore,
+      artifacts: backupsArtifacts,
+      instanceVersion: backupInstanceVersion,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit: routeAudit,
+    }),
+    ...createBackupSettingsRoutes({
+      store: backupsStore,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit,
+    }),
+    ...createBackupsRestoreRoutes({
+      store: backupsStore,
+      artifacts: backupsArtifacts,
+      instanceVersion: backupInstanceVersion,
+      resolveCaller,
+      authorize: authorizeCaller,
+      recordAudit,
+    }),
+
+    // EPIC-022 Spam, Quarantine & Allow/Block (T-0852). Mount bulk before item
+    // routes so `/quarantine/bulk` is not shadowed by `/quarantine/:messageId`.
+    ...createQuarantineBulkRoutes({
+      provider: spamQuarantine.quarantine,
+      queue: spamQuarantine.queue,
+      recordAction: async (entry) => {
+        await quarantineActionRepo.createQuarantineAction(entry);
+      },
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: (event) => routeAudit(event),
+    }),
+    ...createQuarantineRoutes({
+      provider: spamQuarantine.quarantine,
+      submitProvider: spamQuarantine.submitProvider,
+      queue: spamQuarantine.queue,
+      recordAction: async (entry) => {
+        await quarantineActionRepo.createQuarantineAction(entry);
+      },
+      updateAction: async (input) => {
+        const existing = await quarantineActionRepo.listQuarantineActions(input.tenantId);
+        const match = [...existing]
+          .reverse()
+          .find((item) => item.messageId === input.messageId && item.action === input.action);
+        if (match) {
+          await quarantineActionRepo.updateQuarantineAction(input.tenantId, match.id, {
+            result: input.result,
+          });
+        }
+      },
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: (event) => routeAudit(event),
+    }),
+    ...createQuarantinePoliciesRoutes({
+      provider: spamQuarantine.quarantinePolicies,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    ...createAllowBlockRoutes({
+      provider: spamQuarantine.allowBlock,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    ...createFilterRoutes({
+      provider: spamQuarantine.filters,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
+    ...createFilterTemplateRoutes({
+      store: filterTemplateRepo,
+      provider: spamQuarantine.filters,
+      queue: spamQuarantine.queue,
+      resolveCaller,
+      authorize: authorizeQuarantineWrite,
+      recordAudit: async (event) => routeAudit(event),
+    }),
   ];
 
   return {

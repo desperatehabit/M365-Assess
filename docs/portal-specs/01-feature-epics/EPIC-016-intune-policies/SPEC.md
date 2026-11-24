@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #12; CIPP `HTTP Functions/Endpoint/MEM/`, `Set-CIPPIntunePolicy.ps1`, `New-CIPPIntuneTemplate.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-016.md`](../../../../ISSUES/epics/EPIC-016.md)
 
 ## 1. Purpose
 
@@ -164,4 +164,4 @@ and audit. Deploying to many tenants shows the target count before apply.
 - [`../EPIC-017-intune-apps-autopilot/SPEC.md`](../EPIC-017-intune-apps-autopilot/SPEC.md) — apps/autopilot
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — Intune standards
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-016.md`](../../../../ISSUES/epics/EPIC-016.md) — epic ticket

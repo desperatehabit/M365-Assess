@@ -215,3 +215,7 @@ Describe 'Invoke-SecureScoreSnapshot worker (T-0604)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

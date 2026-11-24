@@ -3,7 +3,7 @@ id: "EPIC-036"
 source: "docs/portal-specs/01-feature-epics/EPIC-036-compliance-test-packs/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -22,6 +22,9 @@ children:
   - T-0707
   - T-0708
   - T-0709
+  - T-0866
+  - T-0888
+  - T-0889
 scope_kind: "epic"
 scope_note: "Rollup for Compliance Test Packs. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -49,4 +52,10 @@ until that epic is authored.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0866 — `fixed-unverified`

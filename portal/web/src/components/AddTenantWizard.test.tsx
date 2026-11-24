@@ -5,6 +5,24 @@ import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { AddTenantWizard } from "./AddTenantWizard";
 
+async function advanceToConfirmation(): Promise<void> {
+  fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 2
+  fireEvent.change(screen.getByTestId("tenant-input"), {
+    target: { value: "contoso.onmicrosoft.com" },
+  });
+  fireEvent.click(screen.getByTestId("resolve-tenant-btn"));
+  await waitFor(() => {
+    expect(screen.getByTestId("resolve-success-banner")).toBeTruthy();
+  });
+  fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 3
+  fireEvent.change(screen.getByTestId("admin-upn-input"), {
+    target: { value: "admin@contoso.onmicrosoft.com" },
+  });
+  fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 4
+  fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 5
+  fireEvent.click(screen.getByTestId("wizard-next-btn")); // step 6
+}
+
 describe("AddTenantWizard (T-0031)", () => {
   it("renders all six step indicators in order", () => {
     const view = render(<AddTenantWizard />);
@@ -110,6 +128,215 @@ describe("AddTenantWizard (T-0031)", () => {
         expect(onSubmit).toHaveBeenCalled();
         expect(onComplete).toHaveBeenCalled();
       });
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("opts in to operator write groups and sends the danger confirmation (T-0917)", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ success: true });
+    const onComplete = vi.fn();
+    const view = render(
+      <AddTenantWizard onSubmitOnboarding={onSubmit} onComplete={onComplete} />,
+    );
+
+    try {
+      await advanceToConfirmation();
+
+      expect(screen.getByTestId("writer-reader-note")).toBeTruthy();
+      fireEvent.click(screen.getByTestId("enable-write-access"));
+      fireEvent.click(screen.getByTestId("write-group-identity"));
+      fireEvent.click(screen.getByTestId("write-group-intune"));
+
+      fireEvent.click(screen.getByTestId("confirm-checkbox"));
+      const submitBtn = screen.getByTestId("wizard-submit-btn");
+      // Dangerous groups still need the explicit danger confirmation.
+      expect(submitBtn.hasAttribute("disabled")).toBe(true);
+      fireEvent.click(screen.getByTestId("confirm-dangerous"));
+      expect(submitBtn.hasAttribute("disabled")).toBe(false);
+
+      fireEvent.click(submitBtn);
+      await waitFor(() => {
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId("onboarding-result")).toBeTruthy();
+        expect(screen.getByTestId("operator-result")).toBeTruthy();
+      });
+
+      const payload = onSubmit.mock.calls[0]![0] as Record<string, unknown>;
+      expect(payload["includeWritePermissions"]).toBe(true);
+      expect(payload["writePermissionGroups"]).toEqual(["identity", "intune"]);
+      expect(payload["confirmDangerous"]).toBe(true);
+      expect(payload["confirmed"]).toBe(true);
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("stays reader-only when write access is declined (T-0917)", async () => {
+    const onSubmit = vi.fn().mockResolvedValue({ success: true });
+    const view = render(<AddTenantWizard onSubmitOnboarding={onSubmit} />);
+
+    try {
+      await advanceToConfirmation();
+      fireEvent.click(screen.getByTestId("confirm-checkbox"));
+      fireEvent.click(screen.getByTestId("wizard-submit-btn"));
+
+      await waitFor(() => {
+        expect(onSubmit).toHaveBeenCalledTimes(1);
+        expect(screen.getByTestId("reader-only-result")).toBeTruthy();
+      });
+
+      const payload = onSubmit.mock.calls[0]![0] as Record<string, unknown>;
+      expect(payload["includeWritePermissions"]).toBeUndefined();
+      expect(payload["writePermissionGroups"]).toBeUndefined();
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("shows, updates, and clears the device code while a headless job waits (T-0916)", async () => {
+    let release: (value: Record<string, unknown>) => void = () => {};
+    const gate = new Promise<Record<string, unknown>>((resolve) => {
+      release = resolve;
+    });
+    const onSubmit = vi.fn().mockReturnValue(gate);
+    const snapshots = [
+      {
+        state: "pending" as const,
+        events: [
+          {
+            sequence: 1,
+            kind: "device-code" as const,
+            signIn: "graph-bootstrap",
+            provider: "Microsoft Graph",
+            code: "AAAA-BBBB",
+            verificationUrl: "https://microsoft.com/devicelogin",
+            expiresAt: "2026-06-01T12:15:00.000Z",
+          },
+        ],
+      },
+      {
+        state: "pending" as const,
+        events: [
+          {
+            sequence: 2,
+            kind: "device-code" as const,
+            signIn: "graph-bootstrap",
+            provider: "Microsoft Graph",
+            code: "CCCC-DDDD",
+            verificationUrl: "https://microsoft.com/devicelogin",
+            expiresAt: "2026-06-01T12:15:00.000Z",
+          },
+        ],
+      },
+      {
+        state: "pending" as const,
+        events: [
+          {
+            sequence: 3,
+            kind: "sign-in-complete" as const,
+            signIn: "graph-bootstrap",
+            provider: "Microsoft Graph",
+            account: "admin@contoso.onmicrosoft.com",
+          },
+        ],
+      },
+    ];
+    let snapshotIndex = 0;
+    const watch = vi.fn(async (_progressId: string, _since: number) =>
+      snapshots[Math.min(snapshotIndex++, snapshots.length - 1)]!,
+    );
+
+    const view = render(
+      <AddTenantWizard
+        onSubmitOnboarding={onSubmit}
+        onWatchOnboardingProgress={watch}
+        progressPollIntervalMs={10}
+      />,
+    );
+
+    try {
+      await advanceToConfirmation();
+      fireEvent.click(screen.getByTestId("confirm-checkbox"));
+      fireEvent.click(screen.getByTestId("wizard-submit-btn"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("device-code-panel")).toBeTruthy();
+        expect(screen.getByTestId("device-code-value").textContent).toBe("AAAA-BBBB");
+        expect(screen.getByTestId("device-code-url").textContent).toBe(
+          "https://microsoft.com/devicelogin",
+        );
+      });
+
+      // A later poll supersedes the previous code.
+      await waitFor(() => {
+        expect(screen.getByTestId("device-code-value").textContent).toBe("CCCC-DDDD");
+      });
+
+      // Sign-in completion clears the code so a stale one is never shown.
+      await waitFor(() => {
+        expect(screen.queryByTestId("device-code-panel")).toBeNull();
+        expect(screen.getByTestId("device-code-signed-in")).toBeTruthy();
+      });
+
+      const payload = onSubmit.mock.calls[0]![0] as Record<string, unknown>;
+      expect(typeof payload["progressId"]).toBe("string");
+      expect((payload["progressId"] as string).length).toBeGreaterThan(0);
+      expect(watch.mock.calls[0]![0]).toBe(payload["progressId"]);
+
+      release({ success: true });
+      await waitFor(() => {
+        expect(screen.queryByTestId("device-code-panel")).toBeNull();
+      });
+    } finally {
+      view.unmount();
+    }
+  });
+
+  it("keeps the code visible with a copy action and marks it expired after its lifetime", async () => {
+    let release: (value: Record<string, unknown>) => void = () => {};
+    const gate = new Promise<Record<string, unknown>>((resolve) => {
+      release = resolve;
+    });
+    const watch = vi.fn(async () => ({
+      state: "pending" as const,
+      events: [
+        {
+          sequence: 1,
+          kind: "device-code" as const,
+          signIn: "exchange-online",
+          provider: "Exchange Online",
+          code: "EXO-9999",
+          verificationUrl: "https://microsoft.com/devicelogin",
+          expiresAt: "2020-01-01T00:00:00.000Z",
+        },
+      ],
+    }));
+
+    const view = render(
+      <AddTenantWizard
+        onSubmitOnboarding={vi.fn().mockReturnValue(gate)}
+        onWatchOnboardingProgress={watch}
+        progressPollIntervalMs={10}
+      />,
+    );
+
+    try {
+      await advanceToConfirmation();
+      fireEvent.click(screen.getByTestId("confirm-checkbox"));
+      fireEvent.click(screen.getByTestId("wizard-submit-btn"));
+
+      await waitFor(() => {
+        expect(screen.getByTestId("device-code-value").textContent).toBe("EXO-9999");
+        expect(screen.getByTestId("device-code-expired")).toBeTruthy();
+      });
+
+      // Copying must not throw when the clipboard API is unavailable (jsdom).
+      fireEvent.click(screen.getByTestId("copy-device-code"));
+      expect(screen.getByTestId("copy-device-code")).toBeTruthy();
+
+      release({ success: true });
+      await waitFor(() => expect(screen.queryByTestId("device-code-panel")).toBeNull());
     } finally {
       view.unmount();
     }

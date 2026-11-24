@@ -212,3 +212,7 @@ Describe 'Import-AutopilotDevices worker (T-0328)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

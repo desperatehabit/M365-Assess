@@ -42,9 +42,15 @@ export const SCHEDULE_UNAUTHENTICATED = "request.unauthenticated";
 // command, so creation (and any later command change) rejects anything outside
 // this list with a structured 422. The code-deployed system-timer commands are
 // the always-known set; assessment tasks run the assessment worker command.
+// Commands of timers with no implementation yet are left out, so a user task
+// cannot be saved against them (T-0876). Custom-script tasks run
+// Invoke-CustomScript with parameters.scriptId naming the script.
+export const CUSTOM_SCRIPT_COMMAND = "Invoke-CustomScript";
+
 export const SCHEDULE_ALLOWED_COMMANDS: readonly string[] = Object.freeze([
-  ...SYSTEM_TIMERS.map((timer) => timer.command),
+  ...SYSTEM_TIMERS.filter((timer) => timer.unavailableReason === undefined).map((timer) => timer.command),
   "Invoke-M365Assessment",
+  CUSTOM_SCRIPT_COMMAND,
 ]);
 
 export function isAllowedScheduleCommand(command: unknown): command is string {
@@ -291,8 +297,8 @@ function toSystemRecord(timerName: string, nowIso: string): ScheduleRecord | und
     timezone: timer.timezone,
     targetScope: { type: "all" },
     command: timer.command,
-    parameters: {},
-    enabled: true,
+    parameters: timer.unavailableReason === undefined ? {} : { unavailableReason: timer.unavailableReason },
+    enabled: timer.unavailableReason === undefined,
     isSystem: true,
     lastRunAt: null,
     nextRunAt,

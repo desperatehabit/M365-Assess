@@ -246,3 +246,7 @@ Describe 'Deploy-IntuneTemplate worker (T-0306)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

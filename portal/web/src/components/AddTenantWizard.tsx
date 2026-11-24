@@ -1,4 +1,11 @@
-import React, { useState, type CSSProperties, type ReactElement } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 
 export type SetupMethod = "create-app" | "existing-app" | "manual-creds" | "import-gdap";
 export type M365Environment = "commercial" | "gcc" | "gcchigh" | "dod";
@@ -11,6 +18,237 @@ export interface ServiceTestResult {
   readonly error?: string | null;
 }
 
+/** One PowerShell module the onboarding worker needs on the BFF host. */
+export interface OnboardingModuleStatus {
+  readonly name: string;
+  readonly installed: boolean;
+  readonly version: string | null;
+}
+
+/** Read-only preflight the wizard shows before the final onboarding step. */
+export interface OnboardingPreflight {
+  readonly ready: boolean;
+  readonly graphVersion?: string | null;
+  readonly modules?: readonly OnboardingModuleStatus[];
+  readonly missingModules: readonly string[];
+  /** Exact Install-Module commands; Graph modules carry -RequiredVersion. */
+  readonly installCommands: readonly string[];
+  readonly message: string;
+}
+
+export const ONBOARDING_PREFLIGHT_PATH = "/v1/onboarding/preflight";
+
+async function fetchOnboardingPreflight(): Promise<OnboardingPreflight> {
+  const response = await fetch(ONBOARDING_PREFLIGHT_PATH);
+  if (!response.ok) {
+    throw new Error(`Prerequisite check failed: HTTP ${response.status}`);
+  }
+  return (await response.json()) as OnboardingPreflight;
+}
+
+/** One sign-in event from the onboarding job's progress channel (T-0916). */
+export type OnboardingSignInKind = "device-code" | "sign-in-complete" | "sign-in-failed";
+
+export interface OnboardingSignInEvent {
+  readonly sequence: number;
+  readonly kind: OnboardingSignInKind;
+  /** graph-bootstrap, graph-permissions, graph-operator, exchange-online. */
+  readonly signIn: string;
+  readonly provider: string;
+  readonly code?: string | null;
+  readonly verificationUrl?: string | null;
+  readonly expiresAt?: string | null;
+  readonly message?: string | null;
+  readonly account?: string | null;
+  readonly error?: string | null;
+  readonly at?: string;
+}
+
+export interface OnboardingProgressSnapshot {
+  readonly state: "unknown" | "pending" | "done";
+  readonly events: readonly OnboardingSignInEvent[];
+}
+
+export const ONBOARDING_PROGRESS_PREFIX = "/v1/tenants";
+
+export async function fetchOnboardingProgress(
+  tenantId: string,
+  progressId: string,
+  since: number,
+): Promise<OnboardingProgressSnapshot> {
+  const path = `${ONBOARDING_PROGRESS_PREFIX}/${encodeURIComponent(tenantId)}/onboard/progress/${encodeURIComponent(progressId)}?since=${since}`;
+  const response = await fetch(path);
+  if (!response.ok) {
+    throw new Error(`Onboarding progress failed: HTTP ${response.status}`);
+  }
+  return (await response.json()) as OnboardingProgressSnapshot;
+}
+
+export function newProgressId(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  return `onboard-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+const SIGN_IN_LABELS: Record<string, string> = {
+  "graph-bootstrap": "Microsoft Graph (app registration bootstrap)",
+  "graph-permissions": "Microsoft Graph (permissions and roles)",
+  "graph-operator": "Microsoft Graph (operator app)",
+  "exchange-online": "Exchange Online (RBAC role groups)",
+};
+
+export function signInLabel(signIn: string): string {
+  return SIGN_IN_LABELS[signIn] ?? signIn;
+}
+
+/** Options for {@link useOnboardingSignInProgress}. */
+export interface OnboardingSignInProgressOptions {
+  /** How often to poll for a pending device code. Default: 1500ms. */
+  readonly pollIntervalMs?: number;
+  /**
+   * Optional override for the device-code progress poll; the hook calls the BFF by
+   * default. Receives only events with a sequence greater than `since` (T-0916).
+   */
+  readonly watch?: (
+    progressId: string,
+    since: number,
+  ) => Promise<OnboardingProgressSnapshot>;
+}
+
+/** Device-code state shared by onboarding and per-tenant write-access grants. */
+export interface OnboardingSignInProgress {
+  readonly deviceCode: OnboardingSignInEvent | null;
+  readonly signedInStage: string | null;
+  readonly copyState: "idle" | "copied" | "failed";
+  readonly deviceCodeExpired: boolean;
+  /** Starts polling; clears any previous code and signed-in banner. */
+  readonly start: (tenantId: string, progressId: string) => void;
+  /** Stops polling and keeps the last state. */
+  readonly stop: () => void;
+  /** Stops polling and clears the code and signed-in banner. */
+  readonly reset: () => void;
+  readonly copyDeviceCode: () => Promise<void>;
+}
+
+/**
+ * Watches an onboarding job's progress channel for headless sign-in prompts
+ * (T-0916). Only one sign-in is pending at a time; a new device-code event
+ * supersedes the previous code, and a sign-in-complete event clears it.
+ */
+export function useOnboardingSignInProgress(
+  options: OnboardingSignInProgressOptions = {},
+): OnboardingSignInProgress {
+  const { pollIntervalMs = 1500, watch } = options;
+  const [deviceCode, setDeviceCode] = useState<OnboardingSignInEvent | null>(null);
+  const [signedInStage, setSignedInStage] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const progressTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressActive = useRef(false);
+
+  // Keep the latest poll override and interval without restarting a running watch.
+  const watchRef = useRef(watch);
+  watchRef.current = watch;
+  const intervalRef = useRef(pollIntervalMs);
+  intervalRef.current = pollIntervalMs;
+
+  const stop = useCallback((): void => {
+    progressActive.current = false;
+    if (progressTimer.current) {
+      clearInterval(progressTimer.current);
+      progressTimer.current = null;
+    }
+  }, []);
+
+  useEffect(() => stop, [stop]);
+
+  const applySignInEvent = useCallback((event: OnboardingSignInEvent): void => {
+    if (event.kind === "device-code") {
+      setDeviceCode(event);
+      setSignedInStage(null);
+      setCopyState("idle");
+      return;
+    }
+    // sign-in-complete / sign-in-failed clear only their own pending code, so a
+    // late event can never wipe the next sign-in's code.
+    setDeviceCode((current) => (current && current.signIn === event.signIn ? null : current));
+    if (event.kind === "sign-in-complete") {
+      setSignedInStage(event.signIn);
+    }
+  }, []);
+
+  const start = useCallback(
+    (tenantId: string, progressId: string): void => {
+      stop();
+      setDeviceCode(null);
+      setSignedInStage(null);
+      setCopyState("idle");
+      progressActive.current = true;
+      let since = 0;
+
+      const tick = async (): Promise<void> => {
+        if (!progressActive.current) return;
+        try {
+          const snapshot = watchRef.current
+            ? await watchRef.current(progressId, since)
+            : await fetchOnboardingProgress(tenantId, progressId, since);
+          const events = [...(snapshot.events ?? [])].sort((a, b) => a.sequence - b.sequence);
+          for (const event of events) {
+            if (event.sequence <= since) continue;
+            since = event.sequence;
+            applySignInEvent(event);
+          }
+          if (snapshot.state === "done") {
+            stop();
+          }
+        } catch {
+          // Progress is advisory: the submit response still reports failures.
+        }
+      };
+
+      void tick();
+      progressTimer.current = setInterval(() => {
+        void tick();
+      }, intervalRef.current);
+    },
+    [applySignInEvent, stop],
+  );
+
+  const reset = useCallback((): void => {
+    stop();
+    setDeviceCode(null);
+    setSignedInStage(null);
+    setCopyState("idle");
+  }, [stop]);
+
+  const copyDeviceCode = useCallback(async (): Promise<void> => {
+    if (!deviceCode?.code) return;
+    try {
+      await navigator.clipboard?.writeText(deviceCode.code);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+  }, [deviceCode]);
+
+  const deviceCodeExpired =
+    deviceCode?.expiresAt !== null &&
+    deviceCode?.expiresAt !== undefined &&
+    Date.parse(deviceCode.expiresAt) <= Date.now();
+
+  return {
+    deviceCode,
+    signedInStage,
+    copyState,
+    deviceCodeExpired,
+    start,
+    stop,
+    reset,
+    copyDeviceCode,
+  };
+}
+
 export interface AddTenantWizardProps {
   readonly onComplete?: (data: Record<string, unknown>) => void;
   readonly onCancel?: () => void;
@@ -20,6 +258,18 @@ export interface AddTenantWizardProps {
     services: ServiceTestResult[];
   }>;
   readonly onSubmitOnboarding?: (payload: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  /** Optional override for the module preflight; the wizard calls the BFF by default. */
+  readonly onCheckPrerequisites?: () => Promise<OnboardingPreflight>;
+  /**
+   * Optional override for the device-code progress poll; the wizard calls the BFF by
+   * default. Receives only events with a sequence greater than `since` (T-0916).
+   */
+  readonly onWatchOnboardingProgress?: (
+    progressId: string,
+    since: number,
+  ) => Promise<OnboardingProgressSnapshot>;
+  /** How often the wizard polls for a pending device code. Default: 1500ms. */
+  readonly progressPollIntervalMs?: number;
   readonly availableGroups?: readonly { id: string; name: string }[];
 }
 
@@ -132,12 +382,31 @@ const STEP_TITLES = [
   "6. Confirmation",
 ];
 
+/** Opt-in portal write groups (T-0917); mirrors PermissionDefinitions.ps1. */
+export const WRITE_GROUPS = [
+  { id: "identity", name: "Identity", description: "Users, groups, Conditional Access, authentication methods, PIM." },
+  { id: "security", name: "Security", description: "Defender alerts, incidents, and threat submissions." },
+  { id: "intune", name: "Intune", description: "Configuration, apps, enrollment, and managed-device actions." },
+  { id: "sharepoint", name: "SharePoint & Teams", description: "Site permissions, site edits, Teams creation and settings." },
+  { id: "exchange", name: "Exchange & Purview", description: "Mailbox, transport, quarantine, and eDiscovery writes." },
+] as const;
+
+/** Groups whose grants need the extra dangerous-action confirmation. */
+export const DANGEROUS_WRITE_GROUPS = new Set<string>(["identity", "intune", "sharepoint"]);
+
+export function writeGroupName(id: string): string {
+  return WRITE_GROUPS.find((group) => group.id === id)?.name ?? id;
+}
+
 export function AddTenantWizard({
   onComplete,
   onCancel,
   onResolveTenant,
   onTestConnection,
   onSubmitOnboarding,
+  onCheckPrerequisites,
+  onWatchOnboardingProgress,
+  progressPollIntervalMs = 1500,
   availableGroups = [],
 }: AddTenantWizardProps): ReactElement {
   const [step, setStep] = useState(1);
@@ -174,6 +443,32 @@ export function AddTenantWizard({
   const [confirmed, setConfirmed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const [preflight, setPreflight] = useState<OnboardingPreflight | null>(null);
+  const [preflightError, setPreflightError] = useState<string | null>(null);
+  const preflightRequest = useRef<Promise<OnboardingPreflight | null> | null>(null);
+
+  // Step 6 opt-in write access (T-0917). Off by default: onboarding behaves exactly
+  // as before and the reader app stays read-only.
+  const [includeWritePermissions, setIncludeWritePermissions] = useState(false);
+  const [writeGroups, setWriteGroups] = useState<string[]>([]);
+  const [confirmDangerous, setConfirmDangerous] = useState(false);
+  const [onboardingResult, setOnboardingResult] = useState<Record<string, unknown> | null>(null);
+
+  // Step 6 headless sign-in relay (T-0916). Only one sign-in is pending at a time;
+  // a new device-code event supersedes the previous code and a sign-in-complete
+  // event clears it. The hook is shared with the per-tenant Access tab (T-0942).
+  const {
+    deviceCode,
+    signedInStage,
+    copyState,
+    deviceCodeExpired,
+    start: startProgressWatch,
+    reset: resetProgressWatch,
+    copyDeviceCode,
+  } = useOnboardingSignInProgress({
+    pollIntervalMs: progressPollIntervalMs,
+    watch: onWatchOnboardingProgress,
+  });
 
   const handleResolveIdentity = async (): Promise<void> => {
     if (!tenantInput.trim()) return;
@@ -220,14 +515,59 @@ export function AddTenantWizard({
     }
   };
 
+  const checkPrerequisites = (): Promise<OnboardingPreflight | null> => {
+    if (preflightRequest.current) return preflightRequest.current;
+    const check = onCheckPrerequisites ?? fetchOnboardingPreflight;
+    setPreflightError(null);
+    const pending = Promise.resolve()
+      .then(check)
+      .then((result) => {
+        setPreflight(result);
+        return result;
+      })
+      .catch((err: unknown) => {
+        // The check is advisory when unavailable; the worker still refuses to start
+        // without the modules, and reports them as onboard.failed.
+        setPreflightError(
+          err instanceof Error ? err.message : "Onboarding prerequisite check failed",
+        );
+        return null;
+      });
+    preflightRequest.current = pending;
+    return pending;
+  };
+
+  const dangerousWriteGroups = writeGroups.filter((group) => DANGEROUS_WRITE_GROUPS.has(group));
+  const writeSelectionValid =
+    !includeWritePermissions ||
+    (writeGroups.length > 0 && (dangerousWriteGroups.length === 0 || confirmDangerous));
+
   const handleSubmit = async (): Promise<void> => {
     if (!confirmed) {
       setSubmitError("Explicit confirmation is required before proceeding.");
       return;
     }
+    if (includeWritePermissions && writeGroups.length === 0) {
+      setSubmitError("Select at least one write permission group, or turn write access off.");
+      return;
+    }
+    if (includeWritePermissions && dangerousWriteGroups.length > 0 && !confirmDangerous) {
+      setSubmitError(
+        "Confirm the dangerous write permissions (PIM role assignment, device wipe, or full SharePoint control) before proceeding.",
+      );
+      return;
+    }
     setSubmitting(true);
     setSubmitError(null);
+    setOnboardingResult(null);
+    resetProgressWatch();
     try {
+      const prerequisites = await checkPrerequisites();
+      if (prerequisites && !prerequisites.ready) {
+        setSubmitError(prerequisites.message);
+        return;
+      }
+      const progressId = newProgressId();
       const payload = {
         confirmed: true,
         tenantId: tenantId || tenantInput,
@@ -242,17 +582,31 @@ export function AddTenantWizard({
         createNew: setupMethod === "create-app",
         groups: selectedGroups,
         variables,
+        progressId,
+        ...(includeWritePermissions
+          ? {
+              includeWritePermissions: true,
+              writePermissionGroups: writeGroups,
+              confirmDangerous,
+            }
+          : {}),
       };
+
+      // Poll while the POST waits: a headless BFF relays each device code here.
+      startProgressWatch(tenantId || tenantInput, progressId);
 
       if (onSubmitOnboarding) {
         const result = await onSubmitOnboarding(payload);
+        setOnboardingResult(result);
         onComplete?.(result);
       } else {
+        setOnboardingResult(payload);
         onComplete?.(payload);
       }
     } catch (err) {
       setSubmitError(err instanceof Error ? err.message : "Onboarding failed");
     } finally {
+      resetProgressWatch();
       setSubmitting(false);
     }
   };
@@ -274,6 +628,54 @@ export function AddTenantWizard({
     // probe can neither be required nor trusted to gate onboarding.
     return true;
   };
+
+  const handleNext = (): void => {
+    // Check the worker host's onboarding modules while still on the advisory step, so
+    // the final step reports any missing module before onboarding starts.
+    if (step === 4 || step === 5) {
+      void checkPrerequisites();
+    }
+    setStep((s) => s + 1);
+  };
+
+  const prerequisitesNotice = (
+    <>
+      {preflight && !preflight.ready && (
+        <div style={warningBannerStyle} data-testid="onboarding-prerequisites-missing">
+          <strong>Onboarding prerequisites are not met:</strong>
+          <p
+            style={{ margin: "6px 0 0", whiteSpace: "pre-wrap" }}
+            data-testid="prerequisites-message"
+          >
+            {preflight.message}
+          </p>
+          {preflight.installCommands.length > 0 && (
+            <pre
+              style={{
+                margin: "10px 0 0",
+                padding: "10px",
+                background: "var(--surface)",
+                borderRadius: "6px",
+                overflowX: "auto",
+                fontSize: "12px",
+              }}
+            >
+              <code data-testid="prerequisites-install-commands">
+                {preflight.installCommands.join("\n")}
+              </code>
+            </pre>
+          )}
+        </div>
+      )}
+
+      {preflightError && (
+        <div style={warningBannerStyle} data-testid="onboarding-prerequisites-error">
+          Could not check onboarding prerequisites: {preflightError}. Onboarding can
+          continue; the worker reports any missing module when it starts.
+        </div>
+      )}
+    </>
+  );
 
   return (
     <div style={containerStyle} data-testid="add-tenant-wizard">
@@ -313,7 +715,7 @@ export function AddTenantWizard({
               >
                 <strong>Create app registration & grant consent (Recommended)</strong>
                 <span style={{ fontSize: "13px", color: "var(--text-soft)" }}>
-                  Automates creating the Entra ID application, self-signed certificate, and assigning all 28 read-only permissions via Grant-M365AssessConsent.
+                  Automates creating the Entra ID application, self-signed certificate, and assigning all 29 read-only permissions via Grant-M365AssessConsent.
                 </span>
               </div>
 
@@ -678,6 +1080,7 @@ export function AddTenantWizard({
         {step === 5 && (
           <div data-testid="wizard-step-5" style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
             <h2 style={{ margin: 0, fontSize: "18px" }}>Test Connection</h2>
+            {prerequisitesNotice}
             {onTestConnection ? (
               <>
                 <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "14px" }}>
@@ -758,11 +1161,13 @@ export function AddTenantWizard({
               <strong>HIGH-IMPACT SETUP ACTION:</strong>
               <p style={{ margin: "6px 0 0" }}>
                 Onboarding mutates tenant configuration: it provisions an Entra ID application
-                registration, assigns 28 read-only API permissions, grants tenant-wide admin consent,
+                registration, assigns 29 read-only API permissions, grants tenant-wide admin consent,
                 and adds directory role memberships. This action requires Global Administrator or
                 Application Administrator privileges in the tenant.
               </p>
             </div>
+
+            {prerequisitesNotice}
 
             <div style={{ background: "var(--surface)", padding: "16px", borderRadius: "8px", fontSize: "14px" }}>
               <h4 style={{ margin: "0 0 10px", fontSize: "15px" }}>Summary</h4>
@@ -771,6 +1176,115 @@ export function AddTenantWizard({
               <div><strong>Environment:</strong> {environment}</div>
               {setupMethod === "create-app" && <div><strong>Admin UPN:</strong> {adminUpn}</div>}
               {setupMethod !== "create-app" && clientId && <div><strong>Client ID:</strong> <code>{clientId}</code></div>}
+              <div>
+                <strong>Portal write access:</strong>{" "}
+                {includeWritePermissions ? `operator app (${writeGroups.join(", ") || "no groups selected"})` : "not requested"}
+              </div>
+            </div>
+
+            <div
+              style={{
+                padding: "16px",
+                borderRadius: "8px",
+                background: "var(--surface)",
+                border: "1px solid var(--border)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "12px",
+              }}
+              data-testid="write-access-section"
+            >
+              <label style={{ display: "flex", alignItems: "flex-start", gap: "10px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={includeWritePermissions}
+                  onChange={(e) => {
+                    setIncludeWritePermissions(e.target.checked);
+                    if (!e.target.checked) {
+                      setWriteGroups([]);
+                      setConfirmDangerous(false);
+                    }
+                  }}
+                  style={{ marginTop: "3px" }}
+                  data-testid="enable-write-access"
+                />
+                <span style={{ fontSize: "14px", fontWeight: 600 }}>
+                  Also grant portal write access (optional)
+                </span>
+              </label>
+
+              <p
+                style={{ margin: 0, fontSize: "13px", color: "var(--text-soft)" }}
+                data-testid="writer-reader-note"
+              >
+                Write actions use a second app registration, <code>M365-Assess-Operator</code>.
+                The reader app registration created for assessments is unchanged and stays read-only.
+              </p>
+
+              {includeWritePermissions && (
+                <>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                    {WRITE_GROUPS.map((group) => {
+                      const selected = writeGroups.includes(group.id);
+                      return (
+                        <button
+                          key={group.id}
+                          type="button"
+                          title={group.description}
+                          onClick={() =>
+                            setWriteGroups((prev) =>
+                              selected ? prev.filter((id) => id !== group.id) : [...prev, group.id],
+                            )
+                          }
+                          style={{
+                            ...buttonStyle,
+                            background: selected ? "var(--accent)" : "var(--surface)",
+                            color: selected ? "var(--accent-text)" : "var(--text)",
+                            borderColor: selected ? "var(--accent)" : "var(--border)",
+                          }}
+                          data-testid={`write-group-${group.id}`}
+                        >
+                          {group.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {writeGroups.length === 0 && (
+                    <p style={{ margin: 0, fontSize: "13px", color: "var(--warn-text)" }} data-testid="write-groups-required">
+                      Select at least one group to grant write access.
+                    </p>
+                  )}
+
+                  {dangerousWriteGroups.length > 0 && (
+                    <label
+                      style={{
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: "10px",
+                        cursor: "pointer",
+                        padding: "12px",
+                        borderRadius: "6px",
+                        background: "var(--danger-soft)",
+                        border: "1px solid var(--danger)",
+                        color: "var(--danger-text)",
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={confirmDangerous}
+                        onChange={(e) => setConfirmDangerous(e.target.checked)}
+                        style={{ marginTop: "3px" }}
+                        data-testid="confirm-dangerous"
+                      />
+                      <span style={{ fontSize: "13px" }}>
+                        I understand these groups include dangerous grants: PIM role assignment
+                        (including Global Administrator), device wipe, and full SharePoint control.
+                      </span>
+                    </label>
+                  )}
+                </>
+              )}
             </div>
 
             <label
@@ -797,6 +1311,111 @@ export function AddTenantWizard({
               </span>
             </label>
 
+            {submitting && (
+              <div style={{ fontSize: "13px", color: "var(--text-soft)" }} data-testid="onboarding-progress">
+                Creating the app registration and granting permissions. This can take a few minutes.
+              </div>
+            )}
+
+            {submitting && deviceCode && (
+              <div
+                style={{
+                  padding: "16px",
+                  borderRadius: "8px",
+                  background: "var(--warn-soft, var(--surface))",
+                  border: "1px solid var(--warn, var(--border))",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "10px",
+                }}
+                data-testid="device-code-panel"
+              >
+                <h3 style={{ margin: 0, fontSize: "15px" }} data-testid="device-code-title">
+                  Sign in to {deviceCode.provider}
+                </h3>
+                <p style={{ margin: 0, fontSize: "14px" }} data-testid="device-code-instruction">
+                  The onboarding worker has no desktop to show a sign-in prompt on. Open the
+                  verification page in any browser, then enter this code for{" "}
+                  <strong>{signInLabel(deviceCode.signIn)}</strong>:
+                </p>
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px" }}>
+                  <code
+                    style={{
+                      padding: "8px 14px",
+                      borderRadius: "6px",
+                      background: "var(--surface)",
+                      border: "1px solid var(--border)",
+                      fontSize: "20px",
+                      fontWeight: 700,
+                      letterSpacing: "2px",
+                      userSelect: "all",
+                    }}
+                    data-testid="device-code-value"
+                  >
+                    {deviceCode.code}
+                  </code>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void copyDeviceCode();
+                    }}
+                    style={buttonStyle}
+                    data-testid="copy-device-code"
+                  >
+                    {copyState === "copied" ? "Copied" : copyState === "failed" ? "Select the code" : "Copy code"}
+                  </button>
+                </div>
+                {deviceCode.verificationUrl && (
+                  <p style={{ margin: 0, fontSize: "14px" }} data-testid="device-code-verification">
+                    Verification page:{" "}
+                    <a
+                      href={deviceCode.verificationUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      style={{ color: "var(--accent)" }}
+                      data-testid="device-code-url"
+                    >
+                      {deviceCode.verificationUrl}
+                    </a>
+                  </p>
+                )}
+                {deviceCode.expiresAt && !deviceCodeExpired && (
+                  <p
+                    style={{ margin: 0, fontSize: "12px", color: "var(--text-soft)" }}
+                    data-testid="device-code-expiry"
+                  >
+                    This code expires at {new Date(deviceCode.expiresAt).toLocaleTimeString()}.
+                  </p>
+                )}
+                {deviceCodeExpired && (
+                  <p
+                    style={{ margin: 0, fontSize: "13px", color: "var(--danger-text)" }}
+                    data-testid="device-code-expired"
+                  >
+                    This code has expired. Onboarding waits for a fresh code; if it does not
+                    appear, submit again.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {submitting && !deviceCode && signedInStage && (
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: "6px",
+                  background: "var(--success-soft)",
+                  border: "1px solid var(--success)",
+                  color: "var(--success-text)",
+                  fontSize: "13px",
+                }}
+                data-testid="device-code-signed-in"
+              >
+                Signed in to {signInLabel(signedInStage)}. Continuing onboarding; another code
+                may appear for the next sign-in.
+              </div>
+            )}
+
             {submitError && (
               <div
                 style={{
@@ -810,6 +1429,35 @@ export function AddTenantWizard({
                 data-testid="submit-error-banner"
               >
                 {submitError}
+              </div>
+            )}
+
+            {onboardingResult && !submitting && (
+              <div
+                style={{
+                  padding: "16px",
+                  borderRadius: "8px",
+                  background: "var(--success-soft)",
+                  border: "1px solid var(--success)",
+                  color: "var(--success-text)",
+                  fontSize: "14px",
+                }}
+                data-testid="onboarding-result"
+              >
+                <strong>Onboarding complete.</strong>
+                <p style={{ margin: "6px 0 0" }}>
+                  The reader app registration and its read-only permissions are unchanged.
+                </p>
+                {includeWritePermissions ? (
+                  <p style={{ margin: "6px 0 0" }} data-testid="operator-result">
+                    Write access: the <code>M365-Assess-Operator</code> app was provisioned for{" "}
+                    {writeGroups.join(", ")}.
+                  </p>
+                ) : (
+                  <p style={{ margin: "6px 0 0" }} data-testid="reader-only-result">
+                    Write access was not requested, so no operator app was created.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -845,7 +1493,7 @@ export function AddTenantWizard({
           {step < 6 ? (
             <button
               type="button"
-              onClick={() => setStep((s) => s + 1)}
+              onClick={handleNext}
               disabled={!canGoNext()}
               style={primaryButtonStyle}
               data-testid="wizard-next-btn"
@@ -856,7 +1504,12 @@ export function AddTenantWizard({
             <button
               type="button"
               onClick={handleSubmit}
-              disabled={!confirmed || submitting}
+              disabled={
+                !confirmed ||
+                submitting ||
+                !writeSelectionValid ||
+                (preflight !== null && !preflight.ready)
+              }
               style={{
                 ...primaryButtonStyle,
                 background: confirmed ? "var(--success)" : "var(--chip)",

@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-011, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #23,#28; [`cipp-ui-inventory.md`](../../99-reference/cipp-ui-inventory.md) §3
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-012.md`](../../../../ISSUES/epics/EPIC-012.md)
 
 ## 1. Purpose
 
@@ -163,4 +163,4 @@ confirmation and audit required. TAP values are shown once and redacted from log
 - [`../EPIC-011-users-offboarding/SPEC.md`](../EPIC-011-users-offboarding/SPEC.md) — user context
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — MFA standards
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-012.md`](../../../../ISSUES/epics/EPIC-012.md) — epic ticket

@@ -128,3 +128,7 @@ Describe 'Remove-SharingLinks worker (T-0527)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

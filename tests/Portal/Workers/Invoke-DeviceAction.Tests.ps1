@@ -89,3 +89,7 @@ Describe 'Invoke-DeviceAction worker (T-0344)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

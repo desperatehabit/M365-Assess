@@ -301,3 +301,8 @@ return `$true
         }
     }
 }
+
+AfterAll {
+    # Remove the global cmdlet stubs so later files see these cmdlets as unavailable again.
+    Remove-Item -Path 'Function:\Get-RetentionCompliancePolicy', 'Function:\Get-RetentionComplianceRule' -ErrorAction SilentlyContinue
+}

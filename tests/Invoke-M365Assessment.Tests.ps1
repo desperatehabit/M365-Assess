@@ -291,6 +291,98 @@ Describe 'Invoke-M365Assessment - RunContext (T-0003)' {
     }
 }
 
+Describe 'Invoke-M365Assessment - collector status (T-0937)' {
+    BeforeAll {
+        $script:content = Get-Content -Path $script:scriptPath -Raw
+
+        # Load the orchestrator's collector-status helpers the same way the
+        # Get-RedactedText test does, without running the assessment.
+        foreach ($name in @('Get-CollectorOutcome', 'Write-CollectorOutcome')) {
+            $node = $script:ast.FindAll(
+                {
+                    param($node)
+                    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+                        $node.Name -eq $name
+                },
+                $true
+            ) | Select-Object -First 1
+            $node | Should -Not -BeNullOrEmpty -Because "the orchestrator must define $name"
+            . ([scriptblock]::Create($node.Extent.Text))
+        }
+
+        function Write-AssessmentLog {
+            param($Level, $Message, $Detail, $Section, $Collector)
+        }
+        function Get-RecommendedAction { param($ErrorMessage) 'fix it' }
+    }
+
+    It 'normalizes a Complete collector outcome' {
+        $input = [PSCustomObject]@{ PSTypeName = 'M365Assess.CollectorOutcome'; Outcome = 'Complete'; Reason = '' }
+        (Get-CollectorOutcome -CollectorOutput @($input)).Status | Should -Be 'Complete'
+    }
+
+    It 'accepts Partial, Skipped and Failed as collector statuses' {
+        foreach ($status in @('Partial', 'Skipped', 'Failed')) {
+            $input = [PSCustomObject]@{ PSTypeName = 'M365Assess.CollectorOutcome'; Outcome = $status; Reason = 'the reason' }
+            $outcome = Get-CollectorOutcome -CollectorOutput @($input)
+            $outcome.Status | Should -Be $status
+            $outcome.Reason | Should -Be 'the reason'
+        }
+    }
+
+    It 'ignores an outcome with an unknown status' {
+        $input = [PSCustomObject]@{ PSTypeName = 'M365Assess.CollectorOutcome'; Outcome = 'MostlyFine'; Reason = 'x' }
+        Get-CollectorOutcome -CollectorOutput @($input) | Should -BeNullOrEmpty
+    }
+
+    It 'returns null when the collector reported no outcome' {
+        Get-CollectorOutcome -CollectorOutput @([PSCustomObject]@{ Setting = 'x'; Status = 'Pass' }) |
+            Should -BeNullOrEmpty
+    }
+
+    It 'records a Failed outcome as an ERROR issue and others as WARNING' {
+        $issues = [System.Collections.Generic.List[PSCustomObject]]::new()
+        Write-CollectorOutcome -Status 'Failed' -Reason 'API unavailable' -Section 'PowerBI' -Collector 'Power BI Security Config' -IssueList $issues
+        Write-CollectorOutcome -Status 'Skipped' -Reason 'app-only not supported' -Section 'Collaboration' -Collector 'Teams Security Config' -IssueList $issues
+
+        $issues.Count | Should -Be 2
+        $issues[0].Severity | Should -Be 'ERROR'
+        $issues[0].ErrorMessage | Should -Be 'API unavailable'
+        $issues[1].Severity | Should -Be 'WARNING'
+        $issues[1].Collector | Should -Be 'Teams Security Config'
+    }
+
+    It 'passes the run issue list to Write-CollectorOutcome as -IssueList at every call site' {
+        $calls = @([regex]::Matches($script:content, '(?m)^\s*Write-CollectorOutcome\s+[^\r\n]*'))
+        $calls.Count | Should -BeGreaterThan 0 -Because 'the orchestrator must record non-Complete collector outcomes'
+        foreach ($call in $calls) {
+            $call.Value | Should -Match '-IssueList \$ctx\.Issues' `
+                -Because 'the helper parameter is -IssueList; -Issues binds to nothing and throws'
+            $call.Value | Should -Not -Match '\s-Issues\s'
+        }
+    }
+
+    It 'applies a collector outcome over the row-count inference' {
+        $script:content | Should -Match 'if \(\$collectorOutcome -and \$collectorOutcome\.Status -ne ''Complete''\)'
+        $script:content | Should -Match '\$status = \$collectorOutcome\.Status'
+        $script:content | Should -Match 'Get-CollectorOutcome -CollectorOutput \$rawOutput'
+    }
+
+    It 'keeps the typed outcome object out of the exported section rows' {
+        $script:content | Should -Match "TypeNames -contains 'M365Assess\.CollectorOutcome'"
+        $script:content | Should -Match '\$results = @\(\$rawOutput \| Where-Object \{'
+    }
+
+    It 'reads a child-process collector outcome from the CSV sidecar' {
+        $script:content | Should -Match '\$childOutcomePath = "\$childCsvPath\.status\.json"'
+        $script:content | Should -Match 'Remove-Item -LiteralPath \$childOutcomePath'
+    }
+
+    It 'documents the summary status vocabulary in the CSV header' {
+        $script:content | Should -Match 'Status: Complete \| Partial \| Skipped \| Failed'
+    }
+}
+
 Describe 'Invoke-M365Assessment - PowerBI child process credential handling (T-0005)' {
     BeforeAll {
         $script:content = Get-Content -Path $script:scriptPath -Raw

@@ -59,16 +59,16 @@ class FailingApplyProvider implements CopilotSettingsApplyProvider {
   }
 }
 
-function adminCaller(): { roles: string[]; tenantScope: typeof ALL_TENANTS; id: string } {
-  return { roles: ["admin"], tenantScope: ALL_TENANTS, id: USER_ID };
+function adminCaller(): { roles: string[]; tenantScope: typeof ALL_TENANTS; userId: string } {
+  return { roles: ["admin"], tenantScope: ALL_TENANTS, userId: USER_ID };
 }
 
-function operatorCaller(): { roles: string[]; tenantScope: typeof ALL_TENANTS; id: string } {
-  return { roles: ["operator"], tenantScope: ALL_TENANTS, id: USER_ID };
+function operatorCaller(): { roles: string[]; tenantScope: typeof ALL_TENANTS; userId: string } {
+  return { roles: ["operator"], tenantScope: ALL_TENANTS, userId: USER_ID };
 }
 
-function scopedCaller(tenantIds: string[]): { roles: string[]; tenantScope: { all: boolean; tenantIds: string[] }; id: string } {
-  return { roles: ["admin"], tenantScope: { all: false, tenantIds }, id: USER_ID };
+function scopedCaller(tenantIds: string[]): { roles: string[]; tenantScope: { all: boolean; tenantIds: string[] }; userId: string } {
+  return { roles: ["admin"], tenantScope: { all: false, tenantIds }, userId: USER_ID };
 }
 
 function makeContext(

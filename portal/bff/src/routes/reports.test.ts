@@ -1,10 +1,19 @@
 // T-0084 — Reports API: executive render, custom render, history, download, bundle
 // Tests assert route behaviour without any SQL dependency.
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  buildReportBundleZip,
+  readReportBundleZip,
+  REPORT_BUNDLE_INVALID,
+} from "../domain/reports/bundle.js";
 import {
   createReportsRoutes,
   REPORTS_PERMISSIONS,
+  REPORT_ARTIFACT_MISSING,
   REPORT_NOT_FOUND,
   REPORT_RUN_NOT_FOUND,
   REPORT_TENANT_REQUIRED,
@@ -17,6 +26,11 @@ import {
   type ReportsDependencies,
 } from "./reports.js";
 import type { RequestContext } from "../server.js";
+
+const tempDirs: string[] = [];
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 // ─── Stub helpers ─────────────────────────────────────────────────────────────
 
@@ -62,7 +76,7 @@ function makeRuns(overrides: Partial<RunReadPort> = {}): RunReadPort {
       actionBuckets: {},
     }),
     runArtifacts: vi.fn().mockResolvedValue([
-      { name: "report.html", contentType: "text/html", size: 1024, artifactRef: "/art/report.html" },
+      { name: "report.html", contentType: "text/html", size: 1024, artifactRef: "art/report.html" },
     ]),
     ...overrides,
   };
@@ -110,6 +124,7 @@ function makeDeps(overrides: Partial<ReportsDependencies> = {}): ReportsDependen
     runs: makeRuns(),
     audit: makeAudit(),
     authorizer: makeAuthorizer(),
+    artifactRoot: path.join(tmpdir(), "reports-test-artifacts"),
     ...overrides,
   };
 }
@@ -224,19 +239,23 @@ describe("GET /v1/reports", () => {
 });
 
 describe("GET /v1/reports/:id/download", () => {
-  it("returns artifactRef and content type for a succeeded report", async () => {
+  it("streams the artifact and content type for a succeeded report", async () => {
+    const artifactRoot = mkdtempSync(path.join(tmpdir(), "reports-download-"));
+    writeFileSync(path.join(artifactRoot, "report.pdf"), "%PDF-1.4\n");
     const store = makeStore({
       findById: vi.fn().mockResolvedValue(
-        makeReport({ status: "succeeded", artifactRef: "/art/report.pdf" }),
+        makeReport({ status: "succeeded", artifactRef: "report.pdf" }),
       ),
     });
     const audit = makeAudit();
-    const deps = makeDeps({ store, audit });
+    const deps = makeDeps({ store, audit, artifactRoot });
     const route = findRoute(deps, "GET", "/v1/reports/:id/download");
     const ctx = makeCtx("GET", "/v1/reports/rpt-1/download", { params: { id: "rpt-1" } });
     const res = await route.handler(ctx);
     expect(res.status).toBe(200);
-    expect((res.body as Record<string, unknown>).artifactRef).toBe("/art/report.pdf");
+    expect(res.contentType).toBe("application/pdf");
+    expect(res.headers?.["Content-Disposition"]).toContain("report.pdf");
+    expect(res.stream).toBeDefined();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: "report.download" }),
     );
@@ -260,10 +279,10 @@ describe("GET /v1/reports/:id/download", () => {
 });
 
 describe("POST /v1/reports/:id/bundle", () => {
-  it("returns run artifact listing for a tenanted report", async () => {
+  it("returns ZIP bundle metadata and base64 payload for a tenanted report (ENOENT fallback)", async () => {
     const store = makeStore({
       findById: vi.fn().mockResolvedValue(
-        makeReport({ status: "succeeded", artifactRef: "/art/report.pdf" }),
+        makeReport({ status: "succeeded", artifactRef: "art/report.pdf" }),
       ),
     });
     const audit = makeAudit();
@@ -275,9 +294,159 @@ describe("POST /v1/reports/:id/bundle", () => {
     const body = res.body as Record<string, unknown>;
     expect(Array.isArray(body.artifacts)).toBe(true);
     expect(body.runId).toBe("run-1");
+    expect(body.fileName).toBe("report-rpt-1-bundle.zip");
+    expect(body.contentType).toBe("application/zip");
+    expect(typeof body.size).toBe("number");
+    expect(typeof body.bundleBase64).toBe("string");
+    const zip = readReportBundleZip(Buffer.from(body.bundleBase64 as string, "base64"));
+    expect(zip.get("report.html")).toEqual(Buffer.alloc(0));
+    expect(zip.has("report.pdf")).toBe(false);
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({ action: "report.bundle" }),
     );
+  });
+
+  it("reads run artifacts and rendered PDF from disk into the ZIP bundle", async () => {
+    const artifactRoot = mkdtempSync(path.join(tmpdir(), "reports-bundle-"));
+    tempDirs.push(artifactRoot);
+    mkdirSync(path.join(artifactRoot, "runs/t1/run-1/Assessment"), { recursive: true });
+    mkdirSync(path.join(artifactRoot, "reports/t1/rpt-1"), { recursive: true });
+    writeFileSync(path.join(artifactRoot, "runs/t1/run-1/Assessment/report.html"), "<html>ok</html>");
+    writeFileSync(path.join(artifactRoot, "runs/t1/run-1/Assessment/findings.json"), '{"pass":5}');
+    writeFileSync(path.join(artifactRoot, "reports/t1/rpt-1/report.pdf"), "%PDF-1.4\nbody");
+
+    const store = makeStore({
+      findById: vi.fn().mockResolvedValue(
+        makeReport({ status: "succeeded", artifactRef: "reports/t1/rpt-1/report.pdf" }),
+      ),
+    });
+    const runs = makeRuns({
+      runArtifacts: vi.fn().mockResolvedValue([
+        {
+          name: "Assessment/report.html",
+          contentType: "text/html",
+          size: 15,
+          artifactRef: "runs/t1/run-1/Assessment/report.html",
+        },
+        {
+          name: "Assessment/findings.json",
+          contentType: "application/json",
+          size: 10,
+          artifactRef: "runs/t1/run-1/Assessment/findings.json",
+        },
+      ]),
+    });
+    const deps = makeDeps({ store, runs, artifactRoot });
+    const route = findRoute(deps, "POST", "/v1/reports/:id/bundle");
+
+    const res = await route.handler(makeCtx("POST", "/v1/reports/rpt-1/bundle", { params: { id: "rpt-1" } }));
+    expect(res.status).toBe(200);
+    const body = res.body as {
+      fileName: string;
+      contentType: string;
+      size: number;
+      bundleBase64: string;
+      artifacts: Array<{ name: string; contentType: string; size: number; artifactRef: string }>;
+    };
+    const zipBytes = Buffer.from(body.bundleBase64, "base64");
+    expect(body.size).toBe(zipBytes.length);
+    const entries = readReportBundleZip(zipBytes);
+    expect([...entries.keys()]).toEqual([
+      "Assessment/report.html",
+      "Assessment/findings.json",
+      "report.pdf",
+    ]);
+    expect(entries.get("Assessment/report.html")?.toString("utf8")).toBe("<html>ok</html>");
+    expect(entries.get("Assessment/findings.json")?.toString("utf8")).toBe('{"pass":5}');
+    expect(entries.get("report.pdf")?.toString("utf8")).toBe("%PDF-1.4\nbody");
+    expect(body.artifacts.map((a) => a.name)).toEqual([
+      "Assessment/report.html",
+      "Assessment/findings.json",
+      "report.pdf",
+    ]);
+  });
+
+  it("filters runArtifacts by req.body.artifacts when provided and non-empty", async () => {
+    const artifactRoot = mkdtempSync(path.join(tmpdir(), "reports-bundle-filter-"));
+    tempDirs.push(artifactRoot);
+    mkdirSync(path.join(artifactRoot, "runs/t1/run-1"), { recursive: true });
+    writeFileSync(path.join(artifactRoot, "runs/t1/run-1/report.html"), "<h1>HTML</h1>");
+    writeFileSync(path.join(artifactRoot, "runs/t1/run-1/matrix.xlsx"), "XLSX");
+
+    const store = makeStore({
+      findById: vi.fn().mockResolvedValue(makeReport({ status: "succeeded", artifactRef: null })),
+    });
+    const runs = makeRuns({
+      runArtifacts: vi.fn().mockResolvedValue([
+        { name: "report.html", contentType: "text/html", size: 13, artifactRef: "runs/t1/run-1/report.html" },
+        { name: "matrix.xlsx", contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", size: 4, artifactRef: "runs/t1/run-1/matrix.xlsx" },
+      ]),
+    });
+    const deps = makeDeps({ store, runs, artifactRoot });
+    const route = findRoute(deps, "POST", "/v1/reports/:id/bundle");
+
+    const filtered = await route.handler(
+      makeCtx("POST", "/v1/reports/rpt-1/bundle", {
+        params: { id: "rpt-1" },
+        body: { artifacts: ["matrix.xlsx"] },
+      }),
+    );
+    const filteredBody = filtered.body as { bundleBase64: string; artifacts: Array<{ name: string }> };
+    expect(filteredBody.artifacts.map((a) => a.name)).toEqual(["matrix.xlsx"]);
+    const filteredEntries = readReportBundleZip(Buffer.from(filteredBody.bundleBase64, "base64"));
+    expect([...filteredEntries.keys()]).toEqual(["matrix.xlsx"]);
+    expect(filteredEntries.get("matrix.xlsx")?.toString("utf8")).toBe("XLSX");
+
+    const emptyFilter = await route.handler(
+      makeCtx("POST", "/v1/reports/rpt-1/bundle", {
+        params: { id: "rpt-1" },
+        body: { artifacts: [] },
+      }),
+    );
+    const emptyBody = emptyFilter.body as { artifacts: Array<{ name: string }> };
+    expect(emptyBody.artifacts.map((a) => a.name)).toEqual(["report.html", "matrix.xlsx"]);
+  });
+
+  it("rejects invalid artifacts filter and path traversal references", async () => {
+    const store = makeStore({
+      findById: vi.fn().mockResolvedValue(makeReport({ status: "succeeded", artifactRef: null })),
+    });
+    const route = findRoute(makeDeps({ store }), "POST", "/v1/reports/:id/bundle");
+
+    await expect(
+      route.handler(
+        makeCtx("POST", "/v1/reports/rpt-1/bundle", {
+          params: { id: "rpt-1" },
+          body: { artifacts: "report.html" },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 400 });
+
+    const traversalDeps = makeDeps({
+      store,
+      runs: makeRuns({
+        runArtifacts: vi.fn().mockResolvedValue([
+          { name: "secret.txt", contentType: "text/plain", size: 1, artifactRef: "../../etc/passwd" },
+        ]),
+      }),
+    });
+    await expect(
+      findRoute(traversalDeps, "POST", "/v1/reports/:id/bundle").handler(
+        makeCtx("POST", "/v1/reports/rpt-1/bundle", { params: { id: "rpt-1" } }),
+      ),
+    ).rejects.toMatchObject({ code: REPORT_ARTIFACT_MISSING, status: 400 });
+
+    const absPathDeps = makeDeps({
+      store: makeStore({
+        findById: vi.fn().mockResolvedValue(makeReport({ status: "succeeded", artifactRef: "/etc/passwd" })),
+      }),
+      runs: makeRuns({ runArtifacts: vi.fn().mockResolvedValue([]) }),
+    });
+    await expect(
+      findRoute(absPathDeps, "POST", "/v1/reports/:id/bundle").handler(
+        makeCtx("POST", "/v1/reports/rpt-1/bundle", { params: { id: "rpt-1" } }),
+      ),
+    ).rejects.toMatchObject({ code: REPORT_ARTIFACT_MISSING, status: 400 });
   });
 
   it("returns 400 when report has no tenantId", async () => {
@@ -293,7 +462,7 @@ describe("POST /v1/reports/:id/bundle", () => {
   it("returns 404 when there is no run for the tenant", async () => {
     const store = makeStore({
       findById: vi.fn().mockResolvedValue(
-        makeReport({ status: "succeeded", artifactRef: "/art/report.pdf" }),
+        makeReport({ status: "succeeded", artifactRef: "art/report.pdf" }),
       ),
     });
     const deps = makeDeps({
@@ -310,6 +479,31 @@ describe("POST /v1/reports/:id/bundle", () => {
     const route = findRoute(deps, "POST", "/v1/reports/:id/bundle");
     const ctx = makeCtx("POST", "/v1/reports/rpt-1/bundle", { params: { id: "rpt-1" } });
     await expect(route.handler(ctx)).rejects.toMatchObject({ status: 403 });
+  });
+});
+
+describe("report bundle ZIP domain (T-0875)", () => {
+  it("round-trips empty and multi-entry ZIP archives and verifies CRC32", () => {
+    const emptyZip = buildReportBundleZip([]);
+    expect(readReportBundleZip(emptyZip).size).toBe(0);
+
+    const archive = buildReportBundleZip([
+      { name: "nested/hello.txt", data: Buffer.from("hello world", "utf8") },
+      { name: "data.bin", data: Buffer.from([0x00, 0xff, 0x10, 0x20]) },
+    ]);
+    const extracted = readReportBundleZip(archive);
+    expect(extracted.get("nested/hello.txt")?.toString("utf8")).toBe("hello world");
+    expect(extracted.get("data.bin")).toEqual(Buffer.from([0x00, 0xff, 0x10, 0x20]));
+
+    const corrupted = Buffer.from(archive);
+    const idx = corrupted.indexOf("hello world");
+    corrupted[idx] = "H".charCodeAt(0);
+    expect(() => readReportBundleZip(corrupted)).toThrowError(
+      expect.objectContaining({ code: REPORT_BUNDLE_INVALID, status: 400 }),
+    );
+    expect(() => readReportBundleZip(Buffer.from("not-a-zip"))).toThrowError(
+      expect.objectContaining({ code: REPORT_BUNDLE_INVALID, status: 400 }),
+    );
   });
 });
 
@@ -335,7 +529,7 @@ describe("tenant scope (T-0823)", () => {
     const deps = makeDeps({
       queue,
       authorizer: scoped(["t1"]),
-      store: makeStore({ findById: vi.fn().mockResolvedValue(makeReport({ tenantId: "t2", status: "succeeded", artifactRef: "/a.pdf" })) }),
+      store: makeStore({ findById: vi.fn().mockResolvedValue(makeReport({ tenantId: "t2", status: "succeeded", artifactRef: "a.pdf" })) }),
     });
     await expect(
       findRoute(deps, "POST", "/v1/reports/executive").handler(makeCtx("POST", "/v1/reports/executive", { body: { tenantId: "t2" } })),

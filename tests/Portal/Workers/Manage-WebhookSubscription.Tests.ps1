@@ -95,7 +95,7 @@ Describe 'Manage-WebhookSubscription worker (T-0625)' {
         It 'posts the change types, resource, and expiration to Graph' {
             $res = Invoke-ManageWebhookSubscription -TenantId 'tenant-test' -Action 'create' -Resource 'groups' -NotificationUrl 'https://portal.example/v1/webhooks/notify'
             $res.success | Should -BeTrue
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -eq '/v1.0/subscriptions' } -Scope It
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -eq '/v1.0/subscriptions' } -Scope It
         }
 
         It 'rejects a resource outside the required set' {
@@ -172,7 +172,7 @@ Describe 'Manage-WebhookSubscription worker (T-0625)' {
             $res.subscription.clientState | Should -Be 'state-1'
             $res.auditEvent.action | Should -Be 'webhook.subscription.recreate'
             $res.auditEvent.before.previousSubscriptionId | Should -Be 'sub-1'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -eq '/v1.0/subscriptions/sub-1' } -Scope It
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -eq '/v1.0/subscriptions/sub-1' } -Scope It
         }
     }
 
@@ -192,7 +192,7 @@ Describe 'Manage-WebhookSubscription worker (T-0625)' {
             $res.success | Should -BeTrue
             $res.deleted | Should -Be 'sub-1'
             $res.auditEvent.action | Should -Be 'webhook.subscription.delete'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -eq '/v1.0/subscriptions/sub-1' } -Scope It
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -eq '/v1.0/subscriptions/sub-1' } -Scope It
         }
     }
 
@@ -242,4 +242,8 @@ Describe 'Manage-WebhookSubscription worker (T-0625)' {
             { Read-ManageWebhooksJob -Path $path } | Should -Throw '*tenantId*'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

@@ -122,14 +122,14 @@ $record | ConvertTo-Json -Compress
     }
 
     Context 'resource limits' {
-        It 'kills a runaway script at the timeout and leaves no child behind' {
+        It 'kills a runaway script at the timeout and leaves no child behind' -Skip:$IsWindows {
             $started = [DateTime]::UtcNow
 
             { Invoke-SandboxedScript -ScriptContent 'while ($true) { }' -TimeoutSec 3 } | Should -Throw '*sandbox.timeout*'
 
             $elapsed = [DateTime]::UtcNow - $started
             $elapsed.TotalSeconds | Should -BeLessThan 60
-            $lingering = @((& ps -eo args) | Where-Object { $_ -match 'm365-sandbox-.*harness' })
+            $lingering = @((& /bin/ps -eo args) | Where-Object { $_ -match 'm365-sandbox-.*harness' })
             $lingering.Count | Should -Be 0
         }
     }

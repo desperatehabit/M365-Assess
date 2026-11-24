@@ -160,7 +160,7 @@ Describe 'Get-EntraSecurityConfig' {
     }
 
     It 'All Status values are valid' {
-        $validStatuses = @('Pass', 'Fail', 'Warning', 'Review', 'Info', 'N/A', 'Skipped')
+        $validStatuses = @('Pass', 'Fail', 'Warning', 'Review', 'Info', 'N/A', 'Skipped', 'NotLicensed')
         foreach ($s in $settings) {
             $s.Status | Should -BeIn $validStatuses `
                 -Because "Setting '$($s.Setting)' has status '$($s.Status)'"
@@ -245,5 +245,91 @@ Describe 'Get-EntraSecurityConfig - Edge Cases' {
 
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-EntraSecurityConfig - License gating (T-0935)' {
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        function Get-MgContext { return @{ TenantId = 'test-tenant-id' } }
+
+        Mock Import-Module { }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/identitySecurityDefaultsEnforcementPolicy' {
+                    return @{ isEnabled = $false }
+                }
+                '*/subscribedSkus' {
+                    return @{ value = @() }
+                }
+                default {
+                    return @{ value = @() }
+                }
+            }
+        }
+    }
+
+    Context 'when the tenant lacks Entra ID P2' {
+        BeforeAll {
+            $global:CheckProgressState = @{
+                LicenseSkipped = @{
+                    'ENTRA-PIM-001' = @{
+                        Name          = "Ensure 'Privileged Identity Management' is used to manage roles"
+                        RequiredPlans = @('AAD_PREMIUM_P2')
+                    }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/Common/SecurityConfigHelper.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/Entra/Get-EntraSecurityConfig.ps1"
+        }
+
+        It 'records ENTRA-PIM-001 as NotLicensed instead of Fail' {
+            $check = $settings | Where-Object { $_.CheckId -like 'ENTRA-PIM-001*' }
+            $check | Should -Not -BeNullOrEmpty -Because 'ENTRA-PIM-001 should be emitted'
+            $check.Status | Should -Be 'NotLicensed' -Because 'PIM requires Entra ID P2'
+        }
+
+        It 'names the missing service plan in the reason' {
+            $check = $settings | Where-Object { $_.CheckId -like 'ENTRA-PIM-001*' }
+            $check.CurrentValue | Should -Match 'Requires AAD_PREMIUM_P2, not licensed'
+        }
+
+        It 'leaves checks without a licensing overlay entry untouched' {
+            $check = $settings | Where-Object { $_.Setting -eq 'Global Administrator Count' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Not -Be 'NotLicensed'
+        }
+
+        AfterAll {
+            Remove-Variable -Name CheckProgressState -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'when the tenant has Entra ID P2' {
+        BeforeAll {
+            $global:CheckProgressState = @{ LicenseSkipped = @{} }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/Common/SecurityConfigHelper.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/Entra/Get-EntraSecurityConfig.ps1"
+        }
+
+        It 'keeps ENTRA-PIM-001 on its computed status' {
+            $check = $settings | Where-Object { $_.CheckId -like 'ENTRA-PIM-001*' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Not -Be 'NotLicensed'
+        }
+
+        AfterAll {
+            Remove-Variable -Name CheckProgressState -Scope Global -ErrorAction SilentlyContinue
+            Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+        }
     }
 }

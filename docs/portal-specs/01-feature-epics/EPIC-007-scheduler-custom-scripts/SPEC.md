@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-003, EPIC-001, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #49-#50; [`cipp-standards-ux.md`](../../99-reference/cipp-standards-ux.md) §9; CIPP `Config/CIPPTimers.json`, `Add-CIPPScheduledTask.ps1`, `Tools/Custom-Scripts/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-007.md`](../../../../ISSUES/epics/EPIC-007.md)
 
 ## 1. Purpose
 
@@ -81,19 +81,47 @@ CIPP distinguishes **system timers** (deployed with the app, in `CIPPTimers.json
 scheduled tasks** (created by operators, in the `ScheduledTasks` table). We adopt the same split:
 
 - **System timers** — code-deployed, cron-driven orchestrators (standards every 12 h, drift
-  every 12 h +15 min, webhooks every 15 min, cleanup, token refresh). Read-only in the UI.
+  every 12 h +15 min, webhooks every 15 min, cleanup). Read-only in the UI.
 - **User tasks** — operator-created, target a tenant/group/all, carry a command + parameters,
   support `Run now`.
 
 Cron format follows CIPP's **6-field** cron (seconds included) with an optional timezone
 offset; the UI renders a human-readable description.
 
+#### Operational timers
+
+The operational timers do not run a tenant assessment, so they enqueue under the
+`maintenance` job type and dispatch on the `command` carried in the job payload
+(a system timer has no `Schedule` row for the runner to look up).
+
+- **Webhooks** (`Invoke-WebhookRenewal`, every 15 min) — for every included tenant, list the
+  Graph change-notification subscriptions, renew the ones expiring within 24 h, and recreate
+  the ones that already lapsed through `portal/workers/manage-webhooks.ps1`. A failed renewal
+  or recreation is recorded as an audit event (`webhook.renew_failed` /
+  `webhook.recreate_failed`) so EPIC-032 surfaces it, and the job finishes `failed`.
+- **Cleanup** (`Invoke-PortalCleanup`, daily at 03:00 UTC) — retention is measured from the
+  run instant and each window is configurable; the defaults are:
+
+  | Target | Default | Environment override |
+  |---|---|---|
+  | Artifact folders under the artifact root | 90 days | `M365_BFF_CLEANUP_ARTIFACT_RETENTION_DAYS` |
+  | Terminal (`done`/`failed`) job rows | 30 days | `M365_BFF_CLEANUP_JOB_RETENTION_DAYS` |
+  | Soft-deleted `scheduled_tasks` rows | 30 days | `M365_BFF_CLEANUP_SOFT_DELETE_RETENTION_DAYS` |
+
+  A missing or non-positive window is a startup error rather than a silent default, because
+  an accidental `0` would delete everything on the next tick. Soft-deleted rows are purged
+  only from `scheduled_tasks`; other entities' history is retained until they gain their own
+  documented retention.
+- **Token refresh** — retired (T-0904). Credentials are certificate-based, so there is no
+  OAuth token to keep warm. Credential and certificate expiry is covered by the scheduled
+  credential-expiry scan (EPIC-002 §4.5).
+
 ### 4.2 Execution (US-1, US-2)
 
 1. A scheduler tick evaluates due `Schedule` rows and enqueues a `Job`.
 2. `Job` is processed by the same worker pool as EPIC-003.
 3. Job types: `assessment`, `standards`, `drift`, `baseline`, `backup`, `custom-script`,
-   `report`.
+   `report`, `maintenance`.
 4. Outcome updates the schedule's `lastRunAt`/`nextRunAt` and writes history.
 5. `Run now` sets the task due immediately (CIPP sets `ScheduledTime = now` and enqueues).
 
@@ -197,4 +225,4 @@ script that cannot be sandboxed is rejected.
 - [`../EPIC-003-assessment-runs/SPEC.md`](../EPIC-003-assessment-runs/SPEC.md) — queue + worker
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — scheduled standards
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — alert delivery jobs
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-007.md`](../../../../ISSUES/epics/EPIC-007.md) — epic ticket

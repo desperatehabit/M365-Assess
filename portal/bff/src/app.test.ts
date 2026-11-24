@@ -60,11 +60,35 @@ async function serve(
   };
 }
 
+/** Seed the opt-in operator credential row a write worker requests (T-0940). */
+function seedOperatorCredential(db: Database.Database, tenantId: string): void {
+  const now = new Date().toISOString();
+  db.prepare(
+    `INSERT OR REPLACE INTO tenant_credentials
+       (id, tenantId, authMethod, clientId, secretRef, thumbprint, environment, expiresOn, lastValidated, purpose, createdAt, updatedAt)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    `${tenantId}-operator`,
+    tenantId,
+    "certificate-thumbprint",
+    "operator-app",
+    "thumbprint://ABC123",
+    "ABC123",
+    "commercial",
+    null,
+    null,
+    "operator",
+    now,
+    now,
+  );
+}
+
 /** Serve with tenant t-a and its credential set up, as `role`. */
 async function adminWithTenant(runner: WorkerRunner, role: "admin" | "operator" = "admin", db = new Database(":memory:")) {
   const setup = await serve("admin", db, runner);
   await setup.post("/v1/tenants", { id: "t-a", displayName: "Contoso" });
   await setup.post("/v1/tenants/t-a/credential", { authMethod: "certificate-thumbprint", clientId: "app-1", thumbprint: "ABC123" });
+  seedOperatorCredential(db, "t-a");
   return role === "admin" ? setup : serve("operator", db, runner);
 }
 
@@ -286,6 +310,7 @@ describe("tenants and onboarding routes (T-0822)", () => {
           tenantId: "t-a",
           credential: {
             credentialRef: "tenants/t-a/credential",
+            purpose: "reader",
             record: expect.objectContaining({ tenantId: "t-a", clientId: "app-1", thumbprint: "ABC123" }),
           },
         },
@@ -976,7 +1001,7 @@ describe("EPIC-006 remediation and EPIC-007 schedules and scripts (T-0824)", () 
 describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", () => {
   const runner: WorkerRunner = async () => ({}) as never;
 
-  it("stores standards templates, serves the catalog, and refuses runs with 501", async () => {
+  it("stores standards templates, serves the catalog, and runs a template immediately", async () => {
     const admin = await adminWithTenant(runner);
     const created = await admin.post("/v1/standards/templates", { name: "Tier 1", settings: [{ key: "CA-1", value: true }] });
     expect(created.status).toBe(201);
@@ -986,18 +1011,19 @@ describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", 
     const catalog = await admin.get("/v1/standards/catalog");
     expect(catalog.status).toBe(200);
     expect(((await catalog.json()) as { items: unknown[] }).items.length).toBeGreaterThan(0);
-    expect((await admin.get("/v1/standards/catalog?tenantId=t-a")).status).toBe(501);
+    // T-0877: tenant licence classification is wired, so a tenant-scoped catalog read succeeds.
+    expect((await admin.get("/v1/standards/catalog?tenantId=t-a")).status).toBe(200);
     expect((await admin.get("/v1/standards/compare/t-a")).status).toBe(200);
 
     const run = await admin.post(`/v1/standards/templates/${template.id}/run`, { tenantId: "t-a" });
-    expect(run.status).toBe(501);
-    expect(await run.json()).toMatchObject({ code: "jobs.dispatch_unavailable" });
+    expect(run.status).toBe(202);
+    expect(await run.json()).toMatchObject({ templateId: template.id, tenantId: "t-a", trigger: "manual" });
 
     const operator = await adminWithTenant(runner, "operator");
     expect((await operator.post("/v1/standards/templates", { name: "X" })).status).toBe(403);
   });
 
-  it("lists and triages drift deviations, and refuses refresh and deletion with 501", async () => {
+  it("lists and triages drift deviations, refreshes, and queues a gated delete", async () => {
     const db = new Database(":memory:");
     const admin = await adminWithTenant(runner, "admin", db);
     const drift = new SqliteDriftRepository(db, 0, DEFAULT_STANDARDS_REGISTRY_PATH);
@@ -1015,10 +1041,11 @@ describe("EPIC-008 standards, EPIC-009 drift, and EPIC-010 baselines (T-0825)", 
     expect(accepted.status).toBe(200);
     expect((await drift.getDeviationById(deviation!.id))?.state).toBe("accepted");
 
-    expect((await admin.post("/v1/drift/t-a/refresh", {})).status).toBe(501);
+    expect((await admin.post("/v1/drift/t-a/refresh", {})).status).toBe(202);
     const deny = await admin.post(`/v1/drift/deviations/${deviation!.id}/deny`, { reason: "remove", confirm: true });
-    expect(deny.status).toBe(501);
-    expect((await drift.getDeviationById(deviation!.id))?.state).toBe("accepted");
+    expect(deny.status).toBe(202);
+    expect(await deny.json()).toMatchObject({ deletionQueued: true });
+    expect((await drift.getDeviationById(deviation!.id))?.state).toBe("deletePending");
 
     const operator = await adminWithTenant(runner, "operator", db);
     expect((await operator.post(`/v1/drift/deviations/${deviation!.id}/deny`, { reason: "x", confirm: true })).status).toBe(403);
@@ -1104,7 +1131,7 @@ describe("EPIC-017 routes (T-0844)", () => {
     );
     expect(queue.items[0]).toMatchObject({ deploymentId, state: "succeeded", appId: "graph-app-1" });
     const upload = calls.find((c) => c.entrypoint === "queue-intune-app-upload.ps1")!;
-    expect(upload.job).toMatchObject({ tenantId: "t-a", deploymentId, appType: "store", credential: { credentialRef: "tenants/t-a/credential" } });
+    expect(upload.job).toMatchObject({ tenantId: "t-a", deploymentId, appType: "store", credential: { credentialRef: "tenants/t-a/operator-credential", purpose: "operator" } });
     expect(db.prepare("SELECT type FROM jobs").all()).toEqual([{ type: "app-upload" }]);
     const actions = (db.prepare("SELECT action FROM audit_events WHERE action LIKE 'intune.app.upload.%' ORDER BY rowid").all() as { action: string }[]).map((r) => r.action);
     expect(actions).toEqual(["intune.app.upload.queued", "intune.app.upload.uploading", "intune.app.upload.committing", "intune.app.upload.succeeded"]);

@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-007, EPIC-003, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #18; CIPP `CIPPAlerts/Public/Alerts/` (~70), `Tenant/Administration/Alerts/`, `Send-CIPPAlert.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-029.md`](../../../../ISSUES/epics/EPIC-029.md)
 
 ## 1. Purpose
 
@@ -167,4 +167,4 @@ and those route through **EPIC-006** and the EPIC-007 sandbox. Alert delivery is
 - [`../EPIC-028-incidents-alerts-triage/SPEC.md`](../EPIC-028-incidents-alerts-triage/SPEC.md) — incidents
 - [`../EPIC-007-scheduler-custom-scripts/SPEC.md`](../EPIC-007-scheduler-custom-scripts/SPEC.md) — scheduling + sandbox
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — script actions
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-029.md`](../../../../ISSUES/epics/EPIC-029.md) — epic ticket

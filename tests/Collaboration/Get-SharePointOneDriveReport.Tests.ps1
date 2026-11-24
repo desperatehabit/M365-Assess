@@ -96,3 +96,77 @@ Describe 'Get-SharePointOneDriveReport - 403 response' {
         Remove-Item Function:\Write-AssessmentLog -ErrorAction SilentlyContinue
     }
 }
+
+Describe 'Get-SharePointOneDriveReport - documented sync property name (T-0933)' {
+    BeforeAll {
+        function global:Assert-GraphConnection { return $true }
+        function global:Write-AssessmentLog { param($Message, $Level) }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/v1.0/admin/sharepoint/settings' {
+                    return @{
+                        sharingCapability                     = 'Disabled'
+                        sharingDomainRestrictionMode          = 'allowList'
+                        isResharingByExternalUsersEnabled     = $false
+                        isUnmanagedSyncAppForTenantRestricted = $true
+                        tenantDefaultTimezone                 = 'UTC'
+                        oneDriveLoopSharingCapability         = 'disabled'
+                        isMacSyncAppEnabled                   = $true
+                        isLoopEnabled                         = $false
+                    }
+                }
+                default { return @{ value = @() } }
+            }
+        }
+
+        $script:documentedSyncResult = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointOneDriveReport.ps1"
+    }
+
+    It 'reads the sync restriction from isUnmanagedSyncAppForTenantRestricted' {
+        $script:documentedSyncResult.IsUnmanagedSyncClientRestricted | Should -Be $true
+    }
+
+    AfterAll {
+        Remove-Item Function:\Assert-GraphConnection -ErrorAction SilentlyContinue
+        Remove-Item Function:\Write-AssessmentLog -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-SharePointOneDriveReport - missing sync property (T-0933)' {
+    BeforeAll {
+        function global:Assert-GraphConnection { return $true }
+        function global:Write-AssessmentLog { param($Message, $Level) }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            switch -Wildcard ($Uri) {
+                '*/v1.0/admin/sharepoint/settings' {
+                    return @{
+                        sharingCapability                 = 'Disabled'
+                        sharingDomainRestrictionMode      = 'allowList'
+                        isResharingByExternalUsersEnabled = $false
+                        tenantDefaultTimezone             = 'UTC'
+                        oneDriveLoopSharingCapability     = 'disabled'
+                        isMacSyncAppEnabled               = $true
+                        isLoopEnabled                     = $false
+                    }
+                }
+                default { return @{ value = @() } }
+            }
+        }
+
+        $script:missingSyncResult = & "$PSScriptRoot/../../src/M365-Assess/Collaboration/Get-SharePointOneDriveReport.ps1"
+    }
+
+    It 'leaves the sync restriction null rather than guessing a value' {
+        $script:missingSyncResult.PSObject.Properties.Name | Should -Contain 'IsUnmanagedSyncClientRestricted'
+        $script:missingSyncResult.IsUnmanagedSyncClientRestricted | Should -BeNullOrEmpty
+    }
+
+    AfterAll {
+        Remove-Item Function:\Assert-GraphConnection -ErrorAction SilentlyContinue
+        Remove-Item Function:\Write-AssessmentLog -ErrorAction SilentlyContinue
+    }
+}

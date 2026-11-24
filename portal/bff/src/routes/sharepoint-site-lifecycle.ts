@@ -13,6 +13,7 @@ import { parsePagination } from "../pagination.js";
 import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
+export const SHAREPOINT_SITE_EDIT_PATH = "/v1/tenants/:tenantId/sharepoint/sites/:siteId";
 export const SHAREPOINT_SITE_DELETE_PATH = "/v1/tenants/:tenantId/sharepoint/sites/:siteId";
 export const SHAREPOINT_SITE_RESTORE_PATH =
   "/v1/tenants/:tenantId/sharepoint/sites/:siteId/restore";
@@ -25,8 +26,27 @@ export const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 export const SHAREPOINT_SITE_UNAUTHENTICATED = "request.unauthenticated";
 export const SHAREPOINT_SITE_CONFIRM_REQUIRED = "sharepoint.confirm_required";
 export const SHAREPOINT_SITE_NOT_SOFT_DELETED = "sharepoint.not_soft_deleted";
+export const SHAREPOINT_SITE_NOT_FOUND = "sharepoint.site_not_found";
+
+export const SHAREPOINT_SITE_SHARING_OPTIONS = [
+  "disabled",
+  "externalUserSharingOnly",
+  "externalUserAndGuestSharing",
+  "existingExternalUserSharingOnly",
+] as const;
+
+export const SHAREPOINT_SITE_LOCK_STATES = [
+  "Unlock",
+  "NoAdditions",
+  "ReadOnly",
+  "NoAccess",
+] as const;
+
+export type SharePointSiteSharing = (typeof SHAREPOINT_SITE_SHARING_OPTIONS)[number];
+export type SharePointSiteLockState = (typeof SHAREPOINT_SITE_LOCK_STATES)[number];
 
 export type SharePointSiteOperationName =
+  | "edit"
   | "delete"
   | "restore"
   | "recyclebin.restore"
@@ -35,6 +55,16 @@ export type SharePointSiteOperationName =
 export type SharePointRecycleBinAction = "restore" | "empty";
 
 export interface SharePointSiteLifecycleInput {
+  readonly preview?: boolean;
+  readonly confirm?: boolean;
+  readonly reason?: string;
+}
+
+export interface SharePointSiteEditInput {
+  readonly displayName?: string;
+  readonly sharing?: SharePointSiteSharing;
+  readonly owners?: readonly string[];
+  readonly lockState?: SharePointSiteLockState;
   readonly preview?: boolean;
   readonly confirm?: boolean;
   readonly reason?: string;
@@ -135,6 +165,12 @@ export interface SharePointRecycleBinActionResult {
 // serves the worker result. Depending on the seam keeps Graph and process code
 // out of the BFF.
 export interface SharePointSiteLifecycleProvider {
+  editSite(
+    tenantId: string,
+    siteId: string,
+    input: SharePointSiteEditInput,
+    preview: boolean,
+  ): Promise<SharePointSiteOperationResult | SharePointSiteLifecyclePlan>;
   deleteSite(
     tenantId: string,
     siteId: string,
@@ -229,6 +265,15 @@ export function notSoftDeletedError(siteId: string): AppError {
     `site '${siteId}' is not in the deleted view; restore is available only for a soft-deleted site`,
     404,
     [{ field: "siteId", reason: "not_soft_deleted" }],
+  );
+}
+
+export function siteNotFoundError(siteId: string): AppError {
+  return new AppError(
+    SHAREPOINT_SITE_NOT_FOUND,
+    `site '${siteId}' was not found`,
+    404,
+    [{ field: "siteId", reason: "not_found" }],
   );
 }
 
@@ -404,13 +449,99 @@ function isPlan(
   return (outcome as SharePointSiteLifecyclePlan).dryRun === true;
 }
 
-function mapProviderError(error: unknown, siteId: string): never {
+const UPN_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function parseSiteEditInput(body: Record<string, unknown>): SharePointSiteEditInput {
+  const changes =
+    typeof body["changes"] === "object" &&
+    body["changes"] !== null &&
+    !Array.isArray(body["changes"])
+      ? (body["changes"] as Record<string, unknown>)
+      : {};
+  const source: Record<string, unknown> = { ...changes, ...body };
+
+  const result: {
+    displayName?: string;
+    sharing?: SharePointSiteSharing;
+    owners?: readonly string[];
+    lockState?: SharePointSiteLockState;
+    reason?: string;
+  } = {};
+
+  if (source["displayName"] !== undefined) {
+    if (typeof source["displayName"] !== "string" || source["displayName"].trim().length === 0) {
+      throw validationError("displayName must be a non-empty string", "displayName");
+    }
+    result.displayName = source["displayName"].trim();
+  }
+
+  if (source["sharing"] !== undefined) {
+    const rawSharing = typeof source["sharing"] === "string" ? source["sharing"].trim() : "";
+    if (!(SHAREPOINT_SITE_SHARING_OPTIONS as readonly string[]).includes(rawSharing)) {
+      throw validationError(
+        `sharing must be one of: ${SHAREPOINT_SITE_SHARING_OPTIONS.join(", ")}`,
+        "sharing",
+      );
+    }
+    result.sharing = rawSharing as SharePointSiteSharing;
+  }
+
+  if (source["lockState"] !== undefined) {
+    const rawLock = typeof source["lockState"] === "string" ? source["lockState"].trim() : "";
+    if (!(SHAREPOINT_SITE_LOCK_STATES as readonly string[]).includes(rawLock)) {
+      throw validationError(
+        `lockState must be one of: ${SHAREPOINT_SITE_LOCK_STATES.join(", ")}`,
+        "lockState",
+      );
+    }
+    result.lockState = rawLock as SharePointSiteLockState;
+  }
+
+  if (source["owners"] !== undefined) {
+    if (!Array.isArray(source["owners"])) {
+      throw validationError("owners must be an array of owner UPNs", "owners");
+    }
+    const owners = source["owners"].map((entry) => String(entry).trim()).filter(Boolean);
+    if (owners.length === 0) {
+      throw validationError("owners must be a non-empty array of owner UPNs", "owners");
+    }
+    for (const owner of owners) {
+      if (!UPN_PATTERN.test(owner)) {
+        throw validationError(`owner '${owner}' is not a valid UPN`, "owners");
+      }
+    }
+    result.owners = owners;
+  }
+
+  if (source["reason"] !== undefined) {
+    if (typeof source["reason"] !== "string") {
+      throw validationError("reason must be a string", "reason");
+    }
+    result.reason = source["reason"].trim();
+  }
+
+  if (
+    result.displayName === undefined &&
+    result.sharing === undefined &&
+    result.owners === undefined &&
+    result.lockState === undefined
+  ) {
+    throw validationError(
+      "at least one editable property (displayName, sharing, owners, lockState) is required",
+      "body",
+    );
+  }
+
+  return result;
+}
+
+function mapProviderError(error: unknown, siteId: string, operation: SharePointSiteOperationName): never {
   if (error instanceof AppError) {
     throw error;
   }
   const message = error instanceof Error ? error.message : "";
   if (/not.?found|soft.delet|not in the deleted/i.test(message)) {
-    throw notSoftDeletedError(siteId);
+    throw operation === "restore" ? notSoftDeletedError(siteId) : siteNotFoundError(siteId);
   }
   throw error;
 }
@@ -450,6 +581,44 @@ async function applySiteOperation(
 export function createSharePointSiteLifecycleRoutes(
   options: SharePointSiteLifecycleRouteOptions,
 ): Route[] {
+  const editHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
+    const caller = requireCaller(options.resolveCaller, ctx);
+    const tenantId = requireTenantParam(ctx);
+    const siteId = requireSiteParam(ctx);
+
+    requireTenantInScope(caller, tenantId);
+    await authorize(options, caller, SHAREPOINT_WRITE_PERMISSION);
+
+    const body = readBody(ctx);
+    const isPreview = readPreviewFlag(ctx, body);
+    const confirmed = readConfirmFlag(body);
+    if (!isPreview) {
+      await authorize(options, caller, REMEDIATION_APPLY_PERMISSION);
+    }
+
+    const editInput = parseSiteEditInput(body);
+    let outcome: SharePointSiteOperationResult | SharePointSiteLifecyclePlan;
+    try {
+      outcome = await options.provider.editSite(
+        tenantId,
+        siteId,
+        { ...editInput, preview: isPreview, confirm: confirmed },
+        isPreview,
+      );
+    } catch (error) {
+      mapProviderError(error, siteId, "edit");
+    }
+
+    if (isPreview || isPlan(outcome)) {
+      return {
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: outcome,
+      };
+    }
+    return applySiteOperation(options, caller, tenantId, siteId, "edit", outcome);
+  };
+
   const deleteHandler = async (ctx: RequestContext): Promise<RouteResponse> => {
     const caller = requireCaller(options.resolveCaller, ctx);
     const tenantId = requireTenantParam(ctx);
@@ -482,7 +651,7 @@ export function createSharePointSiteLifecycleRoutes(
         isPreview,
       );
     } catch (error) {
-      mapProviderError(error, siteId);
+      mapProviderError(error, siteId, "delete");
     }
 
     if (isPreview || isPlan(outcome)) {
@@ -519,7 +688,7 @@ export function createSharePointSiteLifecycleRoutes(
         isPreview,
       );
     } catch (error) {
-      mapProviderError(error, siteId);
+      mapProviderError(error, siteId, "restore");
     }
 
     if (isPreview || isPlan(outcome)) {
@@ -617,6 +786,7 @@ export function createSharePointSiteLifecycleRoutes(
   };
 
   return [
+    { method: "PATCH", path: SHAREPOINT_SITE_EDIT_PATH, handler: editHandler },
     { method: "DELETE", path: SHAREPOINT_SITE_DELETE_PATH, handler: deleteHandler },
     { method: "POST", path: SHAREPOINT_SITE_RESTORE_PATH, handler: restoreHandler },
     { method: "GET", path: SHAREPOINT_RECYCLE_BIN_PATH, handler: listRecycleBinHandler },
@@ -629,6 +799,41 @@ export function createSharePointSiteLifecycleRoutes(
 export const SHAREPOINT_SITE_LIFECYCLE_OPENAPI = {
   paths: {
     "/tenants/{tenantId}/sharepoint/sites/{siteId}": {
+      patch: {
+        operationId: "editSharePointSite",
+        summary: "Edit SharePoint site properties (preview with preview:true; apply needs SharePoint.Site.ReadWrite and Remediation.Apply)",
+        permission: SHAREPOINT_WRITE_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "tenantId", in: "path", required: true, schema: { type: "string" } },
+          { name: "siteId", in: "path", required: true, schema: { type: "string" } },
+        ],
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: {
+                type: "object",
+                properties: {
+                  displayName: { type: "string" },
+                  sharing: { type: "string", enum: [...SHAREPOINT_SITE_SHARING_OPTIONS] },
+                  owners: { type: "array", items: { type: "string" } },
+                  lockState: { type: "string", enum: [...SHAREPOINT_SITE_LOCK_STATES] },
+                  preview: { type: "boolean" },
+                  reason: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        responses: {
+          "200": { description: "Edit plan preview, or the applied result with before/after and audit event." },
+          "400": { description: "Invalid site property or no editable properties supplied." },
+          "401": { description: "Authentication required." },
+          "403": { description: "The caller lacks SharePoint.Site.ReadWrite or Remediation.Apply, or the tenant is out of scope." },
+          "404": { description: "The site was not found." },
+        },
+      },
       delete: {
         operationId: "deleteSharePointSite",
         summary: "Soft-delete a SharePoint site (preview with preview:true; apply needs SharePoint.Site.ReadWrite, Remediation.Apply, and confirm:true)",

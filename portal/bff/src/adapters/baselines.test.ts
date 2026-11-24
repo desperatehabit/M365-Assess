@@ -118,7 +118,9 @@ describe("baselines adapters (T-0825)", () => {
   });
 });
 
-describe("baseline evaluation runner and ingestion (T-0841)", () => {
+// These spawn the baseline worker and do file IO; CI runners occasionally take
+// longer than Vitest's 5s default on a loaded host.
+describe("baseline evaluation runner and ingestion (T-0841)", { timeout: 20000 }, () => {
   const workersDir = fileURLToPath(new URL("../../../workers", import.meta.url));
 
   function setup() {

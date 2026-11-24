@@ -211,3 +211,7 @@ Describe 'Get-MfaReport worker (T-0221)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

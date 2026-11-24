@@ -329,3 +329,7 @@ Describe 'Set-CaNamedLocation worker (T-0288)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

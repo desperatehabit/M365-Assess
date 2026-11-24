@@ -294,3 +294,14 @@ Describe 'Get-Filters worker (T-0421)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-HostedContentFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-HostedContentFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-AntiPhishPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-AntiPhishRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MalwareFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MalwareFilterRule' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-HostedConnectionFilterPolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-HostedConnectionFilterRule' -ErrorAction SilentlyContinue
+}

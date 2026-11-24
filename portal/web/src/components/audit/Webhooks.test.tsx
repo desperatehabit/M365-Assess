@@ -77,7 +77,8 @@ describe("WebhooksTable", () => {
             id: "sub-1",
             resource: "users",
             tenantId: "contoso",
-            expirationDateTime: "2099-01-01T00:00:00Z",
+            // Mid-year, so the local date is in 2099 in every UTC offset.
+            expirationDateTime: "2099-06-15T12:00:00Z",
           }),
         ]}
         onRenew={onRenew}
@@ -95,7 +96,7 @@ describe("WebhooksTable", () => {
     const row = screen.getByTestId("webhook-row-sub-1");
     expect(row.textContent).toContain("users");
     expect(row.textContent).toContain("contoso");
-    expect(screen.getByTestId("webhook-expires-sub-1").textContent).toContain("2098");
+    expect(screen.getByTestId("webhook-expires-sub-1").textContent).toContain("2099");
 
     fireEvent.click(screen.getByTestId("webhook-renew-sub-1"));
     expect(onRenew).toHaveBeenCalledWith(
@@ -157,9 +158,11 @@ describe("WebhooksTable", () => {
 describe("deriveWebhookState", () => {
   it("derives active, expiring, and expired from the expiry time", () => {
     const now = "2026-10-01T00:00:00Z";
-    expect(deriveWebhookState({ expirationDateTime: daysFromNow(90) }, now)).toBe("active");
-    expect(deriveWebhookState({ expirationDateTime: daysFromNow(5) }, now)).toBe("expiring");
-    expect(deriveWebhookState({ expirationDateTime: daysFromNow(-1) }, now)).toBe("expired");
+    const daysAfterNow = (days: number) =>
+      new Date(Date.parse(now) + days * 24 * 60 * 60 * 1000).toISOString();
+    expect(deriveWebhookState({ expirationDateTime: daysAfterNow(90) }, now)).toBe("active");
+    expect(deriveWebhookState({ expirationDateTime: daysAfterNow(5) }, now)).toBe("expiring");
+    expect(deriveWebhookState({ expirationDateTime: daysAfterNow(-1) }, now)).toBe("expired");
   });
 });
 

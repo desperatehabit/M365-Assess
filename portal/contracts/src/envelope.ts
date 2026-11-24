@@ -14,8 +14,14 @@ export const JOB_TYPES = [
   "backup",
   "remediation",
   "report",
+  // EPIC-007 scheduled custom scripts and other command-dispatched tasks (T-0876).
+  "custom-script",
   // EPIC-017 app upload queue (T-0323 runner, T-0842).
   "app-upload",
+  // Code-deployed system timers that are not a tenant run (T-0902/T-0903). The
+  // envelope payload carries the timer's `command`, so the maintenance runner can
+  // dispatch without a Schedule row to look up.
+  "maintenance",
 ] as const;
 
 export type JobType = (typeof JOB_TYPES)[number];

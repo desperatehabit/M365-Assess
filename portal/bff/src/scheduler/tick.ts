@@ -3,7 +3,9 @@ import type { JobEnvelope, JobType } from "@m365-assess/contracts";
 import { nextFireTime } from "./cron.js";
 import {
   SYSTEM_TIMERS,
+  isSystemTimerAvailable,
   type SystemTimer,
+  type SystemTimerJobType,
   type SystemTimerScheduleType,
 } from "./system-timers.js";
 
@@ -26,6 +28,13 @@ export interface TickSchedule {
   readonly enabled: boolean;
   readonly lastRunAt: string | null;
   readonly nextRunAt: string | null;
+  /**
+   * The command a code-deployed system timer runs. It travels in the job payload
+   * because a system timer has no Schedule row for the runner to look up.
+   */
+  readonly command?: string;
+  /** Job type to enqueue; defaults to `type` (system timers may override it). */
+  readonly jobType?: SystemTimerJobType;
 }
 
 export const SCHEDULE_TRIGGER = "schedule" as const;
@@ -72,6 +81,13 @@ export interface TickOptions {
   readonly now?: Date;
   readonly newIds?: () => TickIds;
   readonly systemTimers?: readonly SystemTimer[];
+  /**
+   * Persisted last/next run for a code-deployed timer. Without it a timer has no
+   * `nextRunAt` and is due on every tick; the store keeps it on its cron.
+   */
+  readonly systemTimerState?: (
+    name: string,
+  ) => Promise<{ readonly lastRunAt?: string | null; readonly nextRunAt?: string | null } | undefined>;
 }
 
 export interface TickFailure {
@@ -106,9 +122,11 @@ export function toSystemSchedule(
     cron: timer.cron,
     timezone: timer.timezone,
     targetScope: { type: "all" },
-    enabled: true,
+    enabled: isSystemTimerAvailable(timer),
     lastRunAt: state?.lastRunAt ?? null,
     nextRunAt: state?.nextRunAt ?? null,
+    command: timer.command,
+    jobType: timer.jobType ?? timer.type,
   };
 }
 
@@ -128,7 +146,7 @@ export function buildScheduledEnvelope(
   return {
     schemaVersion: "v1",
     jobId: ids.jobId,
-    jobType: schedule.type as JobType,
+    jobType: (schedule.jobType ?? schedule.type) as JobType,
     tenantId,
     runId: ids.runId,
     requestId: ids.requestId,
@@ -143,6 +161,7 @@ export function buildScheduledEnvelope(
           : `schedules/${schedule.id}/credential`,
       sectionRefs: [],
       artifactRefs: [],
+      ...(schedule.command !== undefined ? { command: schedule.command } : {}),
     },
     trigger: SCHEDULE_TRIGGER,
     scheduleId: schedule.id,
@@ -168,11 +187,19 @@ export async function tickSchedules(options: TickOptions): Promise<TickResult> {
   const stored = await options.schedules.listSchedules();
   const storedIds = new Set(stored.map((schedule) => schedule.id));
   const timers = options.systemTimers ?? SYSTEM_TIMERS;
+  // A stored state row for an unavailable timer must not bring it back to life.
+  const unavailableIds = new Set(
+    timers.filter((timer) => !isSystemTimerAvailable(timer)).map((timer) => `system-${timer.name}`),
+  );
+  const timerSchedules: TickSchedule[] = [];
+  for (const timer of timers) {
+    const state =
+      options.systemTimerState === undefined ? undefined : await options.systemTimerState(timer.name);
+    timerSchedules.push(toSystemSchedule(timer, state));
+  }
   const candidates = [
-    ...stored,
-    ...timers
-      .map((timer) => toSystemSchedule(timer))
-      .filter((schedule) => !storedIds.has(schedule.id)),
+    ...stored.filter((schedule) => !unavailableIds.has(schedule.id)),
+    ...timerSchedules.filter((schedule) => !storedIds.has(schedule.id)),
   ];
   const result: {
     enqueued: string[];

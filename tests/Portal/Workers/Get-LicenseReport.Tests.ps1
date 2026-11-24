@@ -26,6 +26,14 @@ BeforeAll {
     . (Join-Path $script:repoRoot 'portal/workers/M365Portal.Workers/Connect-WorkerTenant.ps1')
 }
 
+AfterAll {
+    # These stubs shadow real cmdlets; left in the global scope they break every
+    # later test file in the same run that relies on Test-Path or Invoke-WebRequest.
+    # Use the Function:\ drive path; 'function:global:Name' is silently a no-op.
+    Remove-Item -Path 'Function:\Test-Path', 'Function:\Invoke-WebRequest' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}
+
 Describe 'Get-LicenseReport worker (T-0642)' {
 
     Context 'the worker files' {

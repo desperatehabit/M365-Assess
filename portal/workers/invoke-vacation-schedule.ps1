@@ -32,6 +32,8 @@
     Forwarding target for enable runs without a job envelope.
 .PARAMETER NotAfter
     Apply bound for runs without a job envelope; enable past it is skipped.
+.PARAMETER PriorState
+    OoO and forwarding snapshot captured by enable; revert restores it.
 .PARAMETER DryRun
     Report the intended change without writing to the tenant.
 .PARAMETER Confirmed
@@ -78,6 +80,9 @@ param(
     [Parameter(ParameterSetName = 'ByTenant')]
     [string]$NotAfter = '',
 
+    [Parameter(ParameterSetName = 'ByTenant')]
+    [hashtable]$PriorState = @{},
+
     [Parameter()]
     [switch]$DryRun,
 
@@ -107,6 +112,7 @@ try {
         $OooMessage = $job['OooMessage']
         $ForwardTo  = $job['ForwardTo']
         $NotAfter   = $job['NotAfter']
+        $PriorState = $job['PriorState']
         if (-not $PSBoundParameters.ContainsKey('Confirmed')) {
             $Confirmed = [bool]$job['Confirmed']
         }
@@ -125,6 +131,7 @@ try {
         OooMessage = $OooMessage
         ForwardTo  = $ForwardTo
         NotAfter   = $NotAfter
+        PriorState = $PriorState
         DryRun     = [bool]$DryRun
         Confirmed  = [bool]$Confirmed
     }

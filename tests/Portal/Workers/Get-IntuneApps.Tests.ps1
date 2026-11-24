@@ -196,3 +196,7 @@ Describe 'Get-IntuneApps worker (T-0321)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

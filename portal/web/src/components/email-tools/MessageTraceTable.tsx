@@ -15,6 +15,8 @@ export interface MessageTraceRow {
   readonly subject: string;
   readonly status: string;
   readonly event: string;
+  /** Message identity for the viewer link; absent when EXO did not return one. */
+  readonly messageId?: string;
 }
 
 export interface MessageTraceTableProps {

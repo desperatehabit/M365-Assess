@@ -17,6 +17,7 @@ BeforeAll {
             Subject          = 'Quarterly report'
             Status           = 'Delivered'
             Event            = 'Deliver'
+            MessageTraceId   = 'trace-1'
         },
         @{
             Received         = '2026-09-26T11:00:00Z'
@@ -88,6 +89,7 @@ Describe 'Get-MessageTrace worker (T-0462)' {
             $result.items[0].subject | Should -Be 'Quarterly report'
             $result.items[0].status | Should -Be 'Delivered'
             $result.items[0].event | Should -Be 'Deliver'
+            $result.items[0].messageId | Should -Be 'trace-1'
             $result.totalCount | Should -Be 1
         }
 
@@ -120,7 +122,7 @@ Describe 'Get-MessageTrace worker (T-0462)' {
         It 'passes the exact filters through to Get-MessageTraceV2' {
             $null = Get-MessageTrace -TenantId 'tenant-a' -SenderAddress 'sender@example.invalid' -Status 'Delivered' -StartDate $script:windowStart -EndDate $script:windowEnd
 
-            Assert-MockCalled Get-MessageTraceV2 -ParameterFilter {
+            Should -Invoke Get-MessageTraceV2 -ParameterFilter {
                 $SenderAddress -eq 'sender@example.invalid' -and
                 $Status -eq 'Delivered' -and
                 $StartDate -is [datetime] -and
@@ -208,4 +210,8 @@ Describe 'Get-MessageTrace worker (T-0462)' {
             }
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MessageTraceV2' -ErrorAction SilentlyContinue
 }

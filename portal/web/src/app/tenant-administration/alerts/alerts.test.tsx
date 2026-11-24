@@ -65,6 +65,28 @@ const SNOOZED_EVENT: AlertEventRow = {
   snoozeUntil: "2026-09-21T12:00:00.000Z",
 };
 
+const OPEN_EVENT: AlertEventRow = {
+  id: "event-open",
+  ruleId: "run-failed",
+  tenantId: "tenant-2",
+  firedAt: "2026-09-20T08:00:00.000Z",
+  severity: "Critical",
+  state: "open",
+  snoozeUntil: null,
+  source: "runs",
+};
+
+const RESOLVED_EVENT: AlertEventRow = {
+  id: "event-resolved",
+  ruleId: "new-drift-deviation",
+  tenantId: "tenant-3",
+  firedAt: "2026-09-18T08:00:00.000Z",
+  severity: "Medium",
+  state: "resolved",
+  snoozeUntil: null,
+  source: "drift",
+};
+
 interface RecordedCall {
   readonly url: string;
   readonly method: string;
@@ -85,7 +107,8 @@ function makeFetcher(options?: { readonly toggled?: AlertRuleView; readonly clon
     calls.push({ url: href, method, body: String(init?.body ?? "") });
 
     if (href.startsWith("/v1/alert-events")) {
-      return jsonResponse({ items: [SNOOZED_EVENT], totalCount: 1, nextCursor: null });
+      const items = href.includes("state=snoozed") ? [SNOOZED_EVENT] : [OPEN_EVENT, RESOLVED_EVENT];
+      return jsonResponse({ items, totalCount: items.length, nextCursor: null });
     }
     if (href === "/v1/alert-rules" && method === "GET") {
       return jsonResponse({ rules: [DISABLED_RULE, ENABLED_RULE] });
@@ -196,6 +219,21 @@ describe("AlertConfigurationView (T-0568)", () => {
     await waitFor(() => expect(screen.getByTestId("alert-snoozed-row-event-1")).toBeTruthy());
     expect(screen.getByTestId("alert-snoozed-until-event-1").textContent).toContain("2026");
     expect(screen.getByTestId("alert-snoozed-until-event-1").textContent).not.toBe("—");
+  });
+
+  it("shows open and resolved events with their source on the Alert queue tab", async () => {
+    await renderLoaded();
+
+    fireEvent.click(screen.getByTestId("alert-tab-events"));
+
+    await waitFor(() => expect(screen.getByTestId("alert-event-row-event-open")).toBeTruthy());
+    expect(screen.getByTestId("alert-event-row-event-resolved")).toBeTruthy();
+    expect(screen.getByTestId("alert-event-state-event-open").textContent).toBe("open");
+    expect(screen.getByTestId("alert-event-state-event-resolved").textContent).toBe("resolved");
+    expect(screen.getByTestId("alert-event-row-event-open").textContent).toContain("runs");
+    expect(screen.getByTestId("alert-event-row-event-resolved").textContent).toContain("drift");
+    // The snoozed queue has its own tab, so it is not repeated here.
+    expect(screen.queryByTestId("alert-event-row-event-1")).toBeNull();
   });
 
   it("uses report theme tokens with zero colour literals", async () => {

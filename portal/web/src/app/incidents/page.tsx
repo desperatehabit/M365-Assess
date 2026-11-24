@@ -134,9 +134,14 @@ export default function IncidentsPage(): ReactElement {
   const handleBulkAction = (request: IncidentBulkRequest): void => {
     const first = request.incidents[0];
     if (!first) return;
-    const ids = request.incidents.map((incident) => incident.id).join(",");
+    // Carry each incident's tenant with its id: the action endpoint is tenant-scoped,
+    // so a selection spanning tenants is split per tenant on the detail page.
+    const targets = request.incidents
+      .map((incident) => `${encodeURIComponent(incident.tenantId)}::${encodeURIComponent(incident.id)}`)
+      .join(",");
     router.push(
-      `/incidents/${encodeURIComponent(first.id)}?action=${request.action}&bulk=${encodeURIComponent(ids)}`,
+      `/incidents/${encodeURIComponent(first.id)}?tenantId=${encodeURIComponent(first.tenantId)}` +
+        `&action=${request.action}&bulk=${encodeURIComponent(targets)}`,
     );
   };
 

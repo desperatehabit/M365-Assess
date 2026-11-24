@@ -37,7 +37,7 @@ Describe 'Set-PimRoleSettings worker (T-0244)' {
             $result.before.maximumDurationInHours | Should -Be 8
             $result.after.maximumDurationInHours | Should -Be 4
 
-            Assert-MockCalled Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'PATCH' }
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -ParameterFilter { $Method -eq 'PATCH' }
         }
     }
 
@@ -76,7 +76,11 @@ Describe 'Set-PimRoleSettings worker (T-0244)' {
             $result.applied.maximumDurationInHours | Should -Be 4
             $result.applied.requireMfa | Should -BeTrue
 
-            Assert-MockCalled Invoke-MgGraphRequest -Times 2 -ParameterFilter { $Method -eq 'PATCH' }
+            Should -Invoke Invoke-MgGraphRequest -Times 2 -ParameterFilter { $Method -eq 'PATCH' }
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

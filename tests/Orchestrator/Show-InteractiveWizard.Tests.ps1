@@ -33,7 +33,7 @@ Describe 'Show-InteractiveWizard - non-interactive paths' {
 
     AfterAll {
         Remove-Variable -Name ProjectRoot -Scope Global -ErrorAction SilentlyContinue
-        Remove-Item -Path function:\global:Read-Host -ErrorAction SilentlyContinue
+        Remove-Item -Path Function:\Read-Host -ErrorAction SilentlyContinue
     }
 
     Context 'when user quits at confirmation step' {

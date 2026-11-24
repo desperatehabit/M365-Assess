@@ -1,4 +1,4 @@
-// Domain add/verify/remove/set-default writes (EPIC-034 SPEC.md §3.1, §4.1, §6, §7, §8; T-0663).
+// Domain add/verify/remove/default-domain writes (EPIC-034 SPEC.md §3.1, §4.1, §6, §7, §8; T-0663).
 //
 //   POST   /v1/tenants/:tenantId/domains                      add (returns the DNS verification records)
 //   POST   /v1/tenants/:tenantId/domains/:domain/verify       verify
@@ -505,7 +505,7 @@ export const DOMAINS_ACTIONS_OPENAPI = {
         },
         responses: {
           "200": {
-            description: "The set-default outcome.",
+            description: "The default-domain outcome.",
             content: {
               "application/json": {
                 schema: { $ref: "#/components/schemas/DomainActionOutcome" },
@@ -514,6 +514,40 @@ export const DOMAINS_ACTIONS_OPENAPI = {
           },
           ...ERROR_RESPONSES,
         },
+      },
+    },
+  },
+  schemas: {
+    DomainActionRequest: DOMAIN_ACTION_REQUEST_SCHEMA,
+    DomainActionOutcome: {
+      type: "object",
+      additionalProperties: false,
+      required: ["tenantId", "domain", "action", "status"],
+      properties: {
+        tenantId: { type: "string" },
+        domain: { type: "string" },
+        action: {
+          type: "string",
+          enum: ["add", "verify", "remove", "setDefault"],
+        },
+        status: { type: "string", enum: ["applied", "planned", "failed"] },
+        verificationRecords: {
+          type: ["array", "null"],
+          items: {
+            type: "object",
+            additionalProperties: true,
+            properties: {
+              recordType: { type: "string" },
+              label: { type: "string" },
+              text: { type: "string" },
+              mailExchange: { type: "string" },
+              preference: { type: "integer" },
+              ttl: { type: "integer" },
+            },
+          },
+        },
+        code: { type: ["string", "null"] },
+        error: { type: ["string", "null"] },
       },
     },
   },

@@ -203,3 +203,10 @@ Describe 'Set-QuarantinePolicy worker (T-0428)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-QuarantinePolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-QuarantinePolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-QuarantinePolicy' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-QuarantinePolicy' -ErrorAction SilentlyContinue
+}

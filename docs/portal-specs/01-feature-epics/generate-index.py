@@ -26,7 +26,7 @@ def main() -> None:
 
     out = [
         "# Feature Epics — Index & Status\n",
-        "> Generated tracker for the 41 portal feature epics. Update `Status` in each SPEC.md's",
+        "> Generated tracker for the portal feature epics. Update `Status` in each SPEC.md's",
         "> header; this table reflects it. **Stub** = skeleton only; **Drafted** = sections 2-11",
         "> written; **Approved** = owner sign-off, ready for ticket authoring.\n",
         "| Epic | Title | Cluster | Sev | Depends on | Status |",
@@ -38,7 +38,7 @@ def main() -> None:
         "",
         "## Conventions\n",
         "See [`../README.md`](../README.md) for the SPEC template, ID scheme, and directory contract.",
-        "Fleet ticket format: [`../99-reference/fleet-conventions.md`](../99-reference/fleet-conventions.md).\n",
+        "Ticket format: [`../99-reference/ticket-conventions.md`](../99-reference/ticket-conventions.md).\n",
     ]
     (ROOT / "README.md").write_text("\n".join(out), encoding="utf-8")
     print("wrote index;", len(rows), "epics;", Counter(r[5] for r in rows).most_common())

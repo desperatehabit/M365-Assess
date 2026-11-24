@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-025, EPIC-020, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #40,#37; CIPP `Invoke-ListSharePointSharing.ps1`, `Invoke-ExecBulkRemoveSharingLinks.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-027.md`](../../../../ISSUES/epics/EPIC-027.md)
 
 ## 1. Purpose
 
@@ -142,4 +142,4 @@ before/after, audit. Reports are read-only.
 - [`../EPIC-025-sharepoint-onedrive/SPEC.md`](../EPIC-025-sharepoint-onedrive/SPEC.md) — SPO base
 - [`../EPIC-020-mailboxes/SPEC.md`](../EPIC-020-mailboxes/SPEC.md) — mailbox permissions
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-027.md`](../../../../ISSUES/epics/EPIC-027.md) — epic ticket

@@ -179,3 +179,7 @@ Describe 'Invoke-MfaAction worker (T-0224)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

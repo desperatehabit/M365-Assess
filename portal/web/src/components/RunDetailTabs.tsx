@@ -1,15 +1,42 @@
 "use client";
 
 // Run detail tabs component (EPIC-003 SPEC.md §3.3, §4.3, §4.4, T-0052).
-// Renders all five tabs: Progress, Summary, Findings, Artifacts, and Issues.
+// Renders Progress, Summary, Findings, Remediation, Artifacts, and Issues.
 // Supports status-gated Cancel and Retry actions, artifact downloads via T-0048,
-// and progress streaming. Report theme tokens only with zero colour literals.
+// and progress streaming. T-0925 adds the finding drawer, bulk remediation, and
+// the run-scoped Remediation tab. Report theme tokens only with zero colour literals.
 
-import React, { useState, useMemo, useCallback, type CSSProperties, type ReactElement } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactElement,
+} from "react";
 import { useRunEvents } from "../lib/useRunEvents";
+import { getRunStatusLabel } from "./RunsTable";
 import type { ProgressEvent } from "@m365-assess/contracts/events";
+import { ApplyActionDialog } from "./remediation/ApplyActionDialog";
+import { FindingRemediationPanel } from "./remediation/FindingRemediationPanel";
+import {
+  fetchRemediationHistory,
+  fetchRemediationPlan,
+  generateRemediationPlan,
+  waitForRemediationPlan,
+  type RemediationActionItem,
+  type RemediationHistoryRow,
+  type RemediationPlanResponse,
+} from "../lib/remediationApi";
 
-export type RunDetailTabId = "progress" | "summary" | "findings" | "artifacts" | "issues";
+export type RunDetailTabId =
+  | "progress"
+  | "summary"
+  | "findings"
+  | "remediation"
+  | "artifacts"
+  | "issues";
 
 export interface RunSectionDetail {
   readonly id?: string;
@@ -37,7 +64,10 @@ export interface RunFindingDetail {
   readonly controlName?: string | null;
   readonly currentValue?: string | null;
   readonly recommendedValue?: string | null;
+  readonly checkId?: string | null;
+  readonly evidence?: unknown;
   readonly frameworkRefs?: readonly string[];
+  readonly remediationMode?: string | null;
   readonly [key: string]: unknown;
 }
 
@@ -67,6 +97,7 @@ export interface RunSummaryCounts {
   readonly fail: number;
   readonly warning: number;
   readonly review: number;
+  readonly info?: number;
   readonly skipped: number;
   readonly notLicensed: number;
   readonly total: number;
@@ -83,6 +114,8 @@ export interface RunDetailData {
   readonly finishedAt?: string | null;
   readonly sections?: readonly RunSectionDetail[];
   readonly summaryCounts?: RunSummaryCounts | null;
+  /** Issue-log entry count from the run detail response (T-0929). */
+  readonly issueCount?: number;
   readonly options?: Record<string, unknown> | null;
   readonly artifactPath?: string | null;
   readonly children?: readonly RunDetailData[];
@@ -115,6 +148,14 @@ export interface RunDetailTabsProps {
   readonly baseUrl?: string;
   /** Custom class name */
   readonly className?: string;
+  /** True when the caller holds `Remediation.Apply` (T-0917). */
+  readonly canApply?: boolean;
+  /** Plan to open in the Remediation tab (deep link `?planId=`). */
+  readonly initialPlanId?: string;
+  /** Test seam for the remediation endpoints. */
+  readonly fetcher?: typeof fetch;
+  /** Reloads the run's findings after a verify or a manual mark. */
+  readonly onRefreshResults?: () => void | Promise<void>;
 }
 
 export function formatFileSize(bytes: number): string {
@@ -135,6 +176,22 @@ export function formatTimestamp(isoString?: string | null): string {
     });
   } catch {
     return isoString;
+  }
+}
+
+/** Badge colours for a run section; partial means it finished with skips or partial collectors (T-0944). */
+export function sectionBadgeTone(status: string): Pick<CSSProperties, "background" | "color" | "border"> {
+  switch (status) {
+    case "succeeded":
+      return { background: "var(--success-soft)", color: "var(--success-text)", border: "1px solid var(--success)" };
+    case "failed":
+      return { background: "var(--danger-soft)", color: "var(--danger-text)", border: "1px solid var(--danger)" };
+    case "partial":
+      return { background: "var(--warn-soft)", color: "var(--warn-text)", border: "1px solid var(--warn)" };
+    case "running":
+      return { background: "var(--accent-soft)", color: "var(--accent-text)", border: "1px solid var(--accent)" };
+    default:
+      return { background: "var(--surface)", color: "var(--muted)", border: "1px solid var(--border)" };
   }
 }
 
@@ -159,6 +216,205 @@ export function calculateComplianceScore(summaryCounts?: RunSummaryCounts | null
   return Math.round((summaryCounts.pass / evaluated) * 100);
 }
 
+// ── T-0925: finding remediation state ────────────────────────────────────────
+
+export type FindingRemediationState = "open" | "remediated" | "verified" | "accepted-risk";
+
+export const REMEDIATION_STATE_LABELS: Record<FindingRemediationState, string> = {
+  open: "Open",
+  remediated: "Remediated",
+  verified: "Verified",
+  "accepted-risk": "Accepted risk",
+};
+
+/** The check registry id (checkId when the results route supplies it). */
+export function findingCheckId(finding: Pick<RunFindingDetail, "id" | "checkId">): string {
+  return finding.checkId || finding.id;
+}
+
+function baseCheckId(value: string): string {
+  return value.replace(/\.\d+$/, "").toLowerCase();
+}
+
+/** Matches a finding to an action even across sub-numbered ids (`.1`, `.2`). */
+export function sameCheckId(left: string, right: string): boolean {
+  if (!left || !right) return false;
+  return left.toLowerCase() === right.toLowerCase() || baseCheckId(left) === baseCheckId(right);
+}
+
+/** Statuses that carry a remediation action on the Findings tab. */
+export function isRemediableFinding(finding: Pick<RunFindingDetail, "status">): boolean {
+  const status = finding.status.toLowerCase();
+  return status === "fail" || status === "warning" || status === "review";
+}
+
+interface RemediationStateSource {
+  readonly state: string;
+  readonly result?: Record<string, unknown> | null;
+}
+
+function stateFromRecord(record: RemediationStateSource): FindingRemediationState {
+  if (record.state.toLowerCase() !== "applied") return "open";
+  const verifiedStatus =
+    record.result && typeof record.result["verifiedStatus"] === "string"
+      ? String(record.result["verifiedStatus"]).toLowerCase()
+      : null;
+  if (verifiedStatus === "pass") return "verified";
+  if (verifiedStatus) return "open";
+  return "remediated";
+}
+
+/**
+ * The finding's remediation state in the run view. A locally recorded mark
+ * (manual "Mark as remediated" / "Accept risk") wins, then the plan action,
+ * then the tenant action history. A verify that still fails leaves the finding
+ * open; a passing verify marks it verified.
+ */
+export function deriveFindingRemediationState(
+  finding: Pick<RunFindingDetail, "id" | "checkId" | "status">,
+  actions: readonly RemediationActionItem[] = [],
+  history: readonly RemediationHistoryRow[] = [],
+  marks: Readonly<Record<string, FindingRemediationState>> = {},
+): FindingRemediationState {
+  if (finding.status.toLowerCase() === "pass") return "verified";
+  const check = findingCheckId(finding);
+  const mark = marks[check] ?? marks[check.replace(/\.\d+$/, "")];
+  if (mark) return mark;
+
+  const action = actions.find((item) => sameCheckId(item.check, check));
+  const actionState = action ? stateFromRecord(action) : "open";
+  // An apply/verify recorded in history is newer than a plan action that has
+  // not been reloaded yet, so it wins while the action is still planned.
+  if (actionState !== "open") return actionState;
+
+  const historyRow = [...history].reverse().find((row) => sameCheckId(row.check, check));
+  if (historyRow) return stateFromRecord(historyRow);
+
+  return actionState;
+}
+
+export function remediationStateBadgeStyle(state: FindingRemediationState): CSSProperties {
+  const base: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "2px 8px",
+    borderRadius: "999px",
+    fontSize: "11px",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+  };
+  switch (state) {
+    case "verified":
+      return {
+        ...base,
+        background: "var(--success-soft)",
+        color: "var(--success-text)",
+        border: "1px solid var(--success)",
+      };
+    case "remediated":
+      return {
+        ...base,
+        background: "var(--accent-soft)",
+        color: "var(--accent-text)",
+        border: "1px solid var(--accent)",
+      };
+    case "accepted-risk":
+      return {
+        ...base,
+        background: "var(--warn-soft)",
+        color: "var(--warn-text)",
+        border: "1px solid var(--warn)",
+      };
+    case "open":
+    default:
+      return {
+        ...base,
+        background: "var(--danger-soft)",
+        color: "var(--danger-text)",
+        border: "1px solid var(--danger)",
+      };
+  }
+}
+
+const runCardStyle: CSSProperties = {
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius, 10px)",
+  padding: "20px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "12px",
+};
+
+const drawerOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  background: "var(--overlay, var(--backdrop, transparent))",
+  display: "flex",
+  justifyContent: "flex-end",
+  zIndex: 45,
+};
+
+const drawerStyle: CSSProperties = {
+  width: "min(640px, 100vw)",
+  height: "100%",
+  overflowY: "auto",
+  background: "var(--bg-elev)",
+  borderLeft: "1px solid var(--border)",
+  padding: "20px",
+  display: "flex",
+  flexDirection: "column",
+  gap: "16px",
+  fontFamily: "var(--font-sans, system-ui, sans-serif)",
+  color: "var(--text)",
+};
+
+const drawerButtonStyle: CSSProperties = {
+  padding: "6px 12px",
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  borderRadius: "6px",
+  color: "var(--text)",
+  fontSize: "13px",
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
+const drawerPrimaryButtonStyle: CSSProperties = {
+  ...drawerButtonStyle,
+  background: "var(--accent)",
+  color: "var(--on-accent)",
+  borderColor: "var(--accent)",
+};
+
+const drawerDisabledButtonStyle: CSSProperties = {
+  ...drawerPrimaryButtonStyle,
+  opacity: 0.4,
+  cursor: "not-allowed",
+};
+
+const drawerFieldLabelStyle: CSSProperties = {
+  fontSize: "11px",
+  color: "var(--text-soft)",
+  textTransform: "uppercase",
+  letterSpacing: "0.05em",
+  marginBottom: "4px",
+};
+
+const drawerCodeStyle: CSSProperties = {
+  margin: 0,
+  padding: "10px",
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  borderRadius: "6px",
+  fontFamily: "var(--font-mono, monospace)",
+  fontSize: "12px",
+  whiteSpace: "pre-wrap",
+  wordBreak: "break-word",
+  maxHeight: "180px",
+  overflowY: "auto",
+};
+
 export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
   const {
     run: initialRun,
@@ -174,6 +430,10 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
     streamEvents = true,
     baseUrl = "",
     className,
+    canApply = false,
+    initialPlanId = "",
+    fetcher,
+    onRefreshResults,
   } = props;
 
   const [internalTab, setInternalTab] = useState<RunDetailTabId>(defaultTab);
@@ -276,6 +536,406 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
   const cancellable = isRunCancellable(run.status);
   const retryable = isRunRetryable(run.status, run.summaryCounts);
   const complianceScore = calculateComplianceScore(run.summaryCounts);
+  // The detail response exposes the issue count even before /results arrives (T-0929).
+  const issueCount = Math.max(issues.length, run.issueCount ?? 0);
+
+  // ── T-0925: finding drawer, bulk selection and run remediation ─────────────
+  const [drawerFindingId, setDrawerFindingId] = useState<string | null>(null);
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const drawerCloseRef = useRef<HTMLButtonElement>(null);
+  const [selectedFindingIds, setSelectedFindingIds] = useState<ReadonlySet<string>>(
+    () => new Set<string>(),
+  );
+  const [planId, setPlanId] = useState(initialPlanId);
+  const [plan, setPlan] = useState<RemediationPlanResponse | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [history, setHistory] = useState<readonly RemediationHistoryRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [applyActions, setApplyActions] = useState<readonly RemediationActionItem[] | null>(null);
+  const [verifyingActionId, setVerifyingActionId] = useState<string | null>(null);
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [marks, setMarks] = useState<Record<string, FindingRemediationState>>({});
+
+  const planStorageKey = `m365_assess_run_plan_${run.id}`;
+  const marksStorageKey = `m365_assess_run_marks_${run.id}`;
+
+  // A different run must not inherit the previous run's plan, selection or marks.
+  useEffect(() => {
+    setPlan(null);
+    setHistory([]);
+    setHistoryError(null);
+    setApplyActions(null);
+    setDrawerFindingId(null);
+    setSelectedFindingIds(new Set<string>());
+    setMarks({});
+    setPlanError(null);
+    setStatusMessage(null);
+  }, [run.id]);
+
+  // Restore the plan id chosen for this run and any locally recorded marks.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const storedPlan = window.sessionStorage.getItem(planStorageKey);
+      setPlanId(initialPlanId || storedPlan || "");
+      const storedMarks = window.sessionStorage.getItem(marksStorageKey);
+      if (storedMarks) {
+        const parsed: unknown = JSON.parse(storedMarks);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          setMarks(parsed as Record<string, FindingRemediationState>);
+        }
+      }
+    } catch {
+      // Private mode or a quota error: the plan and marks stay for this page only.
+    }
+  }, [planStorageKey, marksStorageKey, initialPlanId]);
+
+  const rememberPlan = useCallback(
+    (id: string) => {
+      try {
+        window.sessionStorage.setItem(planStorageKey, id);
+      } catch {
+        // See above.
+      }
+    },
+    [planStorageKey],
+  );
+
+  const loadPlan = useCallback(
+    async (id: string): Promise<RemediationPlanResponse | null> => {
+      if (!id) return null;
+      setPlanLoading(true);
+      setPlanError(null);
+      try {
+        const loaded = await fetchRemediationPlan(id, fetcher);
+        setPlan(loaded);
+        return loaded;
+      } catch (err) {
+        setPlanError(err instanceof Error ? err.message : String(err));
+        return null;
+      } finally {
+        setPlanLoading(false);
+      }
+    },
+    [fetcher],
+  );
+
+  const loadHistory = useCallback(async (): Promise<void> => {
+    if (!run.tenantId) return;
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const page = await fetchRemediationHistory(run.tenantId, { limit: 100 }, fetcher);
+      setHistory(page.items ?? []);
+    } catch (err) {
+      setHistoryError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [run.tenantId, fetcher]);
+
+  const ensurePlan = useCallback(async (): Promise<RemediationPlanResponse | null> => {
+    if (plan) return plan;
+    if (planId) return await loadPlan(planId);
+    setPlanLoading(true);
+    setPlanError(null);
+    try {
+      const created = await generateRemediationPlan(
+        { tenantId: run.tenantId, runId: run.id },
+        fetcher,
+      );
+      const loaded = await waitForRemediationPlan(created.planId, fetcher);
+      setPlanId(created.planId);
+      setPlan(loaded);
+      rememberPlan(created.planId);
+      return loaded;
+    } catch (err) {
+      setPlanError(err instanceof Error ? err.message : String(err));
+      return null;
+    } finally {
+      setPlanLoading(false);
+    }
+  }, [plan, planId, loadPlan, run.tenantId, run.id, fetcher, rememberPlan]);
+
+  // The run's Remediation tab reads the same plan/history routes as the
+  // top-level Remediation page, so an action taken in either view is visible.
+  useEffect(() => {
+    if (currentTab !== "remediation") return;
+    void loadHistory();
+    if (planId) void loadPlan(planId);
+  }, [currentTab, planId, loadHistory, loadPlan]);
+
+  const findingState = useCallback(
+    (finding: RunFindingDetail): FindingRemediationState =>
+      deriveFindingRemediationState(finding, plan?.actions ?? [], history, marks),
+    [plan, history, marks],
+  );
+
+  const actionForFinding = useCallback(
+    (finding: RunFindingDetail): RemediationActionItem | null => {
+      if (!plan) return null;
+      const check = findingCheckId(finding);
+      return plan.actions.find((action) => sameCheckId(action.check, check)) ?? null;
+    },
+    [plan],
+  );
+
+  const panelActionFor = useCallback(
+    (finding: RunFindingDetail): RemediationActionItem | null => {
+      const action = actionForFinding(finding);
+      if (action) return action;
+      if (finding.remediationMode !== "manual") return null;
+      return {
+        id: `manual-${finding.id}`,
+        check: findingCheckId(finding),
+        command: "",
+        target: null,
+        mode: "manual",
+        classification: "manual",
+        state: "planned",
+      };
+    },
+    [actionForFinding],
+  );
+
+  const remediationSummary = useMemo(() => {
+    const counts: Record<FindingRemediationState, number> = {
+      open: 0,
+      remediated: 0,
+      verified: 0,
+      "accepted-risk": 0,
+    };
+    let total = 0;
+    let done = 0;
+    for (const finding of findings) {
+      if (!isRemediableFinding(finding)) continue;
+      total += 1;
+      const state = findingState(finding);
+      counts[state] += 1;
+      if (state !== "open") done += 1;
+    }
+    return { counts, total, done, percent: total > 0 ? Math.round((done / total) * 100) : 0 };
+  }, [findings, findingState]);
+
+  const runHistory = useMemo(() => {
+    if (findings.length === 0) return [];
+    return history.filter((row) =>
+      findings.some((finding) => sameCheckId(row.check, findingCheckId(finding))),
+    );
+  }, [history, findings]);
+
+  // Filtered findings list (used by the table and the bulk selection).
+  const filteredFindings = useMemo(() => {
+    return findings.filter((f) => {
+      const matchSearch =
+        findingSearch.trim() === "" ||
+        (f.controlName && f.controlName.toLowerCase().includes(findingSearch.toLowerCase())) ||
+        (f.category && f.category.toLowerCase().includes(findingSearch.toLowerCase()));
+      const matchStatus =
+        findingStatusFilter === "all" || f.status.toLowerCase() === findingStatusFilter.toLowerCase();
+      return matchSearch && matchStatus;
+    });
+  }, [findings, findingSearch, findingStatusFilter]);
+
+  const selectableFindings = useMemo(
+    () => filteredFindings.filter((finding) => isRemediableFinding(finding)),
+    [filteredFindings],
+  );
+
+  const selectedCount = useMemo(
+    () => findings.filter((finding) => selectedFindingIds.has(finding.id)).length,
+    [findings, selectedFindingIds],
+  );
+
+  const allSelectableSelected =
+    selectableFindings.length > 0 &&
+    selectableFindings.every((finding) => selectedFindingIds.has(finding.id));
+
+  const toggleFindingSelection = (findingId: string): void => {
+    setSelectedFindingIds((previous) => {
+      const next = new Set(previous);
+      if (next.has(findingId)) next.delete(findingId);
+      else next.add(findingId);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = (): void => {
+    setSelectedFindingIds((previous) => {
+      const next = new Set(previous);
+      if (allSelectableSelected) {
+        for (const finding of selectableFindings) next.delete(finding.id);
+      } else {
+        for (const finding of selectableFindings) next.add(finding.id);
+      }
+      return next;
+    });
+  };
+
+  const markFinding = (finding: RunFindingDetail, state: FindingRemediationState): void => {
+    const check = findingCheckId(finding);
+    const keys = check === check.replace(/\.\d+$/, "") ? [check] : [check, check.replace(/\.\d+$/, "")];
+    setMarks((previous) => {
+      const next = { ...previous };
+      for (const key of keys) next[key] = state;
+      try {
+        window.sessionStorage.setItem(marksStorageKey, JSON.stringify(next));
+      } catch {
+        // Page-local mark only.
+      }
+      return next;
+    });
+    const label = finding.controlName || check;
+    setStatusMessage(
+      state === "accepted-risk"
+        ? `${label} marked as accepted risk.`
+        : `${label} marked as remediated.`,
+    );
+  };
+
+  const openRemediateFor = async (finding: RunFindingDetail): Promise<void> => {
+    if (!canApply) {
+      setStatusMessage("Applying remediation requires Remediation.Apply.");
+      return;
+    }
+    setStatusMessage(null);
+    const loaded = await ensurePlan();
+    if (!loaded) return;
+    const check = findingCheckId(finding);
+    const action = loaded.actions.find((item) => sameCheckId(item.check, check));
+    if (!action) {
+      setStatusMessage(`No remediation action is defined for ${check}.`);
+      return;
+    }
+    setApplyActions([action]);
+  };
+
+  const openRemediateSelected = async (): Promise<void> => {
+    if (!canApply) {
+      setStatusMessage("Applying remediation requires Remediation.Apply.");
+      return;
+    }
+    const selected = findings.filter(
+      (finding) => selectedFindingIds.has(finding.id) && isRemediableFinding(finding),
+    );
+    if (selected.length === 0) return;
+    setStatusMessage(null);
+    const loaded = await ensurePlan();
+    if (!loaded) return;
+    const actions = selected
+      .map((finding) => {
+        const check = findingCheckId(finding);
+        return loaded.actions.find((item) => sameCheckId(item.check, check));
+      })
+      .filter((action): action is RemediationActionItem => action !== undefined);
+    if (actions.length === 0) {
+      setStatusMessage("The plan has no remediation actions for the selected findings.");
+      return;
+    }
+    setApplyActions(actions);
+  };
+
+  const handleApplied = (): void => {
+    if (planId) void loadPlan(planId);
+    void loadHistory();
+    void onRefreshResults?.();
+  };
+
+  const handleVerify = async (
+    action: RemediationActionItem,
+    finding?: RunFindingDetail,
+  ): Promise<void> => {
+    setVerifyingActionId(action.id);
+    setStatusMessage(null);
+    try {
+      const send = fetcher ?? fetch;
+      const response = await send(
+        `/v1/remediation/actions/${encodeURIComponent(action.id)}/verify`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ section: finding?.category ?? "" }),
+        },
+      );
+      if (!response.ok) {
+        let detail = response.statusText;
+        try {
+          const body = (await response.json()) as { message?: string };
+          if (body?.message) detail = body.message;
+        } catch {
+          // Non-JSON error body; keep the status text.
+        }
+        throw new Error(`Verification failed: ${response.status} ${detail}`);
+      }
+      setStatusMessage("Verification queued. The finding updates when the check finishes.");
+      if (planId) await loadPlan(planId);
+      await loadHistory();
+      void onRefreshResults?.();
+    } catch (err) {
+      setStatusMessage(err instanceof Error ? err.message : String(err));
+    } finally {
+      setVerifyingActionId(null);
+    }
+  };
+
+  const refreshRemediation = (): void => {
+    if (planId) void loadPlan(planId);
+    void loadHistory();
+    void onRefreshResults?.();
+  };
+
+  const closeDrawer = useCallback(() => {
+    setDrawerFindingId(null);
+  }, []);
+
+  // Drawer focus trap, Escape to close, and focus restore to the row.
+  useEffect(() => {
+    if (!drawerFindingId) return undefined;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    drawerCloseRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (document.querySelector('[data-testid="apply-action-dialog"]')) return;
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closeDrawer();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const root = drawerRef.current;
+      if (!root) return;
+      const focusable = root.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (!first || !last) return;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus?.();
+    };
+  }, [drawerFindingId, closeDrawer]);
+
+  const drawerFinding = drawerFindingId
+    ? findings.find((finding) => finding.id === drawerFindingId) ?? null
+    : null;
+  const drawerAction = drawerFinding ? panelActionFor(drawerFinding) : null;
+  const drawerState = drawerFinding ? findingState(drawerFinding) : "open";
+  const drawerIsManual =
+    drawerFinding?.remediationMode === "manual" ||
+    drawerAction?.mode === "manual" ||
+    drawerAction?.classification === "manual";
 
   // Framework rollups calculated from findings
   const frameworkRollup = useMemo(() => {
@@ -297,19 +957,6 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
       percentage: stat.total > 0 ? Math.round((stat.pass / stat.total) * 100) : 0,
     }));
   }, [findings]);
-
-  // Filtered findings list
-  const filteredFindings = useMemo(() => {
-    return findings.filter((f) => {
-      const matchSearch =
-        findingSearch.trim() === "" ||
-        (f.controlName && f.controlName.toLowerCase().includes(findingSearch.toLowerCase())) ||
-        (f.category && f.category.toLowerCase().includes(findingSearch.toLowerCase()));
-      const matchStatus =
-        findingStatusFilter === "all" || f.status.toLowerCase() === findingStatusFilter.toLowerCase();
-      return matchSearch && matchStatus;
-    });
-  }, [findings, findingSearch, findingStatusFilter]);
 
   return (
     <div
@@ -356,35 +1003,60 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                 borderRadius: "999px",
                 fontSize: "12px",
                 fontWeight: 600,
-                textTransform: "capitalize",
+                whiteSpace: "nowrap",
                 background:
                   run.status === "succeeded"
                     ? "var(--success-soft)"
                     : run.status === "failed"
                       ? "var(--danger-soft)"
-                      : run.status === "running"
-                        ? "var(--accent-soft)"
-                        : "var(--surface)",
+                      : run.status === "partial"
+                        ? "var(--warn-soft)"
+                        : run.status === "running"
+                          ? "var(--accent-soft)"
+                          : "var(--surface)",
                 color:
                   run.status === "succeeded"
                     ? "var(--success-text)"
                     : run.status === "failed"
                       ? "var(--danger-text)"
-                      : run.status === "running"
-                        ? "var(--accent-text)"
-                        : "var(--text-soft)",
+                      : run.status === "partial"
+                        ? "var(--warn-text)"
+                        : run.status === "running"
+                          ? "var(--accent-text)"
+                          : "var(--text-soft)",
                 border:
                   run.status === "succeeded"
                     ? "1px solid var(--success)"
                     : run.status === "failed"
                       ? "1px solid var(--danger)"
-                      : run.status === "running"
-                        ? "1px solid var(--accent)"
-                        : "1px solid var(--border)",
+                      : run.status === "partial"
+                        ? "1px solid var(--warn)"
+                        : run.status === "running"
+                          ? "1px solid var(--accent)"
+                          : "1px solid var(--border)",
               }}
             >
-              {run.status}
+              {getRunStatusLabel(run.status)}
             </span>
+            {issueCount > 0 && (
+              <button
+                type="button"
+                data-testid="run-detail-issue-count"
+                onClick={() => handleSelectTab("issues")}
+                style={{
+                  padding: "2px 10px",
+                  borderRadius: "999px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  background: "var(--surface)",
+                  color: "var(--text-soft)",
+                  border: "1px solid var(--border)",
+                }}
+              >
+                {issueCount} {issueCount === 1 ? "issue" : "issues"}
+              </button>
+            )}
           </div>
 
           <div
@@ -475,8 +1147,9 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
             { id: "summary", label: "Summary" },
             { id: "progress", label: "Progress" },
             { id: "findings", label: `Findings (${findings.length})` },
+            { id: "remediation", label: "Remediation" },
             { id: "artifacts", label: `Artifacts (${artifacts.length})` },
-            { id: "issues", label: `Issues (${issues.length})` },
+            { id: "issues", label: `Issues (${issueCount})` },
           ] as const
         ).map((tab) => {
           const isActive = currentTab === tab.id;
@@ -582,7 +1255,7 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
               data-testid="kpi-strip"
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(6, 1fr)",
+                gridTemplateColumns: "repeat(7, 1fr)",
                 gap: "12px",
               }}
             >
@@ -618,6 +1291,14 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                   color: "var(--accent-text)",
                   border: "var(--accent)",
                   testId: "kpi-review",
+                },
+                {
+                  label: "Info",
+                  count: run.summaryCounts?.info ?? 0,
+                  bg: "var(--surface)",
+                  color: "var(--text-soft)",
+                  border: "var(--border)",
+                  testId: "kpi-info",
                 },
                 {
                   label: "Skipped",
@@ -800,30 +1481,7 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                               fontSize: "12px",
                               fontWeight: 600,
                               textTransform: "capitalize",
-                              background:
-                                sec.status === "succeeded"
-                                  ? "var(--success-soft)"
-                                  : sec.status === "failed"
-                                    ? "var(--danger-soft)"
-                                    : sec.status === "running"
-                                      ? "var(--accent-soft)"
-                                      : "var(--surface)",
-                              color:
-                                sec.status === "succeeded"
-                                  ? "var(--success-text)"
-                                  : sec.status === "failed"
-                                    ? "var(--danger-text)"
-                                    : sec.status === "running"
-                                      ? "var(--accent-text)"
-                                      : "var(--muted)",
-                              border:
-                                sec.status === "succeeded"
-                                  ? "1px solid var(--success)"
-                                  : sec.status === "failed"
-                                    ? "1px solid var(--danger)"
-                                    : sec.status === "running"
-                                      ? "1px solid var(--accent)"
-                                      : "1px solid var(--border)",
+                              ...sectionBadgeTone(sec.status),
                             }}
                           >
                             {sec.status}
@@ -900,16 +1558,18 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
           data-testid="tabpanel-findings"
           style={{ display: "flex", flexDirection: "column", gap: "16px" }}
         >
-          {/* Controls: Search and Status filter */}
-          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+          {/* Controls: Search, status filter and bulk remediation */}
+          <div style={{ display: "flex", gap: "12px", alignItems: "center", flexWrap: "wrap" }}>
             <input
               type="text"
               placeholder="Search findings by control or category..."
+              aria-label="Search findings"
               data-testid="findings-search-input"
               value={findingSearch}
               onChange={(e) => setFindingSearch(e.target.value)}
               style={{
                 flex: 1,
+                minWidth: "220px",
                 padding: "8px 12px",
                 background: "var(--input-bg, var(--surface))",
                 border: "1px solid var(--border)",
@@ -920,6 +1580,7 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
             />
             <select
               data-testid="findings-status-filter"
+              aria-label="Filter findings by status"
               value={findingStatusFilter}
               onChange={(e) => setFindingStatusFilter(e.target.value)}
               style={{
@@ -938,6 +1599,32 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
               <option value="review">Review</option>
               <option value="skipped">Skipped</option>
             </select>
+            <button
+              type="button"
+              data-testid="remediate-selected"
+              disabled={selectedCount === 0 || !canApply || planLoading}
+              title={canApply ? undefined : "Requires Remediation.Apply"}
+              onClick={() => void openRemediateSelected()}
+              style={
+                selectedCount > 0 && canApply
+                  ? drawerPrimaryButtonStyle
+                  : drawerDisabledButtonStyle
+              }
+            >
+              {planLoading
+                ? "Planning…"
+                : `Remediate selected${selectedCount > 0 ? ` (${selectedCount})` : ""}`}
+            </button>
+            {selectedCount > 0 && (
+              <button
+                type="button"
+                data-testid="clear-finding-selection"
+                onClick={() => setSelectedFindingIds(new Set<string>())}
+                style={drawerButtonStyle}
+              >
+                Clear selection
+              </button>
+            )}
             {(run.status === "succeeded" || run.status === "partial") && !(run.children && run.children.length > 0) && (
               <a
                 href={`/remediation?tenantId=${encodeURIComponent(run.tenantId)}&runId=${encodeURIComponent(run.id)}`}
@@ -957,6 +1644,28 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
               </a>
             )}
           </div>
+
+          {statusMessage && (
+            <div role="status" data-testid="findings-status" style={{ fontSize: "13px", color: "var(--text-soft)" }}>
+              {statusMessage}
+            </div>
+          )}
+          {planError && (
+            <div
+              role="alert"
+              data-testid="findings-plan-error"
+              style={{
+                padding: "10px 12px",
+                background: "var(--danger-soft)",
+                border: "1px solid var(--danger)",
+                borderRadius: "var(--radius, 6px)",
+                color: "var(--danger-text)",
+                fontSize: "13px",
+              }}
+            >
+              {planError}
+            </div>
+          )}
 
           {/* Findings Table */}
           {filteredFindings.length === 0 ? (
@@ -985,66 +1694,121 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
                 <thead>
                   <tr style={{ borderBottom: "1px solid var(--border)", background: "var(--bg-elev)" }}>
+                    <th style={{ padding: "10px 14px", textAlign: "left", width: "32px" }}>
+                      <input
+                        type="checkbox"
+                        aria-label="Select all remediable findings"
+                        data-testid="findings-select-all"
+                        checked={allSelectableSelected}
+                        disabled={selectableFindings.length === 0}
+                        onChange={toggleSelectAll}
+                      />
+                    </th>
                     <th style={{ padding: "10px 14px", textAlign: "left" }}>Status</th>
                     <th style={{ padding: "10px 14px", textAlign: "left" }}>Severity</th>
                     <th style={{ padding: "10px 14px", textAlign: "left" }}>Control</th>
                     <th style={{ padding: "10px 14px", textAlign: "left" }}>Category</th>
                     <th style={{ padding: "10px 14px", textAlign: "left" }}>Values</th>
+                    <th style={{ padding: "10px 14px", textAlign: "left" }}>Remediation</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredFindings.map((finding) => (
-                    <tr
-                      key={finding.id}
-                      data-testid={`finding-row-${finding.id}`}
-                      style={{ borderBottom: "1px solid var(--border)" }}
-                    >
-                      <td style={{ padding: "10px 14px" }}>
-                        <span
-                          style={{
-                            padding: "2px 6px",
-                            borderRadius: "999px",
-                            fontSize: "11px",
-                            fontWeight: 600,
-                            textTransform: "capitalize",
-                            background:
-                              finding.status.toLowerCase() === "pass"
-                                ? "var(--success-soft)"
-                                : finding.status.toLowerCase() === "fail"
-                                  ? "var(--danger-soft)"
-                                  : "var(--warn-soft)",
-                            color:
-                              finding.status.toLowerCase() === "pass"
-                                ? "var(--success-text)"
-                                : finding.status.toLowerCase() === "fail"
-                                  ? "var(--danger-text)"
-                                  : "var(--warn-text)",
-                            border:
-                              finding.status.toLowerCase() === "pass"
-                                ? "1px solid var(--success)"
-                                : finding.status.toLowerCase() === "fail"
-                                  ? "1px solid var(--danger)"
-                                  : "1px solid var(--warn)",
-                          }}
+                  {filteredFindings.map((finding) => {
+                    const state = findingState(finding);
+                    const remediable = isRemediableFinding(finding);
+                    const selected = selectedFindingIds.has(finding.id);
+                    return (
+                      <tr
+                        key={finding.id}
+                        data-testid={`finding-row-${finding.id}`}
+                        tabIndex={0}
+                        aria-label={`Open finding ${finding.controlName || finding.id}`}
+                        onClick={() => setDrawerFindingId(finding.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setDrawerFindingId(finding.id);
+                          }
+                        }}
+                        style={{
+                          borderBottom: "1px solid var(--border)",
+                          cursor: "pointer",
+                          background: selected
+                            ? "var(--accent-soft)"
+                            : drawerFindingId === finding.id
+                              ? "var(--bg-elev)"
+                              : undefined,
+                        }}
+                      >
+                        <td
+                          style={{ padding: "10px 14px" }}
+                          onClick={(event) => event.stopPropagation()}
                         >
-                          {finding.status}
-                        </span>
-                      </td>
-                      <td style={{ padding: "10px 14px", fontWeight: 600, color: "var(--text-soft)" }}>
-                        {finding.severity || "—"}
-                      </td>
-                      <td style={{ padding: "10px 14px", fontWeight: 500, color: "var(--text)" }}>
-                        {finding.controlName || finding.id}
-                      </td>
-                      <td style={{ padding: "10px 14px", color: "var(--muted)" }}>
-                        {finding.category || "General"}
-                      </td>
-                      <td style={{ padding: "10px 14px", color: "var(--text-soft)", fontSize: "12px" }}>
-                        {finding.currentValue && <div>Current: {finding.currentValue}</div>}
-                        {finding.recommendedValue && <div>Expected: {finding.recommendedValue}</div>}
-                      </td>
-                    </tr>
-                  ))}
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${finding.controlName || finding.id} for remediation`}
+                            data-testid={`finding-select-${finding.id}`}
+                            checked={selected}
+                            disabled={!remediable}
+                            onChange={() => toggleFindingSelection(finding.id)}
+                            onKeyDown={(event) => event.stopPropagation()}
+                          />
+                        </td>
+                        <td style={{ padding: "10px 14px" }}>
+                          <span
+                            style={{
+                              padding: "2px 6px",
+                              borderRadius: "999px",
+                              fontSize: "11px",
+                              fontWeight: 600,
+                              textTransform: "capitalize",
+                              background:
+                                finding.status.toLowerCase() === "pass"
+                                  ? "var(--success-soft)"
+                                  : finding.status.toLowerCase() === "fail"
+                                    ? "var(--danger-soft)"
+                                    : "var(--warn-soft)",
+                              color:
+                                finding.status.toLowerCase() === "pass"
+                                  ? "var(--success-text)"
+                                  : finding.status.toLowerCase() === "fail"
+                                    ? "var(--danger-text)"
+                                    : "var(--warn-text)",
+                              border:
+                                finding.status.toLowerCase() === "pass"
+                                  ? "1px solid var(--success)"
+                                  : finding.status.toLowerCase() === "fail"
+                                    ? "1px solid var(--danger)"
+                                    : "1px solid var(--warn)",
+                            }}
+                          >
+                            {finding.status}
+                          </span>
+                        </td>
+                        <td style={{ padding: "10px 14px", fontWeight: 600, color: "var(--text-soft)" }}>
+                          {finding.severity || "—"}
+                        </td>
+                        <td style={{ padding: "10px 14px", fontWeight: 500, color: "var(--text)" }}>
+                          {finding.controlName || finding.id}
+                        </td>
+                        <td style={{ padding: "10px 14px", color: "var(--muted)" }}>
+                          {finding.category || "General"}
+                        </td>
+                        <td style={{ padding: "10px 14px", color: "var(--text-soft)", fontSize: "12px" }}>
+                          {finding.currentValue && <div>Current: {finding.currentValue}</div>}
+                          {finding.recommendedValue && <div>Expected: {finding.recommendedValue}</div>}
+                        </td>
+                        <td style={{ padding: "10px 14px" }}>
+                          <span
+                            data-testid={`finding-state-${finding.id}`}
+                            style={remediationStateBadgeStyle(state)}
+                          >
+                            {REMEDIATION_STATE_LABELS[state]}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -1052,7 +1816,252 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
         </div>
       )}
 
-      {/* TAB PANEL 4: Artifacts */}
+      {/* TAB PANEL 4: Remediation (T-0925) */}
+      {currentTab === "remediation" && (
+        <div
+          role="tabpanel"
+          id="tabpanel-remediation"
+          aria-labelledby="tab-remediation"
+          data-testid="tabpanel-remediation"
+          style={{ display: "flex", flexDirection: "column", gap: "20px" }}
+        >
+          <div style={runCardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Remediation progress</h3>
+                <div style={{ fontSize: "13px", color: "var(--text-soft)" }}>
+                  {remediationSummary.done} of {remediationSummary.total} failing findings resolved
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                <button type="button" data-testid="remediation-refresh" onClick={refreshRemediation} style={drawerButtonStyle}>
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  data-testid="generate-run-plan"
+                  disabled={!canApply || planLoading}
+                  title={canApply ? undefined : "Requires Remediation.Apply"}
+                  onClick={() => void ensurePlan()}
+                  style={canApply ? drawerPrimaryButtonStyle : drawerDisabledButtonStyle}
+                >
+                  {planLoading ? "Loading plan…" : plan ? "Reload plan" : "Generate plan"}
+                </button>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+                gap: "12px",
+              }}
+            >
+              {(
+                [
+                  { state: "open", testId: "run-progress-open" },
+                  { state: "remediated", testId: "run-progress-remediated" },
+                  { state: "verified", testId: "run-progress-verified" },
+                  { state: "accepted-risk", testId: "run-progress-accepted-risk" },
+                ] as const
+              ).map((card) => (
+                <div
+                  key={card.state}
+                  data-testid={card.testId}
+                  style={{
+                    padding: "12px",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius, 8px)",
+                    background: "var(--bg-elev)",
+                  }}
+                >
+                  <div style={{ fontSize: "22px", fontWeight: 700 }}>{remediationSummary.counts[card.state]}</div>
+                  <div style={{ fontSize: "12px", color: "var(--text-soft)" }}>
+                    {REMEDIATION_STATE_LABELS[card.state]}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div
+              role="progressbar"
+              aria-label="Remediation progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={remediationSummary.percent}
+              data-testid="run-remediation-progressbar"
+              style={{ height: "8px", background: "var(--track)", borderRadius: "999px", overflow: "hidden" }}
+            >
+              <div
+                style={{
+                  height: "100%",
+                  width: `${remediationSummary.percent}%`,
+                  background: "var(--accent)",
+                }}
+              />
+            </div>
+            <div style={{ fontSize: "12px", color: "var(--text-soft)" }} data-testid="run-progress-percent">
+              {remediationSummary.percent}% resolved
+            </div>
+
+            {statusMessage && (
+              <div role="status" data-testid="remediation-status" style={{ fontSize: "13px", color: "var(--text-soft)" }}>
+                {statusMessage}
+              </div>
+            )}
+            {planError && (
+              <div role="alert" data-testid="remediation-plan-error" style={{ padding: "10px 12px", background: "var(--danger-soft)", border: "1px solid var(--danger)", borderRadius: "6px", color: "var(--danger-text)", fontSize: "13px" }}>
+                {planError}
+              </div>
+            )}
+          </div>
+
+          <div style={runCardStyle}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Run plan</h3>
+              <a
+                data-testid="open-remediation-page-link"
+                href={`/remediation?tenantId=${encodeURIComponent(run.tenantId)}&runId=${encodeURIComponent(run.id)}${
+                  planId ? `&planId=${encodeURIComponent(planId)}` : ""
+                }`}
+                style={{ fontSize: "13px", fontWeight: 600, color: "var(--accent-text)" }}
+              >
+                Open Remediation page
+              </a>
+            </div>
+
+            {planLoading && !plan && (
+              <div style={{ color: "var(--text-soft)", fontSize: "13px" }}>Loading the run's plan…</div>
+            )}
+
+            {plan ? (
+              <>
+                <div style={{ fontSize: "12px", color: "var(--text-soft)", fontFamily: "var(--font-mono, monospace)" }}>
+                  Plan {plan.plan.id} · {plan.plan.mode} · created {formatTimestamp(plan.plan.createdAt)}
+                </div>
+                <div style={{ overflowX: "auto" }}>
+                  <table aria-label="Run remediation actions" style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Check</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Finding</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Mode</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>State</th>
+                        <th style={{ padding: "8px 10px", textAlign: "left" }}>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {plan.actions.map((action) => (
+                        <tr key={action.id} data-testid={`run-plan-action-${action.id}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                          <td style={{ padding: "8px 10px", fontFamily: "var(--font-mono, monospace)", fontSize: "12px" }}>
+                            {action.check}
+                          </td>
+                          <td style={{ padding: "8px 10px" }}>{action.finding || "—"}</td>
+                          <td style={{ padding: "8px 10px" }}>{action.mode}</td>
+                          <td style={{ padding: "8px 10px" }}>
+                            <span data-testid={`run-plan-state-${action.id}`} style={remediationStateBadgeStyle(stateFromRecord(action))}>
+                              {REMEDIATION_STATE_LABELS[stateFromRecord(action)]}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 10px" }}>
+                            <div style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}>
+                              {action.mode === "auto" && (
+                                <button
+                                  type="button"
+                                  data-testid={`run-plan-apply-${action.id}`}
+                                  disabled={!canApply || action.state !== "planned"}
+                                  title={canApply ? undefined : "Requires Remediation.Apply"}
+                                  onClick={() => canApply && setApplyActions([action])}
+                                  style={canApply && action.state === "planned" ? drawerPrimaryButtonStyle : drawerDisabledButtonStyle}
+                                >
+                                  Apply
+                                </button>
+                              )}
+                              {action.state === "applied" && (
+                                <button
+                                  type="button"
+                                  data-testid={`run-plan-verify-${action.id}`}
+                                  disabled={verifyingActionId === action.id}
+                                  onClick={() => void handleVerify(action)}
+                                  style={drawerButtonStyle}
+                                >
+                                  {verifyingActionId === action.id ? "Verifying…" : "Verify"}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            ) : (
+              !planLoading && (
+                <div data-testid="remediation-no-plan" style={{ color: "var(--text-soft)", fontSize: "13px" }}>
+                  No plan for this run yet. Select findings on the Findings tab and choose
+                  Remediate selected, or generate a plan.
+                </div>
+              )
+            )}
+          </div>
+
+          <div style={runCardStyle}>
+            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Action history</h3>
+            <div style={{ fontSize: "12px", color: "var(--text-soft)" }}>
+              Actions recorded against this run's findings. The same history backs the Remediation page.
+            </div>
+            {historyLoading && <div style={{ color: "var(--text-soft)", fontSize: "13px" }}>Loading history…</div>}
+            {historyError && (
+              <div role="alert" style={{ padding: "10px 12px", background: "var(--danger-soft)", border: "1px solid var(--danger)", borderRadius: "6px", color: "var(--danger-text)", fontSize: "13px" }}>
+                {historyError}
+              </div>
+            )}
+            {!historyLoading && runHistory.length === 0 ? (
+              <div data-testid="run-history-empty" style={{ color: "var(--text-soft)", fontSize: "13px" }}>
+                No remediation actions have been recorded for this run.
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table aria-label="Run remediation action history" style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--border)" }}>
+                      <th style={{ padding: "8px 10px", textAlign: "left" }}>Check</th>
+                      <th style={{ padding: "8px 10px", textAlign: "left" }}>State</th>
+                      <th style={{ padding: "8px 10px", textAlign: "left" }}>When</th>
+                      <th style={{ padding: "8px 10px", textAlign: "left" }}>Actor</th>
+                      <th style={{ padding: "8px 10px", textAlign: "left" }}>Result</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {runHistory.map((row) => (
+                      <tr key={row.id} data-testid={`run-history-${row.id}`} style={{ borderBottom: "1px solid var(--border)" }}>
+                        <td style={{ padding: "8px 10px", fontFamily: "var(--font-mono, monospace)", fontSize: "12px" }}>
+                          {row.check}
+                        </td>
+                        <td style={{ padding: "8px 10px" }}>
+                          <span data-testid={`run-history-state-${row.id}`} style={remediationStateBadgeStyle(stateFromRecord(row))}>
+                            {REMEDIATION_STATE_LABELS[stateFromRecord(row)]}
+                          </span>
+                        </td>
+                        <td style={{ padding: "8px 10px" }}>{formatTimestamp(row.timestamp)}</td>
+                        <td style={{ padding: "8px 10px" }}>{row.actor || "—"}</td>
+                        <td style={{ padding: "8px 10px" }}>
+                          {row.result && typeof row.result["verifiedStatus"] === "string"
+                            ? `Verified: ${String(row.result["verifiedStatus"])}`
+                            : row.error || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* TAB PANEL 5: Artifacts */}
       {currentTab === "artifacts" && (
         <div
           role="tabpanel"
@@ -1200,6 +2209,23 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
           data-testid="tabpanel-issues"
           style={{ display: "flex", flexDirection: "column", gap: "16px" }}
         >
+          {run.status === "partial" && (
+            <div
+              data-testid="issues-partial-banner"
+              style={{
+                padding: "12px 16px",
+                background: "var(--warn-soft)",
+                border: "1px solid var(--warn)",
+                borderRadius: "var(--radius, 8px)",
+                color: "var(--warn-text)",
+                fontSize: "13px",
+                fontWeight: 600,
+              }}
+            >
+              This run is partial: some requested sections errored or did not run. The issues below
+              explain what did not complete.
+            </div>
+          )}
           {issues.length === 0 ? (
             <div
               data-testid="issues-empty"
@@ -1299,6 +2325,170 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
             </div>
           )}
         </div>
+      )}
+
+      {/* Finding detail drawer (T-0925): details + remediation panel */}
+      {drawerFinding && (
+        <div
+          style={drawerOverlayStyle}
+          data-testid="finding-drawer-overlay"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeDrawer();
+          }}
+        >
+          <div
+            ref={drawerRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="finding-drawer-title"
+            data-testid="finding-drawer"
+            style={drawerStyle}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+              <div>
+                <h2 id="finding-drawer-title" style={{ margin: 0, fontSize: "18px", fontWeight: 700 }}>
+                  {drawerFinding.controlName || drawerFinding.id}
+                </h2>
+                <div style={{ marginTop: "4px", fontSize: "12px", color: "var(--text-soft)", fontFamily: "var(--font-mono, monospace)" }}>
+                  {findingCheckId(drawerFinding)}
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <span data-testid="finding-drawer-state" style={remediationStateBadgeStyle(drawerState)}>
+                  {REMEDIATION_STATE_LABELS[drawerState]}
+                </span>
+                <button ref={drawerCloseRef} type="button" data-testid="finding-drawer-close" onClick={closeDrawer} style={drawerButtonStyle}>
+                  Close
+                </button>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "12px" }}>
+              <div>
+                <div style={drawerFieldLabelStyle}>Current value</div>
+                <div data-testid="finding-drawer-current">{drawerFinding.currentValue || "—"}</div>
+              </div>
+              <div>
+                <div style={drawerFieldLabelStyle}>Recommended value</div>
+                <div data-testid="finding-drawer-recommended">{drawerFinding.recommendedValue || "—"}</div>
+              </div>
+            </div>
+
+            <div>
+              <div style={drawerFieldLabelStyle}>Evidence</div>
+              <pre data-testid="finding-drawer-evidence" style={drawerCodeStyle}>
+                {drawerFinding.evidence
+                  ? JSON.stringify(drawerFinding.evidence, null, 2)
+                  : "No evidence recorded for this finding."}
+              </pre>
+            </div>
+
+            <div>
+              <div style={drawerFieldLabelStyle}>Framework mappings</div>
+              <div data-testid="finding-drawer-frameworks" style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {drawerFinding.frameworkRefs && drawerFinding.frameworkRefs.length > 0 ? (
+                  drawerFinding.frameworkRefs.map((framework) => (
+                    <span
+                      key={framework}
+                      style={{
+                        padding: "2px 8px",
+                        borderRadius: "999px",
+                        border: "1px solid var(--border)",
+                        background: "var(--surface)",
+                        fontSize: "12px",
+                        color: "var(--text-soft)",
+                      }}
+                    >
+                      {framework}
+                    </span>
+                  ))
+                ) : (
+                  <span style={{ fontSize: "13px", color: "var(--text-soft)" }}>No framework mapping recorded.</span>
+                )}
+              </div>
+            </div>
+
+            <div style={{ borderTop: "1px solid var(--border)", paddingTop: "16px" }}>
+              <h3 style={{ margin: "0 0 10px", fontSize: "15px", fontWeight: 600 }}>Remediation</h3>
+              <FindingRemediationPanel
+                check={findingCheckId(drawerFinding)}
+                action={drawerAction}
+                fetcher={fetcher}
+                onCopyPlan={() => setStatusMessage("Remediation plan copied.")}
+                onCopySteps={() => setStatusMessage("Manual steps copied.")}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+              {!drawerIsManual && drawerFinding.status.toLowerCase() !== "pass" && (
+                <button
+                  type="button"
+                  data-testid="drawer-remediate"
+                  disabled={!canApply || planLoading}
+                  title={canApply ? undefined : "Requires Remediation.Apply"}
+                  onClick={() => void openRemediateFor(drawerFinding)}
+                  style={canApply ? drawerPrimaryButtonStyle : drawerDisabledButtonStyle}
+                >
+                  {planLoading ? "Planning…" : "Remediate"}
+                </button>
+              )}
+              {!drawerIsManual && drawerAction?.state === "applied" && (
+                <button
+                  type="button"
+                  data-testid="drawer-verify"
+                  disabled={verifyingActionId === drawerAction.id}
+                  onClick={() => void handleVerify(drawerAction, drawerFinding)}
+                  style={drawerButtonStyle}
+                >
+                  {verifyingActionId === drawerAction.id ? "Verifying…" : "Verify"}
+                </button>
+              )}
+              {drawerIsManual && drawerState !== "remediated" && drawerState !== "verified" && (
+                <button
+                  type="button"
+                  data-testid="drawer-mark-remediated"
+                  onClick={() => markFinding(drawerFinding, "remediated")}
+                  style={drawerPrimaryButtonStyle}
+                >
+                  Mark as remediated
+                </button>
+              )}
+              {drawerFinding.status.toLowerCase() !== "pass" && drawerState !== "accepted-risk" && (
+                <button
+                  type="button"
+                  data-testid="drawer-accept-risk"
+                  onClick={() => markFinding(drawerFinding, "accepted-risk")}
+                  style={drawerButtonStyle}
+                >
+                  Accept risk
+                </button>
+              )}
+              {!canApply && (
+                <span style={{ fontSize: "12px", color: "var(--text-soft)" }}>
+                  Applying remediation requires Remediation.Apply.
+                </span>
+              )}
+            </div>
+
+            {statusMessage && (
+              <div role="status" data-testid="drawer-status" style={{ fontSize: "13px", color: "var(--text-soft)" }}>
+                {statusMessage}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Apply confirmation, shared with the Remediation page's route (T-0925). */}
+      {applyActions && (plan || planId) && (
+        <ApplyActionDialog
+          planId={plan?.plan.id ?? planId}
+          tenantId={run.tenantId}
+          actions={applyActions}
+          fetcher={fetcher}
+          onApplied={handleApplied}
+          onClose={() => setApplyActions(null)}
+        />
       )}
     </div>
   );

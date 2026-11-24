@@ -1,4 +1,4 @@
-BeforeAll {
+﻿BeforeAll {
     $script:repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path
     $script:workersDir = Join-Path $script:repoRoot 'portal/workers/M365Portal.Workers'
     $script:entrypoints = Join-Path $script:repoRoot 'portal/workers'
@@ -61,7 +61,13 @@ BeforeAll {
                 return @{ id = 'group-new' }
             }
             if ($key -like 'GET /v1.0/sites/site-1*') {
-                return @{ id = 'site-1'; webUrl = 'https://contoso.sharepoint.com/sites/alpha' }
+                return @{
+                    id                = 'site-1'
+                    displayName       = 'Team Alpha'
+                    webUrl            = 'https://contoso.sharepoint.com/sites/alpha'
+                    sharingCapability = 'disabled'
+                    lockState         = 'Unlock'
+                }
             }
             if ($key -like 'GET /v1.0/groups/site-live*') {
                 return @{ id = 'site-live'; displayName = 'Project Alpha'; mail = 'project-alpha.example.invalid'; visibility = 'Public' }
@@ -134,7 +140,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.items[0].storageUsedPercent | Should -BeGreaterThan 0
             $result.items[0].sensitivity | Should -Be 'General'
             $result.items[0].sharing | Should -Be 'externalUserSharingOnly'
-            Assert-MockCalled Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
+            Should -Invoke Connect-WorkerTenant -ParameterFilter { $JobFile -eq $script:jobFile }
         }
 
         It 'get-site-browser.ps1 reads SiteId and answers the browser with hand-off paths' {
@@ -221,7 +227,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.id | Should -Not -BeNullOrEmpty
             $result.name | Should -Be 'Team Alpha'
             $result.error | Should -BeNullOrEmpty
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/groups' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/groups' }
         }
 
         It 'new-sharepoint-site-bulk.ps1 reads payload.csv and answers one row per site' {
@@ -269,7 +275,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.auditEvent.action | Should -Be 'sharepoint.site.delete'
             $result.auditEvent.result | Should -Be 'success'
             $result.auditEvent.actor | Should -Be ''
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/groups/site-live' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/groups/site-live' }
         }
 
         It 'invoke-sharepoint-site-action.ps1 restores a soft-deleted site' {
@@ -291,7 +297,7 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.operation | Should -Be 'restore'
             $result.targetName | Should -Be 'Retired Site'
             $result.auditEvent.action | Should -Be 'sharepoint.site.restore'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/directory/deletedItems/site-deleted/restore' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'POST' -and $Uri -like '/v1.0/directory/deletedItems/site-deleted/restore' }
         }
 
         It 'invoke-sharepoint-site-action.ps1 lists the recycle bin' {
@@ -334,7 +340,41 @@ Describe 'SharePoint BFF worker contract (T-0855)' {
             $result.summary.succeeded | Should -Be 1
             $result.results[0].status | Should -Be 'emptied'
             $result.auditEvents[0].action | Should -Be 'sharepoint.recyclebin.empty'
-            Assert-MockCalled Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/directory/deletedItems/recycled-1' }
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like '/v1.0/directory/deletedItems/recycled-1' }
+        }
+
+        It 'invoke-sharepoint-site-action.ps1 reads the edit action and patches site properties' {
+            script:New-GraphMock
+            script:New-JobFile @{
+                schemaVersion = 'v1'
+                correlationId = 'corr-edit-1'
+                action        = 'edit'
+                payload       = @{
+                    siteId      = 'site-1'
+                    displayName = 'Team Beta'
+                    sharing     = 'externalUserSharingOnly'
+                    lockState   = 'ReadOnly'
+                    dryRun      = $false
+                }
+            }
+
+            $result = script:Run-Entrypoint 'invoke-sharepoint-site-action.ps1'
+
+            $result.success | Should -BeTrue
+            $result.state | Should -Be 'succeeded'
+            $result.operation | Should -Be 'edit'
+            $result.siteId | Should -Be 'site-1'
+            $result.targetName | Should -Be 'Team Beta'
+            $result.plan.before.displayName | Should -Be 'Team Alpha'
+            $result.plan.after.displayName | Should -Be 'Team Beta'
+            $result.plan.after.sharing | Should -Be 'externalUserSharingOnly'
+            $result.plan.after.lockState | Should -Be 'ReadOnly'
+            $result.auditEvent.action | Should -Be 'sharepoint.site.edit'
+            Should -Invoke Invoke-MgGraphRequest -ParameterFilter { $Method -eq 'PATCH' -and $Uri -eq '/v1.0/sites/site-1' }
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

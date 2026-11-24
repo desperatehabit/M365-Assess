@@ -4,3 +4,7 @@
 # Test fixtures (D5 #789): JSON snapshots used by mocked Graph/EXO tests.
 # Pinned to LF so cross-platform CI doesn't see false drift on Windows runners.
 tests/Fixtures/**/*.json text eol=lf
+
+# Portal OpenAPI contract: openapi.test.ts compares it byte-for-byte with the
+# generated document (LF). Pinned so a Windows checkout does not see false drift.
+portal/contracts/openapi/*.yaml text eol=lf

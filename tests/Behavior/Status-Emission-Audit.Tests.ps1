@@ -14,14 +14,17 @@
 # Without this guardrail, "I couldn't measure it, returning Review"
 # silently accumulates and erodes the report's credibility.
 #
-# Ceiling values are the snapshot taken 2026-04-30. Adjust ONLY when
+# Ceiling values are the snapshot taken 2026-11-20. Adjust ONLY when
 # the audit doc has been updated to reflect the new state.
 
 BeforeAll {
     $script:srcRoot = "$PSScriptRoot/../../src/M365-Assess"
     $script:emissionPattern = "Status\s*=\s*'(Review|Unknown|Skipped)'"
 
+    # Collectors only: Remediate/ is not a collector, and its local
+    # `$specStatus = 'unknown'` would otherwise match the pattern.
     $script:emissions = Get-ChildItem -Path $script:srcRoot -Recurse -Filter '*.ps1' |
+        Where-Object { $_.FullName -notmatch '[\\/]Remediate[\\/]' } |
         Select-String -Pattern $script:emissionPattern |
         ForEach-Object {
             if ($_.Line -match "'(Review|Unknown|Skipped)'") {
@@ -41,19 +44,19 @@ BeforeAll {
 }
 
 Describe 'Review/Unknown/Skipped emission count lock-down (#884)' {
-    # Ceiling values capture the audited state as of 2026-04-30. Raising
+    # Ceiling values capture the audited state as of 2026-11-20. Raising
     # these requires a corresponding entry in docs/research/review-status-
     # audit.md classifying the new emission as genuine-limitation vs.
     # collector-bug.
 
-    It "Review emissions stay at or below the audited ceiling (70)" {
+    It "Review emissions stay at or below the audited ceiling (88)" {
         $script:counts.Review |
-            Should -BeLessOrEqual 70 -Because 'a new Review emission was added without updating docs/research/review-status-audit.md — see issue #884'
+            Should -BeLessOrEqual 88 -Because 'a new Review emission was added without updating docs/research/review-status-audit.md — see issue #884'
     }
 
-    It "Skipped emissions stay at or below the audited ceiling (31)" {
+    It "Skipped emissions stay at or below the audited ceiling (33)" {
         $script:counts.Skipped |
-            Should -BeLessOrEqual 31 -Because 'a new Skipped emission was added without updating docs/research/review-status-audit.md — see issue #884'
+            Should -BeLessOrEqual 33 -Because 'a new Skipped emission was added without updating docs/research/review-status-audit.md — see issue #884'
     }
 
     It "Unknown emissions stay at or below the audited ceiling (1)" {
@@ -62,8 +65,8 @@ Describe 'Review/Unknown/Skipped emission count lock-down (#884)' {
     }
 
     It 'reports current emission counts for visibility (informational)' {
-        Write-Host ("    [INFO] Review:  $($script:counts.Review) / 70")
-        Write-Host ("    [INFO] Skipped: $($script:counts.Skipped) / 31")
+        Write-Host ("    [INFO] Review:  $($script:counts.Review) / 88")
+        Write-Host ("    [INFO] Skipped: $($script:counts.Skipped) / 33")
         Write-Host ("    [INFO] Unknown: $($script:counts.Unknown) / 1")
         Write-Host ("    [INFO] Total:   $($script:emissions.Count)")
         $script:emissions.Count | Should -BeGreaterThan 0

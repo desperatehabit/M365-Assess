@@ -19,6 +19,7 @@ import { requireTenantInScope, type Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route } from "../server.js";
 
 export const TENANT_CREDENTIAL_PATH = "/v1/tenants/:id/credential";
+export const TENANT_CREDENTIALS_PATH = "/v1/tenants/:id/credentials";
 
 export const CREDENTIALS_PERMISSION = "CIPP.Admin.TenantCredentials";
 
@@ -33,6 +34,9 @@ export type CredentialAuthMethod =
   | "certificate-pfx"
   | "client-secret";
 
+/** Credential purpose (T-0917): reader is the assessment app, operator the write app. */
+export type CredentialPurpose = "reader" | "operator";
+
 export interface CredentialRecord {
   id: string;
   tenantId: string;
@@ -43,6 +47,9 @@ export interface CredentialRecord {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  purpose?: CredentialPurpose;
+  /** Write groups granted to the operator app (T-0942); null for a reader row. */
+  permissionGroups?: string[] | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -59,6 +66,8 @@ export interface CredentialView {
   environment: string;
   expiresOn: string | null;
   lastValidated: string | null;
+  purpose: CredentialPurpose;
+  permissionGroups: string[];
   state: CredentialState;
   createdAt: string;
   updatedAt: string;
@@ -82,8 +91,14 @@ export interface CredentialAuditInput {
 }
 
 export interface CredentialStoreRow {
-  getCredential(tenantId: string): Promise<CredentialRecord | undefined>;
+  getCredential(
+    tenantId: string,
+    purpose?: CredentialPurpose,
+  ): Promise<CredentialRecord | undefined>;
+  listCredentials(tenantId: string): Promise<CredentialRecord[]>;
   upsertCredential(input: CredentialRecord): Promise<CredentialRecord>;
+  /** Removes one purpose's row. The Entra app and its grants stay in place. */
+  deleteCredential(tenantId: string, purpose: CredentialPurpose): Promise<boolean>;
   appendAuditEvent(input: CredentialAuditInput): Promise<unknown>;
 }
 
@@ -266,6 +281,8 @@ function toView(record: CredentialRecord): CredentialView {
     environment: record.environment,
     expiresOn: record.expiresOn,
     lastValidated: record.lastValidated,
+    purpose: record.purpose ?? "reader",
+    permissionGroups: [...(record.permissionGroups ?? [])],
     state: deriveCredentialState(record),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -357,6 +374,7 @@ export function createCredentialRoutes(options: CredentialRouteOptions): Route[]
           environment,
           expiresOn,
           lastValidated: null,
+          purpose: "reader",
           createdAt: prior?.createdAt ?? instant,
           updatedAt: instant,
         });
@@ -382,12 +400,117 @@ export function createCredentialRoutes(options: CredentialRouteOptions): Route[]
         return { status: prior === undefined ? 201 : 200, body: toView(stored) };
       }),
     },
+    {
+      // The tenant detail page has always read the reader credential here. Keep
+      // that single-credential read reader-by-default; the list route below
+      // returns every purpose for the T-0942 Access tab.
+      method: "GET",
+      path: TENANT_CREDENTIAL_PATH,
+      handler: handler(async (ctx) => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        if (options.authorize) {
+          await options.authorize(caller, CREDENTIALS_PERMISSION);
+        }
+        const tenantId = requireTenantId(ctx);
+        requireTenantInScope(caller, tenantId);
+        const reader = await options.records.getCredential(tenantId, "reader");
+        if (reader === undefined) {
+          throw new AppError(CREDENTIAL_NOT_FOUND, "tenant credential was not found", 404);
+        }
+        return { status: 200, body: toView(reader) };
+      }),
+    },
+    {
+      method: "GET",
+      path: TENANT_CREDENTIALS_PATH,
+      handler: handler(async (ctx) => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        if (options.authorize) {
+          await options.authorize(caller, CREDENTIALS_PERMISSION);
+        }
+        const tenantId = requireTenantId(ctx);
+        requireTenantInScope(caller, tenantId);
+        const rows = await options.records.listCredentials(tenantId);
+        return { status: 200, body: { items: rows.map((row) => toView(row)) } };
+      }),
+    },
+    {
+      // Disabling portal write access removes the operator credential row only.
+      // The M365-Assess-Operator app and its Entra grants stay for audit or a
+      // later re-enable (operator decision, 2026-11-22).
+      method: "DELETE",
+      path: TENANT_CREDENTIAL_PATH,
+      handler: handler(async (ctx) => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        if (options.authorize) {
+          await options.authorize(caller, CREDENTIALS_PERMISSION);
+        }
+        const tenantId = requireTenantId(ctx);
+        requireTenantInScope(caller, tenantId);
+
+        const purpose = ctx.query.get("purpose");
+        if (purpose !== "operator") {
+          throw validationError(
+            "only purpose=operator can be deleted; the reader credential cannot be removed through this route",
+            "purpose",
+          );
+        }
+
+        const prior = await options.records.getCredential(tenantId, "operator");
+        if (prior === undefined) {
+          throw new AppError(CREDENTIAL_NOT_FOUND, "operator credential was not found", 404);
+        }
+        const removed = await options.records.deleteCredential(tenantId, "operator");
+        if (!removed) {
+          throw new AppError(CREDENTIAL_NOT_FOUND, "operator credential was not found", 404);
+        }
+
+        const instant = now();
+        await options.records.appendAuditEvent({
+          id: randomUUID(),
+          timestamp: instant,
+          actorUserId: caller.userId ?? null,
+          actorType: "user",
+          tenantId,
+          action: "tenant.credential.delete",
+          targetType: "tenant-credential",
+          targetId: tenantId,
+          before: snapshot(prior),
+          after: null,
+          result: "success",
+          error: null,
+          source: "request",
+          correlationId: ctx.correlationId,
+        });
+        return { status: 204 };
+      }),
+    },
   ];
 }
 
 export const CREDENTIALS_OPENAPI = {
   paths: {
     "/tenants/{id}/credential": {
+      get: {
+        operationId: "getTenantCredential",
+        summary: "Read the tenant's reader credential (reader by default)",
+        permission: CREDENTIALS_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "The reader credential reference; no secret value.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TenantCredentialView" },
+              },
+            },
+          },
+          "401": { description: "Authentication required." },
+          "403": { description: "Tenant is outside the caller scope, or the caller lacks tenants.credentials." },
+          "404": { description: "The tenant has no reader credential." },
+        },
+      },
       post: {
         operationId: "setTenantCredential",
         summary: "Set or rotate a tenant credential; stores a secret reference only",
@@ -406,6 +529,51 @@ export const CREDENTIALS_OPENAPI = {
           "200": { description: "The rotated credential reference; no secret value." },
           "201": { description: "The new credential reference; no secret value." },
           "400": { description: "Validation failed, or a client secret was supplied for Exchange Online/Purview sections." },
+          "401": { description: "Authentication required." },
+          "403": { description: "Tenant is outside the caller scope, or the caller lacks tenants.credentials." },
+        },
+      },
+      delete: {
+        operationId: "deleteTenantCredential",
+        summary: "Disable portal write access by removing the operator credential",
+        description:
+          "Removes the operator credential row and records an audit event. The Entra app registration and its grants are left in place. Only the operator purpose can be deleted through this route; the reader credential is never removed.",
+        permission: CREDENTIALS_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          {
+            name: "purpose",
+            in: "query",
+            required: true,
+            schema: { type: "string", enum: ["operator"] },
+          },
+        ],
+        responses: {
+          "204": { description: "The operator credential was removed." },
+          "400": { description: "The requested purpose is not operator; the reader credential cannot be deleted." },
+          "401": { description: "Authentication required." },
+          "403": { description: "Tenant is outside the caller scope, or the caller lacks tenants.credentials." },
+          "404": { description: "The tenant has no operator credential." },
+        },
+      },
+    },
+    "/tenants/{id}/credentials": {
+      get: {
+        operationId: "listTenantCredentials",
+        summary: "List every credential a tenant holds, including the operator credential",
+        permission: CREDENTIALS_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [{ name: "id", in: "path", required: true, schema: { type: "string" } }],
+        responses: {
+          "200": {
+            description: "The tenant's reader and operator credentials; no secret values.",
+            content: {
+              "application/json": {
+                schema: { $ref: "#/components/schemas/TenantCredentialList" },
+              },
+            },
+          },
           "401": { description: "Authentication required." },
           "403": { description: "Tenant is outside the caller scope, or the caller lacks tenants.credentials." },
         },
@@ -430,6 +598,53 @@ export const CREDENTIALS_OPENAPI = {
         environment: { type: "string", enum: ["commercial", "gcc", "gcchigh", "dod"] },
         expiresOn: { type: ["string", "null"], format: "date-time" },
         sections: { type: "array", items: { type: "string" } },
+      },
+    },
+    TenantCredentialView: {
+      type: "object",
+      required: [
+        "tenantId",
+        "authMethod",
+        "clientId",
+        "secretRef",
+        "environment",
+        "purpose",
+        "permissionGroups",
+        "state",
+        "createdAt",
+        "updatedAt",
+      ],
+      properties: {
+        tenantId: { type: "string" },
+        authMethod: { type: "string" },
+        clientId: { type: "string" },
+        secretRef: { type: "string" },
+        thumbprint: { type: ["string", "null"] },
+        environment: { type: "string" },
+        expiresOn: { type: ["string", "null"], format: "date-time" },
+        lastValidated: { type: ["string", "null"] },
+        purpose: { type: "string", enum: ["reader", "operator"] },
+        permissionGroups: {
+          type: "array",
+          description: "Write-permission groups granted to the operator app; empty for the reader.",
+          items: { type: "string" },
+        },
+        state: {
+          type: "string",
+          enum: ["valid", "expiring", "expired", "missing"],
+        },
+        createdAt: { type: "string", format: "date-time" },
+        updatedAt: { type: "string", format: "date-time" },
+      },
+    },
+    TenantCredentialList: {
+      type: "object",
+      required: ["items"],
+      properties: {
+        items: {
+          type: "array",
+          items: { $ref: "#/components/schemas/TenantCredentialView" },
+        },
       },
     },
   },

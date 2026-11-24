@@ -23,9 +23,117 @@ import {
 import type { Route, RouteResponse } from "../server.js";
 import { ACCESS_CHECK_OPENAPI } from "./access.js";
 import { API_CLIENTS_OPENAPI } from "./api-clients.js";
+import { CREDENTIALS_OPENAPI } from "./credentials.js";
+import { ONBOARD_OPENAPI } from "./onboard.js";
 import { ME_OPENAPI } from "./me.js";
 import { ROLES_OPENAPI } from "./roles.js";
 import { PORTAL_USERS_OPENAPI } from "./users.js";
+// EPIC-028 Incidents & Alerts (T-0858).
+import { INCIDENTS_OPENAPI } from "./incidents.js";
+import { INCIDENT_DETAIL_OPENAPI } from "./incidents-detail.js";
+import { INCIDENT_ACTIONS_OPENAPI } from "./incidents-actions.js";
+import { ALERTS_OPENAPI } from "./alerts.js";
+import { CHECK_ALERTS_OPENAPI } from "./check-alerts.js";
+// EPIC-029 Alerting & notifications (T-0859).
+import { ALERT_RULES_OPENAPI } from "./alert-rules.js";
+import { ALERT_RULES_TEST_OPENAPI } from "./alert-rules-test.js";
+import { ALERT_EVENTS_OPENAPI } from "./alert-events.js";
+import { NOTIFICATIONS_OPENAPI } from "./notifications.js";
+// EPIC-019 Defender & Vulnerabilities (T-0849).
+import { DEFENDER_STATUS_OPENAPI } from "./defender-status.js";
+import { DEFENDER_DEPLOY_OPENAPI } from "./defender-deploy.js";
+import { DEFENDER_VULNERABILITIES_OPENAPI } from "./defender-vulnerabilities.js";
+import { MDE_ONBOARDING_OPENAPI } from "./defender-mde-onboarding.js";
+import { ONBOARDING_PREFLIGHT_OPENAPI } from "./onboarding-preflight.js";
+// EPIC-021 Transport & Connectors (T-0851).
+import { TRANSPORT_RULES_OPENAPI } from "./transport-rules.js";
+import { CONNECTORS_OPENAPI } from "./connectors.js";
+import { TRANSPORT_RULE_TEMPLATES_OPENAPI } from "./transport-rule-templates.js";
+import { CONNECTOR_TEMPLATES_OPENAPI } from "./connector-templates.js";
+// EPIC-024 Email Tools (T-0854).
+import { MESSAGE_TRACE_OPENAPI } from "./message-trace.js";
+import { HISTORICAL_SEARCH_OPENAPI } from "./historical-search.js";
+import { MESSAGES_OPENAPI } from "./messages.js";
+import { MAIL_RESTORES_OPENAPI } from "./mail-restores.js";
+import { ENCRYPTION_OPENAPI } from "./encryption.js";
+// EPIC-026 Teams & Voice (T-0856).
+import { TEAMS_OPENAPI } from "./teams.js";
+import { TEAMS_CREATE_OPENAPI } from "./teams-create.js";
+import { TEAMS_LIFECYCLE_OPENAPI } from "./teams-lifecycle.js";
+import { TEAMS_ACTIVITY_OPENAPI } from "./teams-activity.js";
+import { TEAMS_LIS_OPENAPI } from "./teams-lis.js";
+import { TEAMS_VOICE_OPENAPI } from "./teams-voice.js";
+// EPIC-027 Sharing & Permissions (T-0857).
+import { SHARING_REPORT_OPENAPI } from "./sharing-report.js";
+import { SHARING_PERMISSIONS_OPENAPI } from "./sharing-permissions.js";
+import { SHARING_EXTERNAL_USERS_OPENAPI } from "./sharing-external-users.js";
+import { SHARING_LINKS_REMOVE_OPENAPI } from "./sharing-links-remove.js";
+// EPIC-031 Secure Score (T-0861).
+import { SECURE_SCORE_OPENAPI } from "./secure-score.js";
+import { SECURE_SCORE_FLEET_OPENAPI } from "./secure-score-fleet.js";
+import { SECURE_SCORE_PEERS_OPENAPI } from "./secure-score-peers.js";
+import { SECURE_SCORE_TREND_OPENAPI } from "./secure-score-trend.js";
+// EPIC-032 Audit Logs & Webhooks (T-0862).
+import { AUDIT_SEARCH_OPENAPI } from "./audit-search.js";
+import { AUDIT_SEARCHES_OPENAPI } from "./audit-searches.js";
+import { AUDIT_COVERAGE_OPENAPI } from "./audit-coverage.js";
+import { AUDIT_EXCLUSION_WINDOWS_OPENAPI } from "./audit-exclusion-windows.js";
+import { WEBHOOKS_OPENAPI } from "./webhooks.js";
+import { WEBHOOK_NOTIFY_OPENAPI } from "./webhook-notify.js";
+// EPIC-033 Licensing (T-0863).
+import { LICENSES_OPENAPI } from "./licenses.js";
+import { LICENSE_ASSIGN_OPENAPI } from "./license-assign.js";
+import { LICENSE_OPTIMIZATION_OPENAPI } from "./licenses-optimization.js";
+import { LICENSE_PRICING_OPENAPI } from "./license-pricing.js";
+// EPIC-034 Domains & DNS (T-0864).
+import { DOMAINS_OPENAPI } from "./domains.js";
+import { DOMAINS_ACTIONS_OPENAPI } from "./domains-actions.js";
+import { DOMAINS_DNS_OPENAPI } from "./domains-dns.js";
+import { DOMAINS_RECOMMENDATIONS_OPENAPI } from "./domains-recommendations.js";
+import { DOMAINS_SCHEDULE_OPENAPI } from "./domains-schedule.js";
+// EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+import { TEST_PACKS_OPENAPI } from "./test-packs.js";
+import { CUSTOM_TESTS_OPENAPI } from "./custom-tests.js";
+// EPIC-037 Settings, Branding & Preferences (T-0867).
+import { SETTINGS_OPENAPI } from "./settings.js";
+import { BRANDING_OPENAPI } from "./branding.js";
+import { FEATURE_FLAGS_OPENAPI } from "./feature-flags.js";
+import { PREFERENCES_OPENAPI } from "./preferences.js";
+import { LOGBOOK_OPENAPI } from "./logbook.js";
+import { DIAGNOSTICS_OPENAPI } from "./diagnostics.js";
+// EPIC-039 Template Library & Catalog (T-0869).
+import { TEMPLATE_REPOS_OPENAPI } from "../templates/repo-routes.js";
+// EPIC-040 Graph Explorer & Admin Tools (T-0870).
+import { GRAPH_EXPLORER_OPENAPI } from "../tools/graph-explorer-routes.js";
+import { GRAPH_PRESET_OPENAPI } from "../tools/graph-preset-routes.js";
+import { TENANT_LOOKUP_OPENAPI } from "../tools/tenant-lookup-routes.js";
+import { GEOIP_OPENAPI, DOMAIN_CHECK_OPENAPI } from "../tools/geoip-routes.js";
+import { BREACH_LOOKUP_OPENAPI } from "../tools/breach-lookup-routes.js";
+// EPIC-023 Contacts & Resources (T-0853).
+import { CONTACTS_OPENAPI } from "./contacts.js";
+import { CONTACTS_CRUD_OPENAPI } from "./contacts-crud.js";
+import { CONTACTS_IMPORT_OPENAPI } from "./contacts-import.js";
+import { CONTACT_TEMPLATES_OPENAPI } from "./contact-templates.js";
+import { CONTACT_TEMPLATE_DEPLOY_OPENAPI } from "./contact-templates-deploy.js";
+import { RESOURCES_OPENAPI } from "./resources.js";
+import { RESOURCES_CRUD_OPENAPI } from "./resources-crud.js";
+// EPIC-035 Backup & Restore (T-0865).
+import { BACKUPS_OPENAPI } from "./backups.js";
+import { BACKUP_SETTINGS_OPENAPI } from "./backup-settings.js";
+import { BACKUP_RESTORE_PERMISSION, BACKUPS_RESTORE_OPENAPI } from "./backups-restore.js";
+// EPIC-025 SharePoint Templates (T-0896).
+import { SHAREPOINT_TEMPLATES_OPENAPI } from "./sharepoint-templates.js";
+// EPIC-014 Groups CRUD & Convert (T-0900).
+import { GROUPS_CRUD_OPENAPI } from "./groups-crud.js";
+// EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+import { QUARANTINE_OPENAPI } from "./quarantine.js";
+import { QUARANTINE_BULK_OPENAPI } from "./quarantine-bulk.js";
+import { QUARANTINE_POLICIES_OPENAPI } from "./quarantine-policies.js";
+import { ALLOW_BLOCK_OPENAPI } from "./allow-block.js";
+import { FILTERS_OPENAPI } from "./filters.js";
+import { FILTER_TEMPLATES_OPENAPI } from "./filter-templates.js";
+// EPIC-003 run starting points (T-0922).
+import { RUN_TEMPLATES_OPENAPI } from "./run-templates.js";
 
 export type OpenApiOperation = Record<string, unknown>;
 
@@ -89,6 +197,117 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
   ROLES_OPENAPI as unknown as OpenApiFragment,
   API_CLIENTS_OPENAPI as unknown as OpenApiFragment,
   ACCESS_CHECK_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-002 tenant credentials and onboarding (T-0917, T-0942).
+  CREDENTIALS_OPENAPI as unknown as OpenApiFragment,
+  ONBOARD_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-028 Incidents & Alerts (T-0858).
+  INCIDENTS_OPENAPI as unknown as OpenApiFragment,
+  INCIDENT_DETAIL_OPENAPI as unknown as OpenApiFragment,
+  INCIDENT_ACTIONS_OPENAPI as unknown as OpenApiFragment,
+  ALERTS_OPENAPI as unknown as OpenApiFragment,
+  CHECK_ALERTS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-029 Alerting & notifications (T-0859).
+  ALERT_RULES_OPENAPI as unknown as OpenApiFragment,
+  ALERT_RULES_TEST_OPENAPI as unknown as OpenApiFragment,
+  ALERT_EVENTS_OPENAPI as unknown as OpenApiFragment,
+  NOTIFICATIONS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-019 Defender & Vulnerabilities (T-0849).
+  DEFENDER_STATUS_OPENAPI as unknown as OpenApiFragment,
+  DEFENDER_DEPLOY_OPENAPI as unknown as OpenApiFragment,
+  DEFENDER_VULNERABILITIES_OPENAPI as unknown as OpenApiFragment,
+  MDE_ONBOARDING_OPENAPI as unknown as OpenApiFragment,
+  // Onboarding prerequisites preflight (T-0915).
+  ONBOARDING_PREFLIGHT_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-021 Transport & Connectors (T-0851).
+  TRANSPORT_RULES_OPENAPI as unknown as OpenApiFragment,
+  CONNECTORS_OPENAPI as unknown as OpenApiFragment,
+  TRANSPORT_RULE_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  CONNECTOR_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-024 Email Tools (T-0854).
+  MESSAGE_TRACE_OPENAPI as unknown as OpenApiFragment,
+  HISTORICAL_SEARCH_OPENAPI as unknown as OpenApiFragment,
+  MESSAGES_OPENAPI as unknown as OpenApiFragment,
+  MAIL_RESTORES_OPENAPI as unknown as OpenApiFragment,
+  ENCRYPTION_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-026 Teams & Voice (T-0856).
+  TEAMS_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_CREATE_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_LIFECYCLE_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_ACTIVITY_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_LIS_OPENAPI as unknown as OpenApiFragment,
+  TEAMS_VOICE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-027 Sharing & Permissions (T-0857).
+  SHARING_REPORT_OPENAPI as unknown as OpenApiFragment,
+  SHARING_PERMISSIONS_OPENAPI as unknown as OpenApiFragment,
+  SHARING_EXTERNAL_USERS_OPENAPI as unknown as OpenApiFragment,
+  SHARING_LINKS_REMOVE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-031 Secure Score (T-0861).
+  SECURE_SCORE_OPENAPI as unknown as OpenApiFragment,
+  SECURE_SCORE_FLEET_OPENAPI as unknown as OpenApiFragment,
+  SECURE_SCORE_PEERS_OPENAPI as unknown as OpenApiFragment,
+  SECURE_SCORE_TREND_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-032 Audit Logs & Webhooks (T-0862).
+  AUDIT_SEARCH_OPENAPI as unknown as OpenApiFragment,
+  AUDIT_SEARCHES_OPENAPI as unknown as OpenApiFragment,
+  AUDIT_COVERAGE_OPENAPI as unknown as OpenApiFragment,
+  AUDIT_EXCLUSION_WINDOWS_OPENAPI as unknown as OpenApiFragment,
+  WEBHOOKS_OPENAPI as unknown as OpenApiFragment,
+  WEBHOOK_NOTIFY_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-033 Licensing (T-0863).
+  LICENSES_OPENAPI as unknown as OpenApiFragment,
+  LICENSE_ASSIGN_OPENAPI as unknown as OpenApiFragment,
+  LICENSE_OPTIMIZATION_OPENAPI as unknown as OpenApiFragment,
+  LICENSE_PRICING_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-034 Domains & DNS (T-0864).
+  DOMAINS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_ACTIONS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_DNS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_RECOMMENDATIONS_OPENAPI as unknown as OpenApiFragment,
+  DOMAINS_SCHEDULE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+  TEST_PACKS_OPENAPI as unknown as OpenApiFragment,
+  CUSTOM_TESTS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-037 Settings, Branding & Preferences (T-0867).
+  SETTINGS_OPENAPI as unknown as OpenApiFragment,
+  BRANDING_OPENAPI as unknown as OpenApiFragment,
+  FEATURE_FLAGS_OPENAPI as unknown as OpenApiFragment,
+  PREFERENCES_OPENAPI as unknown as OpenApiFragment,
+  LOGBOOK_OPENAPI as unknown as OpenApiFragment,
+  DIAGNOSTICS_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-039 Template Library & Catalog (T-0869).
+  { paths: TEMPLATE_REPOS_OPENAPI } as unknown as OpenApiFragment,
+  // EPIC-040 Graph Explorer & Admin Tools (T-0870).
+  GRAPH_EXPLORER_OPENAPI as unknown as OpenApiFragment,
+  GRAPH_PRESET_OPENAPI as unknown as OpenApiFragment,
+  TENANT_LOOKUP_OPENAPI as unknown as OpenApiFragment,
+  GEOIP_OPENAPI as unknown as OpenApiFragment,
+  DOMAIN_CHECK_OPENAPI as unknown as OpenApiFragment,
+  BREACH_LOOKUP_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-023 Contacts & Resources (T-0853).
+  CONTACTS_OPENAPI as unknown as OpenApiFragment,
+  CONTACTS_CRUD_OPENAPI as unknown as OpenApiFragment,
+  CONTACTS_IMPORT_OPENAPI as unknown as OpenApiFragment,
+  CONTACT_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  CONTACT_TEMPLATE_DEPLOY_OPENAPI as unknown as OpenApiFragment,
+  RESOURCES_OPENAPI as unknown as OpenApiFragment,
+  RESOURCES_CRUD_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-035 Backup & Restore (T-0865).
+  BACKUPS_OPENAPI as unknown as OpenApiFragment,
+  BACKUP_SETTINGS_OPENAPI as unknown as OpenApiFragment,
+  BACKUPS_RESTORE_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-025 SharePoint Templates (T-0896).
+  SHAREPOINT_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-014 Groups CRUD & Convert (T-0900).
+  GROUPS_CRUD_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+  QUARANTINE_BULK_OPENAPI as unknown as OpenApiFragment,
+  QUARANTINE_OPENAPI as unknown as OpenApiFragment,
+  QUARANTINE_POLICIES_OPENAPI as unknown as OpenApiFragment,
+  ALLOW_BLOCK_OPENAPI as unknown as OpenApiFragment,
+  FILTERS_OPENAPI as unknown as OpenApiFragment,
+  FILTER_TEMPLATES_OPENAPI as unknown as OpenApiFragment,
+  // EPIC-003 run starting points (T-0922).
+  { paths: RUN_TEMPLATES_OPENAPI } as unknown as OpenApiFragment,
 ];
 
 // Fragment operations that carry no `permission` because they require only an
@@ -96,6 +315,13 @@ export const ROUTE_OPENAPI_FRAGMENTS: readonly OpenApiFragment[] = [
 const FRAGMENT_PERMISSION_OVERRIDES: Readonly<Record<string, string>> = {
   "GET /me": AUTHENTICATED_PERMISSION,
   "POST /access/check": AUTHENTICATED_PERMISSION,
+  // The check-alerts factory only checks authentication; the app mounts it behind
+  // the incident read permission (T-0858).
+  "GET /check-alerts": "Security.Incident.Read",
+  // Restore's OpenAPI fragment carries the wildcard scope; map it to the concrete
+  // taxonomy token registered in PermissionRegistry (T-0865).
+  "POST /backups/{id}/restore": BACKUP_RESTORE_PERMISSION,
+  "POST /backups/{id}/restore/preview": BACKUP_RESTORE_PERMISSION,
 };
 
 export const OPENAPI_SKELETON: OpenApiDocument = {
@@ -299,7 +525,7 @@ export function buildRouteMetadata(): Map<string, OpenApiMetadata> {
         const key = operationKey(method, path);
         const operationId = operation["operationId"];
         if (typeof operationId === "string") usedIds.add(operationId);
-        const permission = readPermission(operation) ?? FRAGMENT_PERMISSION_OVERRIDES[key];
+        const permission = FRAGMENT_PERMISSION_OVERRIDES[key] ?? readPermission(operation);
         metadata.set(key, permission === undefined ? { operation } : { operation, permission });
       }
     }

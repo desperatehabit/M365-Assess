@@ -32,8 +32,12 @@ export interface RunItem {
     readonly completed: number;
     readonly total: number;
     readonly percentage?: number;
+    /** The BFF names the derived percentage `percent` (T-0944). */
+    readonly percent?: number;
   } | number | null;
   readonly summaryCounts?: RunItemSummaryCounts | null;
+  /** Issues logged for the run (T-0929/T-0944). */
+  readonly issueCount?: number;
   readonly artifactPath?: string | null;
   readonly createdAt: string;
   readonly updatedAt?: string;
@@ -84,22 +88,71 @@ export function formatDateTime(isoString?: string | null): string {
   }
 }
 
+/**
+ * The words used for a run status in the Runs list, run detail and dashboard, so all
+ * three agree (T-0944). Only a succeeded run is "Completed"; a partial run finished
+ * but some sections errored or did not run.
+ */
+export function getRunStatusLabel(status: string): string {
+  switch (status.toLowerCase()) {
+    case "succeeded":
+      return "Completed";
+    case "partial":
+      return "Completed with issues";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "running":
+      return "Running";
+    case "queued":
+      return "Queued";
+    default:
+      return status;
+  }
+}
+
+const clampPercent = (value: number): number => Math.min(100, Math.max(0, value));
+
 export function calculateProgressPercentage(run: RunItem): number {
   if (typeof run.progress === "number") {
-    return Math.min(100, Math.max(0, run.progress));
+    return clampPercent(run.progress);
   }
   if (run.progress && typeof run.progress === "object") {
-    if (typeof run.progress.percentage === "number") {
-      return Math.min(100, Math.max(0, run.progress.percentage));
+    const explicit = run.progress.percentage ?? run.progress.percent;
+    if (typeof explicit === "number") {
+      return clampPercent(explicit);
     }
     if (run.progress.total > 0) {
-      return Math.min(100, Math.max(0, Math.round((run.progress.completed / run.progress.total) * 100)));
+      return clampPercent(Math.round((run.progress.completed / run.progress.total) * 100));
     }
   }
   if (run.status === "succeeded") return 100;
   if (run.status === "queued") return 0;
   if (run.status === "running") return 50;
-  return 100;
+  // A finished run that did not succeed is never painted full (T-0944). A multi-tenant
+  // parent counts the children that succeeded; anything else with no section data is 0.
+  if (run.children && run.children.length > 0) {
+    const succeeded = run.children.filter((child) => child.status === "succeeded").length;
+    return clampPercent(Math.round((succeeded / run.children.length) * 100));
+  }
+  return 0;
+}
+
+/** "3 / 13 sections" when the run carries a section count, else null. */
+export function getProgressCaption(run: RunItem): string | null {
+  if (run.progress && typeof run.progress === "object" && run.progress.total > 0) {
+    return `${run.progress.completed} / ${run.progress.total} sections`;
+  }
+  return null;
+}
+
+/** Main tenant text: the display name, else the ID (or a multi-tenant label). */
+export function getTenantLabel(run: RunItem, hasChildren: boolean): string {
+  const name = run.tenantDisplayName?.trim();
+  if (name) return name;
+  if (hasChildren) return "Multiple tenants";
+  return run.tenantId;
 }
 
 export function getStatusBadgeStyle(status: string): CSSProperties {
@@ -111,7 +164,7 @@ export function getStatusBadgeStyle(status: string): CSSProperties {
     borderRadius: "999px",
     fontSize: "12px",
     fontWeight: 600,
-    textTransform: "capitalize",
+    whiteSpace: "nowrap",
     fontFamily: "var(--font-sans, system-ui, sans-serif)",
   };
 
@@ -154,9 +207,9 @@ export function getStatusBadgeStyle(status: string): CSSProperties {
     case "partial":
       return {
         ...base,
-        background: "var(--warning-soft)",
-        color: "var(--warning-text)",
-        border: "1px solid var(--warning)",
+        background: "var(--warn-soft)",
+        color: "var(--warn-text)",
+        border: "1px solid var(--warn)",
       };
     default:
       return {
@@ -280,12 +333,19 @@ const progressBarTrackStyle: CSSProperties = {
   position: "relative",
 };
 
+const progressCaptionStyle: CSSProperties = {
+  marginTop: "4px",
+  fontSize: "11px",
+  color: "var(--text-soft)",
+  whiteSpace: "nowrap",
+};
+
 const progressBarStyle = (percent: number, status: string): CSSProperties => {
   let bg = "var(--accent)";
   if (status === "succeeded") bg = "var(--success)";
   else if (status === "failed") bg = "var(--danger)";
   else if (status === "cancelled") bg = "var(--text-soft)";
-  else if (status === "partial") bg = "var(--warning)";
+  else if (status === "partial") bg = "var(--warn)";
 
   return {
     width: `${Math.min(100, Math.max(0, percent))}%`,
@@ -352,6 +412,17 @@ export function RunsTable({
   const [sectionFilter, setSectionFilter] = useState<string>("");
   const [fromDate, setFromDate] = useState<string>("");
   const [toDate, setToDate] = useState<string>("");
+  // Rows are logical runs: a multi-tenant parent carries its per-tenant `children`.
+  const [expandedRuns, setExpandedRuns] = useState<ReadonlySet<string>>(() => new Set<string>());
+
+  const toggleExpanded = (runId: string): void => {
+    setExpandedRuns((previous) => {
+      const next = new Set(previous);
+      if (next.has(runId)) next.delete(runId);
+      else next.add(runId);
+      return next;
+    });
+  };
 
   const filteredRuns = useMemo(() => {
     return runs.filter((run) => {
@@ -363,9 +434,12 @@ export function RunsTable({
       }
       if (tenantFilter.trim()) {
         const query = tenantFilter.trim().toLowerCase();
-        const matchesId = run.tenantId.toLowerCase().includes(query);
-        const matchesName = (run.tenantDisplayName ?? "").toLowerCase().includes(query);
-        if (!matchesId && !matchesName) return false;
+        const matches = [run, ...(run.children ?? [])].some(
+          (candidate) =>
+            candidate.tenantId.toLowerCase().includes(query) ||
+            (candidate.tenantDisplayName ?? "").toLowerCase().includes(query),
+        );
+        if (!matches) return false;
       }
       if (sectionFilter.trim()) {
         const query = sectionFilter.trim().toLowerCase();
@@ -614,8 +688,12 @@ export function RunsTable({
                 const isRetryable = run.status === "failed" || run.status === "cancelled" || run.status === "partial";
                 const hasArtifacts = Boolean(run.artifactPath || run.status === "succeeded" || run.status === "failed" || run.status === "partial");
 
+                const hasChildren = Boolean(run.children && run.children.length > 0);
+                const expanded = expandedRuns.has(run.id);
+
                 return (
-                  <tr key={run.id} data-testid={`run-row-${run.id}`}>
+                  <React.Fragment key={run.id}>
+                  <tr data-testid={`run-row-${run.id}`}>
                     {/* Run ID (mono) */}
                     <td style={tdStyle}>
                       <span style={monoStyle} title={run.id}>
@@ -625,21 +703,30 @@ export function RunsTable({
 
                     {/* Tenant(s) */}
                     <td style={tdStyle}>
-                      {run.tenantDisplayName || run.tenantId}
-                      {run.children && run.children.length > 0 && (
-                        <span
-                          style={{
-                            marginLeft: "6px",
-                            padding: "1px 6px",
-                            borderRadius: "999px",
-                            fontSize: "11px",
-                            background: "var(--surface)",
-                            border: "1px solid var(--border)",
-                            color: "var(--text-soft)",
-                          }}
+                      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                        <span style={{ fontWeight: 500 }}>{getTenantLabel(run, hasChildren)}</span>
+                        {run.tenantDisplayName && run.tenantId !== "all" && (
+                          <span
+                            style={{ ...monoStyle, fontSize: "11px", color: "var(--text-soft)" }}
+                            title={run.tenantId}
+                            data-testid={`tenant-id-${run.id}`}
+                          >
+                            {run.tenantId}
+                          </span>
+                        )}
+                      </div>
+                      {hasChildren && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(run.id)}
+                          aria-expanded={expanded}
+                          aria-label={`${expanded ? "Hide" : "Show"} the ${run.children!.length} per-tenant runs of ${run.id}`}
+                          title={expanded ? "Hide per-tenant runs" : "Show per-tenant runs"}
+                          style={{ ...actionBtnStyle, marginTop: "4px" }}
+                          data-testid={`toggle-children-${run.id}`}
                         >
-                          {run.children.length} tenants
-                        </span>
+                          {run.children!.length} tenants
+                        </button>
                       )}
                     </td>
 
@@ -662,14 +749,17 @@ export function RunsTable({
                         style={getStatusBadgeStyle(run.status)}
                         data-testid={`status-badge-${run.id}`}
                       >
-                        {run.status}
+                        {getRunStatusLabel(run.status)}
                       </span>
                     </td>
 
-                    {/* Progress bar */}
+                    {/* Progress bar with percentage and section count (T-0944) */}
                     <td style={tdStyle}>
                       <div style={progressBarTrackStyle} title={`${percent}%`}>
                         <div style={progressBarStyle(percent, run.status)} />
+                      </div>
+                      <div style={progressCaptionStyle} data-testid={`progress-label-${run.id}`}>
+                        {[`${percent}%`, getProgressCaption(run)].filter(Boolean).join(" · ")}
                       </div>
                     </td>
 
@@ -764,6 +854,97 @@ export function RunsTable({
                       </div>
                     </td>
                   </tr>
+
+                  {hasChildren &&
+                    expanded &&
+                    run.children!.map((child) => {
+                      const childPercent = calculateProgressPercentage(child);
+                      return (
+                        <tr
+                          key={`${run.id}--${child.id}`}
+                          data-testid={`run-child-row-${child.id}`}
+                          style={{ background: "var(--surface)" }}
+                        >
+                          <td style={tdStyle}>
+                            <span style={monoStyle} title={child.id}>
+                              {child.id.slice(0, 8)}…
+                            </span>
+                          </td>
+                          <td style={tdStyle}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: "2px", paddingLeft: "12px" }}>
+                              <span>
+                                <span style={{ color: "var(--text-soft)" }}>↳ </span>
+                                {getTenantLabel(child, false)}
+                              </span>
+                              {child.tenantDisplayName && child.tenantId !== "all" && (
+                                <span
+                                  style={{ ...monoStyle, fontSize: "11px", color: "var(--text-soft)" }}
+                                  title={child.tenantId}
+                                >
+                                  {child.tenantId}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={tdStyle}>
+                            <span style={{ textTransform: "capitalize" }}>{child.trigger}</span>
+                          </td>
+                          <td style={tdStyle}>
+                            <span title={child.sections.join(", ")}>
+                              {child.sections.length} {child.sections.length === 1 ? "section" : "sections"}
+                            </span>
+                          </td>
+                          <td style={tdStyle}>
+                            <span
+                              className="status-badge"
+                              style={getStatusBadgeStyle(child.status)}
+                              data-testid={`status-badge-${child.id}`}
+                            >
+                              {getRunStatusLabel(child.status)}
+                            </span>
+                          </td>
+                          <td style={tdStyle}>
+                            <div style={progressBarTrackStyle} title={`${childPercent}%`}>
+                              <div style={progressBarStyle(childPercent, child.status)} />
+                            </div>
+                            <div style={progressCaptionStyle} data-testid={`progress-label-${child.id}`}>
+                              {[`${childPercent}%`, getProgressCaption(child)].filter(Boolean).join(" · ")}
+                            </div>
+                          </td>
+                          <td style={tdStyle}>
+                            {child.summaryCounts ? (
+                              <div style={{ display: "flex", gap: "6px", fontSize: "12px" }}>
+                                <span style={{ color: "var(--success)" }} title="Passed">
+                                  {child.summaryCounts.pass} pass
+                                </span>
+                                <span style={{ color: "var(--text-soft)" }}>·</span>
+                                <span style={{ color: "var(--danger)" }} title="Failed">
+                                  {child.summaryCounts.fail} fail
+                                </span>
+                              </div>
+                            ) : (
+                              <span style={{ color: "var(--text-soft)" }}>—</span>
+                            )}
+                          </td>
+                          <td style={tdStyle}>{formatDateTime(child.startedAt ?? child.createdAt)}</td>
+                          <td style={tdStyle}>{formatDuration(child.startedAt, child.finishedAt)}</td>
+                          <td style={{ ...tdStyle, textAlign: "right" }}>
+                            {onView && (
+                              <button
+                                type="button"
+                                style={actionBtnStyle}
+                                onClick={() => onView(child)}
+                                aria-label={`View run ${child.id}`}
+                                data-testid={`action-view-${child.id}`}
+                              >
+                                View
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </React.Fragment>
                 );
               })}
             </tbody>
@@ -785,24 +966,57 @@ export function RunsTable({
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span style={monoStyle}>{run.id.slice(0, 12)}…</span>
                   <span className="status-badge" style={getStatusBadgeStyle(run.status)}>
-                    {run.status}
+                    {getRunStatusLabel(run.status)}
                   </span>
                 </div>
 
                 <div>
                   <div style={{ fontWeight: 600, fontSize: "15px" }}>
-                    {run.tenantDisplayName || run.tenantId}
+                    {getTenantLabel(run, Boolean(run.children && run.children.length > 0))}
                   </div>
+                  {run.tenantDisplayName && run.tenantId !== "all" && (
+                    <div
+                      style={{ fontFamily: "var(--font-mono, monospace)", fontSize: "11px", color: "var(--text-soft)" }}
+                      title={run.tenantId}
+                    >
+                      {run.tenantId}
+                    </div>
+                  )}
                   <div style={{ fontSize: "12px", color: "var(--text-soft)" }}>
                     Trigger: <span style={{ textTransform: "capitalize" }}>{run.trigger}</span> · {run.sections.length} sections
                   </div>
+                  {run.children && run.children.length > 0 && (
+                    <div style={{ marginTop: "6px" }}>
+                      <button
+                        type="button"
+                        onClick={() => toggleExpanded(run.id)}
+                        aria-expanded={expandedRuns.has(run.id)}
+                        aria-label={`${expandedRuns.has(run.id) ? "Hide" : "Show"} the ${run.children.length} per-tenant runs of ${run.id}`}
+                        style={actionBtnStyle}
+                        data-testid={`card-toggle-children-${run.id}`}
+                      >
+                        {run.children.length} tenants
+                      </button>
+                      {expandedRuns.has(run.id) && (
+                        <ul style={{ margin: "8px 0 0", paddingLeft: "18px", fontSize: "12px", color: "var(--text-soft)" }}>
+                          {run.children.map((child) => (
+                            <li key={child.id} data-testid={`run-card-child-${child.id}`}>
+                              {getTenantLabel(child, false)} — {getRunStatusLabel(child.status)}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Progress bar */}
                 <div>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", marginBottom: "4px" }}>
                     <span style={{ color: "var(--text-soft)" }}>Progress</span>
-                    <span>{percent}%</span>
+                    <span data-testid={`card-progress-label-${run.id}`}>
+                      {[`${percent}%`, getProgressCaption(run)].filter(Boolean).join(" · ")}
+                    </span>
                   </div>
                   <div style={{ ...progressBarTrackStyle, width: "100%" }}>
                     <div style={progressBarStyle(percent, run.status)} />

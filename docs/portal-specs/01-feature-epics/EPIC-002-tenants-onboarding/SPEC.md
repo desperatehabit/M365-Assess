@@ -6,7 +6,7 @@
 - **Depends on:** EPIC-001
 - **Decisions:** [ADR-0017](../../../adr/0017-gdap-optional-tenant-source.md) (GDAP optional source; direct first)
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #1-#5; [`03-database.md`](../../00-guides/03-database.md) §3-4; [`04-data-modeling.md`](../../00-guides/04-data-modeling.md) §2
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-002.md`](../../../../ISSUES/epics/EPIC-002.md)
 
 ## 1. Purpose
 
@@ -240,4 +240,4 @@ Onboarding and credential operations **write to tenants** and therefore obey
 - [`../EPIC-001-platform-foundation/SPEC.md`](../EPIC-001-platform-foundation/SPEC.md) — RunContext + credential resolution
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — consumes credentials
 - [`../EPIC-038-rbac-api-clients/SPEC.md`](../EPIC-038-rbac-api-clients/SPEC.md) — tenant scoping
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-002.md`](../../../../ISSUES/epics/EPIC-002.md) — epic ticket

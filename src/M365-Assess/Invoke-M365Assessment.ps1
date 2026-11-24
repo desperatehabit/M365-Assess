@@ -216,6 +216,116 @@ function Get-RedactedText {
     return $result
 }
 
+function Get-CollectorOutcome {
+    <#
+    .SYNOPSIS
+        Reads a collector's self-reported outcome from its output (T-0937).
+    .DESCRIPTION
+        A collector may report its own outcome instead of leaving the orchestrator
+        to infer one from the number of rows it returned. It does so by emitting a
+        single object whose PSTypeName is 'M365Assess.CollectorOutcome':
+
+            [PSCustomObject]@{
+                PSTypeName = 'M365Assess.CollectorOutcome'
+                Outcome    = 'Skipped'   # Complete | Partial | Skipped | Failed
+                Reason     = 'app-only not supported: ...'
+            }
+
+        The outcome property is named 'Outcome', not 'Status', so a collector's
+        outcome object is never mistaken for an assessment finding (whose Status
+        uses the Add-SecuritySetting taxonomy). A child-process collector (Power
+        BI), which cannot return objects to the orchestrator, writes the same
+        shape as JSON to '<csv path>.status.json' beside its CSV output; the
+        orchestrator reads and removes that file.
+
+        Returns a normalized { Status; Reason } object, or $null when the
+        collector did not report an outcome (or reported an unknown status), in
+        which case the orchestrator keeps the historical row-count inference.
+    .PARAMETER CollectorOutput
+        The collector's pipeline output, including any outcome object.
+    .EXAMPLE
+        $outcome = Get-CollectorOutcome -CollectorOutput $rawOutput
+    #>
+    [CmdletBinding()]
+    [OutputType([PSCustomObject])]
+    param(
+        [Parameter()]
+        [AllowNull()]
+        [object[]]$CollectorOutput
+    )
+
+    $candidate = @($CollectorOutput | Where-Object {
+        $null -ne $_ -and $_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome'
+    }) | Select-Object -Last 1
+    if (-not $candidate) { return $null }
+
+    $status = ([string]$candidate.Outcome).Trim()
+    if ($status -notin @('Complete', 'Partial', 'Skipped', 'Failed')) {
+        Write-Verbose "Ignoring collector outcome with unknown status '$status'."
+        return $null
+    }
+
+    [PSCustomObject]@{
+        Status = $status
+        Reason = ([string]$candidate.Reason).Trim()
+    }
+}
+
+function Write-CollectorOutcome {
+    <#
+    .SYNOPSIS
+        Records a non-Complete collector outcome in the log and issue list (T-0937).
+    .DESCRIPTION
+        A collector that reports Partial, Skipped or Failed is not a clean run: the
+        reason belongs in the assessment log and in _Assessment-Issues so the
+        portal's Issues tab and the run's partial status carry it. Failed outcomes
+        are ERROR issues; Partial and Skipped outcomes are WARNING issues.
+    .PARAMETER Status
+        Normalized collector status (Partial, Skipped or Failed).
+    .PARAMETER Reason
+        Why the collector did not complete.
+    .PARAMETER Section
+        Assessment section the collector belongs to.
+    .PARAMETER Collector
+        Collector label.
+    .PARAMETER IssueList
+        The run context's issue list.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [ValidateSet('Partial', 'Skipped', 'Failed')]
+        [string]$Status,
+
+        [Parameter()]
+        [AllowEmptyString()]
+        [string]$Reason,
+
+        [Parameter(Mandatory)]
+        [string]$Section,
+
+        [Parameter(Mandatory)]
+        [string]$Collector,
+
+        [Parameter(Mandatory)]
+        [AllowEmptyCollection()]
+        [System.Collections.Generic.List[PSCustomObject]]$IssueList
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Reason)) { return }
+
+    $level = if ($Status -eq 'Failed') { 'ERROR' } else { 'WARN' }
+    Write-AssessmentLog -Level $level -Message "Collector reported $Status`: $Reason" -Section $Section -Collector $Collector
+    $IssueList.Add([PSCustomObject]@{
+        Severity     = if ($Status -eq 'Failed') { 'ERROR' } else { 'WARNING' }
+        Section      = $Section
+        Collector    = $Collector
+        Description  = "Collector $Status"
+        ErrorMessage = $Reason
+        Action       = Get-RecommendedAction -ErrorMessage $Reason
+    })
+}
+
 function Invoke-M365Assessment {
 [CmdletBinding(DefaultParameterSetName = 'Interactive')]
 param(
@@ -1024,6 +1134,9 @@ foreach ($sectionName in $Section) {
         $status = 'Failed'
         $itemCount = 0
         $errorMessage = ''
+        # Reset per collector: an outcome from the previous collector must never
+        # leak into this one if its invocation throws before reporting (T-0937).
+        $collectorOutcome = $null
 
         Write-AssessmentLog -Level INFO -Message "Running: $($collector.Label)" -Section $sectionName -Collector $collector.Label
         if (Get-Command -Name Update-ProgressStatus -ErrorAction SilentlyContinue) {
@@ -1182,16 +1295,41 @@ foreach ($sectionName in $Section) {
                         $results = @(Import-Csv -Path $childCsvPath)
                         $itemCount = $results.Count
                         $status = 'Complete'
+
+                        # T-0937: a child-process collector cannot return objects
+                        # to the parent, so it writes '<csv>.status.json' beside its
+                        # CSV. Its self-reported outcome wins over the row-count
+                        # inference, so a failed API call is never logged Complete.
+                        $childOutcomePath = "$childCsvPath.status.json"
+                        if (Test-Path -LiteralPath $childOutcomePath) {
+                            try {
+                                $childOutcome = Get-Content -LiteralPath $childOutcomePath -Raw | ConvertFrom-Json
+                                $childOutcome.PSObject.TypeNames.Insert(0, 'M365Assess.CollectorOutcome')
+                                $collectorOutcome = Get-CollectorOutcome -CollectorOutput @($childOutcome)
+                            }
+                            catch {
+                                Write-AssessmentLog -Level WARN -Message "Could not read collector outcome '$childOutcomePath': $($_.Exception.Message)" -Section $sectionName -Collector $collector.Label
+                            }
+                            finally {
+                                Remove-Item -LiteralPath $childOutcomePath -Force -ErrorAction SilentlyContinue
+                            }
+                        }
                     }
                     else {
                         throw "Child process completed but CSV output not found at $childCsvPath"
+                    }
+
+                    if ($collectorOutcome -and $collectorOutcome.Status -ne 'Complete') {
+                        $status = $collectorOutcome.Status
+                        if ($collectorOutcome.Reason) { $errorMessage = $collectorOutcome.Reason }
+                        Write-CollectorOutcome -Status $status -Reason $errorMessage -Section $sectionName -Collector $collector.Label -IssueList $ctx.Issues
                     }
                 }
                 finally {
                     # Scrub then delete the child artifacts on every exit path (success,
                     # failure, timeout, Ctrl+C). The script file holds no secret now, but
                     # the overwrite keeps no stale invocation behind on disk.
-                    foreach ($artifact in @($childScriptFile, $childOutputFile, $childErrFile)) {
+                    foreach ($artifact in @($childScriptFile, $childOutputFile, $childErrFile, "$childCsvPath.status.json")) {
                         if (Test-Path -LiteralPath $artifact) {
                             Set-Content -LiteralPath $artifact -Value '' -Encoding UTF8 -ErrorAction SilentlyContinue
                         }
@@ -1222,7 +1360,14 @@ foreach ($sectionName in $Section) {
             # to the catch block below via the exception mechanism.
             $rawOutput = & $scriptPath @collectorParams 3>&1 2>$null
             $capturedWarnings = @($rawOutput | Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
-            $results = @($rawOutput | Where-Object { $null -ne $_ -and $_ -isnot [System.Management.Automation.WarningRecord] })
+            # T-0937: a collector may report its own outcome as a typed object. Read
+            # it before the rows are exported so it never lands in the section CSV.
+            $collectorOutcome = Get-CollectorOutcome -CollectorOutput $rawOutput
+            $results = @($rawOutput | Where-Object {
+                $null -ne $_ -and
+                $_ -isnot [System.Management.Automation.WarningRecord] -and
+                -not ($_.PSObject.TypeNames -contains 'M365Assess.CollectorOutcome')
+            })
 
             # Log captured warnings; track permission failures as WARNING issues,
             # other technical failures (API errors, null-index) as INFO issues
@@ -1270,6 +1415,15 @@ foreach ($sectionName in $Section) {
                     $status = 'Complete'
                     Write-AssessmentLog -Level INFO -Message "No data returned" -Section $sectionName -Collector $collector.Label
                 }
+            }
+
+            # T-0937: the collector's own outcome wins over the row-count inference.
+            # A collector that skipped or failed is never recorded as Complete, and
+            # its reason travels in the summary's Error column.
+            if ($collectorOutcome -and $collectorOutcome.Status -ne 'Complete') {
+                $status = $collectorOutcome.Status
+                if ($collectorOutcome.Reason) { $errorMessage = $collectorOutcome.Reason }
+                Write-CollectorOutcome -Status $status -Reason $errorMessage -Section $sectionName -Collector $collector.Label -IssueList $ctx.Issues
             }
         }
         catch {
@@ -1374,9 +1528,15 @@ $summaryCsvPath = Join-Path -Path $assessmentFolder -ChildPath "_Assessment-Summ
 # with the CSV. Lines starting with '#' are treated as comments by sensible
 # CSV parsers (pandas read_csv comment='#', PowerShell Import-Csv trips on
 # them but 99% of actual consumers use Excel/Python/Power BI which handle it).
-$summaryHeader = "# M365-Assess v$($AssessmentVersion) -- generated $((Get-Date).ToUniversalTime().ToString('o'))"
+# T-0937: the second comment line documents the Status vocabulary. The Status
+# column carries exactly one of Complete | Partial | Skipped | Failed; the
+# reason for any non-Complete collector is in the Error column.
+$summaryHeader = @(
+    "# M365-Assess v$($AssessmentVersion) -- generated $((Get-Date).ToUniversalTime().ToString('o'))"
+    '# Status: Complete | Partial | Skipped | Failed -- non-Complete reason is in the Error column'
+)
 $summaryCsvBody = $summaryResults | ConvertTo-Csv -NoTypeInformation
-Set-Content -Path $summaryCsvPath -Value (@($summaryHeader) + @($summaryCsvBody)) -Encoding UTF8
+Set-Content -Path $summaryCsvPath -Value ($summaryHeader + @($summaryCsvBody)) -Encoding UTF8
 
 # ------------------------------------------------------------------
 # Export issue report (if any issues exist)

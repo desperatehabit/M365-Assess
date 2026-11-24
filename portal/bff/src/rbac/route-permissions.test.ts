@@ -11,7 +11,7 @@ import type { RequestCaller, RequestContext, Route } from "../server.js";
 import { permissionForEndpoint } from "./permissions.js";
 
 const AREA =
-  /\/(mailboxes|retention|vacation-schedules|deleted-mailboxes|purview|safelinks|compliance-templates|sharepoint|onedrive|users|roles)\b|\/mailbox-|\/device-actions\//;
+  /\/(mailboxes|retention|vacation-schedules|deleted-mailboxes|purview|safelinks|compliance-templates|sharepoint|onedrive|users|roles|api-clients)\b|\/mailbox-|\/device-actions\//;
 
 const app = createApp(loadConfig({ M365_BFF_GDAP_PARTNER_TENANT_ID: "partner-tenant" }), {
   db: new Database(":memory:"),
@@ -47,7 +47,7 @@ function registered(route: Route): string {
 describe("area routes are mounted", () => {
   it("covers the mailbox, Purview, SharePoint, user, and role families", () => {
     expect(areaRoutes.length).toBeGreaterThanOrEqual(85);
-    for (const fragment of ["/mailboxes", "/purview/dlp", "/purview/labels", "/purview/sits", "/purview/retention", "/safelinks", "/compliance-templates", "/sharepoint/sites", "/onedrive", "/retention/tags", "/vacation-schedules", "/deleted-mailboxes", "/v1/users", "/v1/roles"]) {
+    for (const fragment of ["/mailboxes", "/purview/dlp", "/purview/labels", "/purview/sits", "/purview/retention", "/safelinks", "/compliance-templates", "/sharepoint/sites", "/onedrive", "/retention/tags", "/vacation-schedules", "/deleted-mailboxes", "/v1/users", "/v1/roles", "/v1/api-clients"]) {
       expect(areaRoutes.some((r) => r.path.includes(fragment)), fragment).toBe(true);
     }
   });
@@ -68,6 +68,47 @@ describe("mounted routes enforce the permission the registry declares", () => {
         status: 403,
         message: `forbidden: requires ${expected}`,
       });
+    }
+  });
+});
+
+const apiClientRoutes = app.routes.filter((r) => r.path.startsWith("/v1/api-clients"));
+
+describe("API client routes enforce their registered permission (T-0899)", () => {
+  it("mounts CRUD and rotate-secret", () => {
+    expect(apiClientRoutes.map(key).sort()).toEqual([
+      "DELETE /v1/api-clients/:id",
+      "GET /v1/api-clients",
+      "GET /v1/api-clients/:id",
+      "PATCH /v1/api-clients/:id",
+      "POST /v1/api-clients",
+      "POST /v1/api-clients/:id/rotate-secret",
+    ]);
+  });
+
+  it("denies a caller with no role, naming the registered permission", async () => {
+    const nobody = callerWith("no-such-role");
+    for (const route of apiClientRoutes) {
+      const expected = registered(route);
+      let thrown: unknown;
+      try {
+        await route.handler(contextFor(route, nobody));
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown, `${key(route)} must reject a caller with no role`).toMatchObject({
+        status: 403,
+        message: `forbidden: requires ${expected}`,
+      });
+    }
+  });
+
+  it("grants readonly reads and editor reads plus writes", () => {
+    for (const route of apiClientRoutes) {
+      const permission = registered(route);
+      const write = permission.endsWith(".ReadWrite");
+      expect(canAccess(callerWith("readonly"), permission), key(route)).toBe(!write);
+      expect(canAccess(callerWith("editor"), permission), key(route)).toBe(true);
     }
   });
 });

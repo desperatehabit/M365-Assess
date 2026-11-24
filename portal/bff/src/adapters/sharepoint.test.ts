@@ -19,6 +19,8 @@ const CRED: CredentialRecord = {
 
 const credentials: CredentialStoreRow = {
   getCredential: async (tenantId) => (tenantId === "t-a" ? CRED : undefined),
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async (input) => input,
   appendAuditEvent: async () => undefined,
 };
@@ -49,7 +51,7 @@ describe("SharePoint providers (T-0855)", () => {
       entrypoint: "get-sharepoint-sites.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         Type: "team",
         Sharing: "externalUserSharingOnly",
         StoragePercent: "25",
@@ -201,6 +203,86 @@ describe("SharePoint providers (T-0855)", () => {
     expect(restore.calls[0]?.job).toMatchObject({ action: "restore" });
   });
 
+  it("edits a site through the lifecycle action, mapping plan and applied results", async () => {
+    const planOutput = {
+      action: "edit",
+      siteId: "site-1",
+      targetName: "Team Beta",
+      before: { id: "site-1", displayName: "Team Alpha", sharing: "disabled", lockState: "Unlock" },
+      after: { id: "site-1", displayName: "Team Beta", sharing: "externalUserSharingOnly", lockState: "ReadOnly" },
+      diff: ["Set displayName to 'Team Beta'", "Set sharing to 'externalUserSharingOnly'", "Set lockState to 'ReadOnly'"],
+      valid: true,
+      dryRun: true,
+      requiresConfirmation: false,
+    };
+    const preview = harness(() => planOutput);
+    await expect(
+      preview.providers.lifecycle.editSite(
+        "t-a",
+        "site-1",
+        { displayName: "Team Beta", sharing: "externalUserSharingOnly", lockState: "ReadOnly" },
+        true,
+      ),
+    ).resolves.toMatchObject({
+      action: "edit",
+      siteId: "site-1",
+      targetName: "Team Beta",
+      dryRun: true,
+    });
+    expect(preview.calls[0]?.entrypoint).toBe("invoke-sharepoint-site-action.ps1");
+    expect(preview.calls[0]?.job).toMatchObject({
+      schemaVersion: "v1",
+      action: "edit",
+      payload: {
+        siteId: "site-1",
+        displayName: "Team Beta",
+        sharing: "externalUserSharingOnly",
+        lockState: "ReadOnly",
+        dryRun: true,
+      },
+    });
+
+    const applied = harness(() => ({
+      success: true,
+      state: "succeeded",
+      operation: "edit",
+      siteId: "site-1",
+      targetName: "Team Beta",
+      plan: planOutput,
+      result: { id: "site-1", state: "edited" },
+      auditEvent: {
+        id: "audit-edit",
+        tenantId: "t-a",
+        action: "sharepoint.site.edit",
+        targetId: "site-1",
+        targetName: "Team Beta",
+        timestamp: "2026-09-28T00:00:00Z",
+        result: "success",
+        before: planOutput.before,
+        after: planOutput.after,
+      },
+    }));
+    await expect(
+      applied.providers.lifecycle.editSite(
+        "t-a",
+        "site-1",
+        { displayName: "Team Beta", sharing: "externalUserSharingOnly", lockState: "ReadOnly" },
+        false,
+      ),
+    ).resolves.toMatchObject({
+      success: true,
+      state: "succeeded",
+      operation: "edit",
+      siteId: "site-1",
+      after: { displayName: "Team Beta", sharing: "externalUserSharingOnly", lockState: "ReadOnly" },
+      auditEvent: { action: "sharepoint.site.edit" },
+    });
+    expect(applied.calls[0]?.job).toMatchObject({
+      action: "edit",
+      payload: { siteId: "site-1", dryRun: false },
+    });
+  });
+
   it("lists the recycle bin and applies restore/empty with per-row results", async () => {
     const list = harness(() => ({
       tenantId: "t-a",
@@ -259,7 +341,7 @@ describe("SharePoint providers (T-0855)", () => {
       entrypoint: "get-site-browser.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         SiteId: "site-1",
       },
     });

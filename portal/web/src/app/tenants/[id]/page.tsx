@@ -1,9 +1,12 @@
 "use client";
 
 import React, { use, useEffect, useState, type CSSProperties, type ReactElement } from "react";
-import { CredentialBadge, type CredentialState } from "../../../components/CredentialBadge";
+import {
+  TenantAccessPanel,
+  type TenantCredentialSummary,
+} from "../../../components/TenantAccessPanel";
 
-type DetailTab = "overview" | "credential" | "groups" | "variables" | "history";
+type DetailTab = "overview" | "access" | "groups" | "variables" | "history";
 
 interface TenantDetailData {
   id: string;
@@ -22,17 +25,6 @@ interface TenantDetailData {
   updatedAt: string;
 }
 
-interface CredentialDetailData {
-  authMethod: string;
-  clientId: string;
-  secretRef: string;
-  thumbprint: string | null;
-  environment: string;
-  expiresOn: string | null;
-  lastValidated: string | null;
-  state: CredentialState;
-}
-
 interface GroupMemberData {
   id: string;
   name: string;
@@ -46,13 +38,53 @@ interface VariableData {
   isSecret: boolean;
 }
 
+// One portal logbook entry (GET /v1/logbook; T-0910).
 interface AuditHistoryItem {
   id: string;
   action: string;
-  actorUserId: string | null;
+  actor: string | null;
   timestamp: string;
   result: "success" | "failure";
   error: string | null;
+}
+
+// Tenant-specific variables only; global ones are managed on the Variables page.
+export function tenantVariablesPath(tenantId: string): string {
+  return `/v1/tenant-variables?tenantId=${encodeURIComponent(tenantId)}&includeGlobal=false`;
+}
+
+// Portal activity recorded against this tenant.
+export function tenantHistoryPath(tenantId: string): string {
+  return `/v1/logbook?tenant=${encodeURIComponent(tenantId)}`;
+}
+
+// Reader and operator credentials for the Access tab (T-0942).
+export function tenantCredentialsPath(tenantId: string): string {
+  return `/v1/tenants/${encodeURIComponent(tenantId)}/credentials`;
+}
+
+async function loadList<T>(path: string, label: string): Promise<T[]> {
+  const res = await fetch(path);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = (await res.json()) as { message?: string; code?: string };
+      if (body?.message) {
+        detail = body.code ? `${body.code}: ${body.message}` : body.message;
+      } else if (body?.code) {
+        detail = body.code;
+      }
+    } catch {
+      // non-JSON error body; keep the status text
+    }
+    throw new Error(`Could not load ${label}: HTTP ${res.status}${detail ? ` ${detail}` : ""}`);
+  }
+  const data = (await res.json()) as { items?: T[] } | T[];
+  return Array.isArray(data) ? data : (data.items ?? []);
+}
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 const pageStyle: CSSProperties = {
@@ -160,10 +192,13 @@ export default function TenantDetailPage({
   const tenantId = resolved?.id ?? "";
   const [activeTab, setActiveTab] = useState<DetailTab>("overview");
   const [tenant, setTenant] = useState<TenantDetailData | null>(null);
-  const [credential, setCredential] = useState<CredentialDetailData | null>(null);
+  const [credentials, setCredentials] = useState<TenantCredentialSummary[] | null>(null);
+  const [credentialsError, setCredentialsError] = useState<string | null>(null);
   const [groups, setGroups] = useState<GroupMemberData[]>([]);
   const [variables, setVariables] = useState<VariableData[]>([]);
   const [history, setHistory] = useState<AuditHistoryItem[]>([]);
+  const [variablesError, setVariablesError] = useState<string | null>(null);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
@@ -173,6 +208,16 @@ export default function TenantDetailPage({
     if (!tenantId) return;
     void loadData();
   }, [tenantId]);
+
+  const loadCredentials = async (): Promise<void> => {
+    setCredentialsError(null);
+    try {
+      setCredentials(await loadList<TenantCredentialSummary>(tenantCredentialsPath(tenantId), "tenant credentials"));
+    } catch (err) {
+      setCredentials([]);
+      setCredentialsError(describeError(err));
+    }
+  };
 
   const loadData = async (): Promise<void> => {
     setLoading(true);
@@ -185,14 +230,8 @@ export default function TenantDetailPage({
       const data = await res.json();
       setTenant(data);
 
-      // Attempt to load credential
-      try {
-        const credRes = await fetch(`/v1/tenants/${tenantId}/credential`);
-        if (credRes.ok) {
-          const credData = await credRes.json();
-          setCredential(credData);
-        }
-      } catch {}
+      // Reader and operator credentials feed the Access tab (T-0942).
+      await loadCredentials();
 
       // Attempt to load groups
       try {
@@ -203,23 +242,23 @@ export default function TenantDetailPage({
         }
       } catch {}
 
-      // Attempt to load variables
+      // Variables and history fail independently of the page, but say so in their
+      // tab instead of showing an empty list (T-0910).
+      setVariablesError(null);
       try {
-        const varRes = await fetch(`/v1/tenants/${tenantId}/variables`);
-        if (varRes.ok) {
-          const vData = await varRes.json();
-          setVariables(vData.items ?? vData ?? []);
-        }
-      } catch {}
+        setVariables(await loadList<VariableData>(tenantVariablesPath(tenantId), "variables"));
+      } catch (err) {
+        setVariables([]);
+        setVariablesError(describeError(err));
+      }
 
-      // Attempt to load history
+      setHistoryError(null);
       try {
-        const histRes = await fetch(`/v1/tenants/${tenantId}/audit`);
-        if (histRes.ok) {
-          const hData = await histRes.json();
-          setHistory(hData.items ?? hData ?? []);
-        }
-      } catch {}
+        setHistory(await loadList<AuditHistoryItem>(tenantHistoryPath(tenantId), "history"));
+      } catch (err) {
+        setHistory([]);
+        setHistoryError(describeError(err));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -348,11 +387,11 @@ export default function TenantDetailPage({
         </button>
         <button
           type="button"
-          onClick={() => setActiveTab("credential")}
-          style={tabButtonStyle(activeTab === "credential")}
-          data-testid="tab-credential"
+          onClick={() => setActiveTab("access")}
+          style={tabButtonStyle(activeTab === "access")}
+          data-testid="tab-access"
         >
-          Credential
+          Access
         </button>
         <button
           type="button"
@@ -420,55 +459,14 @@ export default function TenantDetailPage({
         </div>
       )}
 
-      {/* Tab 2: Credential */}
-      {activeTab === "credential" && (
-        <div style={sectionCardStyle} data-testid="credential-tab-content">
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Tenant Credential</h3>
-            {credential && <CredentialBadge state={credential.state} expiresOn={credential.expiresOn} />}
-          </div>
-
-          {credential ? (
-            <div style={gridStyle}>
-              <div>
-                <div style={fieldLabelStyle}>Auth Method</div>
-                <div style={fieldValueStyle}>{credential.authMethod}</div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Application (Client) ID</div>
-                <div style={{ ...fieldValueStyle, fontFamily: "var(--font-mono)" }}>{credential.clientId}</div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Certificate Thumbprint</div>
-                <div style={{ ...fieldValueStyle, fontFamily: "var(--font-mono)" }}>
-                  {credential.thumbprint ?? "—"}
-                </div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Storage Reference</div>
-                <div style={{ ...fieldValueStyle, fontFamily: "var(--font-mono)", fontSize: "13px" }}>
-                  {credential.secretRef}
-                </div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Expires On</div>
-                <div style={fieldValueStyle}>
-                  {credential.expiresOn ? new Date(credential.expiresOn).toLocaleDateString() : "Never"}
-                </div>
-              </div>
-              <div>
-                <div style={fieldLabelStyle}>Last Validated</div>
-                <div style={fieldValueStyle}>
-                  {credential.lastValidated ? new Date(credential.lastValidated).toLocaleString() : "Not yet tested"}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div style={{ color: "var(--text-soft)" }}>
-              No credential configured for this tenant. Use the Set Credential action to add one.
-            </div>
-          )}
-        </div>
+      {/* Tab 2: Access (reader and write credentials, T-0942) */}
+      {activeTab === "access" && (
+        <TenantAccessPanel
+          tenantId={tenantId}
+          credentials={credentials}
+          error={credentialsError}
+          onReload={loadCredentials}
+        />
       )}
 
       {/* Tab 3: Groups */}
@@ -493,7 +491,11 @@ export default function TenantDetailPage({
       {activeTab === "variables" && (
         <div style={sectionCardStyle} data-testid="variables-tab-content">
           <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Tenant Variables</h3>
-          {variables.length === 0 ? (
+          {variablesError ? (
+            <p role="alert" style={{ margin: 0, color: "var(--danger)" }} data-testid="variables-error">
+              {variablesError}
+            </p>
+          ) : variables.length === 0 ? (
             <p style={{ margin: 0, color: "var(--text-soft)" }}>No tenant-specific variables defined.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -522,7 +524,11 @@ export default function TenantDetailPage({
       {activeTab === "history" && (
         <div style={sectionCardStyle} data-testid="history-tab-content">
           <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 600 }}>Audit History</h3>
-          {history.length === 0 ? (
+          {historyError ? (
+            <p role="alert" style={{ margin: 0, color: "var(--danger)" }} data-testid="history-error">
+              {historyError}
+            </p>
+          ) : history.length === 0 ? (
             <p style={{ margin: 0, color: "var(--text-soft)" }}>No audit events recorded for this tenant.</p>
           ) : (
             <div style={{ overflowX: "auto" }}>
@@ -540,7 +546,7 @@ export default function TenantDetailPage({
                     <tr key={h.id}>
                       <td style={{ padding: "8px", color: "var(--text-soft)" }}>{new Date(h.timestamp).toLocaleString()}</td>
                       <td style={{ padding: "8px", fontWeight: 500 }}>{h.action}</td>
-                      <td style={{ padding: "8px" }}>{h.actorUserId ?? "System"}</td>
+                      <td style={{ padding: "8px" }}>{h.actor ?? "System"}</td>
                       <td style={{ padding: "8px" }}>
                         <span
                           style={{

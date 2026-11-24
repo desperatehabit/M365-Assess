@@ -332,3 +332,7 @@ Describe 'Invoke-LisLocation worker (T-0509)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

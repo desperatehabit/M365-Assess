@@ -124,7 +124,7 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
     }
 
     Context 'a successful render' {
-        It 'renders builder HTML to a PDF artifact via the stub Chromium' {
+        It 'renders builder HTML to a PDF artifact via the stub Chromium' -Skip:$IsWindows {
             $scratch = New-RenderScratch
             $htmlPath = Join-Path -Path $scratch -ChildPath 'report.html'
             New-BuilderHtml | Set-Content -Path $htmlPath -Encoding UTF8
@@ -142,7 +142,7 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
             $result.PdfPath | Should -Be ([System.IO.Path]::GetFullPath($pdfPath))
         }
 
-        It 'stages inline HTML to a temp path and cleans it up' {
+        It 'stages inline HTML to a temp path and cleans it up' -Skip:$IsWindows {
             $scratch = New-RenderScratch
             $stub = New-StubChromium -Directory $scratch -Mode 'Success'
             $pdfPath = Join-Path -Path $scratch -ChildPath 'inline.pdf'
@@ -181,7 +181,7 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
     }
 
     Context 'bounds and versioning' {
-        It 'kills a render past the timeout' {
+        It 'kills a render past the timeout' -Skip:$IsWindows {
             $scratch = New-RenderScratch
             $htmlPath = Join-Path -Path $scratch -ChildPath 'report.html'
             New-BuilderHtml | Set-Content -Path $htmlPath -Encoding UTF8
@@ -189,11 +189,11 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
             $pdfPath = Join-Path -Path $scratch -ChildPath 'report.pdf'
 
             { Invoke-ReportRender -HtmlPath $htmlPath -PdfPath $pdfPath -ChromiumPath $stub -TimeoutSec 2 } | Should -Throw '*render.timeout*'
-            $lingering = @((& ps -eo args) | Where-Object { $_ -match 'sleep 47' })
+            $lingering = @((& /bin/ps -eo args) | Where-Object { $_ -match 'sleep 47' })
             $lingering.Count | Should -Be 0
         }
 
-        It 'rejects a Chromium that does not match the pinned version' {
+        It 'rejects a Chromium that does not match the pinned version' -Skip:$IsWindows {
             $scratch = New-RenderScratch
             $htmlPath = Join-Path -Path $scratch -ChildPath 'report.html'
             New-BuilderHtml | Set-Content -Path $htmlPath -Encoding UTF8
@@ -205,7 +205,7 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
     }
 
     Context 'the render-report.ps1 entrypoint' {
-        It 'writes a succeeded result envelope and exits 0' {
+        It 'writes a succeeded result envelope and exits 0' -Skip:$IsWindows {
             $scratch = New-RenderScratch
             New-BuilderHtml | Set-Content -Path (Join-Path -Path $scratch -ChildPath 'report.html') -Encoding UTF8
             $jobFile = New-ReportJobFile -Directory $scratch -HtmlFileName 'report.html'
@@ -227,7 +227,7 @@ Describe 'Invoke-ReportRender headless Chromium PDF worker (T-0082)' {
             $envelope.ContainsKey('error') | Should -BeFalse
         }
 
-        It 'kills an overrunning render and reports a retryable failed job' {
+        It 'kills an overrunning render and reports a retryable failed job' -Skip:$IsWindows {
             $scratch = New-RenderScratch
             New-BuilderHtml | Set-Content -Path (Join-Path -Path $scratch -ChildPath 'report.html') -Encoding UTF8
             $jobFile = New-ReportJobFile -Directory $scratch -HtmlFileName 'report.html'

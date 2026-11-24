@@ -203,3 +203,7 @@ Describe 'Sync-ReusableSettings worker (T-0308)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

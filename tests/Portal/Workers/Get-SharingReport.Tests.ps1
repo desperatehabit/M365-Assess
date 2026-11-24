@@ -202,3 +202,7 @@ Describe 'Get-SharingReport worker (T-0521)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

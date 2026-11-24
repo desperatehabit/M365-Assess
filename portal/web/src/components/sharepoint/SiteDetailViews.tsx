@@ -11,10 +11,15 @@ import { SiteDeleteDialog, type SiteDeleteTarget } from "./SiteDeleteDialog";
 import { StoragePanel, type SiteStorageComposition } from "./StoragePanel";
 import {
   applyVersionCleanup,
+  editSite,
   fetchSiteBrowser,
   fetchSiteStorage,
   fetchSites,
   previewVersionCleanup,
+  type SharePointLockState,
+  type SharePointSharing,
+  type SiteEditInput,
+  type SiteEditPlan,
 } from "../../lib/sharepointApi";
 
 export interface SiteViewProps {
@@ -182,24 +187,85 @@ const dangerButtonStyle: CSSProperties = {
   color: "var(--danger-text)",
 };
 
+const primaryButtonStyle: CSSProperties = {
+  ...buttonStyle,
+  background: "var(--accent)",
+  borderColor: "var(--accent)",
+  color: "var(--on-accent)",
+};
+
+const fieldStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "6px",
+};
+
+const labelStyle: CSSProperties = {
+  fontSize: "13px",
+  fontWeight: 600,
+  color: "var(--text)",
+};
+
+const inputStyle: CSSProperties = {
+  padding: "8px 12px",
+  background: "var(--input-bg, var(--bg))",
+  border: "1px solid var(--border)",
+  borderRadius: "6px",
+  color: "var(--text)",
+  fontSize: "14px",
+};
+
+const SHARING_OPTIONS: readonly { readonly value: SharePointSharing; readonly label: string }[] = [
+  { value: "disabled", label: "Disabled" },
+  { value: "externalUserSharingOnly", label: "External users only" },
+  { value: "externalUserAndGuestSharing", label: "External users and guests" },
+  { value: "existingExternalUserSharingOnly", label: "Existing external users only" },
+];
+
+const LOCK_STATE_OPTIONS: readonly { readonly value: SharePointLockState; readonly label: string }[] = [
+  { value: "Unlock", label: "Unlock" },
+  { value: "NoAdditions", label: "No additions" },
+  { value: "ReadOnly", label: "Read-only" },
+  { value: "NoAccess", label: "No access" },
+];
+
+function parseOwnerUpns(raw: string): string[] {
+  return raw
+    .split(/[\n,;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 /**
- * v1 site operations are list, add, delete, and restore (SPEC §11 item 1); no BFF endpoint edits site
- * properties, so this page offers the lifecycle action that exists (delete) and the admin-center
- * deep link for everything else (SPEC §11 item 4).
+ * Edits site properties in-portal via PATCH /v1/tenants/:tenantId/sharepoint/sites/:siteId,
+ * keeps the SharePoint admin-center deep link for advanced tenant/site-collection settings,
+ * and exposes soft-delete through the named confirmation dialog.
  */
 export function SiteEditView({ tenantId, siteId }: SiteViewProps): ReactElement {
   const router = useRouter();
   const { browser, loading, error } = useSiteBrowser(tenantId, siteId);
   const [siteName, setSiteName] = useState<string | null>(null);
+  const [displayName, setDisplayName] = useState("");
+  const [sharing, setSharing] = useState<SharePointSharing | "">("");
+  const [lockState, setLockState] = useState<SharePointLockState | "">("");
+  const [ownersInput, setOwnersInput] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<SiteEditPlan | null>(null);
+  const [savedMessage, setSavedMessage] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
-  // The browse endpoint carries no display name; take it from the site list when present.
+  // The browse endpoint carries no display name or sharing setting; hydrate them from the site list when present.
   useEffect(() => {
     let cancelled = false;
     fetchSites(tenantId)
       .then((sites) => {
         const match = sites.find((site) => site.id === siteId);
-        if (!cancelled && match) setSiteName(match.name);
+        if (!cancelled && match) {
+          setSiteName(match.name);
+          setDisplayName(match.name);
+          setSharing(match.sharing);
+        }
       })
       .catch(() => {
         // the URL stands in as the name
@@ -212,6 +278,75 @@ export function SiteEditView({ tenantId, siteId }: SiteViewProps): ReactElement 
   const target: SiteDeleteTarget | null = browser
     ? { id: siteId, name: siteName ?? browser.siteUrl, url: browser.siteUrl }
     : null;
+
+  function buildEditInput(preview: boolean): SiteEditInput | null {
+    const trimmedName = displayName.trim();
+    const owners = parseOwnerUpns(ownersInput);
+    if (!trimmedName && !sharing && !lockState && owners.length === 0) {
+      return null;
+    }
+    return {
+      ...(trimmedName ? { displayName: trimmedName } : {}),
+      ...(sharing ? { sharing } : {}),
+      ...(lockState ? { lockState } : {}),
+      ...(owners.length > 0 ? { owners } : {}),
+      preview,
+    };
+  }
+
+  async function handlePreview(): Promise<void> {
+    const input = buildEditInput(true);
+    if (!input || saving) {
+      setSaveError("Enter at least one property change to preview.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setSavedMessage(null);
+    try {
+      const outcome = await editSite(tenantId, siteId, input);
+      if ("dryRun" in outcome && outcome.dryRun) {
+        setPlan(outcome);
+      }
+    } catch (err) {
+      setSaveError(errorText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleSave(event: React.FormEvent<HTMLFormElement>): Promise<void> {
+    event.preventDefault();
+    const input = buildEditInput(false);
+    if (!input || saving) {
+      setSaveError("Enter at least one property change to save.");
+      return;
+    }
+    setSaving(true);
+    setSaveError(null);
+    setSavedMessage(null);
+    try {
+      const outcome = await editSite(tenantId, siteId, input);
+      setPlan(null);
+      if ("targetName" in outcome && outcome.targetName) {
+        setSiteName(outcome.targetName);
+      } else if (input.displayName) {
+        setSiteName(input.displayName);
+      }
+      setOwnersInput("");
+      setSavedMessage("Site properties updated.");
+    } catch (err) {
+      setSaveError(errorText(err));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const hasChanges =
+    displayName.trim().length > 0 ||
+    sharing !== "" ||
+    lockState !== "" ||
+    parseOwnerUpns(ownersInput).length > 0;
 
   return (
     <>
@@ -249,8 +384,8 @@ export function SiteEditView({ tenantId, siteId }: SiteViewProps): ReactElement 
               {browser.siteUrl}
             </a>
             <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "13px" }}>
-              The portal does not edit site properties in v1. Rename, template, sharing, and other advanced
-              settings are changed in the SharePoint admin center.
+              Edit core site properties below, or open the SharePoint admin center for advanced settings
+              (site collection upgrade, term store, tenant-level sharing).
             </p>
             <a
               href={browser.adminCenterUrl}
@@ -262,6 +397,156 @@ export function SiteEditView({ tenantId, siteId }: SiteViewProps): ReactElement 
               Edit in SharePoint admin center
             </a>
           </div>
+
+          <form style={panelStyle} onSubmit={(e) => void handleSave(e)} data-testid="site-edit-form">
+            <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>Site properties</h2>
+
+            {saveError && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "6px",
+                  background: "var(--danger-soft)",
+                  border: "1px solid var(--danger)",
+                  color: "var(--danger-text)",
+                  fontSize: "13px",
+                }}
+                role="alert"
+                data-testid="site-edit-save-error"
+              >
+                {saveError}
+              </div>
+            )}
+
+            {savedMessage && (
+              <div
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "6px",
+                  background: "var(--success-soft)",
+                  border: "1px solid var(--success)",
+                  color: "var(--success-text)",
+                  fontSize: "13px",
+                }}
+                role="status"
+                data-testid="site-edit-saved"
+              >
+                {savedMessage}
+              </div>
+            )}
+
+            <div style={fieldStyle}>
+              <label style={labelStyle} htmlFor="site-edit-display-name">
+                Display name
+              </label>
+              <input
+                id="site-edit-display-name"
+                type="text"
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                style={inputStyle}
+                data-testid="site-edit-display-name"
+              />
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle} htmlFor="site-edit-sharing">
+                External sharing
+              </label>
+              <select
+                id="site-edit-sharing"
+                value={sharing}
+                onChange={(e) => setSharing(e.target.value as SharePointSharing | "")}
+                style={inputStyle}
+                data-testid="site-edit-sharing"
+              >
+                <option value="">Keep current</option>
+                {SHARING_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle} htmlFor="site-edit-lock-state">
+                Lock state
+              </label>
+              <select
+                id="site-edit-lock-state"
+                value={lockState}
+                onChange={(e) => setLockState(e.target.value as SharePointLockState | "")}
+                style={inputStyle}
+                data-testid="site-edit-lock-state"
+              >
+                <option value="">Keep current</option>
+                {LOCK_STATE_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={fieldStyle}>
+              <label style={labelStyle} htmlFor="site-edit-owners">
+                Add owners (optional, comma or line separated UPNs)
+              </label>
+              <textarea
+                id="site-edit-owners"
+                rows={2}
+                value={ownersInput}
+                onChange={(e) => setOwnersInput(e.target.value)}
+                style={{ ...inputStyle, resize: "vertical", fontFamily: "var(--font-mono, monospace)" }}
+                placeholder="owner2@example.invalid"
+                data-testid="site-edit-owners"
+              />
+            </div>
+
+            {plan && (
+              <div
+                style={{
+                  padding: "12px",
+                  borderRadius: "6px",
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  fontSize: "13px",
+                }}
+                data-testid="site-edit-plan"
+              >
+                <div style={{ fontWeight: 600, marginBottom: "6px" }}>
+                  Planned changes for {plan.targetName}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: "20px" }}>
+                  {plan.diff.map((entry) => (
+                    <li key={entry}>{entry}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                style={buttonStyle}
+                disabled={saving || !hasChanges}
+                onClick={() => void handlePreview()}
+                data-testid="site-edit-preview"
+              >
+                {saving ? "Working…" : "Preview changes"}
+              </button>
+              <button
+                type="submit"
+                style={primaryButtonStyle}
+                disabled={saving || !hasChanges}
+                data-testid="site-edit-save"
+              >
+                {saving ? "Saving…" : "Save changes"}
+              </button>
+            </div>
+          </form>
+
           <div style={panelStyle} data-testid="site-edit-danger">
             <h2 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>Delete site</h2>
             <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "13px" }}>

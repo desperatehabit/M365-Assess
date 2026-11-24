@@ -17,13 +17,13 @@
 | Compliance | — | 0 | 0 | 0 | 1 |
 | Email | ExchangeOnline | 0 | 1 | 1 | 0 |
 | Hybrid | Graph | 2 | 2 | 0 | 0 |
-| Identity | Graph | 9 | 8 | 0 | 0 |
-| Intune | Graph | 2 | 2 | 0 | 0 |
+| Identity | Graph | 9 | 9 | 0 | 0 |
+| Intune | Graph | 2 | 4 | 0 | 0 |
 | Inventory | Graph, ExchangeOnline | 7 | 7 | 1 | 0 |
 | Licensing | Graph | 2 | 2 | 0 | 0 |
 | PowerBI | — | 0 | 0 | 0 | 0 |
-| Security | Graph, ExchangeOnline, Purview | 1 | 4 | 2 | 3 |
-| SOC2 | Graph, Purview | 8 | 0 | 0 | 0 |
+| Security | Graph, ExchangeOnline, Purview | 1 | 5 | 2 | 3 |
+| SOC2 | Graph, Purview | 9 | 9 | 0 | 0 |
 | Tenant | Graph | 5 | 5 | 0 | 0 |
 | ValueOpportunity | Graph | 1 | 0 | 0 | 0 |
 
@@ -115,6 +115,7 @@
 
 | Permission | Reason |
 |---|---|
+| `Agreement.Read.All` | Terms of Use agreements and their acceptance settings (ENTRA-TOU-001) |
 | `Application.Read.All` | App registrations, service principals, OAuth permission grants |
 | `AuditLog.Read.All` | Sign-in logs and directory audit events |
 | `Directory.Read.All` | Devices, admin units, role templates |
@@ -137,8 +138,10 @@
 
 | Permission | Reason |
 |---|---|
+| `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
 | `DeviceManagementConfiguration.Read.All` | Configuration profiles, compliance policies, Multi-Admin Approval policies |
 | `DeviceManagementManagedDevices.Read.All` | Managed device inventory and compliance state |
+| `DeviceManagementServiceConfig.Read.All` | Autopilot deployment profiles and Apple/Android enrollment profiles |
 
 ### Inventory
 
@@ -204,6 +207,7 @@
 
 | Permission | Reason |
 |---|---|
+| `BitlockerKey.Read.All` | BitLocker recovery key retrieval for portal device actions |
 | `DeviceManagementApps.Read.All` | Intune audit events including device wipe/retire/delete actions |
 | `DeviceManagementConfiguration.Read.All` | Configuration profiles, compliance policies, Multi-Admin Approval policies |
 | `DeviceManagementRBAC.Read.All` | Intune RBAC role definitions and assignments (scope tag audit) |
@@ -232,12 +236,27 @@
 
 - `AuditLog.Read.All`
 - `Directory.Read.All`
+- `IdentityRiskEvent.Read.All`
 - `Policy.Read.All`
 - `Reports.Read.All`
 - `RoleManagement.Read.Directory`
 - `SecurityAlert.Read.All`
 - `SecurityEvents.Read.All`
 - `User.Read.All`
+
+**Microsoft Graph application permissions** (app-only auth)
+
+| Permission | Reason |
+|---|---|
+| `AuditLog.Read.All` | Sign-in logs and directory audit events |
+| `Directory.Read.All` | Devices, admin units, role templates |
+| `IdentityRiskEvent.Read.All` | Entra ID Protection risk detections for SOC 2 audit evidence |
+| `Policy.Read.All` | Conditional Access, auth methods, token lifetime, password policies |
+| `Reports.Read.All` | Microsoft 365 usage reports |
+| `RoleManagement.Read.Directory` | Entra directory role assignments and PIM eligibility |
+| `SecurityAlert.Read.All` | Defender security alerts (alerts_v2) for SOC 2 alert triage evidence |
+| `SecurityEvents.Read.All` | Secure Score, improvement actions, security alerts |
+| `User.Read.All` | User profiles, sign-in activity, license assignments |
 
 ### Tenant
 

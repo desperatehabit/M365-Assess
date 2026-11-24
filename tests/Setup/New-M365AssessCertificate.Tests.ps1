@@ -74,3 +74,63 @@ Describe 'Find-M365AssessCertificate' {
         Find-M365AssessCertificate -AppKeys @(& $script:keyFor $script:mine.Thumbprint) -Directory (Join-Path $TestDrive 'nope') -BaseName 'M365-Assess-t' | Should -BeNullOrEmpty
     }
 }
+
+Describe 'Find-M365AssessStoreCertificate' {
+    BeforeAll {
+        $script:subject = 'CN=M365-Assess-contoso.onmicrosoft.com'
+        function New-FakeStoreCert {
+            param([string]$Thumbprint, [string]$Subject = $script:subject, [bool]$HasPrivateKey = $true, [int]$DaysLeft = 365, [int]$AgeDays = 1)
+            [pscustomobject]@{
+                Thumbprint    = $Thumbprint
+                Subject       = $Subject
+                HasPrivateKey = $HasPrivateKey
+                NotBefore     = (Get-Date).AddDays(-$AgeDays)
+                NotAfter      = (Get-Date).AddDays($DaysLeft)
+            }
+        }
+        function ConvertTo-AppKey {
+            param([string]$Thumbprint)
+            [pscustomobject]@{ CustomKeyIdentifier = [System.Convert]::FromHexString($Thumbprint) }
+        }
+        $script:thumbA = 'A' * 40
+        $script:thumbB = 'B' * 40
+    }
+
+    It 'returns the store certificate whose thumbprint is registered on the app' {
+        $hit = Find-M365AssessStoreCertificate -AppKeys @(ConvertTo-AppKey $script:thumbA) -Subject $script:subject -Certificates @(
+            New-FakeStoreCert -Thumbprint $script:thumbB
+            New-FakeStoreCert -Thumbprint $script:thumbA
+        )
+        $hit.Thumbprint | Should -Be $script:thumbA
+        $hit.CertificatePath | Should -BeNullOrEmpty
+    }
+
+    It 'ignores certificates without a private key, expired, or for another subject' {
+        $keys = @(ConvertTo-AppKey $script:thumbA)
+        Find-M365AssessStoreCertificate -AppKeys $keys -Subject $script:subject -Certificates @(New-FakeStoreCert -Thumbprint $script:thumbA -HasPrivateKey $false) | Should -BeNullOrEmpty
+        Find-M365AssessStoreCertificate -AppKeys $keys -Subject $script:subject -Certificates @(New-FakeStoreCert -Thumbprint $script:thumbA -DaysLeft -1) | Should -BeNullOrEmpty
+        Find-M365AssessStoreCertificate -AppKeys $keys -Subject $script:subject -Certificates @(New-FakeStoreCert -Thumbprint $script:thumbA -Subject 'CN=Other') | Should -BeNullOrEmpty
+    }
+
+    It 'returns nothing when the app has no matching key' {
+        Find-M365AssessStoreCertificate -AppKeys @(ConvertTo-AppKey $script:thumbB) -Subject $script:subject -Certificates @(New-FakeStoreCert -Thumbprint $script:thumbA) | Should -BeNullOrEmpty
+        Find-M365AssessStoreCertificate -AppKeys @() -Subject $script:subject -Certificates @(New-FakeStoreCert -Thumbprint $script:thumbA) | Should -BeNullOrEmpty
+    }
+
+    It 'matches the identifier as the Graph SDK returns it (thumbprint text, base64-decoded)' {
+        # Entra stores customKeyIdentifier as the thumbprint text; the SDK base64-decodes it to 30 bytes.
+        $thumb = '1063DA4C0EBDD1D013379DC4581A4861215F4B1A'
+        $sdkKey = [pscustomobject]@{ CustomKeyIdentifier = [System.Convert]::FromBase64String($thumb) }
+        $sdkKey.CustomKeyIdentifier.Length | Should -Be 30
+
+        $hit = Find-M365AssessStoreCertificate -AppKeys @($sdkKey) -Subject $script:subject -Certificates @(New-FakeStoreCert -Thumbprint $thumb)
+        $hit.Thumbprint | Should -Be $thumb
+    }
+
+    It 'prefers the newest matching certificate' {
+        $older = New-FakeStoreCert -Thumbprint $script:thumbA -AgeDays 30
+        $newer = New-FakeStoreCert -Thumbprint $script:thumbB -AgeDays 1
+        $hit = Find-M365AssessStoreCertificate -AppKeys @((ConvertTo-AppKey $script:thumbA), (ConvertTo-AppKey $script:thumbB)) -Subject $script:subject -Certificates @($older, $newer)
+        $hit.Thumbprint | Should -Be $script:thumbB
+    }
+}

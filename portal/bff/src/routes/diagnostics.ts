@@ -14,7 +14,9 @@ import type { Caller } from "../rbac/authorize.js";
 import type { RequestContext, Route, RouteResponse } from "../server.js";
 
 export const DIAGNOSTICS_PATH = "/v1/diagnostics";
-export const DIAGNOSTICS_ADMIN_SCOPE = "CIPP.Admin.*";
+// The admin surface requires the CIPP.Admin family (SPEC §7); the concrete
+// permission keeps the registry taxonomy-valid while base-role `*` covers it.
+export const DIAGNOSTICS_ADMIN_SCOPE = "CIPP.Admin.Diagnostics";
 export const DIAGNOSTICS_UNAUTHENTICATED = "request.unauthenticated";
 export const DIAGNOSTICS_FORBIDDEN = "auth.forbidden";
 

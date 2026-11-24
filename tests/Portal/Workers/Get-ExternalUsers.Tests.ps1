@@ -300,3 +300,7 @@ Describe 'Get-ExternalUsers worker (T-0525)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

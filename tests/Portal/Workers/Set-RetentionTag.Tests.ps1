@@ -80,14 +80,14 @@ Describe 'Set-RetentionTag worker (T-0387)' {
             $plan.before['retentionPolicy'] | Should -Be ''
             $plan.after['retentionTag'] | Should -Be 'tag-1'
             $plan.diff | Should -Not -BeNullOrEmpty
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'assign apply without confirmation is refused' {
             {
                 Invoke-SetRetentionTag -TenantId 'tenant-test' -Action 'assign' -TagId 'tag-1' -MailboxId 'mbx-2' -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'assign apply captures before/after and produces a mailbox operation plus an audit record' {
@@ -106,7 +106,7 @@ Describe 'Set-RetentionTag worker (T-0387)' {
             $res.auditEvent.targetId | Should -Be 'mbx-2'
             $res.auditEvent.before['retentionPolicy'] | Should -Be ''
             $res.auditEvent.after['retentionTag'] | Should -Be 'tag-1'
-            Assert-MockCalled Set-Mailbox -Times 1 -ParameterFilter { $RetentionPolicy -eq 'tag-1' }
+            Should -Invoke Set-Mailbox -Times 1 -ParameterFilter { $RetentionPolicy -eq 'tag-1' }
         }
 
         It 'assign of a mailbox that already carries the tag is a structured no-op with no write' {
@@ -114,14 +114,14 @@ Describe 'Set-RetentionTag worker (T-0387)' {
             $res.success | Should -BeTrue
             $res.noop | Should -BeTrue
             $res.mailboxOperation.state | Should -Be 'noop'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'assign of an unknown mailbox throws NotFound' {
             {
                 Invoke-SetRetentionTag -TenantId 'tenant-test' -Action 'assign' -TagId 'tag-1' -MailboxId 'mbx-missing' -DryRun $true
             } | Should -Throw '*NotFound*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'assign without a mailbox id throws ValidationFailed' {
@@ -161,7 +161,7 @@ Describe 'Set-RetentionTag worker (T-0387)' {
             $plan.dryRun | Should -BeTrue
             $plan.affectedMailboxes | Should -Be @('mbx-1', 'mbx-2')
             $plan.diff.Count | Should -Be 2
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
 
         It 'bulk assign apply writes only mailboxes missing the tag and records per-row results' {
@@ -175,14 +175,14 @@ Describe 'Set-RetentionTag worker (T-0387)' {
             $res.auditEvents.Count | Should -Be 1
             $res.auditEvents[0]['action'] | Should -Be 'retention.assign'
             $res.auditEvents[0]['targetId'] | Should -Be 'mbx-2'
-            Assert-MockCalled Set-Mailbox -Times 1
+            Should -Invoke Set-Mailbox -Times 1
         }
 
         It 'bulk assign apply without confirmation is refused' {
             {
                 Invoke-SetRetentionTag -TenantId 'tenant-test' -Action 'assignBulk' -TagId 'tag-1' -MailboxIds @('mbx-2') -DryRun $false
             } | Should -Throw '*confirm_required*'
-            Assert-MockCalled Set-Mailbox -Times 0
+            Should -Invoke Set-Mailbox -Times 0
         }
     }
 
@@ -219,4 +219,9 @@ Describe 'Set-RetentionTag worker (T-0387)' {
             } | Should -Throw '*job envelope not found*'
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-EXOMailbox' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Set-Mailbox' -ErrorAction SilentlyContinue
 }

@@ -237,3 +237,7 @@ Describe 'Invoke-AlertAction worker (T-0548)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

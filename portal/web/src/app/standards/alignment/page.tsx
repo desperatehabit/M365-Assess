@@ -7,6 +7,7 @@
 // Standard Logs drawer, a Run standard report dialog, and a Compare-tenant-to-
 // standard mode. Zero colour literals: report theme tokens only.
 
+import Link from "next/link";
 import React, { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactElement } from "react";
 import { AlignmentReport } from "../../../components/standards/AlignmentReport";
 import {
@@ -207,12 +208,19 @@ export default function AlignmentPage({ fetcher, tenantId = "" }: AlignmentPageP
       <div style={headerStyle}>
         <div>
           <h1 style={titleStyle}>
-            {selectedTenant ? `Standards Report — ${selectedTenant}` : "Standard & Drift Alignment"}
+            {selectedTenant ? `Standards Report — ${selectedTenant}` : "Standards scorecard"}
           </h1>
           <p style={{ margin: "4px 0 0", color: "var(--text-soft)", fontSize: "14px" }}>
             {selectedTenant
               ? "Per-tenant current vs expected state across the effective standards."
-              : "Compliance across tenants and standards, sharing the drift status vocabulary."}
+              : "Scorecard of how closely each tenant matches its standards."}
+          </p>
+          <p style={{ margin: "6px 0 0", color: "var(--text-soft)", fontSize: "13px" }} data-testid="alignment-cross-link">
+            This scorecard is the summary; triage individual deviations in the{" "}
+            <Link href="/drift" style={{ color: "var(--accent-text)" }}>
+              drift triage queue
+            </Link>
+            .
           </p>
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>

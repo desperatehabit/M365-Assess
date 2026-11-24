@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ALL_TENANTS } from "../rbac/scope.js";
+import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import type { RequestContext, Route } from "../server.js";
 import type { GdapRelationship, GdapRelationshipStore } from "../tenants/gdap-tenant-source.js";
 import type { TenantAuditInput, TenantRecord, TenantStore } from "./tenants.js";
@@ -7,6 +7,8 @@ import {
   createGdapRoutes,
   GDAP_OPENAPI,
   GDAP_PERMISSION,
+  GDAP_READ_PERMISSION,
+  GDAP_RELATIONSHIPS_PATH,
   GDAP_SYNC_PATH,
   GDAP_UNAUTHENTICATED,
   type GdapCaller,
@@ -66,6 +68,16 @@ class MemoryGdapRelationshipStore implements GdapRelationshipStore {
     this.relationships.set(stored.tenantId, stored);
     return { ...stored };
   }
+}
+
+function routeFor(routes: Route[], method: string, path: string): Route {
+  const found = routes.find((r) => r.method === method && r.path === path);
+  if (!found) throw new Error(`${method} ${path} is not served`);
+  return found;
+}
+
+function getCtx(path: string): RequestContext {
+  return { method: "GET", path, params: {}, query: new URLSearchParams(), headers: {} };
 }
 
 function adminCaller(): GdapCaller {
@@ -167,8 +179,11 @@ describe("GDAP routes (T-0029)", () => {
       now: () => NOW,
     });
 
-    expect(routes.length).toBe(1);
-    const route = routes[0];
+    expect(routes.map((r) => `${r.method} ${r.path}`)).toEqual([
+      `GET ${GDAP_RELATIONSHIPS_PATH}`,
+      `POST ${GDAP_SYNC_PATH}`,
+    ]);
+    const route = routeFor(routes, "POST", GDAP_SYNC_PATH);
     const ctx: RequestContext = {
       method: "POST",
       path: GDAP_SYNC_PATH,
@@ -221,7 +236,7 @@ describe("GDAP routes (T-0029)", () => {
       resolveCaller: () => undefined,
     });
 
-    const route = routes[0];
+    const route = routeFor(routes, "POST", GDAP_SYNC_PATH);
     const ctx: RequestContext = {
       method: "POST",
       path: GDAP_SYNC_PATH,
@@ -239,5 +254,120 @@ describe("GDAP routes (T-0029)", () => {
   it("declares OpenAPI spec matching the route", () => {
     expect(GDAP_OPENAPI.paths["/v1/gdap/sync"]).toBeDefined();
     expect(GDAP_OPENAPI.paths["/v1/gdap/sync"].post.permission).toBe(GDAP_PERMISSION);
+  });
+
+  it("declares the relationships list with the read permission", () => {
+    expect(GDAP_OPENAPI.paths["/v1/gdap/relationships"].get.permission).toBe(GDAP_READ_PERMISSION);
+  });
+});
+
+describe("GET /v1/gdap/relationships (T-0911)", () => {
+  async function seeded(): Promise<{ store: MemoryTenantStore; relStore: MemoryGdapRelationshipStore }> {
+    const store = new MemoryTenantStore();
+    const relStore = new MemoryGdapRelationshipStore();
+    await store.upsertTenant({ ...makeDirectTenant("gdap-b"), source: "gdap", displayName: "Beta Client" });
+    await relStore.upsertGdapRelationship({
+      tenantId: "gdap-b",
+      relationshipEnd: "2027-01-01T00:00:00Z",
+      delegatedPrivilegeStatus: "active",
+      cpvConsentState: "consented",
+      lastSynced: NOW,
+    });
+    await relStore.upsertGdapRelationship({
+      tenantId: "gdap-a",
+      relationshipEnd: null,
+      delegatedPrivilegeStatus: "terminated",
+      cpvConsentState: null,
+      lastSynced: NOW,
+    });
+    return { store, relStore };
+  }
+
+  it("is not served when GDAP is not configured, so the page shows its disabled state", () => {
+    const routes = createGdapRoutes({
+      enabled: false,
+      tenantStore: new MemoryTenantStore(),
+      relationshipStore: new MemoryGdapRelationshipStore(),
+      resolveCaller: () => adminCaller(),
+    });
+    expect(routes.find((r) => r.path === GDAP_RELATIONSHIPS_PATH)).toBeUndefined();
+  });
+
+  it("lists stored relationships with the customer name, sorted by tenant", async () => {
+    const { store, relStore } = await seeded();
+    const routes = createGdapRoutes({
+      enabled: true,
+      tenantStore: store,
+      relationshipStore: relStore,
+      resolveCaller: () => adminCaller(),
+    });
+
+    const res = await routeFor(routes, "GET", GDAP_RELATIONSHIPS_PATH).handler(
+      getCtx(GDAP_RELATIONSHIPS_PATH),
+    );
+
+    expect(res.status).toBe(200);
+    expect((res.body as { items: unknown[] }).items).toEqual([
+      expect.objectContaining({ tenantId: "gdap-a", customerName: null, delegatedPrivilegeStatus: "terminated" }),
+      expect.objectContaining({ tenantId: "gdap-b", customerName: "Beta Client", cpvConsentState: "consented" }),
+    ]);
+  });
+
+  it("returns an empty list before the first sync", async () => {
+    const routes = createGdapRoutes({
+      enabled: true,
+      tenantStore: new MemoryTenantStore(),
+      relationshipStore: new MemoryGdapRelationshipStore(),
+      resolveCaller: () => adminCaller(),
+    });
+
+    const res = await routeFor(routes, "GET", GDAP_RELATIONSHIPS_PATH).handler(
+      getCtx(GDAP_RELATIONSHIPS_PATH),
+    );
+
+    expect(res.body).toEqual({ items: [] });
+  });
+
+  it("hides relationships for tenants outside the caller's scope", async () => {
+    const { store, relStore } = await seeded();
+    const routes = createGdapRoutes({
+      enabled: true,
+      tenantStore: store,
+      relationshipStore: relStore,
+      resolveCaller: () => ({ roles: ["admin"], tenantScope: tenantScope(["gdap-b"]), userId: "admin-1" }),
+    });
+
+    const res = await routeFor(routes, "GET", GDAP_RELATIONSHIPS_PATH).handler(
+      getCtx(GDAP_RELATIONSHIPS_PATH),
+    );
+
+    const items = (res.body as { items: Array<{ tenantId: string }> }).items;
+    expect(items.map((item) => item.tenantId)).toEqual(["gdap-b"]);
+  });
+
+  it("checks authentication and the read permission", async () => {
+    const { store, relStore } = await seeded();
+    const unauthenticated = createGdapRoutes({
+      enabled: true,
+      tenantStore: store,
+      relationshipStore: relStore,
+      resolveCaller: () => undefined,
+    });
+    await expect(
+      routeFor(unauthenticated, "GET", GDAP_RELATIONSHIPS_PATH).handler(getCtx(GDAP_RELATIONSHIPS_PATH)),
+    ).rejects.toMatchObject({ status: 401, code: GDAP_UNAUTHENTICATED });
+
+    const requested: string[] = [];
+    const authorized = createGdapRoutes({
+      enabled: true,
+      tenantStore: store,
+      relationshipStore: relStore,
+      resolveCaller: () => adminCaller(),
+      authorize: (_caller, permission) => {
+        requested.push(permission);
+      },
+    });
+    await routeFor(authorized, "GET", GDAP_RELATIONSHIPS_PATH).handler(getCtx(GDAP_RELATIONSHIPS_PATH));
+    expect(requested).toEqual([GDAP_READ_PERMISSION]);
   });
 });

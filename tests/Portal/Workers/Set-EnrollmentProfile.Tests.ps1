@@ -154,3 +154,7 @@ Describe 'Set-EnrollmentProfile worker (T-0329)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

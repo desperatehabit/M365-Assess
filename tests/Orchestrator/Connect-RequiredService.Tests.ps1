@@ -235,6 +235,50 @@ param($Service, $TenantId, $ClientId, $Scopes, $M365Environment)
         $ctx.Services.Connected | Should -Contain 'ExchangeOnline'
     }
 
+    It 'passes the context initial domain, never the tenant GUID, to <Service>' -ForEach @(
+        @{ Service = 'ExchangeOnline'; Timestamp = '20260101_120010'; Folder = 'out-exo' }
+        @{ Service = 'Purview';        Timestamp = '20260101_120011'; Folder = 'out-ipp' }
+    ) {
+        $ctx = New-RunContext -TenantId '00000000-0000-0000-0000-000000000000' -Sections @('Email') `
+            -OutputFolder (Join-Path $TestDrive $Folder) -Timestamp $Timestamp
+        $ctx.Paths.ProjectRoot = ''
+        $ctx.Paths.ConnectServicePath = $script:mockConnectPath
+        $ctx.Tenant.InitialDomain = 'contoso.onmicrosoft.com'
+        $ctx.Services.PermissionsChecked = $true
+
+        Connect-RequiredService -Context $ctx -Services @($Service) -SectionName 'Email'
+
+        $capture = Get-Content -Path $script:capturePath -Raw | ConvertFrom-Json
+        $capture.TenantId | Should -Be 'contoso.onmicrosoft.com'
+        $capture.TenantId | Should -Not -Match '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-'
+    }
+
+    It 'falls back to the context default domain when the initial domain is unknown' {
+        $ctx = New-RunContext -TenantId '00000000-0000-0000-0000-000000000000' -DefaultDomain 'contoso.onmicrosoft.com' `
+            -Sections @('Email') -OutputFolder (Join-Path $TestDrive 'out-default') -Timestamp '20260101_120012'
+        $ctx.Paths.ProjectRoot = ''
+        $ctx.Paths.ConnectServicePath = $script:mockConnectPath
+        $ctx.Services.PermissionsChecked = $true
+
+        Connect-RequiredService -Context $ctx -Services @('ExchangeOnline') -SectionName 'Email'
+
+        $capture = Get-Content -Path $script:capturePath -Raw | ConvertFrom-Json
+        $capture.TenantId | Should -Be 'contoso.onmicrosoft.com'
+    }
+
+    It 'captures the initial domain from Graph without replacing the caller tenant with the GUID' {
+        $ctx = New-RunContext -TenantId 'contoso.onmicrosoft.com' -Sections @('Identity') `
+            -OutputFolder (Join-Path $TestDrive 'out-graph') -Timestamp '20260101_120013'
+        $ctx.Paths.ProjectRoot = ''
+        $ctx.Paths.ConnectServicePath = $script:mockConnectPath
+        $ctx.Services.PermissionsChecked = $true
+
+        Connect-RequiredService -Context $ctx -Services @('Graph') -SectionName 'Identity'
+
+        $ctx.Tenant.InitialDomain | Should -Be 'contoso.onmicrosoft.com'
+        $ctx.Tenant.TenantId | Should -Be 'contoso.onmicrosoft.com'
+    }
+
     It 'preserves the EXO to Purview mutual exclusion on context service state' {
         $ctx = New-RunContext -TenantId 'contoso.onmicrosoft.com' -Sections @('Email') `
             -OutputFolder (Join-Path $TestDrive 'out3') -Timestamp '20260101_120002'

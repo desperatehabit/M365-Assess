@@ -5,7 +5,7 @@
 - **Severity:** low
 - **Depends on:** EPIC-001, EPIC-002
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #51; CIPP `New-CIPPBackup.ps1`, `New-CIPPRestore.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-035.md`](../../../../ISSUES/epics/EPIC-035.md)
 
 ## 1. Purpose
 
@@ -86,6 +86,7 @@ secondary target.
 |---|---|---|
 | `GET`/`POST` | `/v1/backups` | list/create |
 | `GET` | `/v1/backups/{id}/download` | download |
+| `POST` | `/v1/backups/{id}/restore/preview` | dry-run restore: per-table added/changed/removed, no writes (T-0909) |
 | `POST` | `/v1/backups/{id}/restore` | restore |
 | `DELETE` | `/v1/backups/{id}` | delete |
 | `GET`/`PUT` | `/v1/backup-settings` | retention/replication |
@@ -137,4 +138,4 @@ destructive to portal state and is audited with before/after.
 - [`../EPIC-001-platform-foundation/SPEC.md`](../EPIC-001-platform-foundation/SPEC.md) — storage
 - [`../EPIC-037-settings-branding/SPEC.md`](../EPIC-037-settings-branding/SPEC.md) — settings
 - [`../EPIC-007-scheduler-custom-scripts/SPEC.md`](../EPIC-007-scheduler-custom-scripts/SPEC.md) — scheduled backups
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-035.md`](../../../../ISSUES/epics/EPIC-035.md) — epic ticket

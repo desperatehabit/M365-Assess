@@ -125,3 +125,102 @@ describe("BaselinesPage catalog", () => {
     expect(calls.find((call) => call.url === "/v1/baselines/tpl-1/migrate-from-standards")?.init?.method).toBe("POST");
   });
 });
+
+describe("BaselinesPage built-ins (T-0924)", () => {
+  it("shows a lock badge and offers Make a copy instead of edit/delete", async () => {
+    const navigate = vi.fn();
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const builtIn = {
+      id: "builtin-baseline-identity-baseline",
+      name: "Identity Baseline",
+      logic: "and",
+      alerting: { enabled: false },
+      enabled: true,
+      stages: [{ order: 0, conditions: [], action: "report" }],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+      builtIn: true,
+    };
+    const fetcher = (async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      if (url === "/v1/baselines") return jsonResponse({ items: [builtIn] });
+      if (url === "/v1/baselines/fleet") return jsonResponse(FLEET);
+      if (url === `/v1/baselines/${builtIn.id}/copy` && init?.method === "POST") {
+        return jsonResponse(
+          { ...builtIn, id: "bl-copy", name: "Identity Baseline (copy)", builtIn: false },
+          201,
+        );
+      }
+      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as unknown as typeof fetch;
+
+    render(<BaselinesPage fetcher={fetcher} navigate={navigate} />);
+    await waitFor(() => expect(screen.getByTestId("baseline-row-builtin-baseline-identity-baseline")).toBeTruthy());
+
+    expect(screen.getByTestId("baseline-builtin-builtin-baseline-identity-baseline").textContent).toContain("Built-in");
+    expect(screen.queryByTestId("baseline-edit-builtin-baseline-identity-baseline")).toBeNull();
+    expect(screen.queryByTestId("baseline-delete-builtin-baseline-identity-baseline")).toBeNull();
+    expect(screen.queryByTestId("baseline-run-builtin-baseline-identity-baseline")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("baseline-copy-builtin-baseline-identity-baseline"));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith("/baselines/bl-copy/edit"));
+    expect(calls.find((call) => call.url === `/v1/baselines/${builtIn.id}/copy`)?.init?.method).toBe("POST");
+  });
+});
+
+describe("BaselinesPage stage advance (T-0879)", () => {
+  it("advances an eligible tenant and reloads the rollout", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    let advanced = false;
+    const fetcher = (async (url: string, init?: RequestInit): Promise<Response> => {
+      calls.push({ url, init });
+      if (url === "/v1/baselines") {
+        return jsonResponse({
+          items: [
+            {
+              id: "bl-1",
+              name: "Server baseline",
+              logic: "and",
+              alerting: { enabled: false },
+              enabled: true,
+              stages: [{ order: 0, conditions: [], action: "report" }],
+              createdAt: "2026-11-01T00:00:00.000Z",
+              updatedAt: "2026-11-01T00:00:00.000Z",
+            },
+          ],
+        });
+      }
+      if (url === "/v1/baselines/fleet") {
+        return jsonResponse({
+          ...FLEET,
+          baselines: [
+            { id: "bl-1", name: "Server baseline", stages: 2, assignedTenants: 1, fleetCompliance: 0, lastRunAt: null },
+          ],
+          needsAttention: advanced
+            ? [{ tenantId: "tenant-a", baselineId: "bl-1", stage: 1, state: "active", openDeviations: 0 }]
+            : [{ tenantId: "tenant-a", baselineId: "bl-1", stage: 0, state: "eligible", openDeviations: 0 }],
+        });
+      }
+      if (url === "/v1/baselines/bl-1/stages/0/advance" && init?.method === "POST") {
+        advanced = true;
+        return jsonResponse({
+          rollout: { baselineId: "bl-1", tenantId: "tenant-a", stage: 1, state: "active", lastRunAt: "2026-11-07T00:00:00.000Z" },
+        });
+      }
+      throw new Error(`unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as unknown as typeof fetch;
+
+    render(<BaselinesPage fetcher={fetcher} navigate={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId("baselines-eligible")).toBeTruthy());
+
+    fireEvent.click(screen.getByTestId("baseline-advance-tenant-a"));
+
+    await waitFor(() =>
+      expect(screen.getByTestId("baselines-notice").textContent).toContain("advanced to stage 2"),
+    );
+    expect(calls.find((call) => call.url === "/v1/baselines/bl-1/stages/0/advance")?.init?.method).toBe("POST");
+    expect(JSON.parse(String(calls.find((call) => call.url === "/v1/baselines/bl-1/stages/0/advance")?.init?.body))).toEqual({
+      tenantId: "tenant-a",
+    });
+  });
+});

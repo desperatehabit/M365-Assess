@@ -6,6 +6,8 @@
 // Strictly uses report theme tokens with zero colour literals.
 
 import React, { useEffect, useState, use, type CSSProperties, type ReactElement } from "react";
+import { useSearchParams } from "next/navigation";
+import { usePermission } from "../../../components/PermissionGate";
 import {
   RunDetailTabs,
   type RunDetailData,
@@ -13,6 +15,10 @@ import {
   type RunArtifactDetail,
   type RunIssueDetail,
 } from "../../../components/RunDetailTabs";
+import { fetchAllRunResults } from "../../../lib/runResultsApi";
+
+/** The permission the apply route requires (bff/src/routes/remediation.ts). */
+const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
 
 const pageStyle: CSSProperties = {
   padding: "32px",
@@ -49,6 +55,11 @@ export default function RunDetailPage(props: RunDetailPageProps): ReactElement {
 
   const runId = resolvedParams.id;
 
+  // The Remediation page links back with ?planId= so both views open the same plan.
+  const searchParams = useSearchParams();
+  const planId = searchParams?.get("planId") ?? "";
+  const canApply = usePermission(REMEDIATION_APPLY_PERMISSION) === true;
+
   const [run, setRun] = useState<RunDetailData | null>(null);
   const [findings, setFindings] = useState<RunFindingDetail[]>([]);
   const [artifacts, setArtifacts] = useState<RunArtifactDetail[]>([]);
@@ -70,12 +81,14 @@ export default function RunDetailPage(props: RunDetailPageProps): ReactElement {
       const runData = await runRes.json();
       setRun(runData);
 
-      // 2. Fetch Results (findings + issues)
-      const resultsRes = await fetch(`/v1/runs/${encodeURIComponent(runId)}/results`);
-      if (resultsRes.ok) {
-        const resultsData = await resultsRes.json();
-        setFindings(resultsData.items ?? []);
-        setIssues(resultsData.issues ?? []);
+      // 2. Fetch Results (findings + issues). The endpoint is paginated; read every
+      // page so the Findings tab is not cut off at the first 100 (T-0945).
+      try {
+        const results = await fetchAllRunResults<RunFindingDetail, RunIssueDetail>(runId);
+        setFindings(results.items);
+        setIssues(results.issues);
+      } catch {
+        // Results are optional for the page; the run detail above still renders.
       }
 
       // 3. Fetch Artifacts
@@ -166,6 +179,9 @@ export default function RunDetailPage(props: RunDetailPageProps): ReactElement {
         issues={issues}
         onCancel={handleCancel}
         onRetry={handleRetry}
+        canApply={canApply}
+        initialPlanId={planId}
+        onRefreshResults={fetchRunData}
       />
     </div>
   );

@@ -23,6 +23,8 @@ const CRED: CredentialRecord = {
 
 const credentials: CredentialStoreRow = {
   getCredential: async (tenantId) => (tenantId === "t-a" ? CRED : undefined),
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async (input) => input,
   appendAuditEvent: async () => undefined,
 };
@@ -62,7 +64,7 @@ describe("Conditional Access providers (T-0819)", () => {
       entrypoint: "get-ca-policies.ps1",
       job: {
         tenantId: "t-a",
-        credential: { credentialRef: "tenants/t-a/credential", record: expect.objectContaining({ thumbprint: "ABC" }) },
+        credential: { credentialRef: "tenants/t-a/credential", purpose: "reader", record: expect.objectContaining({ thumbprint: "ABC" }) },
         state: "enabled",
         control: "mfa",
         top: 50,

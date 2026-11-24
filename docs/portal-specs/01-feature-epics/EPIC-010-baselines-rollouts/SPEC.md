@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-008, EPIC-006, EPIC-007
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #8; [`cipp-standards-ux.md`](../../99-reference/cipp-standards-ux.md) §7; CIPP `CIPPCore/Public/Baselines/` (~201 state/apply files), `Get-CIPPBaselineAlignment.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-010.md`](../../../../ISSUES/epics/EPIC-010.md)
 
 ## 1. Purpose
 
@@ -192,4 +192,4 @@ apply.
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — standards + conditions
 - [`../EPIC-009-drift-management/SPEC.md`](../EPIC-009-drift-management/SPEC.md) — desired-state comparison
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — apply path
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-010.md`](../../../../ISSUES/epics/EPIC-010.md) — epic ticket

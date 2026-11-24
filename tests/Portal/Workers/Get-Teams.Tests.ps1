@@ -193,3 +193,7 @@ Describe 'Get-Teams worker (T-0502)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

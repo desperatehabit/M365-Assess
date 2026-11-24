@@ -152,11 +152,16 @@ export function createPurviewProviders(run: WorkerRunner, credentials: Credentia
     fields: Record<string, unknown>,
     preview: boolean,
   ): Promise<SafeLinksChangeResult | SafeLinksPlan> {
-    const result = await call<unknown>("get-safelinks.ps1", tenantId, {
-      ...fields,
-      dryRun: preview,
-      confirmed: !preview,
-    });
+    const result = await call<unknown>(
+      "get-safelinks.ps1",
+      tenantId,
+      {
+        ...fields,
+        dryRun: preview,
+        confirmed: !preview,
+      },
+      preview ? undefined : { purpose: "operator" },
+    );
     raiseWorkerError(result);
     return preview ? (result as SafeLinksPlan) : toChangeResult(result);
   }

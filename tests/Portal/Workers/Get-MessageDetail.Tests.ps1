@@ -103,7 +103,7 @@ Describe 'Get-MessageDetail worker (T-0464)' {
 
             $result.body | Should -BeNullOrEmpty
             $result.bodyGated | Should -BeTrue
-            $result.bodyGateReason | Should -Match 'mailtools\.content'
+            $result.bodyGateReason | Should -Match 'Exchange\.MailContent\.Reveal'
         }
 
         It 'returns the body only with -IncludeBody' {
@@ -168,4 +168,9 @@ Describe 'Get-MessageDetail worker (T-0464)' {
             }
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-MessageTrace' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Get-MessageTraceDetail' -ErrorAction SilentlyContinue
 }

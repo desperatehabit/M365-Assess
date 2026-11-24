@@ -54,6 +54,17 @@ class FakeAuditPort implements ConsentAuditPort {
   }
 }
 
+class FakeDecisionStore {
+  decisions: import("./app-approval-service.js").ConsentDecision[] = [];
+  async listConsentDecisions(tenantId: string) {
+    return this.decisions.filter((entry) => entry.tenantId === tenantId);
+  }
+  async appendConsentDecision(input: import("./app-approval-service.js").ConsentDecision) {
+    this.decisions.push(input);
+    return input;
+  }
+}
+
 function adminCaller(): Caller {
   return { roles: ["admin"], tenantScope: ALL_TENANTS };
 }
@@ -73,6 +84,7 @@ function makeService(overrides: Record<string, unknown> = {}) {
   const service = createAppApprovalService({
     writePort,
     auditPort,
+    decisions: new FakeDecisionStore(),
     now: () => NOW,
     requests: [request()],
     ...overrides,

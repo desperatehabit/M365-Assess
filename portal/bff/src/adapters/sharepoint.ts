@@ -94,6 +94,7 @@ interface SiteActionAppliedOutput {
   readonly siteId: string;
   readonly targetName: string;
   readonly plan: SiteActionPlanOutput | null;
+  readonly error?: string | null;
   readonly auditEvent: Record<string, unknown> | null;
 }
 
@@ -180,7 +181,7 @@ function toLifecycleResult(output: SiteActionOutput): SharePointSiteOperationRes
     targetName: output.targetName,
     before: (output.plan?.before ?? null) as Record<string, unknown> | null,
     after: (output.plan?.after ?? null) as Record<string, unknown> | null,
-    error: output.success ? null : `site ${output.operation} failed`,
+    error: output.success ? null : (output.error ?? `site ${output.operation} failed`),
     ...(output.auditEvent ? { auditEvent: toAuditEvent(output.auditEvent) } : {}),
   };
 }
@@ -225,38 +226,48 @@ export function createSharePointProviders(run: WorkerRunner, credentials: Creden
 
     sitesCreate: {
       createSite: async (tenantId, input, preview) => {
-        const output = await call<SiteCreateOutput>("new-sharepoint-site.ps1", tenantId, {
-          schemaVersion: "v1",
-          payload: {
-            site: {
-              name: input.name,
-              alias: input.alias,
-              type: input.type,
-              owners: [...input.owners],
-              ...(input.template ? { template: input.template } : {}),
-              sharing: input.sharing,
+        const output = await call<SiteCreateOutput>(
+          "new-sharepoint-site.ps1",
+          tenantId,
+          {
+            schemaVersion: "v1",
+            payload: {
+              site: {
+                name: input.name,
+                alias: input.alias,
+                type: input.type,
+                owners: [...input.owners],
+                ...(input.template ? { template: input.template } : {}),
+                sharing: input.sharing,
+              },
+              dryRun: preview,
             },
-            dryRun: preview,
           },
-        });
+          preview ? undefined : { purpose: "operator" },
+        );
         return toSiteCreateResult(output);
       },
 
       createSitesBulk: async (tenantId, sites, csv, preview) => {
-        const output = await call<SiteBulkOutput>("new-sharepoint-site-bulk.ps1", tenantId, {
-          schemaVersion: "v1",
-          payload: {
-            ...(csv !== undefined ? { csv } : { sites: sites.map((site) => ({
-              name: site.name,
-              alias: site.alias,
-              type: site.type,
-              owners: [...site.owners],
-              ...(site.template ? { template: site.template } : {}),
-              sharing: site.sharing,
-            })) }),
-            dryRun: preview,
+        const output = await call<SiteBulkOutput>(
+          "new-sharepoint-site-bulk.ps1",
+          tenantId,
+          {
+            schemaVersion: "v1",
+            payload: {
+              ...(csv !== undefined ? { csv } : { sites: sites.map((site) => ({
+                name: site.name,
+                alias: site.alias,
+                type: site.type,
+                owners: [...site.owners],
+                ...(site.template ? { template: site.template } : {}),
+                sharing: site.sharing,
+              })) }),
+              dryRun: preview,
+            },
           },
-        });
+          preview ? undefined : { purpose: "operator" },
+        );
         const result: SharePointSitesBulkResult = {
           success: output.failed === 0,
           total: output.total,
@@ -276,23 +287,56 @@ export function createSharePointProviders(run: WorkerRunner, credentials: Creden
     },
 
     lifecycle: {
+      editSite: async (tenantId, siteId, input, preview) => {
+        const output = await call<SiteActionOutput>(
+          "invoke-sharepoint-site-action.ps1",
+          tenantId,
+          {
+            schemaVersion: "v1",
+            correlationId: globalThis.crypto.randomUUID(),
+            action: "edit",
+            payload: {
+              siteId,
+              ...(input.displayName !== undefined ? { displayName: input.displayName } : {}),
+              ...(input.sharing !== undefined ? { sharing: input.sharing } : {}),
+              ...(input.owners !== undefined ? { owners: [...input.owners] } : {}),
+              ...(input.lockState !== undefined ? { lockState: input.lockState } : {}),
+              dryRun: preview,
+              confirm: input.confirm === true,
+            },
+          },
+          preview ? undefined : { purpose: "operator" },
+        );
+        return toLifecycleResult(output);
+      },
+
       deleteSite: async (tenantId, siteId, input, preview) => {
-        const output = await call<SiteActionOutput>("invoke-sharepoint-site-action.ps1", tenantId, {
-          schemaVersion: "v1",
-          correlationId: globalThis.crypto.randomUUID(),
-          action: "delete",
-          payload: { siteId, dryRun: preview, confirm: input.confirm === true },
-        });
+        const output = await call<SiteActionOutput>(
+          "invoke-sharepoint-site-action.ps1",
+          tenantId,
+          {
+            schemaVersion: "v1",
+            correlationId: globalThis.crypto.randomUUID(),
+            action: "delete",
+            payload: { siteId, dryRun: preview, confirm: input.confirm === true },
+          },
+          preview ? undefined : { purpose: "operator" },
+        );
         return toLifecycleResult(output);
       },
 
       restoreSite: async (tenantId, siteId, input, preview) => {
-        const output = await call<SiteActionOutput>("invoke-sharepoint-site-action.ps1", tenantId, {
-          schemaVersion: "v1",
-          correlationId: globalThis.crypto.randomUUID(),
-          action: "restore",
-          payload: { siteId, dryRun: preview, confirm: input.confirm === true },
-        });
+        const output = await call<SiteActionOutput>(
+          "invoke-sharepoint-site-action.ps1",
+          tenantId,
+          {
+            schemaVersion: "v1",
+            correlationId: globalThis.crypto.randomUUID(),
+            action: "restore",
+            payload: { siteId, dryRun: preview, confirm: input.confirm === true },
+          },
+          preview ? undefined : { purpose: "operator" },
+        );
         return toLifecycleResult(output);
       },
 
@@ -308,16 +352,21 @@ export function createSharePointProviders(run: WorkerRunner, credentials: Creden
         }),
 
       recycleBinAction: async (tenantId, input, preview) => {
-        const output = await call<RecycleBinActionOutput>("invoke-sharepoint-site-action.ps1", tenantId, {
-          schemaVersion: "v1",
-          correlationId: globalThis.crypto.randomUUID(),
-          action: input.action === "restore" ? "recyclebin-restore" : "recyclebin-empty",
-          payload: {
-            recycleBinIds: [...input.itemIds],
-            dryRun: preview,
-            confirm: input.confirm === true,
+        const output = await call<RecycleBinActionOutput>(
+          "invoke-sharepoint-site-action.ps1",
+          tenantId,
+          {
+            schemaVersion: "v1",
+            correlationId: globalThis.crypto.randomUUID(),
+            action: input.action === "restore" ? "recyclebin-restore" : "recyclebin-empty",
+            payload: {
+              recycleBinIds: [...input.itemIds],
+              dryRun: preview,
+              confirm: input.confirm === true,
+            },
           },
-        });
+          preview ? undefined : { purpose: "operator" },
+        );
         return toRecycleBinResult(output);
       },
     },
@@ -332,15 +381,20 @@ export function createSharePointProviders(run: WorkerRunner, credentials: Creden
         call<SiteStorageComposition>("get-site-storage.ps1", tenantId, { SiteId: siteId }),
 
       cleanupVersions: async (tenantId, siteId, input) =>
-        call<VersionCleanupPlan | VersionCleanupApply>("invoke-version-cleanup.ps1", tenantId, {
-          SiteId: siteId,
-          AgeThresholdDays: input.ageThresholdDays,
-          ...(input.includeVersions ? { IncludeVersions: [...input.includeVersions] } : {}),
-          ...(input.excludeVersions ? { ExcludeVersions: [...input.excludeVersions] } : {}),
-          Mode: input.preview === true ? "Plan" : "Apply",
-          ...(input.confirmCount !== undefined ? { ConfirmCount: input.confirmCount } : {}),
-          JobId: globalThis.crypto.randomUUID(),
-        }),
+        call<VersionCleanupPlan | VersionCleanupApply>(
+          "invoke-version-cleanup.ps1",
+          tenantId,
+          {
+            SiteId: siteId,
+            AgeThresholdDays: input.ageThresholdDays,
+            ...(input.includeVersions ? { IncludeVersions: [...input.includeVersions] } : {}),
+            ...(input.excludeVersions ? { ExcludeVersions: [...input.excludeVersions] } : {}),
+            Mode: input.preview === true ? "Plan" : "Apply",
+            ...(input.confirmCount !== undefined ? { ConfirmCount: input.confirmCount } : {}),
+            JobId: globalThis.crypto.randomUUID(),
+          },
+          input.preview === true ? undefined : { purpose: "operator" },
+        ),
     },
 
     onedrive: {

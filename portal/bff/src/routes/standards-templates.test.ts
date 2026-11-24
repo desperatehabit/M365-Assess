@@ -7,9 +7,11 @@ import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import { RbacErrorCodes, type Caller } from "../rbac/authorize.js";
 import type { RequestContext } from "../server.js";
 import {
+  BUILT_IN_STANDARD_TEMPLATES,
   STANDARDS_INVALID_KIND_CONVERSION,
   STANDARDS_PERMISSIONS,
   STANDARDS_TEMPLATE_CLONE_PATH,
+  STANDARDS_TEMPLATE_COPY_PATH,
   STANDARDS_TEMPLATE_DETAIL_PATH,
   STANDARDS_TEMPLATE_NOT_FOUND,
   STANDARDS_TEMPLATES_OPENAPI,
@@ -23,6 +25,7 @@ import {
   type UpdateTemplatePatch,
   type UpsertAssignmentInput,
 } from "./standards-templates.js";
+import { TEMPLATE_BUILTIN_LOCKED } from "./template-builtin.js";
 
 const TENANT_1 = "11111111-1111-1111-1111-111111111111";
 const TENANT_2 = "22222222-2222-2222-2222-222222222222";
@@ -167,7 +170,9 @@ describe("standards template CRUD (T-0143)", () => {
 
     const route = routeFor(makeOptions(store), "GET", STANDARDS_TEMPLATES_PATH);
     const all = await route.handler(ctx("GET", STANDARDS_TEMPLATES_PATH));
-    expect((all.body as { items: unknown[] }).items).toHaveLength(2);
+    expect((all.body as { items: unknown[] }).items).toHaveLength(
+      BUILT_IN_STANDARD_TEMPLATES.length + 2,
+    );
 
     const drift = await route.handler(ctx("GET", STANDARDS_TEMPLATES_PATH, { query: { kind: "drift" } }));
     const items = (drift.body as { items: { id: string }[] }).items;
@@ -278,6 +283,85 @@ describe("clone and convert (T-0143)", () => {
   });
 });
 
+describe("built-in standards templates (T-0924)", () => {
+  const builtInId = BUILT_IN_STANDARD_TEMPLATES[0]!.id;
+
+  it("lists and reads built-ins with the builtIn marker", async () => {
+    const store = new MemoryTemplateStore();
+    const list = routeFor(makeOptions(store), "GET", STANDARDS_TEMPLATES_PATH);
+    const res = await list.handler(ctx("GET", STANDARDS_TEMPLATES_PATH));
+    const items = (res.body as { items: StandardTemplateRecord[] }).items;
+    const builtIn = items.find((template) => template.id === builtInId);
+    expect(builtIn?.builtIn).toBe(true);
+    expect(builtIn?.name).toBe(BUILT_IN_STANDARD_TEMPLATES[0]!.name);
+
+    const get = routeFor(makeOptions(store), "GET", STANDARDS_TEMPLATE_DETAIL_PATH);
+    const detail = await get.handler(
+      ctx("GET", STANDARDS_TEMPLATE_DETAIL_PATH, { params: { templateId: builtInId } }),
+    );
+    expect((detail.body as { template: StandardTemplateRecord }).template.builtIn).toBe(true);
+  });
+
+  it("refuses to update, convert, or delete a built-in", async () => {
+    const store = new MemoryTemplateStore();
+    const patch = routeFor(makeOptions(store), "PATCH", STANDARDS_TEMPLATE_DETAIL_PATH);
+    await expect(
+      patch.handler(
+        ctx("PATCH", STANDARDS_TEMPLATE_DETAIL_PATH, {
+          params: { templateId: builtInId },
+          body: { name: "Changed" },
+        }),
+      ),
+    ).rejects.toMatchObject({ status: 403, code: TEMPLATE_BUILTIN_LOCKED });
+
+    const del = routeFor(makeOptions(store), "DELETE", STANDARDS_TEMPLATE_DETAIL_PATH);
+    await expect(
+      del.handler(ctx("DELETE", STANDARDS_TEMPLATE_DETAIL_PATH, { params: { templateId: builtInId } })),
+    ).rejects.toMatchObject({ status: 403, code: TEMPLATE_BUILTIN_LOCKED });
+  });
+
+  it("copies a built-in into an editable operator template with a unique name", async () => {
+    const store = new MemoryTemplateStore();
+    const copy = routeFor(makeOptions(store), "POST", STANDARDS_TEMPLATE_COPY_PATH);
+    const first = await copy.handler(
+      ctx("POST", STANDARDS_TEMPLATE_COPY_PATH, { params: { templateId: builtInId } }),
+    );
+    expect(first.status).toBe(201);
+    const copyOne = (first.body as { template: StandardTemplateRecord }).template;
+    expect(copyOne.builtIn).toBe(false);
+    expect(copyOne.name).toBe(`${BUILT_IN_STANDARD_TEMPLATES[0]!.name} (copy)`);
+
+    const second = await copy.handler(
+      ctx("POST", STANDARDS_TEMPLATE_COPY_PATH, { params: { templateId: builtInId } }),
+    );
+    const copyTwo = (second.body as { template: StandardTemplateRecord }).template;
+    expect(copyTwo.name).toBe(`${BUILT_IN_STANDARD_TEMPLATES[0]!.name} (copy 2)`);
+
+    // The copy is an ordinary operator template: it can be edited and deleted.
+    const patch = routeFor(makeOptions(store), "PATCH", STANDARDS_TEMPLATE_DETAIL_PATH);
+    const patched = await patch.handler(
+      ctx("PATCH", STANDARDS_TEMPLATE_DETAIL_PATH, {
+        params: { templateId: copyOne.id },
+        body: { name: "Edited copy" },
+      }),
+    );
+    expect((patched.body as { template: StandardTemplateRecord }).template.name).toBe("Edited copy");
+    const del = routeFor(makeOptions(store), "DELETE", STANDARDS_TEMPLATE_DETAIL_PATH);
+    expect(
+      (await del.handler(ctx("DELETE", STANDARDS_TEMPLATE_DETAIL_PATH, { params: { templateId: copyTwo.id } }))).status,
+    ).toBe(204);
+
+    // The built-in itself is unchanged.
+    const get = routeFor(makeOptions(store), "GET", STANDARDS_TEMPLATE_DETAIL_PATH);
+    const source = await get.handler(
+      ctx("GET", STANDARDS_TEMPLATE_DETAIL_PATH, { params: { templateId: builtInId } }),
+    );
+    expect((source.body as { template: StandardTemplateRecord }).template.name).toBe(
+      BUILT_IN_STANDARD_TEMPLATES[0]!.name,
+    );
+  });
+});
+
 describe("RBAC and tenant scope (T-0143)", () => {
   it("rejects a read without standards.read", async () => {
     const route = routeFor(makeOptions(new MemoryTemplateStore(), { authorize: denyAll }), "GET", STANDARDS_TEMPLATES_PATH);
@@ -322,6 +406,7 @@ describe("route set and OpenAPI (T-0143)", () => {
         `PATCH ${STANDARDS_TEMPLATE_DETAIL_PATH}`,
         `DELETE ${STANDARDS_TEMPLATE_DETAIL_PATH}`,
         `POST ${STANDARDS_TEMPLATE_CLONE_PATH}`,
+        `POST ${STANDARDS_TEMPLATE_COPY_PATH}`,
       ].sort(),
     );
   });
@@ -338,6 +423,9 @@ describe("route set and OpenAPI (T-0143)", () => {
     );
     expect(
       STANDARDS_TEMPLATES_OPENAPI["/v1/standards/templates/{templateId}/clone"].post.permission,
+    ).toBe(STANDARDS_PERMISSIONS.write);
+    expect(
+      STANDARDS_TEMPLATES_OPENAPI["/v1/standards/templates/{templateId}/copy"].post.permission,
     ).toBe(STANDARDS_PERMISSIONS.write);
   });
 });

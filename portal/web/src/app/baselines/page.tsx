@@ -12,6 +12,8 @@ import { FleetOverview } from "../../components/baselines/FleetOverview";
 import { BaselineCatalogDialog } from "../../components/baselines/BaselineCatalogDialog";
 import { MigrateFromStandardsDialog } from "../../components/baselines/MigrateFromStandardsDialog";
 import {
+  advanceBaselineStage,
+  copyBaseline,
   deleteBaseline,
   fetchBaselines,
   fetchBaselinesCatalog,
@@ -21,6 +23,7 @@ import {
   type BaselineCatalogEntry,
   type BaselineSummary,
   type FleetOverview as FleetOverviewData,
+  type TenantNeedingAttention,
 } from "../../lib/baselinesApi";
 import { fetchStandardTemplates, type StandardTemplate } from "../../lib/standardsApi";
 
@@ -88,6 +91,19 @@ const actionBtnStyle: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const builtInBadgeStyle: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: "4px",
+  padding: "2px 8px",
+  borderRadius: "999px",
+  fontSize: "11px",
+  fontWeight: 600,
+  background: "var(--surface)",
+  color: "var(--text-soft)",
+  border: "1px solid var(--border)",
+};
+
 const tableWrapStyle: CSSProperties = {
   overflowX: "auto",
   background: "var(--bg-elev)",
@@ -152,6 +168,7 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
   const [migratingId, setMigratingId] = useState<string | null>(null);
+  const [advancingKey, setAdvancingKey] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -191,12 +208,45 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
     return row?.lastRunAt ?? "—";
   };
 
+  const eligibleRollouts = (fleet?.needsAttention ?? []).filter((row) => row.state === "eligible");
+
   const handleDelete = async (id: string, name: string): Promise<void> => {
     try {
       await deleteBaseline(id, doFetch);
       await load();
     } catch (err) {
       setError(`Deleting “${name}”: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleMakeCopy = async (baseline: BaselineSummary): Promise<void> => {
+    try {
+      const copy = await copyBaseline(baseline.id, {}, doFetch);
+      setNotice(`Copied “${baseline.name}” to “${copy.name}”.`);
+      go(`/baselines/${copy.id}/edit`);
+    } catch (err) {
+      setError(`Copying “${baseline.name}”: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  };
+
+  const handleAdvance = async (row: TenantNeedingAttention): Promise<void> => {
+    const key = `${row.baselineId}-${row.tenantId}-${row.stage}`;
+    setAdvancingKey(key);
+    setNotice(null);
+    try {
+      const rollout = await advanceBaselineStage(row.baselineId, row.stage, row.tenantId, doFetch);
+      setNotice(
+        rollout.state === "complete"
+          ? `${row.tenantId} completed every stage of this baseline.`
+          : `${row.tenantId} advanced to stage ${rollout.stage + 1}.`,
+      );
+      await load();
+    } catch (err) {
+      setError(
+        `Advancing “${row.tenantId}”: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      setAdvancingKey(null);
     }
   };
 
@@ -305,6 +355,51 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
 
       <FleetOverview overview={fleet} loading={loading} error={error} />
 
+      {eligibleRollouts.length > 0 && (
+        <div style={tableWrapStyle} data-testid="baselines-eligible">
+          <div style={{ padding: "14px 16px 0" }}>
+            <h2 style={{ fontSize: "16px", fontWeight: 700, margin: 0 }}>Ready to advance</h2>
+            <p style={{ margin: "4px 0 0", color: "var(--text-soft)", fontSize: "13px" }}>
+              These tenants satisfy their current stage conditions. Advancing moves each tenant to
+              the next stage.
+            </p>
+          </div>
+          <table style={tableStyle}>
+            <thead>
+              <tr>
+                <th style={thStyle}>Tenant</th>
+                <th style={thStyle}>Baseline</th>
+                <th style={thStyle}>Stage</th>
+                <th style={thStyle}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eligibleRollouts.map((row) => {
+                const key = `${row.baselineId}-${row.tenantId}-${row.stage}`;
+                return (
+                  <tr key={key} data-testid={`baseline-eligible-${row.tenantId}`}>
+                    <td style={tdStyle}>{row.tenantId}</td>
+                    <td style={tdStyle}>{row.baselineId}</td>
+                    <td style={tdStyle}>{row.stage + 1}</td>
+                    <td style={tdStyle}>
+                      <button
+                        type="button"
+                        style={actionBtnStyle}
+                        data-testid={`baseline-advance-${row.tenantId}`}
+                        disabled={advancingKey === key}
+                        onClick={() => void handleAdvance(row)}
+                      >
+                        {advancingKey === key ? "Advancing…" : "Advance stage"}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       <div style={tableWrapStyle}>
         <table style={tableStyle} data-testid="baselines-table">
           <thead>
@@ -322,7 +417,16 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
               const compliance = complianceFor(baseline.id);
               return (
                 <tr key={baseline.id} data-testid={`baseline-row-${baseline.id}`}>
-                  <td style={tdStyle}>{baseline.name}</td>
+                  <td style={tdStyle}>
+                    <span style={{ display: "inline-flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                      {baseline.name}
+                      {baseline.builtIn && (
+                        <span style={builtInBadgeStyle} title="Built-in baseline: make a copy to edit" data-testid={`baseline-builtin-${baseline.id}`}>
+                          <span aria-hidden="true">🔒</span> Built-in
+                        </span>
+                      )}
+                    </span>
+                  </td>
                   <td style={tdStyle} data-testid={`baseline-stages-${baseline.id}`}>
                     {baseline.stages.length}
                   </td>
@@ -345,34 +449,47 @@ export default function BaselinesPage({ fetcher, navigate }: BaselinesPageProps)
                       >
                         View
                       </button>
-                      <button
-                        type="button"
-                        style={actionBtnStyle}
-                        data-testid={`baseline-edit-${baseline.id}`}
-                        onClick={() => {
-                          go(`/baselines/${baseline.id}/edit`);
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        style={actionBtnStyle}
-                        data-testid={`baseline-run-${baseline.id}`}
-                        onClick={() =>
-                          setNotice("Baseline runs are driven by the baseline system timer (EPIC-007).")
-                        }
-                      >
-                        Run now
-                      </button>
-                      <button
-                        type="button"
-                        style={actionBtnStyle}
-                        data-testid={`baseline-delete-${baseline.id}`}
-                        onClick={() => void handleDelete(baseline.id, baseline.name)}
-                      >
-                        Delete
-                      </button>
+                      {baseline.builtIn ? (
+                        <button
+                          type="button"
+                          style={actionBtnStyle}
+                          data-testid={`baseline-copy-${baseline.id}`}
+                          onClick={() => void handleMakeCopy(baseline)}
+                        >
+                          Make a copy
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            style={actionBtnStyle}
+                            data-testid={`baseline-edit-${baseline.id}`}
+                            onClick={() => {
+                              go(`/baselines/${baseline.id}/edit`);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            style={actionBtnStyle}
+                            data-testid={`baseline-run-${baseline.id}`}
+                            onClick={() =>
+                              setNotice("Baseline runs are driven by the baseline system timer (EPIC-007).")
+                            }
+                          >
+                            Run now
+                          </button>
+                          <button
+                            type="button"
+                            style={actionBtnStyle}
+                            data-testid={`baseline-delete-${baseline.id}`}
+                            onClick={() => void handleDelete(baseline.id, baseline.name)}
+                          >
+                            Delete
+                          </button>
+                        </>
+                      )}
                       <button
                         type="button"
                         style={actionBtnStyle}

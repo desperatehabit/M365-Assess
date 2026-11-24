@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #41; CIPP `HTTP Functions/Teams-Sharepoint/`, `Invoke-AddTeam.ps1`, `Invoke-ListTeamsActivity.ps1`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-026.md`](../../../../ISSUES/epics/EPIC-026.md)
 
 ## 1. Purpose
 
@@ -143,4 +143,4 @@ confirmation; audited.
 
 - [`../EPIC-025-sharepoint-onedrive/SPEC.md`](../EPIC-025-sharepoint-onedrive/SPEC.md) — SPO/OneDrive
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-026.md`](../../../../ISSUES/epics/EPIC-026.md) — epic ticket

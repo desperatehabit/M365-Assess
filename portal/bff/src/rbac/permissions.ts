@@ -36,6 +36,101 @@ import {
   DEFENDER_TEMPLATES_PATH,
 } from "../routes/defender-templates.js";
 import {
+  DEFENDER_STATUS_PATH,
+  DEFENDER_STATUS_READ_PERMISSION,
+} from "../routes/defender-status.js";
+import {
+  DEFENDER_DEPLOY_PATH,
+  DEFENDER_DEPLOY_WRITE_PERMISSION,
+} from "../routes/defender-deploy.js";
+import {
+  VULNERABILITIES_PATH,
+  VULNERABILITIES_READ_PERMISSION,
+  VULNERABILITY_DEVICES_PATH,
+} from "../routes/defender-vulnerabilities.js";
+import {
+  MDE_ONBOARDING_PATH,
+  MDE_ONBOARDING_READ_PERMISSION,
+} from "../routes/defender-mde-onboarding.js";
+import {
+  TRANSPORT_READ_PERMISSION,
+  TRANSPORT_RULES_ITEM_PATH,
+  TRANSPORT_RULES_PATH,
+  TRANSPORT_WRITE_PERMISSION,
+} from "../routes/transport-rules.js";
+import {
+  CONNECTOR_ITEM_PATH,
+  CONNECTORS_PATH,
+} from "../routes/connectors.js";
+import {
+  TRANSPORT_RULE_TEMPLATE_CLONE_PATH,
+  TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH,
+  TRANSPORT_RULE_TEMPLATE_PATH,
+  TRANSPORT_RULE_TEMPLATE_PERMISSIONS,
+  TRANSPORT_RULE_TEMPLATES_PATH,
+} from "../routes/transport-rule-templates.js";
+import {
+  CONNECTOR_TEMPLATE_CLONE_PATH,
+  CONNECTOR_TEMPLATE_DEPLOY_PATH,
+  CONNECTOR_TEMPLATE_PATH,
+  CONNECTOR_TEMPLATE_PERMISSIONS,
+  CONNECTOR_TEMPLATES_PATH,
+} from "../routes/connector-templates.js";
+import {
+  ENCRYPTION_PATH,
+  ENCRYPTION_READ_PERMISSION,
+  ENCRYPTION_WRITE_PERMISSION,
+} from "../routes/encryption.js";
+import {
+  HISTORICAL_SEARCH_CANCEL_PATH,
+  HISTORICAL_SEARCH_JOB_PATH,
+  HISTORICAL_SEARCH_PATH,
+  HISTORICAL_SEARCH_PERMISSION,
+} from "../routes/historical-search.js";
+import {
+  MAIL_RESTORE_JOB_PATH,
+  MAIL_RESTORES_PATH,
+  MAIL_RESTORE_PERMISSION,
+} from "../routes/mail-restores.js";
+import { MESSAGE_TRACE_PATH, MESSAGE_TRACE_READ_PERMISSION } from "../routes/message-trace.js";
+import { MESSAGE_DETAIL_PATH, MESSAGES_READ_PERMISSION } from "../routes/messages.js";
+import { TEAMS_PATH, TEAMS_READ_PERMISSION } from "../routes/teams.js";
+import { TEAMS_CREATE_PATH, TEAMS_WRITE_PERMISSION } from "../routes/teams-create.js";
+import {
+  TEAMS_LIFECYCLE_ARCHIVE_PATH,
+  TEAMS_LIFECYCLE_CLONE_PATH,
+  TEAMS_LIFECYCLE_ITEM_PATH,
+} from "../routes/teams-lifecycle.js";
+import { TEAMS_ACTIVITY_PATH } from "../routes/teams-activity.js";
+import {
+  TEAMS_LIS_BASE_PATH,
+  TEAMS_LIS_ITEM_PATH,
+  TEAMS_VOICE_PERMISSION,
+} from "../routes/teams-lis.js";
+import {
+  TEAMS_VOICE_NUMBERS_PATH,
+  TEAMS_VOICE_NUMBER_ITEM_PATH,
+  TEAMS_VOICE_POLICY_PATH,
+  TEAMS_VOICE_READ_PERMISSION,
+  TEAMS_VOICE_WRITE_PERMISSION,
+} from "../routes/teams-voice.js";
+import {
+  SHARING_REPORT_PATH,
+  SHARING_REPORT_READ_PERMISSION,
+} from "../routes/sharing-report.js";
+import {
+  SHARING_PERMISSIONS_PATH,
+  SHARING_READ_PERMISSION as SHARING_PERMISSIONS_READ_PERMISSION,
+} from "../routes/sharing-permissions.js";
+import {
+  EXTERNAL_USER_ACCESS_PATH,
+  EXTERNAL_USERS_PATH,
+} from "../routes/sharing-external-users.js";
+import {
+  SHARING_LINKS_REMOVE_PATH,
+  SHARING_WRITE_PERMISSION,
+} from "../routes/sharing-links-remove.js";
+import {
   DEVICE_ACTIONS_HISTORY_OPENAPI,
   DEVICE_ACTIONS_HISTORY_PATH,
 } from "../routes/device-actions-history.js";
@@ -117,6 +212,7 @@ import { INTUNE_APP_PATH } from "../routes/intune-apps-crud.js";
 import { INTUNE_APPS_QUEUE_PATH, INTUNE_APPS_QUEUE_RERUN_PATH, INTUNE_APPS_UPLOAD_PATH } from "../routes/intune-apps-queue.js";
 import { GDAP_OPENAPI } from "../routes/gdap.js";
 import { ONBOARD_OPENAPI } from "../routes/onboard.js";
+import { ONBOARDING_PREFLIGHT_OPENAPI } from "../routes/onboarding-preflight.js";
 import { TENANT_GROUPS_OPENAPI } from "../routes/tenant-groups.js";
 import { TENANT_VARIABLES_OPENAPI } from "../routes/tenant-variables.js";
 import { TENANTS_OPENAPI } from "../routes/tenants.js";
@@ -156,7 +252,12 @@ import { CA_POLICIES_BASE_PATH, CA_POLICIES_ITEM_PATH } from "../routes/ca-polic
 import { CA_REPORT_ONLY_PATH } from "../routes/ca-report-only.js";
 import { CA_DEPLOY_PERMISSION, CA_TEMPLATE_DEPLOY_PATH } from "../routes/ca-templates-deploy.js";
 import { GROUP_TEMPLATE_DEPLOY_PATH } from "../routes/group-templates-deploy.js";
-import { GROUPS_BASE_PATH, GROUPS_ITEM_PATH, GROUPS_WRITE_PERMISSION } from "../routes/groups-crud.js";
+import {
+  GROUPS_BASE_PATH,
+  GROUPS_CONVERT_PATH,
+  GROUPS_ITEM_PATH,
+  GROUPS_WRITE_PERMISSION,
+} from "../routes/groups-crud.js";
 import { GROUP_DELIVERY_PATH, GROUP_GAL_PATH } from "../routes/groups-gal.js";
 import { GROUPS_READ_PERMISSION } from "../routes/groups-list.js";
 import { GROUP_MEMBERS_BULK_PATH, GROUP_OWNERS_BULK_PATH } from "../routes/groups-members.js";
@@ -188,6 +289,7 @@ import { ROLE_ASSIGNMENTS_PATH } from "../routes/roles.js";
 import { RUNS_CANCEL_PATH, RUNS_RETRY_PATH } from "../routes/runs-actions.js";
 import { RUNS_ARTIFACTS_DOWNLOAD_PATH, RUNS_ARTIFACTS_LIST_PATH } from "../routes/runs-artifacts.js";
 import { RUNS_CREATE_PATH } from "../routes/runs-create.js";
+import { RUN_TEMPLATES_OPENAPI } from "../routes/run-templates.js";
 import { RUNS_DETAIL_PATH, RUNS_RESULTS_PATH } from "../routes/runs-detail.js";
 import { RUNS_EVENTS_PATH } from "../routes/runs-events.js";
 import { RUNS_LIST_PATH } from "../routes/runs-list.js";
@@ -219,6 +321,112 @@ import {
 } from "../routes/compliance-templates.js";
 import { PORTAL_USERS_OPENAPI } from "../routes/users.js";
 import { ROLES_OPENAPI } from "../routes/roles.js";
+// EPIC-028 Incidents & Alerts (T-0858).
+import { INCIDENTS_OPENAPI, INCIDENTS_READ_PERMISSION } from "../routes/incidents.js";
+import { INCIDENT_DETAIL_OPENAPI } from "../routes/incidents-detail.js";
+import { INCIDENT_ACTIONS_OPENAPI } from "../routes/incidents-actions.js";
+import { ALERTS_OPENAPI } from "../routes/alerts.js";
+import { CHECK_ALERTS_PATH } from "../routes/check-alerts.js";
+// EPIC-029 Alerting & notifications (T-0859).
+import { ALERT_RULES_OPENAPI } from "../routes/alert-rules.js";
+import { ALERT_RULES_TEST_OPENAPI } from "../routes/alert-rules-test.js";
+import { ALERT_EVENTS_OPENAPI } from "../routes/alert-events.js";
+import { NOTIFICATIONS_OPENAPI } from "../routes/notifications.js";
+// EPIC-031 Secure Score (T-0861).
+import { SECURE_SCORE_OPENAPI } from "../routes/secure-score.js";
+import { SECURE_SCORE_FLEET_OPENAPI } from "../routes/secure-score-fleet.js";
+import { SECURE_SCORE_PEERS_OPENAPI } from "../routes/secure-score-peers.js";
+import { SECURE_SCORE_TREND_OPENAPI } from "../routes/secure-score-trend.js";
+// EPIC-032 Audit Logs & Webhooks (T-0862).
+import { AUDIT_SEARCH_OPENAPI } from "../routes/audit-search.js";
+import { AUDIT_SEARCHES_OPENAPI } from "../routes/audit-searches.js";
+import { AUDIT_COVERAGE_OPENAPI } from "../routes/audit-coverage.js";
+import { AUDIT_EXCLUSION_WINDOWS_OPENAPI } from "../routes/audit-exclusion-windows.js";
+import { WEBHOOKS_OPENAPI } from "../routes/webhooks.js";
+import { WEBHOOK_NOTIFY_PATH } from "../routes/webhook-notify.js";
+// EPIC-033 Licensing (T-0863).
+import {
+  LICENSES_OPENAPI,
+} from "../routes/licenses.js";
+import { LICENSE_ASSIGN_OPENAPI } from "../routes/license-assign.js";
+import {
+  LICENSE_OPTIMIZATION_OPENAPI,
+} from "../routes/licenses-optimization.js";
+import { LICENSE_PRICING_OPENAPI } from "../routes/license-pricing.js";
+import {
+  LICENSE_GATES_PATH,
+  LICENSE_GATES_READ_PERMISSION,
+} from "../routes/license-gates.js";
+// EPIC-034 Domains & DNS (T-0864).
+import { DOMAINS_OPENAPI } from "../routes/domains.js";
+import { DOMAINS_ACTIONS_OPENAPI } from "../routes/domains-actions.js";
+import { DOMAINS_DNS_OPENAPI } from "../routes/domains-dns.js";
+import { DOMAINS_RECOMMENDATIONS_OPENAPI } from "../routes/domains-recommendations.js";
+import { DOMAINS_SCHEDULE_OPENAPI } from "../routes/domains-schedule.js";
+// EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+import { TEST_PACKS_OPENAPI } from "../routes/test-packs.js";
+import { CUSTOM_TESTS_OPENAPI } from "../routes/custom-tests.js";
+// EPIC-037 Settings, Branding & Preferences (T-0867).
+import { SETTINGS_OPENAPI } from "../routes/settings.js";
+import { BRANDING_OPENAPI } from "../routes/branding.js";
+import { FEATURE_FLAGS_OPENAPI } from "../routes/feature-flags.js";
+import { PREFERENCES_OPENAPI } from "../routes/preferences.js";
+import { LOGBOOK_OPENAPI } from "../routes/logbook.js";
+import { DIAGNOSTICS_OPENAPI } from "../routes/diagnostics.js";
+// EPIC-039 Template Library & Catalog (T-0869).
+import {
+  TEMPLATE_LIBRARY_PATH,
+  TEMPLATE_LIBRARY_PERMISSIONS,
+} from "../templates/library-routes.js";
+import {
+  TEMPLATE_REPOS_OPENAPI,
+} from "../templates/repo-routes.js";
+import {
+  TEMPLATE_LIBRARY_CLONE_PATH,
+  TEMPLATE_LIBRARY_CLONE_PERMISSION,
+} from "../templates/clone-routes.js";
+import {
+  TEMPLATE_PACKAGES_PATH,
+  TEMPLATE_PACKAGE_EXPORT_PATH,
+  TEMPLATES_READ_PERMISSION,
+  TEMPLATES_WRITE_PERMISSION,
+} from "../templates/package-routes.js";
+import { SAVE_TO_GITHUB_PATH, SAVE_TO_GITHUB_PERMISSION } from "../templates/save-to-github.js";
+// EPIC-040 Graph Explorer & Admin Tools (T-0870).
+import { GRAPH_EXPLORER_OPENAPI } from "../tools/graph-explorer-routes.js";
+import { GRAPH_PRESET_OPENAPI } from "../tools/graph-preset-routes.js";
+import { TENANT_LOOKUP_OPENAPI } from "../tools/tenant-lookup-routes.js";
+import {
+  BREACH_ADMIN_SCOPE,
+  BREACH_LOOKUP_PATH,
+} from "../tools/breach-lookup-routes.js";
+import { APPROVAL_ADMIN_SCOPE, CONSENT_REQUESTS_PATH } from "../tools/app-approval-routes.js";
+import { GEOIP_OPENAPI, DOMAIN_CHECK_OPENAPI } from "../tools/geoip-routes.js";
+// EPIC-023 Contacts & Resources (T-0853).
+import { CONTACTS_OPENAPI } from "../routes/contacts.js";
+import { CONTACTS_CRUD_OPENAPI } from "../routes/contacts-crud.js";
+import { CONTACTS_IMPORT_OPENAPI } from "../routes/contacts-import.js";
+import { CONTACT_TEMPLATES_OPENAPI } from "../routes/contact-templates.js";
+import { CONTACT_TEMPLATE_DEPLOY_OPENAPI } from "../routes/contact-templates-deploy.js";
+import { RESOURCES_OPENAPI } from "../routes/resources.js";
+import { RESOURCES_CRUD_OPENAPI } from "../routes/resources-crud.js";
+// EPIC-035 Backup & Restore (T-0865).
+import { BACKUPS_OPENAPI } from "../routes/backups.js";
+import { BACKUP_SETTINGS_OPENAPI } from "../routes/backup-settings.js";
+import {
+  BACKUP_RESTORE_PATH,
+  BACKUP_RESTORE_PERMISSION,
+  BACKUP_RESTORE_PREVIEW_PATH,
+} from "../routes/backups-restore.js";
+// EPIC-025 SharePoint Templates (T-0896).
+import { SHAREPOINT_TEMPLATES_OPENAPI } from "../routes/sharepoint-templates.js";
+// EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+import { QUARANTINE_OPENAPI } from "../routes/quarantine.js";
+import { QUARANTINE_BULK_OPENAPI } from "../routes/quarantine-bulk.js";
+import { QUARANTINE_POLICIES_OPENAPI } from "../routes/quarantine-policies.js";
+import { ALLOW_BLOCK_OPENAPI } from "../routes/allow-block.js";
+import { FILTERS_OPENAPI } from "../routes/filters.js";
+import { FILTER_TEMPLATES_OPENAPI } from "../routes/filter-templates.js";
 
 // `Public` bypasses permission evaluation (SPEC §4.1 item 4). It is the only
 // single-segment value the registry may hold.
@@ -355,10 +563,34 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   },
   {
     method: "GET",
-    path: DEFENDER_TEMPLATES_PATH,
-    permission: DEFENDER_TEMPLATE_READ_PERMISSION,
+    path: DEFENDER_STATUS_PATH,
+    permission: DEFENDER_STATUS_READ_PERMISSION,
   },
   {
+    method: "POST",
+    path: DEFENDER_DEPLOY_PATH,
+    permission: DEFENDER_DEPLOY_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: VULNERABILITIES_PATH,
+    permission: VULNERABILITIES_READ_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: VULNERABILITY_DEVICES_PATH,
+    permission: VULNERABILITIES_READ_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: MDE_ONBOARDING_PATH,
+    permission: MDE_ONBOARDING_READ_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: DEFENDER_TEMPLATES_PATH,
+    permission: DEFENDER_TEMPLATE_READ_PERMISSION,
+  },  {
     method: "GET",
     path: DEFENDER_TEMPLATE_PATH,
     permission: DEFENDER_TEMPLATE_READ_PERMISSION,
@@ -397,6 +629,116 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
     method: "DELETE",
     path: CVE_EXCEPTION_PATH,
     permission: CVE_EXCEPTION_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: TRANSPORT_RULES_PATH,
+    permission: TRANSPORT_READ_PERMISSION,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULES_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "PATCH",
+    path: TRANSPORT_RULES_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "DELETE",
+    path: TRANSPORT_RULES_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: CONNECTORS_PATH,
+    permission: TRANSPORT_READ_PERMISSION,
+  },
+  {
+    method: "POST",
+    path: CONNECTORS_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "PATCH",
+    path: CONNECTOR_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "DELETE",
+    path: CONNECTOR_ITEM_PATH,
+    permission: TRANSPORT_WRITE_PERMISSION,
+  },
+  {
+    method: "GET",
+    path: TRANSPORT_RULE_TEMPLATES_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULE_TEMPLATES_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "GET",
+    path: TRANSPORT_RULE_TEMPLATE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "PATCH",
+    path: TRANSPORT_RULE_TEMPLATE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "DELETE",
+    path: TRANSPORT_RULE_TEMPLATE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULE_TEMPLATE_CLONE_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: TRANSPORT_RULE_TEMPLATE_DEPLOY_PATH,
+    permission: TRANSPORT_RULE_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "GET",
+    path: CONNECTOR_TEMPLATES_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "POST",
+    path: CONNECTOR_TEMPLATES_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "GET",
+    path: CONNECTOR_TEMPLATE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.read,
+  },
+  {
+    method: "PATCH",
+    path: CONNECTOR_TEMPLATE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "DELETE",
+    path: CONNECTOR_TEMPLATE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: CONNECTOR_TEMPLATE_CLONE_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
+  },
+  {
+    method: "POST",
+    path: CONNECTOR_TEMPLATE_DEPLOY_PATH,
+    permission: CONNECTOR_TEMPLATE_PERMISSIONS.write,
   },
   {
     method: "GET",
@@ -467,6 +809,7 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   ...registryEntriesFromOpenApi(CREDENTIALS_OPENAPI),
   ...registryEntriesFromOpenApi(GDAP_OPENAPI),
   ...registryEntriesFromOpenApi(ONBOARD_OPENAPI),
+  ...registryEntriesFromOpenApi(ONBOARDING_PREFLIGHT_OPENAPI),
   ...registryEntriesFromOpenApi(TEST_CONNECTION_OPENAPI),
   // EPIC-016 Intune (T-0820). Specific /intune/* paths precede the generic /intune/:kind
   // entries, mirroring the mount order in app.ts. Deploy routes also require write
@@ -584,6 +927,9 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "GET", path: RUNS_ARTIFACTS_LIST_PATH, permission: "Tenant.Runs.Read" },
   { method: "GET", path: RUNS_ARTIFACTS_DOWNLOAD_PATH, permission: "Tenant.Runs.Read" },
   { method: "GET", path: RUNS_EVENTS_PATH, permission: "Tenant.Runs.Read" },
+  // EPIC-003 run starting points (T-0922). Built-ins are read-only; the fragment
+  // carries every operation's permission.
+  ...registryEntriesFromOpenApi({ paths: RUN_TEMPLATES_OPENAPI }),
   // EPIC-011 users, BEC, offboarding, and user templates (T-0818).
   ...registryEntriesFromOpenApi(USERS_OPENAPI),
   ...registryEntriesFromOpenApi(BEC_OPENAPI),
@@ -626,6 +972,7 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "POST", path: GROUPS_BASE_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "PATCH", path: GROUPS_ITEM_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "DELETE", path: GROUPS_ITEM_PATH, permission: GROUPS_WRITE_PERMISSION },
+  { method: "POST", path: GROUPS_CONVERT_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "POST", path: GROUP_GAL_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "POST", path: GROUP_DELIVERY_PATH, permission: GROUPS_WRITE_PERMISSION },
   { method: "POST", path: GROUP_MEMBERS_BULK_PATH, permission: GROUPS_WRITE_PERMISSION },
@@ -694,6 +1041,139 @@ export const PermissionRegistry: readonly PermissionRegistryEntry[] = Object.fre
   { method: "PATCH", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
   { method: "DELETE", path: COMPLIANCE_TEMPLATE_ITEM_PATH, permission: PURVIEW_TEMPLATES_PERMISSION },
   { method: "POST", path: COMPLIANCE_TEMPLATE_DEPLOY_PATH, permission: COMPLIANCE_DEPLOY_PERMISSION },
+  // EPIC-028 Incidents & Alerts (T-0858). check-alerts documents no permission
+  // because the factory only checks authentication; the app guards the mounted
+  // route with the same read permission as the tenant alert list.
+  ...registryEntriesFromOpenApi(INCIDENTS_OPENAPI),
+  ...registryEntriesFromOpenApi(INCIDENT_DETAIL_OPENAPI),
+  ...registryEntriesFromOpenApi(INCIDENT_ACTIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(ALERTS_OPENAPI),
+  { method: "GET", path: CHECK_ALERTS_PATH, permission: INCIDENTS_READ_PERMISSION },
+  // EPIC-029 Alerting & notifications (T-0859).
+  ...registryEntriesFromOpenApi(ALERT_RULES_OPENAPI),
+  ...registryEntriesFromOpenApi(ALERT_RULES_TEST_OPENAPI),
+  ...registryEntriesFromOpenApi(ALERT_EVENTS_OPENAPI),
+  ...registryEntriesFromOpenApi(NOTIFICATIONS_OPENAPI),
+  // EPIC-024 Email Tools (T-0854). Trace and detail reads accept the mail-tools
+  // read permission; historical search and restores require their elevated
+  // permission; an OME template change is a mail-tools write.
+  { method: "POST", path: MESSAGE_TRACE_PATH, permission: MESSAGE_TRACE_READ_PERMISSION },
+  { method: "POST", path: HISTORICAL_SEARCH_PATH, permission: HISTORICAL_SEARCH_PERMISSION },
+  { method: "GET", path: HISTORICAL_SEARCH_JOB_PATH, permission: HISTORICAL_SEARCH_PERMISSION },
+  { method: "POST", path: HISTORICAL_SEARCH_CANCEL_PATH, permission: HISTORICAL_SEARCH_PERMISSION },
+  { method: "GET", path: MESSAGE_DETAIL_PATH, permission: MESSAGES_READ_PERMISSION },
+  { method: "POST", path: MAIL_RESTORES_PATH, permission: MAIL_RESTORE_PERMISSION },
+  { method: "GET", path: MAIL_RESTORE_JOB_PATH, permission: MAIL_RESTORE_PERMISSION },
+  { method: "GET", path: ENCRYPTION_PATH, permission: ENCRYPTION_READ_PERMISSION },
+  { method: "PUT", path: ENCRYPTION_PATH, permission: ENCRYPTION_WRITE_PERMISSION },
+  // EPIC-026 Teams & Voice (T-0856). /teams/activity and /teams/lis precede
+  // /teams/:teamId, matching the mount order.
+  { method: "GET", path: TEAMS_ACTIVITY_PATH, permission: TEAMS_READ_PERMISSION },
+  { method: "GET", path: TEAMS_LIS_BASE_PATH, permission: TEAMS_READ_PERMISSION },
+  { method: "POST", path: TEAMS_LIS_BASE_PATH, permission: TEAMS_VOICE_PERMISSION },
+  { method: "PATCH", path: TEAMS_LIS_ITEM_PATH, permission: TEAMS_VOICE_PERMISSION },
+  { method: "DELETE", path: TEAMS_LIS_ITEM_PATH, permission: TEAMS_VOICE_PERMISSION },
+  { method: "GET", path: TEAMS_PATH, permission: TEAMS_READ_PERMISSION },
+  { method: "POST", path: TEAMS_CREATE_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "PATCH", path: TEAMS_LIFECYCLE_ITEM_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "DELETE", path: TEAMS_LIFECYCLE_ITEM_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "POST", path: TEAMS_LIFECYCLE_ARCHIVE_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "POST", path: TEAMS_LIFECYCLE_CLONE_PATH, permission: TEAMS_WRITE_PERMISSION },
+  { method: "GET", path: TEAMS_VOICE_NUMBERS_PATH, permission: TEAMS_VOICE_READ_PERMISSION },
+  { method: "POST", path: TEAMS_VOICE_NUMBERS_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
+  { method: "DELETE", path: TEAMS_VOICE_NUMBER_ITEM_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
+  { method: "POST", path: TEAMS_VOICE_POLICY_PATH, permission: TEAMS_VOICE_WRITE_PERMISSION },
+  // EPIC-027 Sharing & Permissions (T-0857).
+  { method: "GET", path: SHARING_REPORT_PATH, permission: SHARING_REPORT_READ_PERMISSION },
+  { method: "GET", path: SHARING_PERMISSIONS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
+  { method: "GET", path: EXTERNAL_USERS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
+  { method: "GET", path: EXTERNAL_USER_ACCESS_PATH, permission: SHARING_PERMISSIONS_READ_PERMISSION },
+  { method: "POST", path: SHARING_LINKS_REMOVE_PATH, permission: SHARING_WRITE_PERMISSION },
+  // EPIC-031 Secure Score (T-0861).
+  ...registryEntriesFromOpenApi(SECURE_SCORE_OPENAPI),
+  ...registryEntriesFromOpenApi(SECURE_SCORE_FLEET_OPENAPI),
+  ...registryEntriesFromOpenApi(SECURE_SCORE_PEERS_OPENAPI),
+  ...registryEntriesFromOpenApi(SECURE_SCORE_TREND_OPENAPI),
+  // EPIC-032 Audit Logs & Webhooks (T-0862).
+  ...registryEntriesFromOpenApi(AUDIT_SEARCH_OPENAPI),
+  ...registryEntriesFromOpenApi(AUDIT_SEARCHES_OPENAPI),
+  ...registryEntriesFromOpenApi(AUDIT_COVERAGE_OPENAPI),
+  ...registryEntriesFromOpenApi(AUDIT_EXCLUSION_WINDOWS_OPENAPI),
+  ...registryEntriesFromOpenApi(WEBHOOKS_OPENAPI),
+  // The Graph notification receiver is unauthenticated by design (SPEC §4.3):
+  // Graph cannot carry a portal session, so the subscription clientState is the
+  // credential and the route verifies it against the stored hash (T-0905).
+  { method: "POST", path: WEBHOOK_NOTIFY_PATH, permission: PUBLIC_PERMISSION },
+  // EPIC-033 Licensing (T-0863). The gates route publishes no OpenAPI fragment,
+  // so its mounted endpoint is registered directly.
+  ...registryEntriesFromOpenApi(LICENSES_OPENAPI),
+  ...registryEntriesFromOpenApi(LICENSE_ASSIGN_OPENAPI),
+  ...registryEntriesFromOpenApi(LICENSE_OPTIMIZATION_OPENAPI),
+  ...registryEntriesFromOpenApi(LICENSE_PRICING_OPENAPI),
+  { method: "GET", path: LICENSE_GATES_PATH, permission: LICENSE_GATES_READ_PERMISSION },
+  // EPIC-034 Domains & DNS (T-0864). The five fragments publish every mounted
+  // endpoint: inventory read, the four writes, check-dns/history,
+  // recommendations, and the analysis schedule (read + write).
+  ...registryEntriesFromOpenApi(DOMAINS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_ACTIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_DNS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_RECOMMENDATIONS_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAINS_SCHEDULE_OPENAPI),
+  // EPIC-036 Compliance Test Packs and Custom Tests (T-0866).
+  ...registryEntriesFromOpenApi(TEST_PACKS_OPENAPI),
+  ...registryEntriesFromOpenApi(CUSTOM_TESTS_OPENAPI),
+  // EPIC-037 Settings, Branding & Preferences (T-0867).
+  ...registryEntriesFromOpenApi(SETTINGS_OPENAPI),
+  ...registryEntriesFromOpenApi(BRANDING_OPENAPI),
+  ...registryEntriesFromOpenApi(FEATURE_FLAGS_OPENAPI),
+  ...registryEntriesFromOpenApi(PREFERENCES_OPENAPI),
+  ...registryEntriesFromOpenApi(LOGBOOK_OPENAPI),
+  ...registryEntriesFromOpenApi(DIAGNOSTICS_OPENAPI),
+  // EPIC-039 Template Library & Catalog (T-0869). Repos publish a fragment; the
+  // other four modules declare their endpoints directly. Clone plans through the
+  // owning epic and is gated on templates.clone.
+  ...registryEntriesFromOpenApi({ paths: TEMPLATE_REPOS_OPENAPI }),
+  { method: "GET", path: TEMPLATE_LIBRARY_PATH, permission: TEMPLATE_LIBRARY_PERMISSIONS.read },
+  { method: "DELETE", path: `${TEMPLATE_LIBRARY_PATH}/:id`, permission: TEMPLATE_LIBRARY_PERMISSIONS.write },
+  { method: "POST", path: TEMPLATE_LIBRARY_CLONE_PATH, permission: TEMPLATE_LIBRARY_CLONE_PERMISSION },
+  { method: "POST", path: SAVE_TO_GITHUB_PATH, permission: SAVE_TO_GITHUB_PERMISSION },
+  { method: "GET", path: TEMPLATE_PACKAGES_PATH, permission: TEMPLATES_READ_PERMISSION },
+  { method: "POST", path: TEMPLATE_PACKAGES_PATH, permission: TEMPLATES_WRITE_PERMISSION },
+  { method: "GET", path: TEMPLATE_PACKAGE_EXPORT_PATH, permission: TEMPLATES_READ_PERMISSION },
+  // EPIC-040 Graph Explorer & Admin Tools (T-0870). The tools.read routes publish
+  // fragments; approval and breach decisions are admin-family endpoints, registered
+  // with concrete tokens because the wildcard scope is not a taxonomy value.
+  ...registryEntriesFromOpenApi(GRAPH_EXPLORER_OPENAPI),
+  ...registryEntriesFromOpenApi(GRAPH_PRESET_OPENAPI),
+  ...registryEntriesFromOpenApi(TENANT_LOOKUP_OPENAPI),
+  ...registryEntriesFromOpenApi(GEOIP_OPENAPI),
+  ...registryEntriesFromOpenApi(DOMAIN_CHECK_OPENAPI),
+  { method: "GET", path: CONSENT_REQUESTS_PATH, permission: APPROVAL_ADMIN_SCOPE },
+  { method: "POST", path: CONSENT_REQUESTS_PATH, permission: APPROVAL_ADMIN_SCOPE },
+  { method: "POST", path: BREACH_LOOKUP_PATH, permission: BREACH_ADMIN_SCOPE },
+  // EPIC-023 Contacts & Resources (T-0853).
+  ...registryEntriesFromOpenApi(CONTACTS_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACTS_CRUD_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACTS_IMPORT_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACT_TEMPLATES_OPENAPI),
+  ...registryEntriesFromOpenApi(CONTACT_TEMPLATE_DEPLOY_OPENAPI),
+  ...registryEntriesFromOpenApi(RESOURCES_OPENAPI),
+  ...registryEntriesFromOpenApi(RESOURCES_CRUD_OPENAPI),
+  // EPIC-035 Backup & Restore (T-0865). Restore's OpenAPI fragment carries the
+  // wildcard scope (`CIPP.Admin.*`), so register its concrete taxonomy token here.
+  ...registryEntriesFromOpenApi(BACKUPS_OPENAPI),
+  ...registryEntriesFromOpenApi(BACKUP_SETTINGS_OPENAPI),
+  { method: "POST", path: BACKUP_RESTORE_PATH, permission: BACKUP_RESTORE_PERMISSION },
+  { method: "POST", path: BACKUP_RESTORE_PREVIEW_PATH, permission: BACKUP_RESTORE_PERMISSION },
+  // EPIC-025 SharePoint Templates (T-0896).
+  ...registryEntriesFromOpenApi(SHAREPOINT_TEMPLATES_OPENAPI),
+  // EPIC-022 Spam, Quarantine & Allow/Block (T-0852).
+  ...registryEntriesFromOpenApi(QUARANTINE_BULK_OPENAPI),
+  ...registryEntriesFromOpenApi(QUARANTINE_OPENAPI),
+  ...registryEntriesFromOpenApi(QUARANTINE_POLICIES_OPENAPI),
+  ...registryEntriesFromOpenApi(ALLOW_BLOCK_OPENAPI),
+  ...registryEntriesFromOpenApi(FILTERS_OPENAPI),
+  ...registryEntriesFromOpenApi(FILTER_TEMPLATES_OPENAPI),
 ]);
 
 // SPEC §11 item 2 taxonomy: `{Area}.{Resource}.{Action}` — two or three

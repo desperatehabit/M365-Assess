@@ -13,6 +13,15 @@ BeforeAll {
         Mock Invoke-MgGraphRequest {
             param($Method, $Uri, $Body)
             $key = "$Method $Uri"
+            if ($key -like 'GET /v1.0/sites/site-1*') {
+                return @{
+                    id                = 'site-1'
+                    displayName       = 'Project Alpha'
+                    webUrl            = 'https://contoso.example.invalid/sites/alpha'
+                    sharingCapability = 'disabled'
+                    lockState         = 'Unlock'
+                }
+            }
             if ($key -like 'GET /v1.0/groups/site-live*') {
                 return @{
                     id          = 'site-live'
@@ -56,6 +65,7 @@ Describe 'Invoke-SharePointSiteAction worker (T-0485)' {
             Test-Path -LiteralPath $script:worker | Should -BeTrue
             Test-Path -LiteralPath $script:entrypoint | Should -BeTrue
             (Get-Command Invoke-SharePointSiteAction -CommandType Function) | Should -Not -BeNullOrEmpty
+            (Get-Command Invoke-SharePointSiteEdit -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Invoke-SharePointSiteDelete -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Invoke-SharePointSiteRestore -CommandType Function) | Should -Not -BeNullOrEmpty
             (Get-Command Get-SharePointRecycleBin -CommandType Function) | Should -Not -BeNullOrEmpty
@@ -63,12 +73,12 @@ Describe 'Invoke-SharePointSiteAction worker (T-0485)' {
             (Get-Command Read-SharePointSiteActionJob -CommandType Function) | Should -Not -BeNullOrEmpty
         }
 
-        It 'writes with GET/POST/DELETE only and never evaluates strings as code' {
+        It 'writes with GET/POST/PATCH/DELETE only and never evaluates strings as code' {
             $source = Get-Content -LiteralPath $script:worker -Raw
             $source | Should -Match 'Invoke-MgGraphRequest -Method POST'
+            $source | Should -Match 'Invoke-MgGraphRequest -Method PATCH'
             $source | Should -Match 'Invoke-MgGraphRequest -Method DELETE'
             $source | Should -Not -Match '-Method PUT'
-            $source | Should -Not -Match '-Method PATCH'
             $source | Should -Not -Match 'Invoke-Expression'
         }
 
@@ -76,8 +86,65 @@ Describe 'Invoke-SharePointSiteAction worker (T-0485)' {
             $entrySource = Get-Content -LiteralPath $script:entrypoint -Raw
             $entrySource | Should -Match 'Invoke-SharePointSiteAction\.ps1'
             $entrySource | Should -Match 'Read-SharePointSiteActionJob -Path'
-            $entrySource | Should -Match 'Invoke-SharePointSiteAction -TenantId'
+            $entrySource | Should -Match 'Invoke-SharePointSiteAction @actionParams'
             $entrySource | Should -Match 'ConvertTo-Json'
+        }
+    }
+
+    Context 'site edit' {
+        BeforeEach {
+            New-ActionMock
+        }
+
+        It 'plans without writing on DryRun and captures before/after diff' {
+            $plan = Invoke-SharePointSiteEdit -TenantId 'tenant-test' -SiteId 'site-1' -DisplayName 'Project Beta' -Sharing 'externalUserSharingOnly' -LockState 'ReadOnly' -DryRun $true
+            $plan.action | Should -Be 'edit'
+            $plan.dryRun | Should -BeTrue
+            $plan.targetName | Should -Be 'Project Beta'
+            $plan.before.displayName | Should -Be 'Project Alpha'
+            $plan.before.sharing | Should -Be 'disabled'
+            $plan.before.lockState | Should -Be 'Unlock'
+            $plan.after.displayName | Should -Be 'Project Beta'
+            $plan.after.sharing | Should -Be 'externalUserSharingOnly'
+            $plan.after.lockState | Should -Be 'ReadOnly'
+            $plan.diff | Should -Contain "Set displayName to 'Project Beta'"
+            $plan.diff | Should -Contain "Set sharing to 'externalUserSharingOnly'"
+            $plan.diff | Should -Contain "Set lockState to 'ReadOnly'"
+            $plan.requiresConfirmation | Should -BeFalse
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -ParameterFilter { $Method -eq 'PATCH' -or $Method -eq 'POST' }
+        }
+
+        It 'applies property updates, adds owners, and records an audit event plus SiteOperation' {
+            $events = [System.Collections.Generic.List[object]]::new()
+            $result = Invoke-SharePointSiteAction -TenantId 'tenant-test' -Action 'edit' -SiteId 'site-1' -DisplayName 'Project Beta' -Sharing 'externalUserAndGuestSharing' -LockState 'NoAdditions' -Owners @('owner2@example.invalid') -Actor 'operator-1' -CorrelationId 'corr-edit' -WriteAudit { param($e) $events.Add($e) }
+
+            $result.success | Should -BeTrue
+            $result.state | Should -Be 'succeeded'
+            $result.operation | Should -Be 'edit'
+            $result.plan.before.displayName | Should -Be 'Project Alpha'
+            $result.plan.after.displayName | Should -Be 'Project Beta'
+            $result.plan.after.sharing | Should -Be 'externalUserAndGuestSharing'
+            $result.plan.after.lockState | Should -Be 'NoAdditions'
+            $result.auditEvent.action | Should -Be 'sharepoint.site.edit'
+            $result.auditEvent.result | Should -Be 'success'
+            $result.siteOperation.operation | Should -Be 'edit'
+            $result.siteOperation.state | Should -Be 'succeeded'
+            $events.Count | Should -Be 1
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'PATCH' -and $Uri -eq '/v1.0/sites/site-1' }
+            Should -Invoke Invoke-MgGraphRequest -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $Uri -eq '/v1.0/sites/site-1/permissions' }
+        }
+
+        It 'rejects invalid inputs or missing sites without writing' {
+            {
+                Invoke-SharePointSiteEdit -TenantId 'tenant-test' -SiteId 'site-1'
+            } | Should -Throw '*ValidationFailed*'
+            {
+                Invoke-SharePointSiteEdit -TenantId 'tenant-test' -SiteId 'site-1' -LockState 'Frozen'
+            } | Should -Throw '*ValidationFailed*lockState*'
+            {
+                Invoke-SharePointSiteEdit -TenantId 'tenant-test' -SiteId 'site-missing' -DisplayName 'X'
+            } | Should -Throw '*NotFound*live site*'
+            Should -Invoke Invoke-MgGraphRequest -Times 0 -Exactly -ParameterFilter { $Method -eq 'PATCH' }
         }
     }
 
@@ -269,6 +336,38 @@ Describe 'Invoke-SharePointSiteAction worker (T-0485)' {
             } | Should -Throw '*job file not found*'
         }
 
+        It 'reads edit fields from the envelope' {
+            $jobPath = Join-Path ([System.IO.Path]::GetTempPath()) ('sharepoint-site-action-' + [guid]::NewGuid().ToString() + '.json')
+            try {
+                @{
+                    schemaVersion = 'v1'
+                    tenantId      = 'tenant-test'
+                    action        = 'edit'
+                    actor         = 'operator-1'
+                    correlationId = 'corr-edit'
+                    payload       = @{
+                        siteId      = 'site-1'
+                        displayName = 'Project Beta'
+                        sharing     = 'externalUserSharingOnly'
+                        lockState   = 'ReadOnly'
+                        owners      = @('owner2@example.invalid')
+                        dryRun      = $true
+                    }
+                } | ConvertTo-Json -Depth 5 -Compress | Set-Content -LiteralPath $jobPath -Encoding UTF8
+                $job = Read-SharePointSiteActionJob -Path $jobPath
+                $job['Action'] | Should -Be 'edit'
+                $job['SiteId'] | Should -Be 'site-1'
+                $job['DisplayName'] | Should -Be 'Project Beta'
+                $job['Sharing'] | Should -Be 'externalUserSharingOnly'
+                $job['LockState'] | Should -Be 'ReadOnly'
+                $job['Owners'] | Should -Contain 'owner2@example.invalid'
+                $job['DryRun'] | Should -BeTrue
+            }
+            finally {
+                Remove-Item -LiteralPath $jobPath -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         It 'rejects an unsupported action' {
             $jobPath = Join-Path ([System.IO.Path]::GetTempPath()) ('sharepoint-site-action-' + [guid]::NewGuid().ToString() + '.json')
             try {
@@ -285,4 +384,8 @@ Describe 'Invoke-SharePointSiteAction worker (T-0485)' {
             }
         }
     }
+}
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
 }

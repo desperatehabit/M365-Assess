@@ -14,12 +14,88 @@ import type { CredentialStoreRow } from "./credentials.js";
 import type { TenantAuditInput, TenantRecord, TenantStore } from "./tenants.js";
 
 export const ONBOARD_PATH = "/v1/tenants/:id/onboard";
+export const ONBOARD_PROGRESS_PATH = "/v1/tenants/:id/onboard/progress/:progressId";
 export const ONBOARD_PERMISSION = "Tenant.Administration.ReadWrite";
 
 export const ONBOARD_CONFIRMATION_REQUIRED = "onboard.confirmation_required";
 export const ONBOARD_FAILED = "onboard.failed";
 export const ONBOARD_PARTIAL_FAILURE = "onboard.partial_failure";
 export const ONBOARD_UNAUTHENTICATED = "request.unauthenticated";
+/** The worker exceeded the 30-minute job timeout, usually waiting on a device code. */
+export const ONBOARD_TIMEOUT = "onboard.timeout";
+
+export type OnboardProgressKind = "device-code" | "sign-in-complete" | "sign-in-failed";
+
+/**
+ * One sign-in progress event for an onboarding job (T-0916). A device-code event carries
+ * the code and verification URL the wizard shows while the worker waits; a
+ * sign-in-complete event supersedes it. Sequence is monotonic per progress channel.
+ */
+export interface OnboardDeviceCodeProgress {
+  readonly sequence: number;
+  readonly kind: OnboardProgressKind;
+  /** Onboarding step: graph-bootstrap, graph-permissions, graph-operator, exchange-online. */
+  readonly signIn: string;
+  readonly provider: string;
+  readonly code?: string | null;
+  readonly verificationUrl?: string | null;
+  readonly expiresAt?: string | null;
+  readonly message?: string | null;
+  readonly account?: string | null;
+  readonly error?: string | null;
+  readonly at: string;
+}
+
+/** Receives progress events while the onboarding worker runs. */
+export type OnboardProgressSink = (event: OnboardDeviceCodeProgress) => void;
+
+export interface OnboardProgressSnapshot {
+  /** unknown means the channel was never created (or has been pruned). */
+  readonly state: "unknown" | "pending" | "done";
+  readonly events: readonly OnboardDeviceCodeProgress[];
+}
+
+/**
+ * Parses one JSON stdout line from the onboarding worker. Diagnostics and the final
+ * result line are ignored. The relay in adapters/workers.ts feeds every line here.
+ */
+export function parseOnboardProgressLine(line: string): OnboardDeviceCodeProgress | null {
+  let value: unknown;
+  try {
+    value = JSON.parse(line);
+  } catch {
+    return null;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const kind = record["kind"];
+  if (kind !== "device-code" && kind !== "sign-in-complete" && kind !== "sign-in-failed") {
+    return null;
+  }
+  const signIn = typeof record["signIn"] === "string" ? record["signIn"] : "";
+  if (signIn.length === 0) {
+    return null;
+  }
+  const text = (key: string): string | null =>
+    typeof record[key] === "string" && (record[key] as string).length > 0
+      ? (record[key] as string)
+      : null;
+  return {
+    sequence: typeof record["sequence"] === "number" ? record["sequence"] : 0,
+    kind,
+    signIn,
+    provider: text("provider") ?? signIn,
+    code: text("code"),
+    verificationUrl: text("verificationUrl"),
+    expiresAt: text("expiresAt"),
+    message: text("message"),
+    account: text("account"),
+    error: text("error"),
+    at: text("at") ?? new Date().toISOString(),
+  };
+}
 
 export interface OnboardInput {
   readonly confirmed?: boolean;
@@ -28,6 +104,16 @@ export interface OnboardInput {
   readonly clientId?: string;
   readonly certificateThumbprint?: string;
   readonly createNew?: boolean;
+  /** Opt in to the operator app registration (T-0917); omitted means reader-only, unchanged. */
+  readonly includeWritePermissions?: boolean;
+  readonly writePermissionGroups?: readonly string[];
+  readonly confirmDangerous?: boolean;
+  /**
+   * Reconcile the operator app's managed grants to the selected groups (T-0942):
+   * add the selected grants and remove the unselected ones from the operator app
+   * only. The reader app is never touched.
+   */
+  readonly replaceWriteGroups?: boolean;
   readonly displayName?: string | null;
   readonly defaultDomain?: string | null;
   readonly initialDomain?: string | null;
@@ -43,6 +129,13 @@ export interface OnboardWorkerResult {
   readonly certificatePath?: string | null;
   readonly appDisplayName?: string | null;
   readonly bootstrapCreated?: boolean;
+  /** Operator app results when write access was opted in (T-0917). */
+  readonly operatorAppDisplayName?: string | null;
+  readonly operatorClientId?: string | null;
+  readonly operatorCertificateThumbprint?: string | null;
+  readonly operatorCertificatePath?: string | null;
+  readonly operatorCreated?: boolean;
+  readonly writePermissionGroups?: readonly string[];
   readonly totalFailed?: number;
   readonly error?: string | null;
   readonly completedAt?: string;
@@ -51,6 +144,8 @@ export interface OnboardWorkerResult {
 export type OnboardRunner = (
   tenantId: string,
   input: OnboardInput,
+  /** Present when the wizard asked for a progress channel (device-code relay, T-0916). */
+  progress?: OnboardProgressSink,
 ) => Promise<OnboardWorkerResult>;
 
 export interface OnboardCaller extends Caller {
@@ -80,6 +175,15 @@ export interface OnboardRouteOptions {
 
 function unauthenticatedError(): AppError {
   return new AppError(ONBOARD_UNAUTHENTICATED, "authentication required", 401);
+}
+
+/** In-memory per-job device-code channel; created by the POST and read by the wizard. */
+interface ProgressChannel {
+  readonly tenantId: string;
+  state: "pending" | "done";
+  sequence: number;
+  readonly events: OnboardDeviceCodeProgress[];
+  updatedAt: number;
 }
 
 function requireCaller(
@@ -126,6 +230,22 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
       }
     });
 
+  // Device-code relay channels (T-0916): one per onboarding job, keyed by the
+  // client-generated progressId. Events live only while the job runs plus a short
+  // grace period; they carry no credential material, only the pending code.
+  const channels = new Map<string, ProgressChannel>();
+  const CHANNEL_TTL_MS = 30 * 60 * 1000;
+  const CHANNEL_MAX_EVENTS = 50;
+
+  const pruneChannels = (nowIso: string): void => {
+    const current = Date.parse(nowIso);
+    for (const [id, channel] of channels) {
+      if (current - channel.updatedAt > CHANNEL_TTL_MS) {
+        channels.delete(id);
+      }
+    }
+  };
+
   return [
     {
       method: "POST",
@@ -157,6 +277,12 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
               ? bodyObj["certificateThumbprint"]
               : undefined,
           createNew: bodyObj["createNew"] === true,
+          includeWritePermissions: bodyObj["includeWritePermissions"] === true,
+          writePermissionGroups: Array.isArray(bodyObj["writePermissionGroups"])
+            ? bodyObj["writePermissionGroups"].filter((value): value is string => typeof value === "string")
+            : undefined,
+          confirmDangerous: bodyObj["confirmDangerous"] === true,
+          replaceWriteGroups: bodyObj["replaceWriteGroups"] === true,
           displayName:
             typeof bodyObj["displayName"] === "string" ? bodyObj["displayName"] : undefined,
           defaultDomain:
@@ -171,10 +297,51 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
         const instant = now();
         let workerResult: OnboardWorkerResult;
 
+        // Device-code relay (T-0916). The wizard generates the id and polls the
+        // progress route while this POST waits for the operator; a new onboarding for
+        // the same tenant supersedes any earlier channel, clearing stale codes.
+        const rawProgressId = bodyObj["progressId"];
+        const progressId =
+          typeof rawProgressId === "string" && rawProgressId.trim().length > 0
+            ? rawProgressId.trim()
+            : randomUUID();
+        pruneChannels(instant);
+        for (const [id, channel] of channels) {
+          if (channel.tenantId === tenantId && id !== progressId) {
+            channel.state = "done";
+          }
+        }
+        const channel: ProgressChannel = {
+          tenantId,
+          state: "pending",
+          sequence: 0,
+          events: [],
+          updatedAt: Date.parse(instant),
+        };
+        channels.set(progressId, channel);
+        const progress: OnboardProgressSink = (event) => {
+          channel.sequence += 1;
+          channel.events.push({
+            ...event,
+            sequence: channel.sequence,
+            at: event.at || now(),
+          });
+          if (channel.events.length > CHANNEL_MAX_EVENTS) {
+            channel.events.splice(0, channel.events.length - CHANNEL_MAX_EVENTS);
+          }
+          channel.updatedAt = Date.parse(now());
+        };
+
         try {
-          workerResult = await options.runner(tenantId, input);
+          workerResult = await options.runner(tenantId, input, progress);
         } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
+          const timedOut =
+            typeof err === "object" && err !== null && "code" in err && (err as { code?: string }).code === "worker.timeout";
+          const errMsg = timedOut
+            ? "Onboarding did not finish within 30 minutes. If a device code was shown, it expired or nobody signed in; start onboarding again for a fresh code."
+            : err instanceof Error
+              ? err.message
+              : String(err);
           if (options.tenantStore.appendAuditEvent) {
             const audit: TenantAuditInput = {
               id: randomUUID(),
@@ -194,7 +361,13 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             };
             await options.tenantStore.appendAuditEvent(audit);
           }
+          if (timedOut) {
+            throw new AppError(ONBOARD_TIMEOUT, errMsg, 504);
+          }
           throw new AppError(ONBOARD_FAILED, `Tenant onboarding failed: ${errMsg}`, 500);
+        } finally {
+          channel.state = "done";
+          channel.updatedAt = Date.parse(now());
         }
 
         if (workerResult.status === "failed") {
@@ -250,6 +423,16 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
           throw new AppError(ONBOARD_PARTIAL_FAILURE, errMsg, 502);
         }
 
+        // Write access was requested, so a successful run must have produced the
+        // operator credential. Never report a reader-only success for an opt-in run.
+        if (input.includeWritePermissions && !workerResult.operatorClientId) {
+          throw new AppError(
+            ONBOARD_PARTIAL_FAILURE,
+            "onboarding reported success but did not provision the operator app; write access was not granted",
+            502,
+          );
+        }
+
         // Success path: upsert tenant row and credential reference
         const tenantRecord: TenantRecord = {
           id: tenantId,
@@ -272,14 +455,36 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
         };
         // Checked before any write so a misconfigured backend never leaves a tenant row with no
         // credential. The app registration already exists by now, so the PFX path is reported.
-        if (workerResult.certificatePath && !options.secrets) {
+        if (
+          (workerResult.certificatePath || workerResult.operatorCertificatePath) &&
+          !options.secrets
+        ) {
+          const path = workerResult.certificatePath ?? workerResult.operatorCertificatePath;
           throw new AppError(
             ONBOARD_FAILED,
-            `onboarding created the app registration with a PFX certificate at ${workerResult.certificatePath}, but no credential backend is configured to store it`,
+            `onboarding created an app registration with a PFX certificate at ${path}, but no credential backend is configured to store it`,
             500,
           );
         }
         const savedTenant = await options.tenantStore.upsertTenant(tenantRecord);
+
+        // Re-onboarding an existing tenant updates its rows instead of appending
+        // duplicates, so the T-0942 Access tab sees one reader and one operator.
+        const priorReader = options.credentialStore
+          ? await options.credentialStore.getCredential(tenantId, "reader")
+          : undefined;
+        const priorOperator = options.credentialStore
+          ? await options.credentialStore.getCredential(tenantId, "operator")
+          : undefined;
+        const readerCreatedAt = priorReader?.createdAt ?? instant;
+        const operatorCreatedAt = priorOperator?.createdAt ?? instant;
+        const reportedGroups = Array.isArray(workerResult.writePermissionGroups)
+          ? workerResult.writePermissionGroups
+          : [];
+        const grantedGroups =
+          reportedGroups.length > 0
+            ? [...reportedGroups]
+            : [...(input.writePermissionGroups ?? [])];
 
         if (options.credentialStore && workerResult.clientId && workerResult.certificatePath) {
           // The worker kept the private key in an owner-only PFX file. Only its path is stored,
@@ -290,7 +495,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             JSON.stringify({ certificatePath: workerResult.certificatePath }),
           );
           await options.credentialStore.upsertCredential({
-            id: randomUUID(),
+            id: priorReader?.id ?? randomUUID(),
             tenantId,
             authMethod: "certificate-pfx",
             clientId: workerResult.clientId,
@@ -299,7 +504,9 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             environment: input.environment ?? "commercial",
             expiresOn: null,
             lastValidated: instant,
-            createdAt: instant,
+            purpose: "reader",
+            permissionGroups: null,
+            createdAt: readerCreatedAt,
             updatedAt: instant,
           });
         } else if (
@@ -308,7 +515,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
           workerResult.certificateThumbprint
         ) {
           await options.credentialStore.upsertCredential({
-            id: randomUUID(),
+            id: priorReader?.id ?? randomUUID(),
             tenantId,
             authMethod: "certificate-thumbprint",
             clientId: workerResult.clientId,
@@ -317,7 +524,60 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
             environment: input.environment ?? "commercial",
             expiresOn: null,
             lastValidated: instant,
-            createdAt: instant,
+            purpose: "reader",
+            permissionGroups: null,
+            createdAt: readerCreatedAt,
+            updatedAt: instant,
+          });
+        }
+
+        // Operator credential (T-0917): stored beside the reader row, never over it.
+        // The worker reuses the reader certificate, so the same secret material and
+        // thumbprint apply; only the purpose and client id differ. Migration 0134
+        // records the granted write groups so the portal can show and reconcile them.
+        if (
+          options.credentialStore &&
+          workerResult.operatorClientId &&
+          workerResult.operatorCertificatePath
+        ) {
+          const operatorSecretRef = formatSecretRef(tenantId);
+          await options.secrets!.writeSecret(
+            operatorSecretRef,
+            JSON.stringify({ certificatePath: workerResult.operatorCertificatePath }),
+          );
+          await options.credentialStore.upsertCredential({
+            id: priorOperator?.id ?? randomUUID(),
+            tenantId,
+            authMethod: "certificate-pfx",
+            clientId: workerResult.operatorClientId,
+            secretRef: operatorSecretRef,
+            thumbprint: workerResult.operatorCertificateThumbprint ?? null,
+            environment: input.environment ?? "commercial",
+            expiresOn: null,
+            lastValidated: instant,
+            purpose: "operator",
+            permissionGroups: grantedGroups,
+            createdAt: operatorCreatedAt,
+            updatedAt: instant,
+          });
+        } else if (
+          options.credentialStore &&
+          workerResult.operatorClientId &&
+          workerResult.operatorCertificateThumbprint
+        ) {
+          await options.credentialStore.upsertCredential({
+            id: priorOperator?.id ?? randomUUID(),
+            tenantId,
+            authMethod: "certificate-thumbprint",
+            clientId: workerResult.operatorClientId,
+            secretRef: formatThumbprintRef(workerResult.operatorCertificateThumbprint),
+            thumbprint: workerResult.operatorCertificateThumbprint,
+            environment: input.environment ?? "commercial",
+            expiresOn: null,
+            lastValidated: instant,
+            purpose: "operator",
+            permissionGroups: grantedGroups,
+            createdAt: operatorCreatedAt,
             updatedAt: instant,
           });
         }
@@ -338,6 +598,8 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
               clientId: workerResult.clientId,
               thumbprint: workerResult.certificateThumbprint,
               appDisplayName: workerResult.appDisplayName,
+              operatorClientId: workerResult.operatorClientId ?? null,
+              writePermissionGroups: grantedGroups,
               status: "active",
             },
             result: "success",
@@ -353,6 +615,41 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
           body: {
             tenant: savedTenant,
             onboarding: workerResult,
+            progressId,
+          },
+        };
+      },
+    },
+    {
+      method: "GET",
+      path: ONBOARD_PROGRESS_PATH,
+      handler: async (ctx: RequestContext) => {
+        const caller = requireCaller(options.resolveCaller, ctx);
+        const tenantId = extractTenantId(ctx);
+        requireTenantInScope(caller, tenantId);
+        await authorize(caller, ONBOARD_PERMISSION);
+
+        const progressId = ctx.params["progressId"];
+        if (typeof progressId !== "string" || progressId.trim().length === 0) {
+          throw new AppError(ErrorCodes.validationFailed, "progress id is required", 400);
+        }
+
+        const sinceRaw = Number(ctx.query.get("since") ?? "0");
+        const since = Number.isFinite(sinceRaw) ? sinceRaw : 0;
+
+        pruneChannels(now());
+        const channel = channels.get(progressId);
+        if (!channel || channel.tenantId !== tenantId) {
+          // The wizard polls immediately after submitting, before the POST has created
+          // the channel on a busy BFF; unknown is a normal answer, not an error.
+          return { status: 200, body: { state: "unknown", events: [] } };
+        }
+
+        return {
+          status: 200,
+          body: {
+            state: channel.state,
+            events: channel.events.filter((event) => event.sequence > since),
           },
         };
       },
@@ -362,7 +659,7 @@ export function createOnboardRoutes(options: OnboardRouteOptions): Route[] {
 
 export const ONBOARD_OPENAPI = {
   paths: {
-    "/v1/tenants/{id}/onboard": {
+    "/tenants/{id}/onboard": {
       post: {
         operationId: "onboardTenant",
         summary: "Direct tenant onboarding with app registration and consent",
@@ -383,10 +680,29 @@ export const ONBOARD_OPENAPI = {
                   clientId: { type: "string" },
                   certificateThumbprint: { type: "string" },
                   createNew: { type: "boolean" },
+                  includeWritePermissions: { type: "boolean" },
+                  writePermissionGroups: {
+                    type: "array",
+                    items: {
+                      type: "string",
+                      enum: ["identity", "security", "intune", "sharepoint", "exchange"],
+                    },
+                  },
+                  confirmDangerous: { type: "boolean" },
+                  replaceWriteGroups: {
+                    type: "boolean",
+                    description:
+                      "Reconcile the operator app's managed grants to writePermissionGroups: add the selected grants and remove the unselected managed grants from the operator app only. The reader app is never changed (T-0942).",
+                  },
                   displayName: { type: "string" },
                   defaultDomain: { type: "string" },
                   initialDomain: { type: "string" },
                   environment: { type: "string" },
+                  progressId: {
+                    type: "string",
+                    description:
+                      "Client-generated id for the device-code progress channel the wizard polls while onboarding waits for a sign-in (T-0916).",
+                  },
                 },
               },
             },
@@ -399,6 +715,27 @@ export const ONBOARD_OPENAPI = {
           "403": { description: "Forbidden; tenants.onboard permission required." },
           "500": { description: "Onboarding failed." },
           "502": { description: "Partial onboarding failure." },
+          "504": { description: "Onboarding exceeded the 30-minute job timeout while waiting for sign-in." },
+        },
+      },
+    },
+    "/tenants/{id}/onboard/progress/{progressId}": {
+      get: {
+        operationId: "getOnboardProgress",
+        summary: "Read pending device-code progress for an onboarding job",
+        description:
+          "Returns the sign-in events emitted by the onboarding worker since `since`. A pending device-code event carries the code and verification URL the wizard shows while the job waits (T-0916).",
+        permission: ONBOARD_PERMISSION,
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          { name: "id", in: "path", required: true, schema: { type: "string" } },
+          { name: "progressId", in: "path", required: true, schema: { type: "string" } },
+          { name: "since", in: "query", required: false, schema: { type: "integer" } },
+        ],
+        responses: {
+          "200": { description: "Progress snapshot: state (unknown, pending, done) and new events." },
+          "401": { description: "Authentication required." },
+          "403": { description: "Forbidden; tenants.onboard permission required." },
         },
       },
     },

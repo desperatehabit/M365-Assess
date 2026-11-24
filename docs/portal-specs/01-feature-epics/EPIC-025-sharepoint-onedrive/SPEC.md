@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #39,#42; CIPP `HTTP Functions/Teams-Sharepoint/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-025.md`](../../../../ISSUES/epics/EPIC-025.md)
 
 ## 1. Purpose
 
@@ -156,4 +156,4 @@ destructive — confirmation, plan preview, before/after, audit.
 - [`../EPIC-027-sharing-permissions-reports/SPEC.md`](../EPIC-027-sharing-permissions-reports/SPEC.md) — sharing
 - [`../EPIC-026-teams-voice/SPEC.md`](../EPIC-026-teams-voice/SPEC.md) — Teams
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-025.md`](../../../../ISSUES/epics/EPIC-025.md) — epic ticket

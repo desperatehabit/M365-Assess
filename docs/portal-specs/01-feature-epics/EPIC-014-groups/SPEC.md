@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-011, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #26; [`cipp-ui-inventory.md`](../../99-reference/cipp-ui-inventory.md) §3
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-014.md`](../../../../ISSUES/epics/EPIC-014.md)
 
 ## 1. Purpose
 
@@ -159,4 +159,4 @@ confirmation and produce per-change audit records.
 
 - [`../EPIC-011-users-offboarding/SPEC.md`](../EPIC-011-users-offboarding/SPEC.md) — users
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-014.md`](../../../../ISSUES/epics/EPIC-014.md) — epic ticket

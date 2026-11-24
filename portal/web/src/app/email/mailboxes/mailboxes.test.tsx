@@ -241,6 +241,41 @@ describe("MailboxesView paging (T-0895)", () => {
 });
 
 describe("RulesView", () => {
+  it("pre-fills several forward targets and sends them back as a list (T-0901)", async () => {
+    const writes: { url: string; body: Record<string, unknown> }[] = [];
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        writes.push({ url: String(url), body: JSON.parse(String(init.body)) as Record<string, unknown> });
+        return jsonResponse({ action: "edit", diff: [], valid: true, dryRun: true, requiresConfirmation: true });
+      }
+      return jsonResponse({
+        rules: [
+          {
+            identity: "rule-many",
+            name: "Forward to team",
+            enabled: true,
+            priority: 1,
+            forwardTo: ["one@example.invalid", "two@example.invalid"],
+            forwardAsAttachmentTo: null,
+            redirectTo: null,
+            deleteMessage: false,
+          },
+        ],
+      });
+    });
+    render(<RulesView tenantId="tenant-1" mailboxId="mbx-1" fetcher={fetcher as unknown as typeof fetch} />);
+
+    await waitFor(() => expect(screen.getByTestId("rule-edit-rule-many")).toBeTruthy());
+    fireEvent.click(screen.getByTestId("rule-edit-rule-many"));
+
+    const field = screen.getByTestId("rule-forward-to") as HTMLInputElement;
+    expect(field.value).toBe("one@example.invalid; two@example.invalid");
+
+    fireEvent.click(screen.getByTestId("rule-preview"));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0]!.body.forwardTo).toEqual(["one@example.invalid", "two@example.invalid"]);
+  });
+
   it("flags forwarding rules as security-sensitive", async () => {
     const fetcher = vi.fn(async () =>
       jsonResponse({

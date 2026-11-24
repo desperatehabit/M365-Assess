@@ -6,14 +6,19 @@ import type { CredentialRecord, CredentialStoreRow } from "./credentials.js";
 import type { TenantAuditInput, TenantRecord, TenantStore } from "./tenants.js";
 import {
   createOnboardRoutes,
+  parseOnboardProgressLine,
   ONBOARD_CONFIRMATION_REQUIRED,
   ONBOARD_FAILED,
   ONBOARD_OPENAPI,
   ONBOARD_PARTIAL_FAILURE,
   ONBOARD_PERMISSION,
+  ONBOARD_PROGRESS_PATH,
+  ONBOARD_TIMEOUT,
   ONBOARD_UNAUTHENTICATED,
   type OnboardCaller,
+  type OnboardDeviceCodeProgress,
   type OnboardInput,
+  type OnboardProgressSnapshot,
   type OnboardRouteOptions,
   type OnboardRunner,
   type OnboardWorkerResult,
@@ -58,15 +63,35 @@ class MemoryTenantStore implements TenantStore {
 class MemoryCredentialStore implements CredentialStoreRow {
   readonly records = new Map<string, CredentialRecord>();
 
-  async getCredential(tenantId: string): Promise<CredentialRecord | undefined> {
-    const found = this.records.get(tenantId);
+  private key(tenantId: string, purpose: "reader" | "operator" = "reader"): string {
+    return `${tenantId}:${purpose}`;
+  }
+
+  async getCredential(
+    tenantId: string,
+    purpose: "reader" | "operator" = "reader",
+  ): Promise<CredentialRecord | undefined> {
+    const found = this.records.get(this.key(tenantId, purpose));
     return found ? { ...found } : undefined;
+  }
+
+  async listCredentials(tenantId: string): Promise<CredentialRecord[]> {
+    return [...this.records.values()]
+      .filter((row) => row.tenantId === tenantId)
+      .map((row) => ({ ...row }));
   }
 
   async upsertCredential(input: CredentialRecord): Promise<CredentialRecord> {
     const stored = { ...input };
-    this.records.set(stored.tenantId, stored);
+    this.records.set(this.key(stored.tenantId, stored.purpose ?? "reader"), stored);
     return { ...stored };
+  }
+
+  async deleteCredential(
+    tenantId: string,
+    purpose: "reader" | "operator" = "reader",
+  ): Promise<boolean> {
+    return this.records.delete(this.key(tenantId, purpose));
   }
 
   async appendAuditEvent(): Promise<unknown> {
@@ -293,6 +318,158 @@ describe("Tenant onboarding route (T-0025)", () => {
     expect(JSON.parse(material!)).toEqual({ certificatePath: "/home/op/.m365-assess/certs/M365-Assess-t.pfx" });
   });
 
+  it("forwards the opt-in write selection and stores the operator credential beside the reader row", async () => {
+    const result: OnboardWorkerResult = {
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "reader-app-id",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      appDisplayName: "M365-Assess-Reader",
+      operatorClientId: "operator-app-id",
+      operatorCertificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorAppDisplayName: "M365-Assess-Operator",
+      operatorCreated: true,
+      writePermissionGroups: ["identity", "intune"],
+      bootstrapCreated: true,
+      totalFailed: 0,
+      completedAt: NOW,
+    };
+    const h = createHarness(result);
+
+    const res = await h.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          adminUpn: "admin@contoso.onmicrosoft.com",
+          createNew: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["identity", "intune"],
+          confirmDangerous: true,
+          replaceWriteGroups: true,
+        },
+      ),
+    );
+
+    expect(res.status).toBe(201);
+    expect(h.runnerCalls[0].input.includeWritePermissions).toBe(true);
+    expect(h.runnerCalls[0].input.writePermissionGroups).toEqual(["identity", "intune"]);
+    expect(h.runnerCalls[0].input.confirmDangerous).toBe(true);
+    expect(h.runnerCalls[0].input.replaceWriteGroups).toBe(true);
+
+    const reader = await h.credentials.getCredential(TENANT_ID, "reader");
+    expect(reader?.clientId).toBe("reader-app-id");
+    expect(reader?.purpose).toBe("reader");
+    expect(reader?.permissionGroups).toBeNull();
+    const operator = await h.credentials.getCredential(TENANT_ID, "operator");
+    expect(operator?.clientId).toBe("operator-app-id");
+    expect(operator?.purpose).toBe("operator");
+    expect(operator?.thumbprint).toBe("AABBCCDDEEFF0011223344556677889900112233");
+    expect(operator?.permissionGroups).toEqual(["identity", "intune"]);
+  });
+
+  it("falls back to the requested groups when the worker omits writePermissionGroups", async () => {
+    const h = createHarness({
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "reader-app-id",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorClientId: "operator-app-id",
+      operatorCertificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorAppDisplayName: "M365-Assess-Operator",
+      totalFailed: 0,
+      completedAt: NOW,
+    });
+
+    await h.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["security"],
+        },
+      ),
+    );
+
+    const operator = await h.credentials.getCredential(TENANT_ID, "operator");
+    expect(operator?.permissionGroups).toEqual(["security"]);
+  });
+
+  it("updates the existing operator row on re-onboarding instead of appending a duplicate", async () => {
+    const result: OnboardWorkerResult = {
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "reader-app-id",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      operatorClientId: "operator-app-id",
+      operatorCertificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      writePermissionGroups: ["identity"],
+      totalFailed: 0,
+      completedAt: NOW,
+    };
+    const h = createHarness(result);
+
+    await h.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["identity"],
+        },
+      ),
+    );
+    const firstId = (await h.credentials.getCredential(TENANT_ID, "operator"))?.id;
+
+    const second = createHarness({
+      ...result,
+      writePermissionGroups: ["security"],
+    });
+    // The second harness starts empty, so seed the existing rows to mimic a
+    // tenant that was already onboarded through this store.
+    const prior = await h.credentials.getCredential(TENANT_ID, "operator");
+    if (prior) await second.credentials.upsertCredential(prior);
+    const reader = await h.credentials.getCredential(TENANT_ID, "reader");
+    if (reader) await second.credentials.upsertCredential(reader);
+
+    await second.routes[0].handler(
+      makeContext(
+        { id: TENANT_ID },
+        {
+          confirmed: true,
+          includeWritePermissions: true,
+          writePermissionGroups: ["security"],
+        },
+      ),
+    );
+
+    const rows = await second.credentials.listCredentials(TENANT_ID);
+    expect(rows.filter((row) => row.purpose === "operator")).toHaveLength(1);
+    expect(rows.find((row) => row.purpose === "operator")?.id).toBe(firstId);
+    expect(rows.find((row) => row.purpose === "operator")?.permissionGroups).toEqual(["security"]);
+  });
+
+  it("keeps the reader-only path when write access is declined", async () => {
+    const h = createHarness({
+      tenantId: TENANT_ID,
+      status: "succeeded",
+      clientId: "reader-app-id",
+      certificateThumbprint: "AABBCCDDEEFF0011223344556677889900112233",
+      appDisplayName: "M365-Assess-Reader",
+      totalFailed: 0,
+      completedAt: NOW,
+    });
+
+    await h.routes[0].handler(
+      makeContext({ id: TENANT_ID }, { confirmed: true, createNew: true }),
+    );
+
+    expect(h.runnerCalls[0].input.includeWritePermissions).toBe(false);
+    expect(await h.credentials.getCredential(TENANT_ID, "reader")).toBeDefined();
+    expect(await h.credentials.getCredential(TENANT_ID, "operator")).toBeUndefined();
+  });
+
   it("fails before writing a tenant row when a PFX result has no credential backend", async () => {
     const pfxResult: OnboardWorkerResult = {
       tenantId: TENANT_ID,
@@ -365,7 +542,199 @@ describe("Tenant onboarding route (T-0025)", () => {
   });
 
   it("declares OpenAPI specification matching the route", () => {
-    expect(ONBOARD_OPENAPI.paths["/v1/tenants/{id}/onboard"]).toBeDefined();
-    expect(ONBOARD_OPENAPI.paths["/v1/tenants/{id}/onboard"].post.permission).toBe(ONBOARD_PERMISSION);
+    expect(ONBOARD_OPENAPI.paths["/tenants/{id}/onboard"]).toBeDefined();
+    expect(ONBOARD_OPENAPI.paths["/tenants/{id}/onboard"].post.permission).toBe(ONBOARD_PERMISSION);
+    expect(
+      ONBOARD_OPENAPI.paths["/tenants/{id}/onboard"].post.requestBody.content["application/json"]
+        .schema.properties,
+    ).toHaveProperty("replaceWriteGroups");
+    expect(ONBOARD_OPENAPI.paths["/tenants/{id}/onboard/progress/{progressId}"]).toBeDefined();
+    expect(
+      ONBOARD_OPENAPI.paths["/tenants/{id}/onboard/progress/{progressId}"].get.permission,
+    ).toBe(ONBOARD_PERMISSION);
+  });
+});
+
+function progressContext(
+  progressId: string,
+  since = 0,
+  tenantId: string = TENANT_ID,
+): RequestContext {
+  return {
+    method: "GET",
+    path: `/v1/tenants/${tenantId}/onboard/progress/${progressId}`,
+    params: { id: tenantId, progressId },
+    query: new URLSearchParams(since > 0 ? { since: String(since) } : {}),
+    headers: {},
+  };
+}
+
+async function waitForState(check: () => Promise<boolean>, timeoutMs = 1000): Promise<void> {
+  const start = Date.now();
+  while (!(await check())) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error("timed out waiting for the onboarding progress channel");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
+function deviceCodeEvent(overrides: Partial<OnboardDeviceCodeProgress> = {}): OnboardDeviceCodeProgress {
+  return {
+    sequence: 1,
+    kind: "device-code",
+    signIn: "graph-permissions",
+    provider: "Microsoft Graph",
+    code: "ABCD-EFGH",
+    verificationUrl: "https://microsoft.com/devicelogin",
+    expiresAt: "2026-06-01T12:15:00.000Z",
+    at: NOW,
+    ...overrides,
+  };
+}
+
+describe("Onboarding device-code relay (T-0916)", () => {
+  it("parses worker progress lines and ignores diagnostics and the result line", () => {
+    const event = parseOnboardProgressLine(JSON.stringify(deviceCodeEvent()));
+    expect(event).toMatchObject({
+      kind: "device-code",
+      signIn: "graph-permissions",
+      code: "ABCD-EFGH",
+      verificationUrl: "https://microsoft.com/devicelogin",
+    });
+    expect(parseOnboardProgressLine("Creating the app registration...")).toBeNull();
+    expect(parseOnboardProgressLine('{"tenantId":"t","status":"succeeded"}')).toBeNull();
+    expect(parseOnboardProgressLine('{"kind":"sign-in-complete"}')).toBeNull();
+  });
+
+  it("publishes each device code and clears it when the sign-in completes", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner: OnboardRunner = async (_tenantId, _input, progress) => {
+      progress?.(deviceCodeEvent());
+      progress?.(
+        deviceCodeEvent({
+          sequence: 2,
+          kind: "sign-in-complete",
+          code: null,
+          verificationUrl: null,
+          expiresAt: null,
+          account: "admin@contoso.example",
+        }),
+      );
+      await gate;
+      return {
+        tenantId: TENANT_ID,
+        status: "succeeded",
+        clientId: "app-123",
+        certificateThumbprint: "THUMB123",
+      };
+    };
+    const h = createHarness({ tenantId: TENANT_ID, status: "succeeded" }, { runner });
+
+    const submit = h.routes[0].handler(
+      makeContext({ id: TENANT_ID }, { confirmed: true, progressId: "progress-1" }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const pending = (await h.routes[1].handler(progressContext("progress-1"))) as {
+      status: number;
+      body: OnboardProgressSnapshot;
+    };
+    expect(pending.status).toBe(200);
+    expect(pending.body.state).toBe("pending");
+    expect(pending.body.events).toHaveLength(2);
+    expect(pending.body.events[0]).toMatchObject({
+      sequence: 1,
+      kind: "device-code",
+      code: "ABCD-EFGH",
+      verificationUrl: "https://microsoft.com/devicelogin",
+    });
+    expect(pending.body.events[1]).toMatchObject({ sequence: 2, kind: "sign-in-complete" });
+
+    const incremental = (await h.routes[1].handler(progressContext("progress-1", 1))) as {
+      body: OnboardProgressSnapshot;
+    };
+    expect(incremental.body.events.map((event) => event.sequence)).toEqual([2]);
+
+    release();
+    expect((await submit).status).toBe(201);
+
+    const finished = (await h.routes[1].handler(progressContext("progress-1"))) as {
+      body: OnboardProgressSnapshot;
+    };
+    expect(finished.body.state).toBe("done");
+  });
+
+  it("supersedes an earlier channel when onboarding for the tenant starts again", async () => {
+    const gated = (): OnboardRunner => async () => {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      return { tenantId: TENANT_ID, status: "succeeded" };
+    };
+    const h = createHarness({ tenantId: TENANT_ID, status: "succeeded" }, { runner: gated() });
+
+    const first = h.routes[0].handler(
+      makeContext({ id: TENANT_ID }, { confirmed: true, progressId: "old-channel" }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const second = h.routes[0].handler(
+      makeContext({ id: TENANT_ID }, { confirmed: true, progressId: "new-channel" }),
+    );
+
+    await waitForState(async () => {
+      const created = (await h.routes[1].handler(progressContext("new-channel"))) as {
+        body: OnboardProgressSnapshot;
+      };
+      return created.body.state === "pending";
+    });
+
+    const oldChannel = (await h.routes[1].handler(progressContext("old-channel"))) as {
+      body: OnboardProgressSnapshot;
+    };
+    expect(oldChannel.body.state).toBe("done");
+
+    await Promise.all([first, second]);
+  });
+
+  it("answers unknown for a channel that has not been created yet", async () => {
+    const h = createHarness({ tenantId: TENANT_ID, status: "succeeded" });
+    const response = (await h.routes[1].handler(progressContext("never-created"))) as {
+      status: number;
+      body: OnboardProgressSnapshot;
+    };
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ state: "unknown", events: [] });
+  });
+
+  it("requires admin permission and tenant scope on the progress route", async () => {
+    const h = createHarness(
+      { tenantId: TENANT_ID, status: "succeeded" },
+      {
+        resolveCaller: () => ({ roles: ["admin"], tenantScope: tenantScope(["other-tenant"]) }),
+      },
+    );
+    await expect(h.routes[1].handler(progressContext("progress-1"))).rejects.toMatchObject({
+      code: "auth.forbidden",
+      status: 403,
+    });
+  });
+
+  it("reports a clear timeout when the job exceeds 30 minutes waiting for sign-in", async () => {
+    const runner: OnboardRunner = async () => {
+      throw { code: "worker.timeout", message: "worker for job x exceeded its timeout" };
+    };
+    const h = createHarness({ tenantId: TENANT_ID, status: "succeeded" }, { runner });
+
+    await expect(
+      h.routes[0].handler(makeContext({ id: TENANT_ID }, { confirmed: true })),
+    ).rejects.toMatchObject({
+      code: ONBOARD_TIMEOUT,
+      status: 504,
+    });
+    const event = h.tenants.events[0];
+    expect(event.result).toBe("failure");
+    expect(JSON.stringify(event)).not.toMatch(/worker for job/);
   });
 });

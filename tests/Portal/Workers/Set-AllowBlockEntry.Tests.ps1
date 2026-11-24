@@ -211,3 +211,9 @@ Describe 'Set-AllowBlockEntry worker (T-0427)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Get-TenantAllowBlockListItems' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\New-TenantAllowBlockListItems' -ErrorAction SilentlyContinue
+    Remove-Item -Path 'Function:\Remove-TenantAllowBlockListItems' -ErrorAction SilentlyContinue
+}

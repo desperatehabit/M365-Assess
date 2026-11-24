@@ -35,6 +35,7 @@ function seedTenantsAndRuns(
       status: string;
       finishedAt?: string;
       summaryCounts?: Record<string, unknown>;
+      provenance?: Record<string, unknown>;
     }[];
     findings?: readonly {
       id: string;
@@ -58,8 +59,8 @@ function seedTenantsAndRuns(
     }
 
     const insertRun = raw.prepare(
-      `INSERT OR IGNORE INTO runs (id, tenantId, trigger, status, finishedAt, summaryCounts, createdAt, updatedAt)
-       VALUES (?, ?, 'manual', ?, ?, ?, ?, ?)`
+      `INSERT OR IGNORE INTO runs (id, tenantId, trigger, status, finishedAt, summaryCounts, provenance, createdAt, updatedAt)
+       VALUES (?, ?, 'manual', ?, ?, ?, ?, ?, ?)`
     );
     for (const r of data.runs || []) {
       insertRun.run(
@@ -68,6 +69,7 @@ function seedTenantsAndRuns(
         r.status,
         r.finishedAt || NOW,
         r.summaryCounts ? JSON.stringify(r.summaryCounts) : null,
+        r.provenance ? JSON.stringify(r.provenance) : null,
         NOW,
         NOW
       );
@@ -180,6 +182,44 @@ describe("DashboardRepository", () => {
     expect(payload.metrics?.metrics.length).toBe(6);
 
     repo.close();
+  });
+
+  it("keeps a partial run as the latest assessment but carries its status and issues (T-0944)", async () => {
+    const dbFile = tempDbPath();
+    const repo = await openSqliteDashboardRepository({ filename: dbFile });
+
+    seedTenantsAndRuns(dbFile, {
+      tenants: [{ id: "tenant-contoso" }],
+      runs: [
+        {
+          id: "run-partial",
+          tenantId: "tenant-contoso",
+          status: "partial",
+          finishedAt: "2026-11-23T15:28:00.000Z",
+          summaryCounts: { pass: 5, fail: 1, warning: 0, total: 6 },
+          provenance: {
+            partial: true,
+            issues: [
+              { level: "WARNING", section: "Collaboration", message: "Teams checks skipped" },
+              { level: "ERROR", section: "Power BI", message: "403 on /admin/tenantsettings" },
+            ],
+          },
+        },
+      ],
+    });
+
+    try {
+      const payload = await repo.getTenantDashboard("tenant-contoso");
+      expect(payload.assessment).toMatchObject({
+        runId: "run-partial",
+        status: "partial",
+        issueCount: 2,
+        errorCount: 1,
+        firstError: "Power BI: 403 on /admin/tenantsettings",
+      });
+    } finally {
+      repo.close();
+    }
   });
 
   it("filters fleet dashboard strictly by caller tenant scope (preventing scope leakage)", async () => {

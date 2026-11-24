@@ -93,7 +93,9 @@ Describe 'Build-SectionHtml.ps1 — execution' {
         @'
 Section,Collector,FileName,Status,Items
 Identity,Get-MfaReport,03-MFA-Report.csv,Complete,2
-Identity,Get-CAReport,CA-Security.csv,Complete,1
+Identity,Get-CAReport,CA-Security.csv,Partial,1
+Power BI,Get-PowerBISecurityConfig,22-PowerBI-Security-Config.csv,Failed,2
+Collaboration,Get-TeamsSecurityConfig,21b-Teams-Security-Config.csv,Skipped,1
 '@ | Set-Content -Path (Join-Path $script:tmpDir '_Assessment-Summary.csv')
 
         # Write minimal finding CSVs
@@ -101,6 +103,19 @@ Identity,Get-CAReport,CA-Security.csv,Complete,1
 CheckId,Category,Setting,CurrentValue,RecommendedValue,Status,Remediation
 CA-REPORTONLY-001.1,Access,MFA Required,Disabled,Enabled,Fail,Enable MFA
 '@ | Set-Content -Path (Join-Path $script:tmpDir 'CA-Security.csv')
+
+        # Collector failure sentinel with a real CheckId (T-0930) must survive
+        # the empty-CheckId filter and reach the HTML/JSON/XLSX.
+        @'
+CheckId,Category,Setting,CurrentValue,RecommendedValue,Status,Remediation
+POWERBI-GUEST-001.1,Power BI - Guest Access,Guest User Access Restricted,True,True,Pass,Disable
+POWERBI-COLLECTOR-000.1,Power BI,Power BI Tenant Settings,Could not verify,Verify in Fabric admin portal,Warning,Check role and scope
+'@ | Set-Content -Path (Join-Path $script:tmpDir '22-PowerBI-Security-Config.csv')
+
+        @'
+CheckId,Category,Setting,CurrentValue,RecommendedValue,Status,Remediation
+TEAMS-APPS-001.1,Teams Apps,Chat Resource-Specific Consent,Not assessed,n/a,Skipped,Re-run with delegated auth
+'@ | Set-Content -Path (Join-Path $script:tmpDir '21b-Teams-Security-Config.csv')
 
         @'
 UserPrincipalName,IsAdmin,MfaStrength
@@ -181,6 +196,31 @@ contoso.com,Pass,Pass,reject,Pass,Pass
 
     It 'mfa section data is populated from CSV' {
         @($sectionData['mfa']).Count | Should -Be 2
+    }
+
+    It 'keeps the Power BI collector sentinel row from the CSV (T-0930)' {
+        $sentinel = $allCisFindings | Where-Object { $_.CheckId -eq 'POWERBI-COLLECTOR-000.1' }
+        $sentinel | Should -Not -BeNullOrEmpty
+        $sentinel.Status | Should -Be 'Warning'
+        $sentinel.Section | Should -Be 'Power BI'
+    }
+
+    It 'loads findings from Partial and Failed collectors (T-0937)' {
+        $partial = $allCisFindings | Where-Object { $_.CheckId -like 'CA-REPORTONLY-001*' }
+        $partial | Should -Not -BeNullOrEmpty
+        $failed = $allCisFindings | Where-Object { $_.CheckId -eq 'POWERBI-COLLECTOR-000.1' }
+        $failed | Should -Not -BeNullOrEmpty
+    }
+
+    It 'loads findings a Skipped collector emitted instead of dropping them' {
+        $skipped = $allCisFindings | Where-Object { $_.CheckId -eq 'TEAMS-APPS-001.1' }
+        $skipped | Should -Not -BeNullOrEmpty
+        $skipped.Status | Should -Be 'Skipped'
+    }
+
+    It 'keeps every CSV row that carries a CheckId (CSV and JSON row counts agree)' {
+        $csvRowCount = 1 + 2 + 1   # CA-Security.csv + 22-PowerBI-Security-Config.csv + 21b-Teams-Security-Config.csv
+        @($allCisFindings).Count | Should -Be $csvRowCount
     }
 
     It 'does not set $sectionHtml or $tocHtml in scope' {

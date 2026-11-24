@@ -5,6 +5,7 @@ BeforeAll {
     $script:controls = Join-Path $script:repoRoot 'portal/web/src/components/reports/BlockControls.tsx'
     $script:rail = Join-Path $script:repoRoot 'portal/web/src/components/reports/ReportSettingsRail.tsx'
     $script:testFile = Join-Path $script:repoRoot 'portal/web/src/components/reports/ReportBuilder.test.tsx'
+    $script:portalCss = Join-Path $script:repoRoot 'portal/web/src/app/portal.css'
 }
 
 Describe 'Report Builder page (T-0088)' {
@@ -42,14 +43,20 @@ Describe 'Report Builder page (T-0088)' {
 
         It 'hands scheduling off to the EPIC-007 scheduler surface' {
             $source = Get-Content -LiteralPath $script:page -Raw
-            $source | Should -Match '/schedules'
-            $source | Should -Match 'EPIC-007'
+            $source | Should -Match '/schedules\?type=report'
+            $source | Should -Match 'scheduler'
         }
 
         It 'styles from report tokens instead of hard-coded colours' {
+            # T-0923 moved the builder styling into portal.css; the page carries
+            # report-* classes and the stylesheet uses the report theme tokens.
             $source = Get-Content -LiteralPath $script:page -Raw
-            $source | Should -Match 'var\(--'
+            $source | Should -Match 'className="report-'
             $source | Should -Not -Match '#[0-9a-fA-F]{6}\b'
+            $css = Get-Content -LiteralPath $script:portalCss -Raw
+            $css | Should -Match '\.report-builder'
+            $css | Should -Match '\.report-palette'
+            $css | Should -Match 'var\(--'
         }
     }
 
@@ -98,8 +105,9 @@ Describe 'Report Builder page (T-0088)' {
         It 'edits Report Settings and Page Setup and Branding' {
             Test-Path -LiteralPath $script:rail | Should -BeTrue
             $source = Get-Content -LiteralPath $script:rail -Raw
-            $source | Should -Match 'Report Settings'
-            $source | Should -Match 'Page Setup &amp; Branding|Page Setup & Branding'
+            $source | Should -Match 'Report settings'
+            $source | Should -Match 'Page setup'
+            $source | Should -Match 'Branding'
             $source | Should -Match 'report-setting-title'
             $source | Should -Match 'report-page-size'
             $source | Should -Match 'report-brand-watermark'

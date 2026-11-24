@@ -46,6 +46,34 @@ $graphEnvironment = try { (Get-MgContext).Environment } catch { $null }
 $_scriptDir = if ($MyInvocation.MyCommand.Path) { Split-Path -Parent $MyInvocation.MyCommand.Path } else { $PSScriptRoot }
 . (Join-Path -Path $_scriptDir -ChildPath '..\Common\SecurityConfigHelper.ps1')
 
+# Resolve a Forms setting that the API may expose under more than one property name.
+# Returns a hashtable so a present-but-false value is distinguishable from an absent
+# property (which must be reported as Review, not Pass or Fail).
+function Get-SettingProperty {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param(
+        [Parameter(Mandatory)]
+        [object]$Settings,
+
+        [Parameter(Mandatory)]
+        [string[]]$Name
+    )
+
+    foreach ($candidate in $Name) {
+        if ($Settings -is [System.Collections.IDictionary]) {
+            if ($Settings.Contains($candidate)) {
+                return @{ Found = $true; Name = $candidate; Value = $Settings[$candidate] }
+            }
+        }
+        elseif ($Settings.PSObject.Properties.Name -contains $candidate) {
+            return @{ Found = $true; Name = $candidate; Value = $Settings.$candidate }
+        }
+    }
+
+    return @{ Found = $false; Name = $null; Value = $null }
+}
+
 # Initialize-SecurityConfig records the active context; the shared Add-Setting from
 # SecurityConfigHelper.ps1 reads it, so no local wrapper is needed (#958).
 $ctx = Initialize-SecurityConfig
@@ -104,15 +132,33 @@ try {
         Add-Setting @settingParams
 
         # CIS 3.6.2 - Phishing protection enabled
-        $phishingProtection = $formsSettings['isPhishingScanEnabled']
-        $settingParams = @{
-            Category         = 'Security'
-            Setting          = 'Phishing Protection'
-            CurrentValue     = "$phishingProtection"
-            RecommendedValue = 'True'
-            Status           = if ($phishingProtection) { 'Pass' } else { 'Fail' }
-            CheckId          = 'FORMS-CONFIG-004'
-            Remediation      = 'Microsoft 365 admin center > Settings > Org settings > Microsoft Forms > Enable "Internal phishing protection".'
+        # The beta formsSettings resource uses isInOrgFormsPhishingScanEnabled;
+        # isPhishingScanEnabled is accepted as a fallback so older responses work.
+        $phishingProtection = Get-SettingProperty -Settings $formsSettings -Name @(
+            'isInOrgFormsPhishingScanEnabled',
+            'isPhishingScanEnabled'
+        )
+        if ($phishingProtection.Found -and $null -ne $phishingProtection.Value) {
+            $settingParams = @{
+                Category         = 'Security'
+                Setting          = 'Phishing Protection'
+                CurrentValue     = "$($phishingProtection.Value)"
+                RecommendedValue = 'True'
+                Status           = if ($phishingProtection.Value) { 'Pass' } else { 'Fail' }
+                CheckId          = 'FORMS-CONFIG-004'
+                Remediation      = 'Microsoft 365 admin center > Settings > Org settings > Microsoft Forms > Enable "Internal phishing protection".'
+            }
+        }
+        else {
+            $settingParams = @{
+                Category         = 'Security'
+                Setting          = 'Phishing Protection'
+                CurrentValue     = 'Not returned by API'
+                RecommendedValue = 'True'
+                Status           = 'Review'
+                CheckId          = 'FORMS-CONFIG-004'
+                Remediation      = 'Verify in Microsoft 365 admin center > Settings > Org settings > Microsoft Forms that "Internal phishing protection" is enabled.'
+            }
         }
         Add-Setting @settingParams
 
@@ -130,15 +176,33 @@ try {
         Add-Setting @settingParams
 
         # Bing image/video search (external content exposure)
-        $bingSearch = $formsSettings['isBingImageVideoSearchEnabled']
-        $settingParams = @{
-            Category         = 'Security'
-            Setting          = 'Bing Image and Video Search'
-            CurrentValue     = "$bingSearch"
-            RecommendedValue = 'False'
-            Status           = if (-not $bingSearch) { 'Pass' } else { 'Review' }
-            CheckId          = 'FORMS-CONFIG-006'
-            Remediation      = 'Microsoft 365 admin center > Settings > Org settings > Microsoft Forms > Uncheck "Bing search and YouTube video".'
+        # The beta formsSettings resource uses isBingImageSearchEnabled;
+        # isBingImageVideoSearchEnabled is accepted as a fallback.
+        $bingSearch = Get-SettingProperty -Settings $formsSettings -Name @(
+            'isBingImageSearchEnabled',
+            'isBingImageVideoSearchEnabled'
+        )
+        if ($bingSearch.Found -and $null -ne $bingSearch.Value) {
+            $settingParams = @{
+                Category         = 'Security'
+                Setting          = 'Bing Image and Video Search'
+                CurrentValue     = "$($bingSearch.Value)"
+                RecommendedValue = 'False'
+                Status           = if (-not $bingSearch.Value) { 'Pass' } else { 'Review' }
+                CheckId          = 'FORMS-CONFIG-006'
+                Remediation      = 'Microsoft 365 admin center > Settings > Org settings > Microsoft Forms > Uncheck "Bing search and YouTube video".'
+            }
+        }
+        else {
+            $settingParams = @{
+                Category         = 'Security'
+                Setting          = 'Bing Image and Video Search'
+                CurrentValue     = 'Not returned by API'
+                RecommendedValue = 'False'
+                Status           = 'Review'
+                CheckId          = 'FORMS-CONFIG-006'
+                Remediation      = 'Verify in Microsoft 365 admin center > Settings > Org settings > Microsoft Forms that "Bing search and YouTube video" is unchecked.'
+            }
         }
         Add-Setting @settingParams
     }

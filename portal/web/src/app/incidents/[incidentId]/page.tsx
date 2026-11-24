@@ -9,6 +9,11 @@
 import React, { use, useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  BulkTriageDialog,
+  type BulkTriageAction,
+  type BulkTriagePayload,
+} from "../../../components/incidents/BulkTriageDialog";
+import {
   IncidentTabs,
   IncidentSeverityBadge,
   type IncidentDetailData,
@@ -29,6 +34,30 @@ export interface IncidentActionResponse {
   readonly action: IncidentTriageAction;
   readonly rows: readonly unknown[];
   readonly summary: Record<string, number>;
+}
+
+/** One incident in a bulk selection, paired with the tenant that owns it. */
+export interface BulkIncidentTarget {
+  readonly tenantId: string;
+  readonly incidentId: string;
+}
+
+/**
+ * Parses the `bulk` query parameter the list page builds: comma-separated
+ * `tenantId::incidentId` pairs, each component URI-encoded once. A bare id (an older
+ * link) is ignored because the action endpoint is tenant-scoped.
+ */
+export function parseBulkTargets(raw: string | null): BulkIncidentTarget[] {
+  if (raw === null || raw.length === 0) return [];
+  const targets: BulkIncidentTarget[] = [];
+  for (const entry of raw.split(",")) {
+    const separator = entry.indexOf("::");
+    if (separator <= 0) continue;
+    const tenantId = decodeURIComponent(entry.slice(0, separator));
+    const incidentId = decodeURIComponent(entry.slice(separator + 2));
+    if (tenantId.length > 0 && incidentId.length > 0) targets.push({ tenantId, incidentId });
+  }
+  return targets;
 }
 
 const pageStyle: CSSProperties = {
@@ -102,12 +131,19 @@ export async function submitIncidentAction(
   action: IncidentTriageAction,
   payload: TriagePayload,
   fetcher: IncidentFetcher = fetch,
+  options: { readonly incidentIds?: readonly string[] } = {},
 ): Promise<IncidentActionResponse> {
+  const extraIds = options.incidentIds ?? [];
   const body: Record<string, unknown> = {
     value: payload.value,
     comment: payload.comment,
     reason: payload.reason,
   };
+  if (extraIds.length > 0) {
+    body.incidentIds = [...extraIds];
+    // A change across more than one incident is bulk and must be confirmed.
+    body.confirm = true;
+  }
   // The T-0546 API refuses a status change to resolved without explicit
   // confirmation, so a single-incident resolve carries it here.
   if (action === "status" && payload.value.trim().toLowerCase() === "resolved") {
@@ -129,12 +165,18 @@ export interface IncidentDetailViewProps {
   readonly tenantId: string;
   readonly incidentId: string;
   readonly fetcher?: IncidentFetcher;
+  /** Present when the list page handed off a bulk selection. */
+  readonly bulk?: {
+    readonly action: BulkTriageAction;
+    readonly targets: readonly BulkIncidentTarget[];
+  };
 }
 
 export function IncidentDetailView({
   tenantId,
   incidentId,
   fetcher = fetch,
+  bulk,
 }: IncidentDetailViewProps): ReactElement {
   const [detail, setDetail] = useState<IncidentDetailData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -142,6 +184,9 @@ export function IncidentDetailView({
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [tab, setTab] = useState<IncidentTabId>("overview");
+  const [bulkOpen, setBulkOpen] = useState(bulk !== undefined);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState<string | null>(null);
 
   const load = useCallback(async (): Promise<void> => {
     setLoading(true);
@@ -173,6 +218,43 @@ export function IncidentDetailView({
       }
     },
     [tenantId, incidentId, fetcher, load],
+  );
+
+  const handleBulkConfirm = useCallback(
+    async (payload: BulkTriagePayload): Promise<void> => {
+      if (bulk === undefined) return;
+      setBulkBusy(true);
+      setBulkError(null);
+      try {
+        // The action endpoint is tenant-scoped, so a cross-tenant selection is split
+        // into one request per tenant with the first incident as the path target.
+        const byTenant = new Map<string, string[]>();
+        for (const target of bulk.targets) {
+          const ids = byTenant.get(target.tenantId) ?? [];
+          ids.push(target.incidentId);
+          byTenant.set(target.tenantId, ids);
+        }
+        for (const [bulkTenant, ids] of byTenant) {
+          const [first, ...rest] = ids;
+          if (first === undefined) continue;
+          await submitIncidentAction(
+            bulkTenant,
+            first,
+            bulk.action,
+            { value: payload.value, comment: "", reason: payload.reason },
+            fetcher,
+            { incidentIds: rest },
+          );
+        }
+        setBulkOpen(false);
+        await load();
+      } catch (err) {
+        setBulkError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [bulk, fetcher, load],
   );
 
   if (loading) {
@@ -240,6 +322,18 @@ export function IncidentDetailView({
       </header>
 
       <IncidentTabs detail={detail} activeTab={tab} onTabChange={setTab} />
+
+      {bulk !== undefined && (
+        <BulkTriageDialog
+          open={bulkOpen}
+          action={bulk.action}
+          incidentIds={bulk.targets.map((target) => target.incidentId)}
+          busy={bulkBusy}
+          error={bulkError}
+          onConfirm={handleBulkConfirm}
+          onClose={() => setBulkOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -257,10 +351,22 @@ export default function IncidentDetailPage(props: IncidentDetailPageProps): Reac
   const incidentId = decodeURIComponent(resolvedParams.incidentId);
   const searchParams = useSearchParams();
   const tenantId = resolveTenantId(searchParams.get("tenantId"), useCurrentTenantId());
+  const targets = parseBulkTargets(searchParams.get("bulk"));
+  const actionParam = searchParams.get("action");
+  const bulkAction: BulkTriageAction | undefined =
+    actionParam === "assign" || actionParam === "status" ? actionParam : undefined;
 
   return (
     <RequireTenant tenantId={tenantId}>
-      <IncidentDetailView tenantId={tenantId} incidentId={incidentId} />
+      <IncidentDetailView
+        tenantId={tenantId}
+        incidentId={incidentId}
+        bulk={
+          bulkAction !== undefined && targets.length > 0
+            ? { action: bulkAction, targets }
+            : undefined
+        }
+      />
     </RequireTenant>
   );
 }

@@ -20,6 +20,8 @@ const credentials: CredentialStoreRow = {
     thumbprint: "thumb-1",
     environment: "commercial",
   }),
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async () => {
     throw new Error("not implemented");
   },

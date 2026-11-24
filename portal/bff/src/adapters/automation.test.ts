@@ -11,6 +11,7 @@ import type { TenantStore } from "../routes/tenants.js";
 import {
   JOB_DISPATCH_UNAVAILABLE,
   NO_CREDENTIAL,
+  NO_OPERATOR_CREDENTIAL,
   REMEDIATION_APPLY_NO_PLAN,
   REMEDIATION_OUTPUT_UNREADABLE,
   buildApplyWorkerArgs,
@@ -41,12 +42,27 @@ const CREDENTIAL: CredentialRecord = {
   environment: "commercial",
   expiresOn: null,
   lastValidated: null,
+  purpose: "reader",
   createdAt: "",
   updatedAt: "",
 };
 
+const OPERATOR_CREDENTIAL: CredentialRecord = {
+  ...CREDENTIAL,
+  id: "c-operator",
+  clientId: "operator-app-1",
+  secretRef: "thumbprint://OPERATOR",
+  thumbprint: "OPERATOR",
+  purpose: "operator",
+};
+
 const credentials: CredentialStoreRow = {
-  getCredential: async (tenantId) => (tenantId === "t-a" ? CREDENTIAL : undefined),
+  getCredential: async (tenantId, purpose = "reader") => {
+    if (tenantId !== "t-a") return undefined;
+    return purpose === "operator" ? OPERATOR_CREDENTIAL : CREDENTIAL;
+  },
+  listCredentials: async () => [],
+  deleteCredential: async () => false,
   upsertCredential: async (input) => input,
   appendAuditEvent: async () => undefined,
 };
@@ -169,6 +185,8 @@ describe("scheduled assessment runs (T-0840)", () => {
             updatedAt: "",
           }
         : undefined,
+    listCredentials: async () => [],
+    deleteCredential: async () => false,
   };
 
   async function setupWithCredential() {
@@ -306,6 +324,25 @@ describe("schedule job state and tick store (T-0840)", () => {
     await tickStore.updateSchedule("sch-1", { lastRunAt: "2026-09-26T12:00:00.000Z" });
     expect(await tickStore.getSchedule("sch-1")).toMatchObject({ lastRunAt: "2026-09-26T12:00:00.000Z" });
   });
+
+  it("routes code-deployed timer state to the system timer store (T-0902/T-0903)", async () => {
+    const { db, version } = await setup();
+    const { SqliteScheduleRepository } = await import("@m365-assess/db");
+    const repo = new SqliteScheduleRepository(db, version);
+    const writes: Array<{ name: string; nextRunAt?: string | null }> = [];
+    const tickStore = createTickScheduleStore(repo, {
+      get: async () => undefined,
+      set: async (name, patch) => {
+        writes.push({ name, nextRunAt: patch.nextRunAt ?? null });
+      },
+    });
+
+    await tickStore.updateSchedule("system-webhooks", { nextRunAt: "2026-09-26T12:15:00.000Z" });
+
+    expect(writes).toEqual([{ name: "webhooks", nextRunAt: "2026-09-26T12:15:00.000Z" }]);
+    // It must not try to write a schedule row that does not exist.
+    expect(await repo.getSchedule("system-webhooks")).toBeUndefined();
+  });
 });
 
 describe("script sandbox (T-0837)", () => {
@@ -413,6 +450,7 @@ describe("remediation plan jobs (T-0836)", () => {
     const jobFile = JSON.parse(readFileSync(path.join(root, "remediation/t-a/job-1", "job.json"), "utf8"));
     expect(jobFile.credential).toEqual({
       credentialRef: "tenants/t-a/credential",
+      purpose: "reader",
       record: expect.objectContaining({ tenantId: "t-a", clientId: "app-1", thumbprint: "ABC" }),
     });
     expect(jobFile.payload).toMatchObject({ operation: "verify", planId: "plan-7" });
@@ -526,17 +564,26 @@ describe("remediation plan jobs (T-0836)", () => {
     const env = planEnvelope("apply");
     expect(await queue.enqueue(env)).toBe("job-1");
     expect(enqueued).toHaveLength(1);
-    expect(enqueued[0]!.payload).toMatchObject({ planOutputRef: "remediation/t-a/plan-job-1" });
+    expect(enqueued[0]!.payload).toMatchObject({
+      planOutputRef: "remediation/t-a/plan-job-1",
+      purpose: "operator",
+    });
 
     const jobFile = JSON.parse(readFileSync(path.join(root, "remediation/t-a/job-1", "job.json"), "utf8"));
     expect(jobFile.credential).toEqual({
-      credentialRef: "tenants/t-a/credential",
-      record: expect.objectContaining({ tenantId: "t-a", clientId: "app-1", thumbprint: "ABC" }),
+      credentialRef: "tenants/t-a/operator-credential",
+      purpose: "operator",
+      record: expect.objectContaining({
+        tenantId: "t-a",
+        clientId: "operator-app-1",
+        thumbprint: "OPERATOR",
+        purpose: "operator",
+      }),
     });
     expect(jobFile.payload).toMatchObject({ operation: "apply", planId: "plan-7", planOutputRef: "remediation/t-a/plan-job-1" });
   });
 
-  it("refuses an apply whose tenant has no credential", async () => {
+  it("refuses an apply whose tenant has no operator credential", async () => {
     const { repo } = await setup();
     await repo.createJob({
       id: "plan-job-1",
@@ -550,7 +597,7 @@ describe("remediation plan jobs (T-0836)", () => {
     });
     const noCredential: CredentialStoreRow = { ...credentials, getCredential: async () => undefined };
     const queue = createRemediationQueue({ jobs: { enqueue: async () => "" }, repo, credentials: noCredential, storageRoot: tempRoot() });
-    await expect(queue.enqueue(planEnvelope("apply"))).rejects.toMatchObject({ status: 409, code: NO_CREDENTIAL });
+    await expect(queue.enqueue(planEnvelope("apply"))).rejects.toMatchObject({ status: 409, code: NO_OPERATOR_CREDENTIAL });
   });
 
   it("refuses an apply whose plan job is not stored", async () => {

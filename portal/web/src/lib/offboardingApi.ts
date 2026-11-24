@@ -194,3 +194,52 @@ export async function listUserTemplates(fetcher?: Fetcher): Promise<{ templates:
   const response = await asFetcher(fetcher)("/v1/user-templates");
   return (await expectOk(response, "User templates")) as { templates: readonly UserTemplate[] };
 }
+
+// ─── User templates (EPIC-011 SPEC.md §3.5; T-0881) ─────────────────────────
+
+export interface UserTemplateInput {
+  readonly name: string;
+  readonly properties?: Record<string, unknown>;
+  readonly licenses?: readonly string[];
+  readonly groups?: readonly string[];
+  readonly offboardingDefaults?: Record<string, unknown>;
+}
+
+export async function createUserTemplate(
+  input: UserTemplateInput,
+  fetcher?: Fetcher,
+): Promise<UserTemplate> {
+  const response = await asFetcher(fetcher)("/v1/user-templates", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  return (await expectOk(response, "Creating user template")) as UserTemplate;
+}
+
+export async function updateUserTemplate(
+  templateId: string,
+  input: Partial<UserTemplateInput>,
+  fetcher?: Fetcher,
+): Promise<UserTemplate> {
+  const response = await asFetcher(fetcher)(
+    `/v1/user-templates/${encodeURIComponent(templateId)}`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    },
+  );
+  return (await expectOk(response, "Updating user template")) as UserTemplate;
+}
+
+export async function deleteUserTemplate(
+  templateId: string,
+  fetcher?: Fetcher,
+): Promise<void> {
+  const response = await asFetcher(fetcher)(
+    `/v1/user-templates/${encodeURIComponent(templateId)}`,
+    { method: "DELETE" },
+  );
+  await expectOk(response, "Deleting user template");
+}

@@ -24,6 +24,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       docs: ${{ steps.filter.outputs.docs }}
+      portal: ${{ steps.filter.outputs.portal }}
     steps:
       - uses: actions/checkout@v7
       # Third-party action pinned by commit SHA for supply-chain hardening (#768).
@@ -37,6 +38,9 @@ jobs:
               - 'tests/**'
               - '.github/workflows/ci.yml'
               - 'PSScriptAnalyzerSettings.psd1'
+            portal:
+              - 'portal/**'
+              - '.github/workflows/ci.yml'
             docs:
               - 'README.md'
               - 'CHANGELOG.md'
@@ -358,8 +362,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # T-0908: macOS runner minutes are quota-limited on this plan, so keep
+      # macOS off pull requests. ubuntu-latest still covers every PR; macOS
+      # runs on merges to main and on manual dispatch (release branches).
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: ${{ (github.event_name == 'workflow_dispatch' || github.event_name == 'push') && fromJSON('["ubuntu-latest", "macos-latest"]') || fromJSON('["ubuntu-latest"]') }}
     steps:
       - uses: actions/checkout@v7
 
@@ -378,9 +385,48 @@ jobs:
           $config.Output.Verbosity = 'Detailed'
           Invoke-Pester -Configuration $config
 
+  # T-0913: the portal monorepo (contracts, db, bff, web) is built and tested
+  # here. Build runs first because the bff and web workspaces import the
+  # contracts and db packages through their gitignored dist/ output, so
+  # typecheck cannot run on a clean checkout until they are compiled. The
+  # build also runs `next build`, which catches prerender failures such as a
+  # useSearchParams() call with no Suspense boundary.
+  portal:
+    needs: changes
+    if: needs.changes.outputs.portal == 'true'
+    name: Portal (build, typecheck, test)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: portal
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: portal/package-lock.json
+
+      # Install scripts stay enabled: better-sqlite3 fetches its native binary
+      # in its install script (allow-listed in portal/package.json).
+      - name: Install
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        # Some worker tests read a job envelope from stdin; close it so they
+        # cannot wait on an open pipe.
+        run: npm test < /dev/null
+
   ci-status:
     name: CI
-    needs: [quality-gates, test, docs-gates]
+    needs: [quality-gates, test, docs-gates, portal]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -389,12 +435,13 @@ jobs:
           qg="${{ needs.quality-gates.result }}"
           t="${{ needs.test.result }}"
           d="${{ needs.docs-gates.result }}"
+          p="${{ needs.portal.result }}"
           if [[ "$qg" == "success" || "$qg" == "skipped" ]] && \
              [[ "$t"  == "success" || "$t"  == "skipped" ]] && \
-             [[ "$d"  == "success" || "$d"  == "skipped" ]]; then
-            echo "CI passed (quality-gates=$qg, test=$t, docs-gates=$d)"
+             [[ "$d"  == "success" || "$d"  == "skipped" ]] &&              [[ "$p"  == "success" || "$p"  == "skipped" ]]; then
+            echo "CI passed (quality-gates=$qg, test=$t, docs-gates=$d, portal=$p)"
           else
-            echo "CI failed (quality-gates=$qg, test=$t, docs-gates=$d)"
+            echo "CI failed (quality-gates=$qg, test=$t, docs-gates=$d, portal=$p)"
             exit 1
           fi
 

@@ -38,7 +38,8 @@ Describe 'EntraConditionalAccessChecks' {
                     return @{
                         azureADJoin = @{
                             localAdmins = @{
-                                registeredUsers = @{ additionalLocalAdminsCount = 0 }
+                                enableGlobalAdmins = $false
+                                registeringUsers   = @{ '@odata.type' = '#microsoft.graph.noDeviceRegistrationMembership' }
                             }
                         }
                         localAdminPassword = @{ isEnabled = $true }
@@ -132,6 +133,13 @@ Describe 'EntraConditionalAccessChecks' {
         $check.Status | Should -Be 'Pass'
     }
 
+    It 'ENTRA-DEVICE-004 passes when registering users are not local admins (T-0951)' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Local Admin Assignment on Entra Join' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Be 'Registering user is local admin: None'
+    }
+
     It 'LAPS passes when enabled' {
         $check = $settings | Where-Object { $_.Setting -like '*LAPS*' -or $_.Setting -like '*Local Administrator Password*' }
         $check | Should -Not -BeNullOrEmpty
@@ -182,7 +190,7 @@ Describe 'EntraConditionalAccessChecks - No CA Policies' {
                 }
                 '*/beta/policies/deviceRegistrationPolicy' {
                     return @{
-                        azureADJoin = @{ localAdmins = @{ registeredUsers = @{ additionalLocalAdminsCount = 0 } } }
+                        azureADJoin = @{ localAdmins = @{ enableGlobalAdmins = $true; registeringUsers = @{ '@odata.type' = '#microsoft.graph.allDeviceRegistrationMembership' } } }
                         localAdminPassword = @{ isEnabled = $false }
                     }
                 }
@@ -226,6 +234,13 @@ Describe 'EntraConditionalAccessChecks - No CA Policies' {
         $check = $settings | Where-Object { $_.Setting -eq 'Maximum Devices Per User' }
         $check | Should -Not -BeNullOrEmpty
         $check.Status | Should -Be 'Fail'
+    }
+
+    It 'ENTRA-DEVICE-004 fails when every registering user becomes a local admin (T-0951)' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Local Admin Assignment on Entra Join' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Fail'
+        $check.CurrentValue | Should -Be 'Registering user is local admin: All'
     }
 
     It 'LAPS fails when disabled' {

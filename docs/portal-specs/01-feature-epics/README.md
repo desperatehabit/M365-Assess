@@ -1,6 +1,6 @@
 # Feature Epics — Index & Status
 
-> Generated tracker for the 41 portal feature epics. Update `Status` in each SPEC.md's
+> Generated tracker for the 48 portal feature epics. Update `Status` in each SPEC.md's
 > header; this table reflects it. **Stub** = skeleton only; **Drafted** = sections 2-11
 > written; **Approved** = owner sign-off, ready for ticket authoring.
 
@@ -47,12 +47,22 @@
 | [EPIC-039](EPIC-039-template-library/SPEC.md) | Template Library & Catalog | Platform Admin | medium | EPIC-015, EPIC-016, EPIC-008 | Drafted |
 | [EPIC-040](EPIC-040-graph-explorer-tools/SPEC.md) | Graph Explorer & Admin Tools | Platform Admin | medium | EPIC-002 | Drafted |
 | [EPIC-041](EPIC-041-integrations-copilot/SPEC.md) | Integrations, Copilot & Shadow AI | Platform Admin | low | EPIC-038 | Drafted (PARKED) |
+| [EPIC-042](EPIC-042-compliance-frameworks-console/SPEC.md) | Compliance Frameworks Console | Compliance | critical | EPIC-003, EPIC-004, EPIC-036 | Drafted |
+| [EPIC-043](EPIC-043-evidence-locker/SPEC.md) | Evidence Locker & Automated Collection | Compliance | high | EPIC-042, EPIC-007, EPIC-032 | Drafted |
+| [EPIC-044](EPIC-044-intune-cis-baselines/SPEC.md) | Workstation CIS Baselines via Intune | Devices | high | EPIC-016, EPIC-010, EPIC-006, EPIC-042 | Drafted |
+| [EPIC-045](EPIC-045-rmm-integrations/SPEC.md) | RMM Integrations (ConnectWise Automate, NinjaOne) | Platform Admin | high | EPIC-041, EPIC-038, EPIC-042 | Drafted |
+| [EPIC-046](EPIC-046-policy-ssp-poam/SPEC.md) | Policy Documentation, SSP & POA&M | Compliance | high | EPIC-042, EPIC-043, EPIC-005 | Drafted |
+| [EPIC-047](EPIC-047-network-posture/SPEC.md) | Network Device Posture | Devices | medium | EPIC-042, EPIC-045 | Drafted |
+| [EPIC-048](EPIC-048-portal-agent/SPEC.md) | Portal Agent | Devices | medium | EPIC-038, EPIC-042, EPIC-043, EPIC-045 | Drafted (PARKED) |
 
 ## Conventions
 
-> **Tickets:** all 41 epics now have child tickets authored in `ISSUES/` (T-0001–T-0820, 398
-> children). `bash fleet/sync-epics.sh` keeps `ISSUES/epics/` in step. The `Status` column
-> above is the SPEC's status, not ticket progress — dispatch state lives in `TICKETS.md`.
+> **Compliance console:** EPIC-042 to EPIC-048 were drafted on 2026-11-16 and have **no child
+> tickets yet**; they await SPEC approval. EPIC-042 is the foundation and must be approved first.
+>
+> **Tickets:** EPIC-001 to EPIC-041 have child tickets authored in `ISSUES/` (T-0001–T-0820, 398
+> children). The `Status` column above is the SPEC's status, not ticket progress — ticket
+> state lives in `TICKETS.md`.
 
 See [`../README.md`](../README.md) for the SPEC template, ID scheme, and directory contract.
-Fleet ticket format: [`../99-reference/fleet-conventions.md`](../99-reference/fleet-conventions.md).
+Ticket format: [`../99-reference/ticket-conventions.md`](../99-reference/ticket-conventions.md).

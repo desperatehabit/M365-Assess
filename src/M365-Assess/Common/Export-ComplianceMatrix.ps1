@@ -44,6 +44,44 @@ param(
 $ErrorActionPreference = 'Stop'
 
 # ------------------------------------------------------------------
+# Shared pass-rate helper (T-0938)
+# ------------------------------------------------------------------
+function Get-StrictPassRate {
+    <#
+    .SYNOPSIS
+        Returns the strict pass rate used on every XLSX sheet.
+    .DESCRIPTION
+        Pass / (Pass + Fail + Warning) x 100, rounded to one decimal, per
+        docs/reference/CHECK-STATUS-MODEL.md and #802. Review, Skipped, Unknown,
+        NotApplicable, NotLicensed and Info are excluded from the denominator.
+    .PARAMETER Pass
+        Number of Pass rows.
+    .PARAMETER Fail
+        Number of Fail rows.
+    .PARAMETER Warning
+        Number of Warning rows.
+    .EXAMPLE
+        Get-StrictPassRate -Pass 8 -Fail 2 -Warning 1
+    #>
+    [CmdletBinding()]
+    [OutputType([double])]
+    param(
+        [Parameter(Mandatory)]
+        [int]$Pass,
+
+        [Parameter(Mandatory)]
+        [int]$Fail,
+
+        [Parameter(Mandatory)]
+        [int]$Warning
+    )
+
+    $denominator = $Pass + $Fail + $Warning
+    if ($denominator -le 0) { return 0 }
+    return [math]::Round(($Pass / $denominator) * 100, 1)
+}
+
+# ------------------------------------------------------------------
 # Check for ImportExcel module
 # ------------------------------------------------------------------
 if (-not (Get-Module -ListAvailable -Name ImportExcel)) {
@@ -118,7 +156,10 @@ $evidenceRows = [System.Collections.Generic.List[PSCustomObject]]::new()
 $evidenceFieldNames = @('ObservedValue','ExpectedValue','EvidenceSource','EvidenceTimestamp','CollectionMethod','PermissionRequired','Confidence','Limitations')
 
 foreach ($c in $summary) {
-    if ($c.Status -ne 'Complete' -or [int]$c.Items -eq 0) { continue }
+    # T-0937: a collector can be Skipped and still emit findings (for example, the
+    # app-only Teams branch records one Skipped finding per check). Include every
+    # collector that produced rows; only an empty CSV has nothing to render.
+    if ([int]$c.Items -eq 0) { continue }
     $csvFile = Join-Path -Path $AssessmentFolder -ChildPath $c.FileName
     if (-not (Test-Path -Path $csvFile)) { continue }
 
@@ -242,8 +283,7 @@ foreach ($fwDef in $allFrameworks) {
     $review = @($mapped | Where-Object { $_.Status -eq 'Review' }).Count
     # #802: strict denominator -- Pass / (Pass + Fail + Warning) per CHECK-STATUS-MODEL.md.
     # Review / Skipped / Unknown / NotApplicable / NotLicensed are excluded.
-    $scoreDenom = $pass + $fail + $warn
-    $pct = if ($scoreDenom -gt 0) { [math]::Round(($pass / $scoreDenom) * 100, 1) } else { 0 }
+    $pct = Get-StrictPassRate -Pass $pass -Fail $fail -Warning $warn
 
     $summaryData.Add([PSCustomObject][ordered]@{
         Framework      = $colLabel
@@ -325,8 +365,7 @@ foreach ($summaryRow in $summaryData) {
         foreach ($group in $grpResult.Groups) {
             if ($group.IsGap) { continue }
             # #802: strict denominator -- Pass / (Pass + Fail + Warning).
-            $subDenom = $group.Passed + $group.Failed + $group.Warning
-            $subRate = if ($subDenom -gt 0) { [math]::Round(($group.Passed / $subDenom) * 100, 1) } else { 0 }
+            $subRate = Get-StrictPassRate -Pass $group.Passed -Fail $group.Failed -Warning $group.Warning
             $summaryExpanded.Add([PSCustomObject][ordered]@{
                 Framework      = "    $($group.Key) — $($group.Label)"
                 'Total Mapped' = $group.Mapped
@@ -353,7 +392,7 @@ foreach ($summaryRow in $summaryData) {
                             $cFail     = @($tierFindings | Where-Object Status -eq 'Fail').Count
                             $cWarn     = @($tierFindings | Where-Object Status -eq 'Warning').Count
                             $cReview   = @($tierFindings | Where-Object Status -eq 'Review').Count
-                            $cRate     = [math]::Round(($cPass / $tierFindings.Count) * 100, 1)
+                            $cRate     = Get-StrictPassRate -Pass $cPass -Fail $cFail -Warning $cWarn
                             $levelKeys = @($sortedTierLevels | ForEach-Object { ($_.Key -split '-')[-1] }) -join '+'
                             $summaryExpanded.Add([PSCustomObject][ordered]@{
                                 Framework      = "    $tierKey Combined ($levelKeys)"
@@ -375,8 +414,7 @@ foreach ($summaryRow in $summaryData) {
         foreach ($group in $grpResult.Groups) {
             if ($group.IsGap) { continue }
             # #802: strict denominator -- Pass / (Pass + Fail + Warning).
-            $subDenom = $group.Passed + $group.Failed + $group.Warning
-            $subRate = if ($subDenom -gt 0) { [math]::Round(($group.Passed / $subDenom) * 100, 1) } else { 0 }
+            $subRate = Get-StrictPassRate -Pass $group.Passed -Fail $group.Failed -Warning $group.Warning
             $summaryExpanded.Add([PSCustomObject][ordered]@{
                 Framework      = "    $($group.Key) — $($group.Label)"
                 'Total Mapped' = $group.Mapped
@@ -489,7 +527,7 @@ if ($cisFw -and $null -ne $catalogFindings) {
         $sheet3EmittedTiers = [System.Collections.Generic.HashSet[string]]::new()
         foreach ($group in $groupedResult.Groups) {
             if ($group.IsGap) { continue }
-            $grpPassRate = if ($group.Mapped -gt 0) { [math]::Round(($group.Passed / $group.Mapped) * 100, 1) } else { 0 }
+            $grpPassRate = Get-StrictPassRate -Pass $group.Passed -Fail $group.Failed -Warning $group.Warning
             $groupedRows.Add([PSCustomObject][ordered]@{
                 Profile      = $group.Key
                 Label        = $group.Label
@@ -517,7 +555,7 @@ if ($cisFw -and $null -ne $catalogFindings) {
                             $cFail     = @($tierFindings | Where-Object Status -eq 'Fail').Count
                             $cWarn     = @($tierFindings | Where-Object Status -eq 'Warning').Count
                             $cReview   = @($tierFindings | Where-Object Status -eq 'Review').Count
-                            $cRate     = [math]::Round(($cPass / $tierFindings.Count) * 100, 1)
+                            $cRate     = Get-StrictPassRate -Pass $cPass -Fail $cFail -Warning $cWarn
                             $levelKeys = @($sortedTierLevels | ForEach-Object { ($_.Key -split '-')[-1] }) -join '+'
                             $combinedTotal = ($sortedTierLevels | Measure-Object { $_.Total } -Sum).Sum
                             $groupedRows.Add([PSCustomObject][ordered]@{

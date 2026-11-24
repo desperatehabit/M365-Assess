@@ -166,7 +166,11 @@ Describe 'Get-ComplianceSecurityConfig - Cmdlets Not Available' {
         }
 
         # Do NOT define Get-AdminAuditLogConfig, Get-DlpCompliancePolicy, Get-LabelPolicy
-        # so Get-Command returns $null for each, triggering the 'Review' paths
+        # so Get-Command returns $null for each, triggering the 'Review' paths.
+        # Other test files leave global stubs for these cmdlets behind; remove them.
+        Remove-Item -Path 'Function:\Get-AdminAuditLogConfig', 'Function:\Get-DlpCompliancePolicy',
+            'Function:\Get-LabelPolicy', 'Function:\Get-ProtectionAlert',
+            'Function:\Get-AutoSensitivityLabelPolicy', 'Function:\Get-CommunicationCompliancePolicy' -ErrorAction SilentlyContinue
 
         # Run the collector by dot-sourcing it
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"

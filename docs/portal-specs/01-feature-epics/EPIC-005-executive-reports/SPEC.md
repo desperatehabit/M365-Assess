@@ -6,7 +6,7 @@
 - **Depends on:** EPIC-003, EPIC-004, EPIC-031, EPIC-037, EPIC-007, EPIC-029
 - **Decisions:** [ADR-0016](../../../adr/0016-pdf-via-headless-chromium.md) (PDF via headless Chromium)
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #48; [`cipp-ui-patterns.md`](../../99-reference/cipp-ui-patterns.md) §8; CIPP `Tools/Report-Builder/`, `ExecutiveReportButton`, `CippPdf`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-005.md`](../../../../ISSUES/epics/EPIC-005.md)
 
 ## 1. Purpose
 
@@ -182,4 +182,4 @@ static, dataBinding?, settings}`.
 - [`../EPIC-004-dashboard-widgets/SPEC.md`](../EPIC-004-dashboard-widgets/SPEC.md) — entry points
 - [`../EPIC-037-settings-branding/SPEC.md`](../EPIC-037-settings-branding/SPEC.md) — branding
 - [`../EPIC-007-scheduler-custom-scripts/SPEC.md`](../EPIC-007-scheduler-custom-scripts/SPEC.md) — scheduled reports
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-005.md`](../../../../ISSUES/epics/EPIC-005.md) — epic ticket

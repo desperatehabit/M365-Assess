@@ -15,7 +15,7 @@ import type { LicensePricing, LicensePricingInput, LicensingRepository } from "@
 export const LICENSE_PRICING_PATH = "/v1/license-pricing";
 
 export const LICENSE_PRICING_READ_PERMISSION = "Tenant.Licensing.Read";
-export const LICENSE_PRICING_ADMIN_SCOPE = "CIPP.Admin.*";
+export const LICENSE_PRICING_ADMIN_SCOPE = "CIPP.Admin.ReadWrite";
 
 export const LICENSE_PRICING_UNAUTHENTICATED = "request.unauthenticated";
 export const LICENSE_PRICING_FORBIDDEN = "auth.forbidden";

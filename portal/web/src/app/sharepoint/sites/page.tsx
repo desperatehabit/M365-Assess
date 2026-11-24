@@ -11,14 +11,19 @@
 
 import React, { useCallback, useEffect, useState, type CSSProperties, type ReactElement } from "react";
 import { useRouter } from "next/navigation";
-import { AddSiteWizard } from "../../../components/sharepoint/AddSiteWizard";
+import { AddSiteWizard, type SharePointTemplateOption } from "../../../components/sharepoint/AddSiteWizard";
 import { SiteDeleteDialog } from "../../../components/sharepoint/SiteDeleteDialog";
 import {
   SitesTable,
   type SharePointSite,
   type SitesView,
 } from "../../../components/sharepoint/SitesTable";
-import { fetchDeletedSites, fetchSites, restoreSite } from "../../../lib/sharepointApi";
+import {
+  fetchDeletedSites,
+  fetchSites,
+  listSharePointTemplates,
+  restoreSite,
+} from "../../../lib/sharepointApi";
 import { useCurrentTenantId } from "../../../lib/useCurrentTenant";
 
 const pageStyle: CSSProperties = {
@@ -105,6 +110,7 @@ export default function SharePointSitesPage(): ReactElement {
   const currentTenant = useCurrentTenantId();
   const [view, setView] = useState<SitesView>("active");
   const [sites, setSites] = useState<SharePointSite[]>([]);
+  const [templates, setTemplates] = useState<SharePointTemplateOption[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showWizard, setShowWizard] = useState(false);
@@ -140,6 +146,22 @@ export default function SharePointSitesPage(): ReactElement {
       void loadSites(currentTenant, view);
     }
   }, [currentTenant, view, loadSites]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listSharePointTemplates()
+      .then((items) => {
+        if (!cancelled) {
+          setTemplates(items.map((tpl) => ({ id: tpl.id, name: tpl.name })));
+        }
+      })
+      .catch(() => {
+        // Templates are optional in the add-site wizard; keep an empty list if unavailable.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function openSite(site: SharePointSite): void {
     window.open(site.url, "_blank", "noopener,noreferrer");
@@ -260,6 +282,7 @@ export default function SharePointSitesPage(): ReactElement {
         <div style={wizardPanelStyle} data-testid="add-site-panel">
           <AddSiteWizard
             tenantId={tenantId.trim()}
+            templates={templates}
             onClose={() => setShowWizard(false)}
             onCreated={() => void loadSites(tenantId, view)}
           />

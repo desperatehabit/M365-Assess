@@ -152,3 +152,7 @@ Describe 'Get-Alerts worker (T-0548)' {
         }
     }
 }
+
+AfterAll {
+    Remove-Item -Path 'Function:\Invoke-MgGraphRequest' -ErrorAction SilentlyContinue
+}

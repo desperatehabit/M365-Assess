@@ -82,3 +82,46 @@ Describe 'Get-EntraSoDConfig - Overlapping Roles' {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
     }
 }
+
+Describe 'Get-EntraSoDConfig - Separation of duties only' {
+    BeforeAll {
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            # One Global Admin and a *different* single Privileged Role Admin.
+            # The minimum Global Admin count is ENTRA-ADMIN-001's concern, so
+            # ENTRA-SOD-001 must pass on separation alone.
+            if ($Uri -match 'roleDefinitionId eq .62e90394') {
+                return @{ value = @(
+                    @{ principalId = 'user-aa' }
+                ) }
+            }
+            if ($Uri -match 'roleDefinitionId eq .e8611ab8') {
+                return @{ value = @(
+                    @{ principalId = 'user-cc' }
+                ) }
+            }
+            return @{ value = @() }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Entra/Get-EntraSoDConfig.ps1"
+    }
+
+    It 'Status is Pass with a single Global Admin when the roles are separated' {
+        $check = $settings | Where-Object { $_.CheckId -like 'ENTRA-SOD-001*' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Pass' -Because 'ENTRA-SOD-001 tests separation only, not the Global Admin minimum'
+    }
+
+    It 'RecommendedValue states the Privileged Role Administrator separation rule' {
+        $check = $settings | Where-Object { $_.CheckId -like 'ENTRA-SOD-001*' }
+        $check.RecommendedValue | Should -Match 'Privileged Role Admin'
+        $check.RecommendedValue | Should -Match 'both'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}

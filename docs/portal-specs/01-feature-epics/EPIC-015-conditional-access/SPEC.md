@@ -5,7 +5,7 @@
 - **Severity:** high
 - **Depends on:** EPIC-002, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #11; CIPP `HTTP Functions/Tenant/Conditional/`, `New-CIPPCAPolicy.ps1`, `CippCADeployDrawer`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-015.md`](../../../../ISSUES/epics/EPIC-015.md)
 
 ## 1. Purpose
 
@@ -181,4 +181,4 @@ requires explicit confirmation naming the policy.
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
 - [`../EPIC-008-standards-templates/SPEC.md`](../EPIC-008-standards-templates/SPEC.md) — CA standards
 - [`../EPIC-039-template-library/SPEC.md`](../EPIC-039-template-library/SPEC.md) — community templates
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-015.md`](../../../../ISSUES/epics/EPIC-015.md) — epic ticket

@@ -237,16 +237,31 @@ export function createCaProviders(
 
     crud: {
       createPolicy: (tenantId, input, preview) =>
-        call<CaCrudResult | CaPlan>("set-ca-policy.ps1", tenantId, { action: "create", ...caPolicyJob(input), dryRun: preview }),
+        call<CaCrudResult | CaPlan>(
+          "set-ca-policy.ps1",
+          tenantId,
+          { action: "create", ...caPolicyJob(input), dryRun: preview },
+          preview ? undefined : { purpose: "operator" },
+        ),
       editPolicy: (tenantId, policyId, input, preview) =>
-        call<CaCrudResult | CaPlan>("set-ca-policy.ps1", tenantId, {
-          action: "edit",
-          policyId,
-          ...caPolicyJob(input),
-          dryRun: preview,
-        }),
+        call<CaCrudResult | CaPlan>(
+          "set-ca-policy.ps1",
+          tenantId,
+          {
+            action: "edit",
+            policyId,
+            ...caPolicyJob(input),
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       deletePolicy: (tenantId, policyId, confirmName, preview) =>
-        call<CaCrudResult | CaPlan>("set-ca-policy.ps1", tenantId, { action: "delete", policyId, confirmName, dryRun: preview }),
+        call<CaCrudResult | CaPlan>(
+          "set-ca-policy.ps1",
+          tenantId,
+          { action: "delete", policyId, confirmName, dryRun: preview },
+          preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     coverage: {
@@ -264,28 +279,43 @@ export function createCaProviders(
     namedLocations: {
       listLocations: (tenantId) => call<CaNamedLocationsListResponse>("set-ca-named-location.ps1", tenantId, { action: "list" }),
       createLocation: (tenantId, input, preview) =>
-        call<LocationResult>("set-ca-named-location.ps1", tenantId, {
-          action: "create",
-          displayName: input.displayName,
-          locationType: input.locationType,
-          ...locationFlags(input),
-          dryRun: preview,
-        }),
+        call<LocationResult>(
+          "set-ca-named-location.ps1",
+          tenantId,
+          {
+            action: "create",
+            displayName: input.displayName,
+            locationType: input.locationType,
+            ...locationFlags(input),
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       editLocation: (tenantId, locationId, input, preview) =>
-        call<LocationResult>("set-ca-named-location.ps1", tenantId, {
-          action: "edit",
-          locationId,
-          ...(input.displayName ? { displayName: input.displayName } : {}),
-          ...locationFlags(input),
-          dryRun: preview,
-        }),
+        call<LocationResult>(
+          "set-ca-named-location.ps1",
+          tenantId,
+          {
+            action: "edit",
+            locationId,
+            ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...locationFlags(input),
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       deleteLocation: (tenantId, locationId, confirmName, preview) =>
-        call<LocationResult>("set-ca-named-location.ps1", tenantId, {
-          action: "delete",
-          locationId,
-          ...(confirmName ? { confirmName } : {}),
-          dryRun: preview ?? false,
-        }),
+        call<LocationResult>(
+          "set-ca-named-location.ps1",
+          tenantId,
+          {
+            action: "delete",
+            locationId,
+            ...(confirmName ? { confirmName } : {}),
+            dryRun: preview ?? false,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     templateDeploy: {
@@ -294,7 +324,9 @@ export function createCaProviders(
         return result.plan;
       },
       executeDeploy: (template, options) =>
-        call<CaDeployResult>("deploy-ca-template.ps1", options.tenantId, deployJob(template, options, false)),
+        call<CaDeployResult>("deploy-ca-template.ps1", options.tenantId, deployJob(template, options, false), {
+          purpose: "operator",
+        }),
     },
   };
 }

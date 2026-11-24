@@ -14,6 +14,7 @@ import { useSearchParams } from "next/navigation";
 import { BaselineTimeline, type BaselineTimelineStep } from "../../../../components/baselines/BaselineTimeline";
 import { StageEditor } from "../../../../components/baselines/StageEditor";
 import {
+  copyBaseline,
   createBaseline,
   fetchBaseline,
   fetchBaselinesCatalog,
@@ -150,6 +151,7 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
   const [assignTarget, setAssignTarget] = useState("");
   const [stages, setStages] = useState<BaselineStageInput[]>([]);
   const [alertingEnabled, setAlertingEnabled] = useState(false);
+  const [builtIn, setBuiltIn] = useState(false);
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -161,6 +163,7 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
     setError(null);
     try {
       const detail = await fetchBaseline(baselineId, doFetch);
+      setBuiltIn(detail.builtIn === true);
       setName(detail.name);
       setAssignments(
         detail.assignments.map((assignment) => ({
@@ -224,7 +227,7 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
     [stages],
   );
   const hasStandards = stagedCount > 0;
-  const canSave = hasName && hasAssignment && hasStandards && !saving;
+  const canSave = hasName && hasAssignment && hasStandards && !saving && !builtIn;
 
   const steps: readonly BaselineTimelineStep[] = [
     { id: "name", label: "Set a baseline name", state: hasName ? "done" : "current" },
@@ -257,8 +260,21 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
     setAssignments((previous) => previous.filter((_, position) => position !== index));
   };
 
+  const handleMakeCopy = async (): Promise<void> => {
+    setSaving(true);
+    setError(null);
+    try {
+      const copy = await copyBaseline(baselineId, {}, doFetch);
+      window.location.href = `/baselines/${copy.id}/edit`;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSave = async (): Promise<void> => {
-    if (!canSave) return;
+    if (!canSave || builtIn) return;
     setSaving(true);
     setError(null);
     try {
@@ -300,6 +316,7 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
               type="checkbox"
               data-testid="builder-alerting"
               checked={alertingEnabled}
+              disabled={builtIn}
               onChange={(event) => setAlertingEnabled(event.target.checked)}
             />
             Alert on stage drift (EPIC-029)
@@ -317,6 +334,18 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
 
       <div style={mainStyle}>
         <h1 style={titleStyle}>{isNew ? "Add Baseline" : "Edit Baseline"}</h1>
+        {builtIn && (
+          <div
+            style={{ padding: "12px 16px", background: "var(--warning-soft)", border: "1px solid var(--warning)", borderRadius: "6px", color: "var(--warning-text)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}
+            role="status"
+            data-testid="builtin-banner"
+          >
+            <span>This is a built-in baseline and is read-only. Make a copy to edit it.</span>
+            <button type="button" style={primaryButtonStyle} onClick={() => void handleMakeCopy()} disabled={saving} data-testid="builtin-make-copy">
+              Make a copy to edit
+            </button>
+          </div>
+        )}
         {loading && <div data-testid="builder-loading">Loading baseline…</div>}
         {error && (
           <div
@@ -357,6 +386,7 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
               data-testid="builder-name"
               placeholder="e.g. Server baseline"
               value={name}
+              disabled={builtIn}
               onChange={(event) => setName(event.target.value)}
             />
           </label>
@@ -369,47 +399,53 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
               <span style={{ fontSize: "13px" }}>
                 {assignment.targetType}: {assignment.targetId ?? "all tenants"}
               </span>
-              <button
-                type="button"
-                style={{ ...buttonStyle, padding: "4px 8px", fontSize: "12px" }}
-                data-testid={`assignment-remove-${index}`}
-                onClick={() => handleRemoveAssignment(index)}
-              >
-                Remove
-              </button>
+              {!builtIn && (
+                <button
+                  type="button"
+                  style={{ ...buttonStyle, padding: "4px 8px", fontSize: "12px" }}
+                  data-testid={`assignment-remove-${index}`}
+                  onClick={() => handleRemoveAssignment(index)}
+                >
+                  Remove
+                </button>
+              )}
             </div>
           ))}
-          <div style={rowStyle}>
-            <select
-              style={selectStyle}
-              aria-label="Assignment target type"
-              data-testid="assignment-type"
-              value={assignType}
-              onChange={(event) => setAssignType(event.target.value as BaselineTargetType)}
-            >
-              <option value="tenant">Tenant</option>
-              <option value="group">Group</option>
-              <option value="allTenants">All tenants</option>
-            </select>
-            {assignType !== "allTenants" && (
-              <input
-                style={inputStyle}
-                aria-label="Assignment target id"
-                data-testid="assignment-target"
-                placeholder="Tenant or group id…"
-                value={assignTarget}
-                onChange={(event) => setAssignTarget(event.target.value)}
-              />
-            )}
-            <button type="button" style={buttonStyle} data-testid="assignment-add" onClick={handleAddAssignment}>
-              Add assignment
-            </button>
-          </div>
+          {!builtIn && (
+            <div style={rowStyle}>
+              <select
+                style={selectStyle}
+                aria-label="Assignment target type"
+                data-testid="assignment-type"
+                value={assignType}
+                onChange={(event) => setAssignType(event.target.value as BaselineTargetType)}
+              >
+                <option value="tenant">Tenant</option>
+                <option value="group">Group</option>
+                <option value="allTenants">All tenants</option>
+              </select>
+              {assignType !== "allTenants" && (
+                <input
+                  style={inputStyle}
+                  aria-label="Assignment target id"
+                  data-testid="assignment-target"
+                  placeholder="Tenant or group id…"
+                  value={assignTarget}
+                  onChange={(event) => setAssignTarget(event.target.value)}
+                />
+              )}
+              <button type="button" style={buttonStyle} data-testid="assignment-add" onClick={handleAddAssignment}>
+                Add assignment
+              </button>
+            </div>
+          )}
         </section>
 
         <section style={cardStyle} aria-label="Stages">
           <h2 style={cardTitleStyle}>Stages</h2>
-          <StageEditor stages={stages} onChange={setStages} />
+          <div style={{ pointerEvents: builtIn ? "none" : "auto", opacity: builtIn ? 0.65 : 1 }} data-testid="builder-stages">
+            <StageEditor stages={stages} onChange={setStages} />
+          </div>
         </section>
 
         <div style={rowStyle}>
@@ -422,7 +458,11 @@ export default function BaselineBuilderPage({ params, fetcher }: BaselineBuilder
           >
             {saving ? "Saving…" : "Save baseline"}
           </button>
-          {!canSave && (
+          {builtIn ? (
+            <span style={{ fontSize: "13px", color: "var(--text-soft)" }} data-testid="builder-save-hint">
+              Built-in baselines cannot be edited. Make a copy to change it.
+            </span>
+          ) : !canSave && (
             <span style={{ fontSize: "13px", color: "var(--text-soft)" }} data-testid="builder-save-hint">
               Save needs a name, an assignment, and a staged standard.
             </span>

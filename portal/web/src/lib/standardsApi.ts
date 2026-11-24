@@ -24,6 +24,8 @@ export interface StandardTemplate {
   readonly autoRemediate: boolean;
   readonly settings: readonly StandardTemplateSetting[];
   readonly scheduleId: string | null;
+  /** Pre-defined templates are read-only; make a copy to edit them. */
+  readonly builtIn?: boolean;
 }
 
 export interface CreateTemplateInput {
@@ -138,6 +140,23 @@ export async function cloneStandardTemplate(
       body: JSON.stringify(options),
     }),
     "Cloning standards template",
+  );
+  return body.template;
+}
+
+/** Makes an editable operator copy (the only write path for a built-in). */
+export async function copyStandardTemplate(
+  id: string,
+  options: { name?: string } = {},
+  fetcher?: Fetcher,
+): Promise<StandardTemplate> {
+  const body = await readJson<{ template: StandardTemplate }>(
+    await asFetcher(fetcher)(`/v1/standards/templates/${encodeURIComponent(id)}/copy`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(options),
+    }),
+    "Copying standards template",
   );
   return body.template;
 }

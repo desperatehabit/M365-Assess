@@ -10,6 +10,7 @@ import {
   CREDENTIALS_OPENAPI,
   CREDENTIALS_PERMISSION,
   TENANT_CREDENTIAL_PATH,
+  TENANT_CREDENTIALS_PATH,
   createCredentialRoutes,
   type CredentialAuditInput,
   type CredentialCaller,
@@ -25,15 +26,33 @@ class MemoryCredentialRows implements CredentialStoreRow {
   readonly records = new Map<string, CredentialRecord>();
   readonly events: CredentialAuditInput[] = [];
 
-  async getCredential(tenantId: string): Promise<CredentialRecord | undefined> {
-    const found = this.records.get(tenantId);
+  private key(tenantId: string, purpose: CredentialRecord["purpose"] = "reader"): string {
+    return `${tenantId}:${purpose ?? "reader"}`;
+  }
+
+  async getCredential(
+    tenantId: string,
+    purpose: CredentialRecord["purpose"] = "reader",
+  ): Promise<CredentialRecord | undefined> {
+    const found = this.records.get(this.key(tenantId, purpose));
     return found === undefined ? undefined : { ...found };
+  }
+
+  async listCredentials(tenantId: string): Promise<CredentialRecord[]> {
+    return [...this.records.values()].filter((row) => row.tenantId === tenantId).map((row) => ({ ...row }));
   }
 
   async upsertCredential(input: CredentialRecord): Promise<CredentialRecord> {
     const stored = { ...input };
-    this.records.set(stored.tenantId, stored);
+    this.records.set(this.key(stored.tenantId, stored.purpose), stored);
     return { ...stored };
+  }
+
+  async deleteCredential(
+    tenantId: string,
+    purpose: CredentialRecord["purpose"],
+  ): Promise<boolean> {
+    return this.records.delete(this.key(tenantId, purpose));
   }
 
   async appendAuditEvent(input: CredentialAuditInput): Promise<unknown> {
@@ -99,14 +118,45 @@ function invoke(
   routes: readonly Route[],
   overrides: Partial<TestContext> = {},
 ): Promise<RouteResponse> {
+  return invokeRoute(routes, "POST", TENANT_CREDENTIAL_PATH, overrides);
+}
+
+function invokeRoute(
+  routes: readonly Route[],
+  method: string,
+  path: string,
+  overrides: Partial<TestContext> = {},
+): Promise<RouteResponse> {
   const route = routes.find(
-    (candidate) =>
-      candidate.method === "POST" && candidate.path === TENANT_CREDENTIAL_PATH,
+    (candidate) => candidate.method === method && candidate.path === path,
   );
   if (route === undefined) {
-    throw new Error("no route registered for POST credential");
+    throw new Error(`no route registered for ${method} ${path}`);
   }
-  return Promise.resolve(route.handler(context(overrides)));
+  return Promise.resolve(route.handler(context({ ...overrides, method, path })));
+}
+
+function credentialRecord(
+  tenantId: string,
+  purpose: "reader" | "operator",
+  overrides: Partial<CredentialRecord> = {},
+): CredentialRecord {
+  return {
+    id: `${tenantId}-${purpose}`,
+    tenantId,
+    authMethod: "certificate-thumbprint",
+    clientId: `${purpose}-client`,
+    secretRef: `cert://thumbprint/${purpose}`,
+    thumbprint: "ABC123",
+    environment: "commercial",
+    expiresOn: null,
+    lastValidated: null,
+    purpose,
+    permissionGroups: purpose === "operator" ? ["identity"] : null,
+    createdAt: NOW,
+    updatedAt: NOW,
+    ...overrides,
+  };
 }
 
 describe("credential routes", () => {
@@ -292,10 +342,151 @@ describe("credential routes", () => {
     expect(value.rows.events).toHaveLength(0);
   });
 
-  it("publishes the OpenAPI set/rotate operation", () => {
+  it("lists every credential purpose with its granted write groups", async () => {
+    const value = harness();
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "reader"));
+    await value.rows.upsertCredential(
+      credentialRecord("tenant-a", "operator", {
+        clientId: "operator-client",
+        permissionGroups: ["identity", "exchange"],
+      }),
+    );
+
+    const response = await invokeRoute(value.routes, "GET", TENANT_CREDENTIALS_PATH);
+    expect(response.status).toBe(200);
+    const items = (
+      response.body as {
+        items: Array<{ purpose?: string; permissionGroups?: string[]; clientId?: string }>;
+      }
+    ).items;
+    expect(items).toHaveLength(2);
+    const operator = items.find((item) => item.purpose === "operator");
+    const reader = items.find((item) => item.purpose === "reader");
+    expect(operator?.permissionGroups).toEqual(["identity", "exchange"]);
+    expect(reader?.permissionGroups).toEqual([]);
+    expect(operator?.clientId).toBe("operator-client");
+    expect(value.seenPermissions).toContain(CREDENTIALS_PERMISSION);
+  });
+
+  it("keeps the single GET reader-by-default", async () => {
+    const value = harness();
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "reader"));
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "operator"));
+
+    const response = await invokeRoute(value.routes, "GET", TENANT_CREDENTIAL_PATH);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ purpose: "reader", clientId: "reader-client" });
+  });
+
+  it("deletes only the operator credential and records an audit event", async () => {
+    const value = harness();
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "reader"));
+    await value.rows.upsertCredential(
+      credentialRecord("tenant-a", "operator", {
+        permissionGroups: ["identity", "intune"],
+      }),
+    );
+
+    const response = await invokeRoute(value.routes, "DELETE", TENANT_CREDENTIAL_PATH, {
+      method: "DELETE",
+      query: new URLSearchParams({ purpose: "operator" }),
+    });
+
+    expect(response.status).toBe(204);
+    expect(await value.rows.getCredential("tenant-a", "operator")).toBeUndefined();
+    expect(await value.rows.getCredential("tenant-a", "reader")).toBeDefined();
+    expect(value.rows.events).toHaveLength(1);
+    expect(value.rows.events[0]).toMatchObject({
+      action: "tenant.credential.delete",
+      actorUserId: "operator-1",
+      actorType: "user",
+      tenantId: "tenant-a",
+      targetType: "tenant-credential",
+      targetId: "tenant-a",
+      before: { purpose: "operator", permissionGroups: ["identity", "intune"] },
+      after: null,
+      result: "success",
+      source: "request",
+      correlationId: "corr-test",
+    });
+  });
+
+  it("refuses any purpose other than operator with 400 and leaves both rows", async () => {
+    const value = harness();
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "reader"));
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "operator"));
+
+    for (const query of [
+      new URLSearchParams(),
+      new URLSearchParams({ purpose: "reader" }),
+      new URLSearchParams({ purpose: "all" }),
+    ]) {
+      await expect(
+        invokeRoute(value.routes, "DELETE", TENANT_CREDENTIAL_PATH, {
+          method: "DELETE",
+          query,
+        }),
+      ).rejects.toMatchObject({ status: 400 });
+    }
+
+    expect(await value.rows.getCredential("tenant-a", "reader")).toBeDefined();
+    expect(await value.rows.getCredential("tenant-a", "operator")).toBeDefined();
+    expect(value.rows.events).toHaveLength(0);
+  });
+
+  it("returns 404 when the operator credential is absent", async () => {
+    const value = harness();
+    await value.rows.upsertCredential(credentialRecord("tenant-a", "reader"));
+
+    await expect(
+      invokeRoute(value.routes, "DELETE", TENANT_CREDENTIAL_PATH, {
+        method: "DELETE",
+        query: new URLSearchParams({ purpose: "operator" }),
+      }),
+    ).rejects.toMatchObject({ code: "credential.not_found", status: 404 });
+    expect(value.rows.events).toHaveLength(0);
+  });
+
+  it("requires authentication, scope, and the credentials permission for list and delete", async () => {
+    const unauthenticated = harness({ resolveCaller: () => undefined });
+    await expect(
+      invokeRoute(unauthenticated.routes, "GET", TENANT_CREDENTIALS_PATH),
+    ).rejects.toMatchObject({ status: 401 });
+    await expect(
+      invokeRoute(unauthenticated.routes, "DELETE", TENANT_CREDENTIAL_PATH, {
+        method: "DELETE",
+        query: new URLSearchParams({ purpose: "operator" }),
+      }),
+    ).rejects.toMatchObject({ status: 401 });
+
+    const scoped = harness({
+      resolveCaller: () => ({
+        roles: ["admin"] as const,
+        tenantScope: tenantScope(["tenant-other"]),
+        userId: "operator-2",
+      }),
+    });
+    await expect(
+      invokeRoute(scoped.routes, "GET", TENANT_CREDENTIALS_PATH),
+    ).rejects.toMatchObject({ code: "auth.forbidden", status: 403 });
+  });
+
+  it("publishes the OpenAPI set/rotate, list, and delete operations", () => {
     expect(CREDENTIALS_OPENAPI.paths["/tenants/{id}/credential"]).toHaveProperty("post");
+    expect(CREDENTIALS_OPENAPI.paths["/tenants/{id}/credential"]).toHaveProperty("get");
+    expect(CREDENTIALS_OPENAPI.paths["/tenants/{id}/credential"]).toHaveProperty("delete");
+    expect(CREDENTIALS_OPENAPI.paths["/tenants/{id}/credentials"]).toHaveProperty("get");
     expect(CREDENTIALS_OPENAPI.paths["/tenants/{id}/credential"].post.permission).toBe(
       CREDENTIALS_PERMISSION,
+    );
+    expect(CREDENTIALS_OPENAPI.paths["/tenants/{id}/credential"].delete.parameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "purpose",
+          in: "query",
+          schema: { type: "string", enum: ["operator"] },
+        }),
+      ]),
     );
   });
 });

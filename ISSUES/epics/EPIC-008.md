@@ -3,7 +3,7 @@ id: "EPIC-008"
 source: "docs/portal-specs/01-feature-epics/EPIC-008-standards-templates/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "critical"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -25,6 +25,7 @@ children:
   - T-0148
   - T-0149
   - T-0150
+  - T-0877
 scope_kind: "epic"
 scope_note: "Rollup for Standards Templates. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -47,4 +48,10 @@ real `scope:` paths can be named.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0877 — `fixed-unverified`

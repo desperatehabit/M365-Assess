@@ -199,7 +199,7 @@ Describe 'Get-CASecurityConfig' {
     }
 
     It 'All Status values are valid' {
-        $validStatuses = @('Pass', 'Fail', 'Warning', 'Review', 'Info', 'N/A')
+        $validStatuses = @('Pass', 'Fail', 'Warning', 'Review', 'Info', 'N/A', 'Skipped', 'NotLicensed')
         foreach ($s in $settings) {
             $s.Status | Should -BeIn $validStatuses `
                 -Because "Setting '$($s.Setting)' has status '$($s.Status)'"
@@ -305,6 +305,15 @@ Describe 'Get-CASecurityConfig - No Policies' {
                 $s.Status | Should -Be 'Fail' -Because "Setting '$($s.Setting)' should fail with no CA policies and SD off"
             }
         }
+    }
+
+    It 'CA-DEVICE-002 fails and is rated above Info in risk-severity.json' {
+        $check = $settings | Where-Object { $_.Setting -eq 'Managed Device for Security Info Registration' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.Status | Should -Be 'Fail'
+        $riskPath = Join-Path $PSScriptRoot '../../src/M365-Assess/controls/risk-severity.json'
+        $risk = Get-Content -Path $riskPath -Raw | ConvertFrom-Json -AsHashtable
+        $risk['checks']['CA-DEVICE-002'] | Should -Not -Be 'Info' -Because 'an Info severity cannot describe a Fail'
     }
 
     AfterAll {
@@ -898,6 +907,90 @@ Describe 'Get-CASecurityConfig - All-Users MFA under operator AND (#1000 review)
 
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-CASecurityConfig - License gating (T-0935)' {
+    BeforeAll {
+        function global:Update-CheckProgress {
+            param($CheckId, $Setting, $Status)
+        }
+
+        function Get-MgContext { return @{ TenantId = 'test-tenant-id' } }
+
+        Mock Invoke-MgGraphRequest {
+            param($Method, $Uri)
+            if ($Uri -like '*identitySecurityDefaultsEnforcementPolicy*') {
+                return @{ isEnabled = $false }
+            }
+            return @{ value = @() }
+        }
+    }
+
+    Context 'when the tenant lacks AAD_PREMIUM_P2' {
+        BeforeAll {
+            $global:CheckProgressState = @{
+                LicenseSkipped = @{
+                    'CA-USERRISK-001'   = @{
+                        Name          = 'Enable Identity Protection user risk policies'
+                        RequiredPlans = @('AAD_PREMIUM_P2')
+                    }
+                    'CA-SIGNINRISK-001' = @{
+                        Name          = 'Enable Identity Protection sign-in risk policies'
+                        RequiredPlans = @('AAD_PREMIUM_P2')
+                    }
+                }
+            }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/Entra/Get-CASecurityConfig.ps1"
+        }
+
+        It 'records P2-gated checks as NotLicensed instead of Fail' {
+            foreach ($settingName in @('User Risk Policy Configured', 'Sign-in Risk Policy Configured')) {
+                $check = $settings | Where-Object { $_.Setting -eq $settingName }
+                $check | Should -Not -BeNullOrEmpty -Because "$settingName should be emitted"
+                $check.Status | Should -Be 'NotLicensed' -Because "$settingName requires AAD_PREMIUM_P2"
+            }
+        }
+
+        It 'names the missing service plan in the reason' {
+            $check = $settings | Where-Object { $_.Setting -eq 'User Risk Policy Configured' }
+            $check.CurrentValue | Should -Match 'Requires AAD_PREMIUM_P2, not licensed'
+            $check.CurrentValue | Should -Match 'No matching CA policy found'
+        }
+
+        It 'leaves non-gated checks on their computed status' {
+            $check = $settings | Where-Object { $_.Setting -eq 'MFA Required for All Users' }
+            $check | Should -Not -BeNullOrEmpty
+            $check.Status | Should -Be 'Fail'
+        }
+
+        AfterAll {
+            Remove-Variable -Name CheckProgressState -Scope Global -ErrorAction SilentlyContinue
+        }
+    }
+
+    Context 'when the tenant has AAD_PREMIUM_P2' {
+        BeforeAll {
+            $global:CheckProgressState = @{ LicenseSkipped = @{} }
+
+            . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+            . "$PSScriptRoot/../../src/M365-Assess/Entra/Get-CASecurityConfig.ps1"
+        }
+
+        It 'keeps P2-gated checks on their computed status' {
+            foreach ($settingName in @('User Risk Policy Configured', 'Sign-in Risk Policy Configured')) {
+                $check = $settings | Where-Object { $_.Setting -eq $settingName }
+                $check | Should -Not -BeNullOrEmpty
+                $check.Status | Should -Be 'Fail' -Because 'the tenant has the required P2 plan'
+            }
+        }
+
+        AfterAll {
+            Remove-Variable -Name CheckProgressState -Scope Global -ErrorAction SilentlyContinue
+            Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+        }
     }
 }
 

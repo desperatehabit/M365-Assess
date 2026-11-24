@@ -91,6 +91,7 @@ export default function NewTenantPage(): ReactElement {
         <h1 style={titleStyle}>Add Microsoft 365 Tenant</h1>
         <p style={{ margin: 0, color: "var(--text-soft)", fontSize: "14px" }}>
           Follow the guided wizard to register and grant read-only assessment consent.
+          Portal write access is optional and uses a separate operator app registration.
         </p>
       </div>
 

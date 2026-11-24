@@ -3,7 +3,7 @@ id: "EPIC-014"
 source: "docs/portal-specs/01-feature-epics/EPIC-014-groups/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "medium"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,8 @@ children:
   - T-0268
   - T-0269
   - T-0270
+  - T-0883
+  - T-0900
 scope_kind: "epic"
 scope_note: "Rollup for Groups. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -45,4 +47,10 @@ list above names them in dependency order.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0900 — `fixed-unverified`

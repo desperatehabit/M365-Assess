@@ -61,10 +61,15 @@ export function createGroupProviders(run: WorkerRunner, credentials: CredentialS
     createdBy: string,
   ): Promise<DeployTemplateResult> {
     try {
-      const output = await call<GroupTemplateDeployOutput>("deploy-group-template.ps1", tenantId, {
-        ...deployJob(template, variables, false),
-        createdBy,
-      });
+      const output = await call<GroupTemplateDeployOutput>(
+        "deploy-group-template.ps1",
+        tenantId,
+        {
+          ...deployJob(template, variables, false),
+          createdBy,
+        },
+        { purpose: "operator" },
+      );
       return {
         targetId: String(output.auditEvent["targetId"] ?? output.deployment.id),
         tenantId,
@@ -125,60 +130,114 @@ export function createGroupProviders(run: WorkerRunner, credentials: CredentialS
 
     crud: {
       createGroup: (tenantId, input, preview) =>
-        call<GroupCrudResult | GroupPlan>("set-group.ps1", tenantId, {
-          action: "create",
-          displayName: input.displayName,
-          groupType: input.groupType,
-          ...(input.mailNickname ? { mailNickname: input.mailNickname } : {}),
-          ...(input.description ? { description: input.description } : {}),
-          ...(input.dynamicRule ? { dynamicRule: input.dynamicRule } : {}),
-          dryRun: preview,
-        }),
+        call<GroupCrudResult | GroupPlan>(
+          "set-group.ps1",
+          tenantId,
+          {
+            action: "create",
+            displayName: input.displayName,
+            groupType: input.groupType,
+            ...(input.mailNickname ? { mailNickname: input.mailNickname } : {}),
+            ...(input.description ? { description: input.description } : {}),
+            ...(input.dynamicRule ? { dynamicRule: input.dynamicRule } : {}),
+            ...(input.hiddenFromAddressListsEnabled !== undefined
+              ? { hiddenFromAddressListsEnabled: input.hiddenFromAddressListsEnabled }
+              : {}),
+            ...(input.requireSenderAuthenticationEnabled !== undefined
+              ? { requireSenderAuthenticationEnabled: input.requireSenderAuthenticationEnabled }
+              : {}),
+            ...(input.grantSendOnBehalfTo !== undefined
+              ? { grantSendOnBehalfTo: input.grantSendOnBehalfTo }
+              : {}),
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       editGroup: (tenantId, groupId, input, preview) =>
-        call<GroupCrudResult | GroupPlan>("set-group.ps1", tenantId, {
-          action: "edit",
-          groupId,
-          ...(input.displayName ? { displayName: input.displayName } : {}),
-          ...(input.description !== undefined ? { description: input.description } : {}),
-          ...(input.dynamicRule !== undefined ? { dynamicRule: input.dynamicRule } : {}),
-          dryRun: preview,
-        }),
+        call<GroupCrudResult | GroupPlan>(
+          "set-group.ps1",
+          tenantId,
+          {
+            action: "edit",
+            groupId,
+            ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...(input.description !== undefined ? { description: input.description } : {}),
+            ...(input.dynamicRule !== undefined ? { dynamicRule: input.dynamicRule } : {}),
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       deleteGroup: (tenantId, groupId, confirmName, preview) =>
-        call<GroupCrudResult | GroupPlan>("set-group.ps1", tenantId, {
-          action: "delete",
-          groupId,
-          confirmName,
-          dryRun: preview,
-        }),
+        call<GroupCrudResult | GroupPlan>(
+          "set-group.ps1",
+          tenantId,
+          {
+            action: "delete",
+            groupId,
+            confirmName,
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
+      convertGroup: (tenantId, groupId, input, preview) =>
+        call<GroupCrudResult | GroupPlan>(
+          "set-group.ps1",
+          tenantId,
+          {
+            action: "convert",
+            groupId,
+            targetType: input.targetType,
+            groupType: input.groupType ?? input.targetType,
+            ...(input.mailNickname ? { mailNickname: input.mailNickname } : {}),
+            ...(input.dynamicRule !== undefined ? { dynamicRule: input.dynamicRule } : {}),
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     gal: {
       setGal: (tenantId, groupId, input, preview) =>
-        call<GroupGalDeliveryPlan | GroupGalDeliveryResult>("set-group-gal-delivery.ps1", tenantId, {
-          groupId,
-          target: "gal",
-          hiddenFromAddressListsEnabled: input.hiddenFromAddressListsEnabled,
-          dryRun: preview,
-        }),
+        call<GroupGalDeliveryPlan | GroupGalDeliveryResult>(
+          "set-group-gal-delivery.ps1",
+          tenantId,
+          {
+            groupId,
+            target: "gal",
+            hiddenFromAddressListsEnabled: input.hiddenFromAddressListsEnabled,
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
       setDelivery: (tenantId, groupId, input, preview) =>
-        call<GroupGalDeliveryPlan | GroupGalDeliveryResult>("set-group-gal-delivery.ps1", tenantId, {
-          groupId,
-          target: "delivery",
-          requireSenderAuthenticationEnabled: input.requireSenderAuthenticationEnabled,
-          grantSendOnBehalfTo: input.grantSendOnBehalfTo ?? [],
-          dryRun: preview,
-        }),
+        call<GroupGalDeliveryPlan | GroupGalDeliveryResult>(
+          "set-group-gal-delivery.ps1",
+          tenantId,
+          {
+            groupId,
+            target: "delivery",
+            requireSenderAuthenticationEnabled: input.requireSenderAuthenticationEnabled,
+            grantSendOnBehalfTo: input.grantSendOnBehalfTo ?? [],
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     members: {
       invokeBulkMembership: (tenantId, groupId, role, input, preview) =>
-        call<BulkMembershipPlan | BulkMembershipResult>("group-membership-bulk.ps1", tenantId, {
-          groupId,
-          role,
-          operation: input.operation,
-          users: input.users,
-          dryRun: preview,
-        }),
+        call<BulkMembershipPlan | BulkMembershipResult>(
+          "group-membership-bulk.ps1",
+          tenantId,
+          {
+            groupId,
+            role,
+            operation: input.operation,
+            users: input.users,
+            dryRun: preview,
+          },
+          preview ? undefined : { purpose: "operator" },
+        ),
     },
 
     templateDeploy: {

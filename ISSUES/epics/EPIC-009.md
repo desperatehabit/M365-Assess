@@ -3,7 +3,7 @@ id: "EPIC-009"
 source: "docs/portal-specs/01-feature-epics/EPIC-009-drift-management/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -23,6 +23,7 @@ children:
   - T-0168
   - T-0169
   - T-0170
+  - T-0878
 scope_kind: "epic"
 scope_note: "Rollup for Drift Management. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
@@ -45,4 +46,10 @@ real `scope:` paths can be named.
 
 - [x] SPEC.md sections 2-9 complete and approved.
 - [x] Child tickets authored in `tickets/` with non-empty `scope:`.
-- [x] All children closed before this epic is considered done.
+- [ ] All children closed before this epic is considered done.
+
+## Reopened (2026-11-16)
+
+Marked `closed` while these children were still open or unverified. An epic closes only when every child, including follow-ups, is closed.
+
+- T-0878 — `fixed-unverified`

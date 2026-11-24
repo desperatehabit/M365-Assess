@@ -5,7 +5,7 @@
 - **Severity:** low
 - **Depends on:** EPIC-020, EPIC-006
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #30,#36; CIPP `Email-Exchange/Administration/Contacts/`, `Email-Exchange/Resources/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-023.md`](../../../../ISSUES/epics/EPIC-023.md)
 
 ## 1. Purpose
 
@@ -125,4 +125,4 @@ confirmation.
 
 - [`../EPIC-020-mailboxes/SPEC.md`](../EPIC-020-mailboxes/SPEC.md) — EXO base
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — execution
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-023.md`](../../../../ISSUES/epics/EPIC-023.md) — epic ticket

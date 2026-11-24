@@ -74,6 +74,16 @@ export interface DenyDeviationInput {
   readonly delayDays?: number;
 }
 
+export interface RemediateDeviationInput {
+  readonly reason?: string | null;
+}
+
+export interface RemediateResult {
+  readonly deviation: DriftDeviation;
+  readonly remediationQueued: boolean;
+  readonly jobId: string;
+}
+
 export interface BulkTriageInput {
   readonly tenantId: string;
   readonly action: DriftBulkAction;
@@ -205,6 +215,21 @@ export async function denyDeviation(
     `/v1/drift/deviations/${encodeURIComponent(deviationId)}/deny`,
     { reason: input.reason, confirm: true, delayDays: input.delayDays ?? 0 },
     "Denying drift deviation",
+    fetcher,
+  );
+}
+
+// ─── Remediate: queued remediation (T-0878) ──────────────────────────────────
+
+export async function remediateDeviation(
+  deviationId: string,
+  input: RemediateDeviationInput = {},
+  fetcher?: Fetcher,
+): Promise<RemediateResult> {
+  return postJson<RemediateResult>(
+    `/v1/drift/deviations/${encodeURIComponent(deviationId)}/remediate`,
+    input.reason !== undefined ? { reason: input.reason } : {},
+    "Remediating drift deviation",
     fetcher,
   );
 }

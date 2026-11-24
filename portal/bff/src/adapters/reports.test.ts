@@ -5,6 +5,8 @@ import type { JobEnvelope, ResultEnvelope } from "@m365-assess/contracts";
 import { SqliteReportRepository, SqliteRepository, loadMigrations, runMigrations } from "@m365-assess/db";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
+import { SqliteSecureScoreRepository } from "../repository/secure-score.js";
+import * as reportsAdapter from "./reports.js";
 import {
   createGeneratedReportStore,
   createReportRunReader,
@@ -137,7 +139,65 @@ describe("report run reader (T-0823)", () => {
     expect(await reader.executivePayload("t-a", "new")).toMatchObject({
       tenantFacts: { displayName: "Tenant t-a", defaultDomain: "t-a.example" },
       compliance: { pass: 3 },
+      secureScore: { current: 100, max: 100, percentage: 100, evaluatedCount: 3 },
+      actionBuckets: { immediate: 0, compliance: 0, monitoring: 0, training: 0 },
     });
+  });
+
+  it("populates executivePayload secureScore from latest snapshot and derives actionBuckets from failed findings", async () => {
+    const { db, repo } = await setup();
+    const scoreRepo = new SqliteSecureScoreRepository(db, repo.schemaVersion);
+    const root = scratch();
+    const base = { tenantId: "t-a", parentRunId: null, trigger: "manual" as const, sections: [], options: null, startedAt: null, artifactPath: null, summaryCounts: null, provenance: null };
+    await repo.createRun({
+      ...base,
+      id: "run-findings",
+      status: "succeeded",
+      finishedAt: "2026-09-20T00:00:00.000Z",
+    });
+
+    const findingBase = { runId: "run-findings", tenantId: "t-a", controlName: null, collector: null, currentValue: null, recommendedValue: null, evidence: null, frameworkRefs: [], remediationMode: null };
+    await repo.replaceRunFindings("t-a", "run-findings", [
+      { ...findingBase, id: "f1", checkId: "ENTRA-MFA-001", category: "Identity", status: "Pass", severity: "High" },
+      { ...findingBase, id: "f2", checkId: "ENTRA-CA-001", category: "Conditional Access", status: "Fail", severity: "Critical" },
+      { ...findingBase, id: "f3", checkId: "EXO-AUTH-001", category: "Authentication", status: "Fail", severity: "High" },
+      { ...findingBase, id: "f4", checkId: "PURVIEW-DLP-001", category: "Compliance", status: "Fail", severity: "Medium" },
+      { ...findingBase, id: "f5", checkId: "AUDIT-LOG-001", category: "Monitoring", status: "Fail", severity: "Medium" },
+      { ...findingBase, id: "f6", checkId: "USER-TRAIN-001", category: "Security Training", status: "Fail", severity: "Low" },
+      { ...findingBase, id: "f7", checkId: "EXO-WARN-001", category: "Monitoring", status: "Warning", severity: "Medium" },
+    ]);
+
+    // Without snapshots: derives headlineScore = round(1 / 7 * 100) = 14
+    const readerNoSnap = createReportRunReader(repo, root);
+    expect(await readerNoSnap.executivePayload("t-a", "run-findings")).toMatchObject({
+      secureScore: { current: 14, max: 100, percentage: 14, evaluatedCount: 7 },
+      actionBuckets: { immediate: 2, compliance: 1, monitoring: 1, training: 1 },
+    });
+
+    // With snapshots: picks the latest snapshot while retaining evaluatedCount
+    await scoreRepo.recordSnapshot({ tenantId: "t-a", at: "2026-09-10T00:00:00.000Z", current: 45, max: 100, percentage: 45 });
+    await scoreRepo.recordSnapshot({ tenantId: "t-a", at: "2026-09-20T00:00:00.000Z", current: 78, max: 120, percentage: 65 });
+    const readerWithSnap = createReportRunReader(repo, root, { secureScore: scoreRepo });
+    expect(await readerWithSnap.executivePayload("t-a", "run-findings")).toMatchObject({
+      secureScore: { current: 78, max: 120, percentage: 65, evaluatedCount: 7 },
+      actionBuckets: { immediate: 2, compliance: 1, monitoring: 1, training: 1 },
+    });
+  });
+
+  it("returns null secureScore and actionBuckets when run summary and findings are absent", async () => {
+    const { repo } = await setup();
+    const root = scratch();
+    const base = { tenantId: "t-a", parentRunId: null, trigger: "manual" as const, sections: [], options: null, startedAt: null, artifactPath: null, summaryCounts: null, provenance: null };
+    await repo.createRun({ ...base, id: "empty-run", status: "succeeded", finishedAt: "2026-09-20T00:00:00.000Z" });
+    const reader = createReportRunReader(repo, root);
+    const payload = await reader.executivePayload("t-a", "empty-run");
+    expect(payload.secureScore).toBeNull();
+    expect(payload.actionBuckets).toBeNull();
+  });
+
+  it("removes the dead unavailable template render stub exports (T-0875)", () => {
+    expect("createUnavailableTemplateRender" in reportsAdapter).toBe(false);
+    expect("REPORT_RENDER_UNAVAILABLE" in reportsAdapter).toBe(false);
   });
 });
 

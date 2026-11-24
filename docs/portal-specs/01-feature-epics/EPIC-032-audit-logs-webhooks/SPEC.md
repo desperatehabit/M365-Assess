@@ -5,7 +5,7 @@
 - **Severity:** medium
 - **Depends on:** EPIC-002, EPIC-007, EPIC-029
 - **CIPP provenance:** [`cipp-features.md`](../../99-reference/cipp-features.md) #19; CIPP `CIPPCore/Public/AuditLogs/`, `Tenant/Administration/Alerts/Invoke-ListAuditLogs.ps1`, `Public/Webhooks/`
-- **Epic ticket:** [`epic.md`](epic.md)
+- **Epic ticket:** [`ISSUES/epics/EPIC-032.md`](../../../../ISSUES/epics/EPIC-032.md)
 
 ## 1. Purpose
 
@@ -169,4 +169,4 @@ config) and is audited. Enabling audit logging is remediation (EPIC-006), linked
 - [`../EPIC-029-alerting-notifications/SPEC.md`](../EPIC-029-alerting-notifications/SPEC.md) — alerting
 - [`../EPIC-028-incidents-alerts-triage/SPEC.md`](../EPIC-028-incidents-alerts-triage/SPEC.md) — incidents
 - [`../EPIC-006-remediation-engine/SPEC.md`](../EPIC-006-remediation-engine/SPEC.md) — audit enablement
-- [`epic.md`](epic.md) — fleet rollup
+- [`ISSUES/epics/EPIC-032.md`](../../../../ISSUES/epics/EPIC-032.md) — epic ticket

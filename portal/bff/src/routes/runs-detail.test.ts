@@ -210,6 +210,11 @@ describe("runs-detail route (GET /v1/runs/:runId)", () => {
       },
     ]);
 
+    store.issues.set("run-1", [
+      { level: "ERROR", section: "Email", message: "Exchange Online connection failed" },
+      { level: "WARNING", section: "Identity", message: "Graph throttled a request" },
+    ]);
+
     const route = createRunsDetailRoute({
       store,
       resolveCaller: () => scopedCaller([TENANT_1]),
@@ -224,15 +229,57 @@ describe("runs-detail route (GET /v1/runs/:runId)", () => {
     expect(body.status).toBe("succeeded");
     expect(body.sections).toHaveLength(2);
     expect(body.sections[0]?.section).toBe("Identity");
+    expect(body.issueCount).toBe(2);
     expect(body.summaryCounts).toEqual({
       pass: 15,
       fail: 2,
       warning: 1,
       review: 0,
+      info: 0,
       skipped: 3,
       notLicensed: 1,
       total: 22,
     });
+  });
+
+  it("keeps Info findings in the buckets so they sum to the total", async () => {
+    const store = new FakeRunsDetailStore();
+    store.runs.set("run-walk", {
+      id: "run-walk",
+      tenantId: TENANT_1,
+      parentRunId: null,
+      trigger: "manual",
+      sections: ["Identity", "Email"],
+      options: { quickScan: false, skipPurview: true, redact: false, evidence: true },
+      startedAt: "2026-11-19T10:00:00.000Z",
+      finishedAt: "2026-11-19T10:30:00.000Z",
+      status: "partial",
+      artifactPath: "/artifacts/run-walk",
+      // The walk's run 1e05ddc5: pass 47, fail 46, warning 26, review 33, info 15,
+      // skipped 0, total 167 (T-0931).
+      summaryCounts: { pass: 47, fail: 46, warning: 26, review: 33, info: 15, skipped: 0, notLicensed: 0, total: 167 },
+      provenance: null,
+      createdAt: "2026-11-19T10:00:00.000Z",
+      updatedAt: "2026-11-19T10:30:00.000Z",
+    });
+
+    const route = createRunsDetailRoute({ store, resolveCaller: () => scopedCaller([TENANT_1]) });
+    const body = (await route.handler(createDetailContext("run-walk"))).body as RunDetailResponse;
+
+    expect(body.summaryCounts).toEqual({
+      pass: 47,
+      fail: 46,
+      warning: 26,
+      review: 33,
+      info: 15,
+      skipped: 0,
+      notLicensed: 0,
+      total: 167,
+    });
+    const { total, ...buckets } = body.summaryCounts;
+    expect(
+      buckets.pass + buckets.fail + buckets.warning + buckets.review + buckets.info + buckets.skipped + buckets.notLicensed,
+    ).toBe(total);
   });
 
   it("aggregates child runs and their metrics for a parent run", async () => {
@@ -286,7 +333,7 @@ describe("runs-detail route (GET /v1/runs/:runId)", () => {
       finishedAt: "2026-06-01T10:08:00.000Z",
       status: "succeeded",
       artifactPath: null,
-      summaryCounts: { pass: 8, fail: 2, warning: 1, review: 1, skipped: 0, notLicensed: 0 },
+      summaryCounts: { pass: 8, fail: 2, warning: 1, review: 1, info: 2, skipped: 0, notLicensed: 0 },
       provenance: null,
       createdAt: "2026-06-01T10:00:00.000Z",
       updatedAt: "2026-06-01T10:08:00.000Z",
@@ -316,6 +363,12 @@ describe("runs-detail route (GET /v1/runs/:runId)", () => {
       },
     ]);
 
+    store.issues.set("child-1", [{ level: "WARNING", message: "Child 1 warning" }]);
+    store.issues.set("child-2", [
+      { level: "ERROR", message: "Child 2 error" },
+      { level: "WARNING", message: "Child 2 warning" },
+    ]);
+
     const route = createRunsDetailRoute({
       store,
       resolveCaller: () => adminCaller(),
@@ -328,17 +381,23 @@ describe("runs-detail route (GET /v1/runs/:runId)", () => {
     expect(body.id).toBe("parent-1");
     expect(body.children).toHaveLength(2);
     expect(body.sections).toHaveLength(2);
+    expect(body.issueCount).toBe(3);
 
-    // Assert aggregated KPI summaryCounts (pass: 10 + 8 = 18, fail: 1 + 2 = 3)
+    // Assert aggregated KPI summaryCounts (pass: 10 + 8 = 18, fail: 1 + 2 = 3, info: 0 + 2 = 2)
     expect(body.summaryCounts).toEqual({
       pass: 18,
       fail: 3,
       warning: 1,
       review: 1,
+      info: 2,
       skipped: 1,
       notLicensed: 0,
-      total: 24,
+      total: 26,
     });
+    const { total, ...buckets } = body.summaryCounts;
+    expect(
+      buckets.pass + buckets.fail + buckets.warning + buckets.review + buckets.info + buckets.skipped + buckets.notLicensed,
+    ).toBe(total);
   });
 
   it("filters parent children according to caller scope", async () => {
