@@ -5,6 +5,7 @@ BeforeAll {
     # A minimal SupportsShouldProcess wrapper so Invoke-RemediationStep gets a
     # real $PSCmdlet whose -WhatIf / -Confirm behave like a script's.
     function Invoke-TestStep {
+        [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSShouldProcess', '', Justification = 'ShouldProcess is called by Invoke-RemediationStep on this $PSCmdlet.')]
         [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
         param(
             [hashtable]$Step
@@ -105,9 +106,10 @@ Describe 'Assert-RemediationConnection' {
         { Assert-RemediationConnection -Service Graph } | Should -Throw '*Connect-MgGraph*'
     }
 
-    It 'throws when a required Graph scope is missing from a delegated context' {
+    It 'warns when a required Graph scope is missing from a delegated context' {
         function Get-MgContext { [PSCustomObject]@{ Scopes = @('User.Read') } }
-        { Assert-RemediationConnection -Service Graph -GraphScope 'Policy.ReadWrite.Authorization' } | Should -Throw '*Policy.ReadWrite.Authorization*'
+        Assert-RemediationConnection -Service Graph -GraphScope 'Policy.ReadWrite.Authorization' -WarningVariable warn -WarningAction SilentlyContinue
+        "$warn" | Should -Match 'Policy.ReadWrite.Authorization'
     }
 
     It 'passes when the Graph context has the scope' {
@@ -124,6 +126,31 @@ Describe 'Assert-RemediationConnection' {
         function Get-ConnectionInformation { [PSCustomObject]@{ State = 'Connected'; IsEopSession = $true } }
         { Assert-RemediationConnection -Service SecurityCompliance } | Should -Not -Throw
         { Assert-RemediationConnection -Service ExchangeOnline } | Should -Throw '*Connect-ExchangeOnline*'
+    }
+}
+
+Describe 'Test-RemediationProperty' {
+    It 'matches flat and dotted paths' {
+        $state = @{ a = $true; nested = @{ b = 'X' } }
+        Test-RemediationProperty -State $state -Expected @{ a = $true; 'nested.b' = 'x' } | Should -BeTrue
+        Test-RemediationProperty -State $state -Expected @{ 'nested.b' = 'y' } | Should -BeFalse
+    }
+
+    It 'does not treat a missing property as false' {
+        Test-RemediationProperty -State @{} -Expected @{ a = $false } | Should -BeFalse
+    }
+
+    It 'requires a real boolean for boolean expectations' {
+        Test-RemediationProperty -State @{ a = 'False' } -Expected @{ a = $false } | Should -BeFalse
+    }
+
+    It 'compares arrays as unordered sets' {
+        Test-RemediationProperty -State @{ a = @('y', 'x') } -Expected @{ a = @('x', 'y') } | Should -BeTrue
+        Test-RemediationProperty -State @{ a = @('x') } -Expected @{ a = @('x', 'y') } | Should -BeFalse
+    }
+
+    It 'works on PSObjects' {
+        Test-RemediationProperty -State ([PSCustomObject]@{ a = 1 }) -Expected @{ a = 1 } | Should -BeTrue
     }
 }
 
