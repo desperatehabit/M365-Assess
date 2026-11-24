@@ -39,7 +39,7 @@ try {
             ErrorAction = 'Stop'
         }
         $members = Invoke-MgGraphRequest @graphParams
-        $allAdmins = if ($members -and $members['value']) { @($members['value']) } else { @() }
+        $allAdmins = @(if ($members -and $members['value']) { $members['value'] })
 
         # Exclude break-glass accounts from the operational admin count
         $breakGlassAdmins = Get-BreakGlassAccounts -Users $allAdmins
@@ -394,7 +394,7 @@ try {
     }
     $gaMembers = Invoke-MgGraphRequest @graphParams
 
-    $gaList = if ($gaMembers -and $gaMembers['value']) { @($gaMembers['value']) } else { @() }
+    $gaList = @(if ($gaMembers -and $gaMembers['value']) { $gaMembers['value'] })
     $syncedAdmins = @($gaList | Where-Object { $_['onPremisesSyncEnabled'] -eq $true })
 
     if ($syncedAdmins.Count -eq 0) {
@@ -538,7 +538,7 @@ try {
         ErrorAction = 'Stop'
     }
     $adminMembers = Invoke-MgGraphRequest @graphParams
-    $adminList = if ($adminMembers -and $adminMembers['value']) { @($adminMembers['value']) } else { @() }
+    $adminList = @(if ($adminMembers -and $adminMembers['value']) { $adminMembers['value'] })
 
     if ($adminList.Count -gt 0) {
         $graphParams = @{

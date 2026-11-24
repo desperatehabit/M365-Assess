@@ -247,6 +247,17 @@ Describe 'EntraPasswordAuthChecks' {
         }
     }
 
+    It 'ENTRA-HYBRID-001 reads the single organization object (T-0950)' {
+        # /organization returns exactly one item. An unrolled `if` assignment made
+        # $orgValue[0] a hashtable key lookup that returned $null, so the check reported
+        # "Organization data not available" for every tenant.
+        $check = $settings | Where-Object { $_.CheckId -like 'ENTRA-HYBRID-001*' }
+        $check | Should -Not -BeNullOrEmpty
+        $check.CurrentValue | Should -Not -Be 'Organization data not available'
+        $check.CurrentValue | Should -Be 'Cloud-only tenant (no directory sync)'
+        $check.Status | Should -Be 'Info'
+    }
+
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
         Remove-Item Function:\Get-MgContext -ErrorAction SilentlyContinue

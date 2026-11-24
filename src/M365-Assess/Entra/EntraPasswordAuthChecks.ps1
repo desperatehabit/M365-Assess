@@ -580,7 +580,7 @@ try {
     }
     $orgInfo = Invoke-MgGraphRequest @graphParams
 
-    $orgValue = if ($orgInfo -and $orgInfo['value']) { @($orgInfo['value']) } else { @() }
+    $orgValue = @(if ($orgInfo -and $orgInfo['value']) { $orgInfo['value'] })
     $org = if ($orgValue.Count -gt 0) { $orgValue[0] } else { $null }
 
     if ($null -eq $org) {

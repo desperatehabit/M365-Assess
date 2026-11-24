@@ -239,7 +239,7 @@ try {
     foreach ($userId in $adminUserIds) {
         try {
             $regDetails = Invoke-MgGraphRequest -Method GET -Uri "/v1.0/reports/authenticationMethods/userRegistrationDetails?`$filter=id eq '$userId'" -ErrorAction Stop
-            $details = if ($regDetails -and $regDetails['value']) { @($regDetails['value']) } else { @() }
+            $details = @(if ($regDetails -and $regDetails['value']) { $regDetails['value'] })
             if ($details.Count -gt 0) {
                 $methods = @($details[0]['methodsRegistered'])
                 if ($methods -contains 'fido2SecurityKey' -or $methods -contains 'windowsHelloForBusiness' -or $methods -contains 'passKeyDeviceBound') {
@@ -365,7 +365,7 @@ catch {
 try {
     Write-Verbose "S-07: Checking Defender alert policies..."
     $alerts = Invoke-MgGraphRequest -Method GET -Uri '/v1.0/security/alerts_v2?$top=10' -ErrorAction Stop
-    $alertList = if ($alerts -and $alerts['value']) { @($alerts['value']) } else { @() }
+    $alertList = @(if ($alerts -and $alerts['value']) { $alerts['value'] })
 
     $currentValue = if ($alertList.Count -gt 0) {
         "$($alertList.Count)+ alerts found (threat detection active)"
@@ -404,7 +404,7 @@ try {
     $null = $resolvedAlerts  # Response used only to confirm API access; counts derived from allAlerts below
 
     $allAlerts = Invoke-MgGraphRequest -Method GET -Uri '/v1.0/security/alerts_v2?$top=50' -ErrorAction Stop
-    $allList = if ($allAlerts -and $allAlerts['value']) { @($allAlerts['value']) } else { @() }
+    $allList = @(if ($allAlerts -and $allAlerts['value']) { $allAlerts['value'] })
     $newCount = @($allList | Where-Object { $_['status'] -eq 'new' }).Count
     $triagedCount = $allList.Count - $newCount
 

@@ -232,7 +232,7 @@ try {
         ErrorAction = 'Stop'
     }
     $allPrincipalGrants = Invoke-MgGraphRequest @graphParams
-    $tenantWideGrants = if ($allPrincipalGrants -and $allPrincipalGrants['value']) { @($allPrincipalGrants['value']) } else { @() }
+    $tenantWideGrants = @(if ($allPrincipalGrants -and $allPrincipalGrants['value']) { $allPrincipalGrants['value'] })
 
     $settingParams = @{
         Category         = 'Application Consent'
@@ -610,9 +610,9 @@ try {
     }
     $unifiedGroups = Invoke-MgGraphRequest @graphParams
 
-    $publicGroupList = if ($unifiedGroups -and $unifiedGroups['value']) {
-        @($unifiedGroups['value'] | Where-Object { $_['visibility'] -eq 'Public' })
-    } else { @() }
+    $publicGroupList = @(if ($unifiedGroups -and $unifiedGroups['value']) {
+            $unifiedGroups['value'] | Where-Object { $_['visibility'] -eq 'Public' }
+        })
     $noOwnerGroups = @()
     foreach ($group in $publicGroupList) {
         $graphParams = @{
