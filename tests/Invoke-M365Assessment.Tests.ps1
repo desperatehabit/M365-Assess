@@ -352,6 +352,16 @@ Describe 'Invoke-M365Assessment - collector status (T-0937)' {
         $issues[1].Collector | Should -Be 'Teams Security Config'
     }
 
+    It 'passes the run issue list to Write-CollectorOutcome as -IssueList at every call site' {
+        $calls = @([regex]::Matches($script:content, '(?m)^\s*Write-CollectorOutcome\s+[^\r\n]*'))
+        $calls.Count | Should -BeGreaterThan 0 -Because 'the orchestrator must record non-Complete collector outcomes'
+        foreach ($call in $calls) {
+            $call.Value | Should -Match '-IssueList \$ctx\.Issues' `
+                -Because 'the helper parameter is -IssueList; -Issues binds to nothing and throws'
+            $call.Value | Should -Not -Match '\s-Issues\s'
+        }
+    }
+
     It 'applies a collector outcome over the row-count inference' {
         $script:content | Should -Match 'if \(\$collectorOutcome -and \$collectorOutcome\.Status -ne ''Complete''\)'
         $script:content | Should -Match '\$status = \$collectorOutcome\.Status'

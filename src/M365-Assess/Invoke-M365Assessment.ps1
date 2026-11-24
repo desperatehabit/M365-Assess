@@ -1322,7 +1322,7 @@ foreach ($sectionName in $Section) {
                     if ($collectorOutcome -and $collectorOutcome.Status -ne 'Complete') {
                         $status = $collectorOutcome.Status
                         if ($collectorOutcome.Reason) { $errorMessage = $collectorOutcome.Reason }
-                        Write-CollectorOutcome -Status $status -Reason $errorMessage -Section $sectionName -Collector $collector.Label -Issues $ctx.Issues
+                        Write-CollectorOutcome -Status $status -Reason $errorMessage -Section $sectionName -Collector $collector.Label -IssueList $ctx.Issues
                     }
                 }
                 finally {
@@ -1423,7 +1423,7 @@ foreach ($sectionName in $Section) {
             if ($collectorOutcome -and $collectorOutcome.Status -ne 'Complete') {
                 $status = $collectorOutcome.Status
                 if ($collectorOutcome.Reason) { $errorMessage = $collectorOutcome.Reason }
-                Write-CollectorOutcome -Status $status -Reason $errorMessage -Section $sectionName -Collector $collector.Label -Issues $ctx.Issues
+                Write-CollectorOutcome -Status $status -Reason $errorMessage -Section $sectionName -Collector $collector.Label -IssueList $ctx.Issues
             }
         }
         catch {
