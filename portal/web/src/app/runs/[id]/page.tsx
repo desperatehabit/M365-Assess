@@ -15,6 +15,7 @@ import {
   type RunArtifactDetail,
   type RunIssueDetail,
 } from "../../../components/RunDetailTabs";
+import { fetchAllRunResults } from "../../../lib/runResultsApi";
 
 /** The permission the apply route requires (bff/src/routes/remediation.ts). */
 const REMEDIATION_APPLY_PERMISSION = "Remediation.Apply";
@@ -80,12 +81,14 @@ export default function RunDetailPage(props: RunDetailPageProps): ReactElement {
       const runData = await runRes.json();
       setRun(runData);
 
-      // 2. Fetch Results (findings + issues)
-      const resultsRes = await fetch(`/v1/runs/${encodeURIComponent(runId)}/results`);
-      if (resultsRes.ok) {
-        const resultsData = await resultsRes.json();
-        setFindings(resultsData.items ?? []);
-        setIssues(resultsData.issues ?? []);
+      // 2. Fetch Results (findings + issues). The endpoint is paginated; read every
+      // page so the Findings tab is not cut off at the first 100 (T-0945).
+      try {
+        const results = await fetchAllRunResults<RunFindingDetail, RunIssueDetail>(runId);
+        setFindings(results.items);
+        setIssues(results.issues);
+      } catch {
+        // Results are optional for the page; the run detail above still renders.
       }
 
       // 3. Fetch Artifacts

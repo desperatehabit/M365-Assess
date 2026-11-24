@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fetchAllRunResults } from "../../../lib/runResultsApi";
 import BlockCanvas, {
   BLOCK_PALETTE_GROUPS,
   BLOCK_TYPE_DESCRIPTIONS,
@@ -429,10 +430,9 @@ export default function ReportBuilderPage() {
     setRunId(id);
     setLiveStatus("Loading run findings…");
     try {
-      const response = await fetch(`${RUNS_API_PATH}/${encodeURIComponent(id)}/results`);
-      if (!response.ok) throw new Error(`Run results failed to load: ${response.status}`);
-      const body = (await response.json()) as { items?: unknown };
-      const findings: RunPreviewFinding[] = (Array.isArray(body.items) ? body.items : [])
+      // Read every results page so the preview covers the whole run (T-0945).
+      const body = await fetchAllRunResults<unknown>(id);
+      const findings: RunPreviewFinding[] = body.items
         .map((item) => asRecord(item))
         .map((item) => ({
           status: typeof item["status"] === "string" ? item["status"] : undefined,
