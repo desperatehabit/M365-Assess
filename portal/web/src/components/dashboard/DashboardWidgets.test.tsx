@@ -199,6 +199,37 @@ describe("Dashboard Overview Widgets (T-0064)", () => {
       expect(handleDrill).toHaveBeenCalledWith("run-assessment-123");
     });
 
+    it("labels a succeeded run Completed with no issue link (T-0944)", () => {
+      render(<AssessmentCard assessment={SAMPLE_ASSESSMENT} />);
+      expect(screen.getByTestId("assessment-status-line").textContent).toMatch(/^Completed /);
+      expect(screen.queryByTestId("assessment-issues-link")).toBeNull();
+    });
+
+    it("does not call a partial run Completed and surfaces its issues and first error (T-0944)", () => {
+      render(
+        <AssessmentCard
+          assessment={{
+            ...SAMPLE_ASSESSMENT,
+            status: "partial",
+            issueCount: 11,
+            errorCount: 1,
+            firstError: "Power BI: 403 on /admin/tenantsettings",
+          }}
+        />
+      );
+      const line = screen.getByTestId("assessment-status-line").textContent ?? "";
+      expect(line).toMatch(/^Completed with issues /);
+      const link = screen.getByTestId("assessment-issues-link");
+      expect(link.textContent).toContain("11 issues (1 error)");
+      expect(link.getAttribute("href")).toBe("/runs/run-assessment-123");
+      expect(screen.getByTestId("assessment-first-error").textContent).toBe("Power BI: 403 on /admin/tenantsettings");
+    });
+
+    it("labels a failed run Failed (T-0944)", () => {
+      render(<AssessmentCard assessment={{ ...SAMPLE_ASSESSMENT, status: "failed" }} />);
+      expect(screen.getByTestId("assessment-status-line").textContent).toMatch(/^Failed /);
+    });
+
     it("renders empty state affordance when no completed run exists", () => {
       render(<AssessmentCard isEmpty={true} />);
 

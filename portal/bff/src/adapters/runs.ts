@@ -134,7 +134,50 @@ async function rollUpParent(repo: SqliteRepository, childRunId: string): Promise
 function toListItem(run: Run): RunListItem {
   const durationMs =
     run.startedAt && run.finishedAt ? Math.max(0, Date.parse(run.finishedAt) - Date.parse(run.startedAt)) : null;
-  return { ...(run as unknown as RunRecord), durationMs };
+  const issues = run.provenance?.["issues"];
+  const issueCount = Array.isArray(issues) ? issues.length : 0;
+  return { ...(run as unknown as RunRecord), durationMs, issueCount } as RunListItem;
+}
+
+export interface PersistedSectionStatus {
+  readonly section: string;
+  readonly status: string;
+}
+
+export interface DerivedRunProgress {
+  readonly completed: number;
+  readonly total: number;
+  readonly percent: number;
+}
+
+const FINISHED_SECTION_STATES = new Set(["succeeded", "partial", "failed", "skipped"]);
+
+/**
+ * Section progress for a run, from its persisted run_sections rows (T-0944). An active
+ * run counts every section that has finished. A finished run counts only sections that
+ * succeeded, so a partial or failed run never reads 100% unless every requested section
+ * succeeded. A succeeded or queued run returns null; the UI
+ * shows 100% and 0% for those. Rows are in createdAt order, and the latest row for a
+ * section wins.
+ */
+export function deriveRunProgress(
+  status: string,
+  requestedSections: readonly string[],
+  rows: readonly PersistedSectionStatus[],
+): DerivedRunProgress | null {
+  if (status === "succeeded" || status === "queued") return null;
+  const latest = new Map<string, string>();
+  for (const row of rows) latest.set(row.section, row.status);
+  // A finished run with no persisted sections (a multi-tenant parent, or a run that
+  // failed before any section ran) has nothing to count; the UI falls back.
+  if (latest.size === 0 && status !== "running") return null;
+  const total = Math.max(requestedSections.length, latest.size);
+  if (total === 0) return null;
+  const counts = status === "running"
+    ? (state: string) => FINISHED_SECTION_STATES.has(state)
+    : (state: string) => state === "succeeded";
+  const completed = Math.min(total, [...latest.values()].filter(counts).length);
+  return { completed, total, percent: Math.round((completed / total) * 100) };
 }
 
 /**
@@ -162,6 +205,22 @@ export function createRunStore(repo: SqliteRepository, db: Database.Database): R
     if (current?.status !== "partial" || current.provenance?.["partial"] !== true) return update;
     const { status: _status, ...rest } = update;
     return rest;
+  }
+
+  const sectionRows = db.prepare(
+    "SELECT section, status FROM run_sections WHERE runId = ? ORDER BY createdAt",
+  );
+
+  // Live progress events are not persisted on the run, so the list and detail derive
+  // the bar from run_sections instead of guessing from the status (T-0944).
+  function withProgress(item: RunListItem): RunListItem {
+    if (item.progress) return item;
+    const progress = deriveRunProgress(
+      item.status,
+      item.sections ?? [],
+      sectionRows.all(item.id) as PersistedSectionStatus[],
+    );
+    return progress ? { ...item, progress } : item;
   }
 
   async function tenantDisplayName(tenantId: string): Promise<string | null> {
@@ -205,7 +264,7 @@ export function createRunStore(repo: SqliteRepository, db: Database.Database): R
     getRunById: async (runId: string) => {
       const run = await repo.getRunById(runId);
       if (!run) return run;
-      return withTenantDisplayName(toListItem(run), await tenantDisplayName(run.tenantId));
+      return withProgress(withTenantDisplayName(toListItem(run), await tenantDisplayName(run.tenantId)));
     },
     listChildRuns: async (parentRunId: string) => {
       const children = await repo.listChildRuns(parentRunId);
@@ -214,7 +273,7 @@ export function createRunStore(repo: SqliteRepository, db: Database.Database): R
         (await repo.listTenants()).map((tenant) => [tenant.id, tenant.displayName] as const),
       );
       return children.map((child) =>
-        withTenantDisplayName(toListItem(child), displayNames.get(child.tenantId)),
+        withProgress(withTenantDisplayName(toListItem(child), displayNames.get(child.tenantId))),
       );
     },
     listRunsByParentId: (parentRunId: string) => repo.listRunsByParentId(parentRunId),
@@ -256,7 +315,7 @@ export function createRunStore(repo: SqliteRepository, db: Database.Database): R
       const tenantIds = tenantId ? [tenantId] : tenants.map((tenant) => tenant.id);
       const runs = (await Promise.all(tenantIds.map((id) => repo.listRuns(id)))).flat();
       return runs.map((run) =>
-        withTenantDisplayName(toListItem(run), displayNames.get(run.tenantId)),
+        withProgress(withTenantDisplayName(toListItem(run), displayNames.get(run.tenantId))),
       );
     },
     recordRunSection,
@@ -437,7 +496,7 @@ const ASSESSMENT_SUMMARY_CSV = /(^|\/)_Assessment-Summary[^/]*\.csv$/;
 
 export interface ParsedRunSectionStatus {
   readonly section: string;
-  readonly status: "succeeded" | "failed" | "skipped";
+  readonly status: "succeeded" | "partial" | "failed" | "skipped";
   readonly error: string | null;
 }
 
@@ -535,9 +594,11 @@ export function parseCsvLine(line: string): string[] {
  *
  * The Status column carries exactly one of Complete | Partial | Skipped | Failed
  * (T-0937); a reason for a non-Complete collector is in the Error column. A section
- * is succeeded only when every collector finished completely. A partial or failed
- * collector makes the section failed, and a collector that skipped for a reason (or
- * reported Partial/Failed) makes the run partial (T-0929/T-0937).
+ * is succeeded only when every collector finished completely, and skipped only when
+ * every collector skipped. A Failed collector makes the section failed. Any other mix
+ * (Complete with Skipped, or a Partial collector) produced usable output, so the
+ * section is partial rather than failed (T-0944). A failed or partial section makes
+ * the run partial (T-0929/T-0937).
  */
 export function parseAssessmentSummary(text: string): ParsedRunSectionStatus[] {
   const lines = text.split(/\r?\n/).filter((line) => line.trim() && !line.startsWith("#"));
@@ -565,13 +626,16 @@ export function parseAssessmentSummary(text: string): ParsedRunSectionStatus[] {
     // hand-edited summary still classifies correctly.
     const isComplete = (status: string) => status === "complete" || status.startsWith("complete (");
     const isSkipped = (status: string) => status === "skipped" || status.startsWith("skipped (");
+    const isFailed = (status: string) => status === "failed" || status.startsWith("failed (");
     const allComplete = entry.statuses.length > 0 && entry.statuses.every(isComplete);
     const allSkipped = entry.statuses.length > 0 && entry.statuses.every(isSkipped);
     const status: ParsedRunSectionStatus["status"] = allComplete
       ? "succeeded"
       : allSkipped
         ? "skipped"
-        : "failed";
+        : entry.statuses.some(isFailed)
+          ? "failed"
+          : "partial";
     return {
       section,
       status,
@@ -661,12 +725,12 @@ export function withFindingsIngestion(runWorker: RunWorkerFn, options: FindingsI
       }
     }
 
-    // A run is partial when an issue is an ERROR, a section failed, or a section was
+    // A run is partial when an issue is an ERROR, a section failed or was partial, or a section was
     // skipped for a reason the operator did not choose. Skips caused by an operator
     // option such as -SkipPurview do not make a run partial (T-0929).
     const partial =
       issues.some((issue) => String(issue.level ?? "").toUpperCase() === "ERROR") ||
-      sectionStatuses.some((section) => section.status === "failed") ||
+      sectionStatuses.some((section) => section.status === "failed" || section.status === "partial") ||
       sectionStatuses.some(
         (section) => section.status === "skipped" && !skipIsOperatorChoice(section, skipPurview),
       );
