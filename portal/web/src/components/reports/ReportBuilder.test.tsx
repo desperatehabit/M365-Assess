@@ -407,7 +407,8 @@ describe("ReportBuilder", () => {
           }),
         };
       }
-      if (path === "/v1/runs/run-2/results") {
+      // Results are paginated, so the request carries ?limit= (T-0945).
+      if (path.split("?")[0] === "/v1/runs/run-2/results") {
         return {
           ok: true,
           status: 200,
