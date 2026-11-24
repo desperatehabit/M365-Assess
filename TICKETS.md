@@ -12,8 +12,8 @@ the same commit. The ticket file is the source of truth._
 | Status | Count |
 |---|---|
 | epic | 40 |
-| fixed-unverified | 70 |
-| open | 15 |
+| fixed-unverified | 73 |
+| open | 12 |
 | closed | 8 |
 
 ## Open
@@ -58,10 +58,10 @@ the same commit. The ticket file is the source of truth._
 | [T-0929](ISSUES/T-0929.md) | high | fixed-unverified | 4 | A run with failed sections reports `succeeded`, and the portal never shows its issues |
 | [T-0940](ISSUES/T-0940.md) | high | fixed-unverified | 23 | Remaining portal write routes still use the reader credential |
 | [T-0943](ISSUES/T-0943.md) | high | open | 8 | Run progress never receives live section events, so the bar is static and shows no step counts |
-| [T-0944](ISSUES/T-0944.md) | high | open | 5 | A partial or failed run is rendered as 100% and "Completed" |
+| [T-0944](ISSUES/T-0944.md) | high | fixed-unverified | 5 | A partial or failed run is rendered as 100% and "Completed" |
 | [T-0945](ISSUES/T-0945.md) | high | fixed-unverified | 3 | Run detail and report builder show only the first 100 findings |
-| [T-0950](ISSUES/T-0950.md) | high | open | 9 | A single-item Graph result unrolls to a hashtable, so counts and indexing are wrong |
-| [T-0951](ISSUES/T-0951.md) | high | open | 1 | ENTRA-DEVICE-004 always passes because it reads a property Graph does not return |
+| [T-0950](ISSUES/T-0950.md) | high | fixed-unverified | 9 | A single-item Graph result unrolls to a hashtable, so counts and indexing are wrong |
+| [T-0951](ISSUES/T-0951.md) | high | fixed-unverified | 1 | ENTRA-DEVICE-004 always passes because it reads a property Graph does not return |
 | [T-0955](ISSUES/T-0955.md) | high | open | 1 | App credential checks read only service principals and miss app registration secrets and certificates |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
