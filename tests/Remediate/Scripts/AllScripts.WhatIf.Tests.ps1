@@ -63,7 +63,14 @@ Describe 'Script <CheckId> under -WhatIf with faked tenant commands' -ForEach $s
         $commands = @(@($ast, $helperAst) | ForEach-Object {
                 $_.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)
             } | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ } | Sort-Object -Unique |
-                Where-Object { $helperFunctions -notcontains $_ -and -not (Get-Command -Name $_ -CommandType Cmdlet -ErrorAction SilentlyContinue) })
+                Where-Object {
+                    # Fake every tenant command, including ones from installed modules
+                    # (Microsoft.Graph, ExchangeOnlineManagement): only PowerShell's own
+                    # cmdlets run for real. Skipping any installed cmdlet left the real
+                    # Get-MgContext in place on machines that have the Graph SDK.
+                    $cmdlet = Get-Command -Name $_ -CommandType Cmdlet -ErrorAction SilentlyContinue | Select-Object -First 1
+                    $helperFunctions -notcontains $_ -and -not ($cmdlet -and $cmdlet.Source -like 'Microsoft.PowerShell.*')
+                })
         foreach ($c in $commands) {
             if ($c -eq 'Invoke-AzRestMethod') {
                 Set-Item -Path "function:script:$c" -Value {
