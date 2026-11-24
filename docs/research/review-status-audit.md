@@ -13,10 +13,10 @@ Get-ChildItem -Path 'src/M365-Assess' -Recurse -Filter '*.ps1' |
 
 | Status | Emissions | What it should mean |
 |---|---|---|
-| `Review` | 88 | Data was collected but a human needs to interpret the result. |
-| `Skipped` | 33 | The check did not run (license-gated, permission-gated, or env-not-applicable). |
+| `Review` | 98 | Data was collected but a human needs to interpret the result. |
+| `Skipped` | 34 | The check did not run (license-gated, permission-gated, or env-not-applicable). |
 | `Unknown` | 1 | Data could not be collected; this is different from "Skipped". |
-| **Total** | **122** | |
+| **Total** | **133** | |
 
 Per-collector breakdown:
 
@@ -66,6 +66,7 @@ For each emission site, the question is one of three things:
 - **Forms and SharePoint unverifiable-property Review emissions** (T-0932/T-0933/T-0934, ceiling 70 -> 86) - the Forms collector reads two beta `formsSettings` properties and the SharePoint collector reads settings that `/admin/sharepoint/settings` (or the `site` resource) does not expose. Previously a missing property produced false Pass/Fail (or Warning for "could not verify"). These collectors now read both the documented and legacy property names and emit Review when neither is present, so an unverifiable setting is never scored as compliant. +16 static Review sites: 2 in `Get-FormsSecurityConfig.ps1`, 14 in `Get-SharePointSecurityConfig.ps1` (the SharePoint count includes the previously Warning-only unverifiable paths, now Review). Genuine limitation: the API response does not carry the property.
 - **Teams app-only and operator-role Skipped emissions** (T-0937, ceiling 31 -> 33) - the Teams collectors run app-only with no `MicrosoftTeams` module dependency, so they now emit every Teams check as Skipped with "app-only not supported" instead of logging a Complete section with `N/A` rows (+1 static site, 19 checks). Onboarding also records a skipped operator Exchange role group when write access is requested without the exchange group (+1 static site). Both are genuine limitations and are surfaced in the run's issues/sections.
 - **ENTRA-DEVICE-004 registering-user local admin Review emissions** (T-0951, ceiling 86 -> 88) - the check previously read a property Graph does not return and passed on every tenant. It now evaluates `azureADJoin.localAdmins.registeringUsers`: None is Pass and All is Fail. Two outcomes emit Review (+2 static sites): "Selected" users/groups, because whether that set is appropriate is an operator judgment, and a response without `registeringUsers`, so a missing setting is never scored as compliant. Genuine limitation in both cases.
+- **CIS M365 v6 and CMMC L2 coverage emissions** (PR #12 work, Review ceiling 88 -> 98, Skipped 33 -> 34) - new checks for recommendations and practices that had no collector. +10 static Review sites: `Get-StrykerIncidentReadiness.ps1` (4: ENTRA-ADMIN-003 when break-glass detection failed; ENTRA-BREAKGLASS-002 when there are no break-glass accounts or detection failed, when no Defender XDR custom detection names them (Azure Monitor / Sentinel alerts are not readable), and when the detection-rules API fails), `Get-DefenderSecureMonConfig.ps1` (3: DEFENDER-CLOUDAPPS-001 when licensed and enabled, because the app-connector state is not readable through Graph, and when the SKU read fails; DEFENDER-SECURESCORE-001 when Secure Score cannot be read), `Get-SharePointSecurityConfig.ps1` (1: SPO-SWAY-001, which has no API and carries manual steps), `Get-M365BackupConfig.ps1` (1: BACKUP-ENABLED-001 on an unexpected API error) and `Get-IntuneEndpointHardeningConfig.ps1` (1 shared helper: INTUNE-ENCRYPTION-001 / MOBILECODE-001 / FIREWALL-001 when Intune reads fail). +1 static Skipped site in `EntraPasswordAuthChecks.ps1` (ENTRA-SESSION-001 when the company branding read fails). All are genuine limitations: the data is not exposed by an API this collector can call, or the read failed.
 - **CA-MFA-ADMIN-001 All-Users-with-exclusions Review emission** (#1000, ceiling 69 -> 70) — the "MFA Required for Admin Roles" check now accepts an All-Users MFA policy as admin coverage (community request #1000). When such a policy carries `excludeUsers` / `excludeGroups`, group/user membership is not resolved here (that would need a per-group directory lookup), so the collector cannot prove the administrators are not carved out. Rather than guess Pass (a false negative if admins are excluded) or Fail (a false positive for a benign break-glass exclusion), it emits Review naming the policy and asking the operator to verify. Genuine limitation: confirming exclusion membership is out of scope for this collector; explicit admin-role-targeted coverage and clean All-Users coverage still resolve to Pass.
 
 ### Triage pending (representative — not exhaustive)
@@ -76,7 +77,7 @@ For each emission site, the question is one of three things:
 
 ## Lock-down regression
 
-`tests/Behavior/Status-Emission-Audit.Tests.ps1` asserts the count of Review / Unknown / Skipped emissions stays at or below the current ceiling (88 / 33 / 1 = 122 total). When a new emission is added the test fails, forcing the contributor to:
+`tests/Behavior/Status-Emission-Audit.Tests.ps1` asserts the count of Review / Unknown / Skipped emissions stays at or below the current ceiling (98 / 34 / 1 = 133 total). When a new emission is added the test fails, forcing the contributor to:
 
 1. Justify the new emission (genuine limitation? collector bug?)
 2. Update this doc to add the new site to the audit catalogue
