@@ -27,6 +27,8 @@ children:
   - T-0051
   - T-0052
   - T-0943
+  - T-0945
+  - T-0946
 scope_kind: "epic"
 scope_note: "Rollup for Assessment Runs & Queue. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---

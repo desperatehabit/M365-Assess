@@ -26,6 +26,7 @@ children:
   - T-0031
   - T-0032
   - T-0874
+  - T-0947
 scope_kind: "epic"
 scope_note: "Rollup for Tenants & Onboarding. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---
