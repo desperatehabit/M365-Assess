@@ -25,6 +25,7 @@ children:
   - T-0070
   - T-0891
   - T-0892
+  - T-0944
 scope_kind: "epic"
 scope_note: "Rollup for Dashboard & Widgets. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---

@@ -156,9 +156,10 @@ $evidenceRows = [System.Collections.Generic.List[PSCustomObject]]::new()
 $evidenceFieldNames = @('ObservedValue','ExpectedValue','EvidenceSource','EvidenceTimestamp','CollectionMethod','PermissionRequired','Confidence','Limitations')
 
 foreach ($c in $summary) {
-    # T-0937: Partial/Failed collectors still produced findings; only Skipped
-    # (or an empty CSV) has nothing to render.
-    if ($c.Status -notin @('Complete', 'Partial', 'Failed') -or [int]$c.Items -eq 0) { continue }
+    # T-0937: a collector can be Skipped and still emit findings (for example, the
+    # app-only Teams branch records one Skipped finding per check). Include every
+    # collector that produced rows; only an empty CSV has nothing to render.
+    if ([int]$c.Items -eq 0) { continue }
     $csvFile = Join-Path -Path $AssessmentFolder -ChildPath $c.FileName
     if (-not (Test-Path -Path $csvFile)) { continue }
 

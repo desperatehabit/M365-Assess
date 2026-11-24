@@ -2,18 +2,19 @@
 
 _Maintained by hand (last regenerated 2026-11-22; T-0909 to T-0913 added 2026-11-17;
 T-0914 to T-0916 added 2026-11-18; T-0917 to T-0939 added 2026-11-19; T-0940 and
-T-0941 added 2026-11-20; T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
+T-0941 added 2026-11-20; T-0943 and T-0944 added 2026-11-23;
+T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
 2026-11-22). When a ticket's `status` changes, update its row and the counts below in
 the same commit. The ticket file is the source of truth._
 
-**119 open · 462 closed**
+**121 open · 462 closed**
 
 | Status | Count |
 |---|---|
-| epic | 39 |
+| epic | 40 |
 | fixed-unverified | 69 |
-| open | 2 |
-| closed | 9 |
+| open | 4 |
+| closed | 8 |
 
 ## Open
 
@@ -26,7 +27,7 @@ the same commit. The ticket file is the source of truth._
 | [EPIC-038](ISSUES/epics/EPIC-038.md) | critical | epic | 0 | RBAC & API Clients |
 | [EPIC-042](ISSUES/epics/EPIC-042.md) | critical | epic | 0 | Compliance Frameworks Console |
 | [T-0926](ISSUES/T-0926.md) | critical | fixed-unverified | 3 | Exchange Online and Purview connections pass the tenant GUID as `-Organization`, so 10 collectors never run |
-| [EPIC-003](ISSUES/epics/EPIC-003.md) | high | closed | 0 | Assessment Runs & Queue |
+| [EPIC-003](ISSUES/epics/EPIC-003.md) | high | epic | 0 | Assessment Runs & Queue |
 | [EPIC-004](ISSUES/epics/EPIC-004.md) | high | epic | 0 | Dashboard & Widgets |
 | [EPIC-005](ISSUES/epics/EPIC-005.md) | high | epic | 0 | Executive/PDF Reports & Report Builder |
 | [EPIC-007](ISSUES/epics/EPIC-007.md) | high | epic | 0 | Scheduler & Custom Scripts |
@@ -56,6 +57,8 @@ the same commit. The ticket file is the source of truth._
 | [T-0928](ISSUES/T-0928.md) | high | fixed-unverified | 2 | Remediation jobs overwrite the assessment run's status and timestamps |
 | [T-0929](ISSUES/T-0929.md) | high | fixed-unverified | 4 | A run with failed sections reports `succeeded`, and the portal never shows its issues |
 | [T-0940](ISSUES/T-0940.md) | high | fixed-unverified | 23 | Remaining portal write routes still use the reader credential |
+| [T-0943](ISSUES/T-0943.md) | high | open | 8 | Run progress never receives live section events, so the bar is static and shows no step counts |
+| [T-0944](ISSUES/T-0944.md) | high | open | 5 | A partial or failed run is rendered as 100% and "Completed" |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
 | [EPIC-017](ISSUES/epics/EPIC-017.md) | medium | closed | 0 | Intune Apps & Autopilot |

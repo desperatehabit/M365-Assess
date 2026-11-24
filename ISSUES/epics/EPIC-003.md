@@ -3,7 +3,7 @@ id: "EPIC-003"
 source: "docs/portal-specs/01-feature-epics/EPIC-003-assessment-runs/SPEC.md"
 section: "Portal skeleton (Session 1)"
 severity: "high"
-status: "closed"
+status: "epic"
 original_status: "declared"
 parent: ""
 scope: []
@@ -26,6 +26,7 @@ children:
   - T-0050
   - T-0051
   - T-0052
+  - T-0943
 scope_kind: "epic"
 scope_note: "Rollup for Assessment Runs & Queue. Children are authored in ISSUES/ against the layout fixed in SPEC.md §1; scope: is empty by design (rollups are never dispatched)."
 ---

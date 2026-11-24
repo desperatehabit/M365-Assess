@@ -12,14 +12,14 @@ $script:RequiredGraphPermissions = @(
     @{ Name = 'Domain.Read.All';                         Sections = 'Tenant, Identity, Hybrid'               ; Reason = 'All domains registered in the tenant' }
     @{ Name = 'Group.Read.All';                          Sections = 'Tenant, Inventory'                      ; Reason = 'All groups including Microsoft 365 and security groups' }
     # -- Identity --------------------------------------------------------------
-    @{ Name = 'User.Read.All';                           Sections = 'Tenant, Identity, Licensing, Inventory' ; Reason = 'User profiles, sign-in activity, license assignments' }
-    @{ Name = 'AuditLog.Read.All';                       Sections = 'Identity'                               ; Reason = 'Sign-in logs and directory audit events' }
+    @{ Name = 'User.Read.All';                           Sections = 'Tenant, Identity, Licensing, Inventory, SOC2' ; Reason = 'User profiles, sign-in activity, license assignments' }
+    @{ Name = 'AuditLog.Read.All';                       Sections = 'Identity, SOC2'                         ; Reason = 'Sign-in logs and directory audit events' }
     @{ Name = 'UserAuthenticationMethod.Read.All';       Sections = 'Identity'                               ; Reason = 'MFA and passwordless authentication methods per user' }
-    @{ Name = 'RoleManagement.Read.Directory';           Sections = 'Identity'                               ; Reason = 'Entra directory role assignments and PIM eligibility' }
-    @{ Name = 'Policy.Read.All';                         Sections = 'Tenant, Identity'                       ; Reason = 'Conditional Access, auth methods, token lifetime, password policies' }
+    @{ Name = 'RoleManagement.Read.Directory';           Sections = 'Identity, SOC2'                         ; Reason = 'Entra directory role assignments and PIM eligibility' }
+    @{ Name = 'Policy.Read.All';                         Sections = 'Tenant, Identity, SOC2'                 ; Reason = 'Conditional Access, auth methods, token lifetime, password policies' }
     @{ Name = 'Application.Read.All';                    Sections = 'Identity'                               ; Reason = 'App registrations, service principals, OAuth permission grants' }
     @{ Name = 'Agreement.Read.All';                      Sections = 'Identity'                               ; Reason = 'Terms of Use agreements and their acceptance settings (ENTRA-TOU-001)' }
-    @{ Name = 'Directory.Read.All';                      Sections = 'Identity'                               ; Reason = 'Devices, admin units, role templates' }
+    @{ Name = 'Directory.Read.All';                      Sections = 'Identity, SOC2'                         ; Reason = 'Devices, admin units, role templates' }
     # -- Intune ----------------------------------------------------------------
     @{ Name = 'DeviceManagementManagedDevices.Read.All'; Sections = 'Intune'                                 ; Reason = 'Managed device inventory and compliance state' }
     @{ Name = 'DeviceManagementConfiguration.Read.All';  Sections = 'Intune, Security'                       ; Reason = 'Configuration profiles, compliance policies, Multi-Admin Approval policies' }
@@ -29,7 +29,9 @@ $script:RequiredGraphPermissions = @(
     @{ Name = 'DeviceManagementServiceConfig.Read.All';  Sections = 'Intune'                                 ; Reason = 'Autopilot deployment profiles and Apple/Android enrollment profiles' }
     @{ Name = 'BitlockerKey.Read.All';                   Sections = 'Intune, Security'                       ; Reason = 'BitLocker recovery key retrieval for portal device actions' }
     # -- Security --------------------------------------------------------------
-    @{ Name = 'SecurityEvents.Read.All';                 Sections = 'Security'                               ; Reason = 'Secure Score, improvement actions, security alerts' }
+    @{ Name = 'SecurityEvents.Read.All';                 Sections = 'Security, SOC2'                         ; Reason = 'Secure Score, improvement actions, security alerts' }
+    @{ Name = 'SecurityAlert.Read.All';                  Sections = 'SOC2'                                   ; Reason = 'Defender security alerts (alerts_v2) for SOC 2 alert triage evidence' }
+    @{ Name = 'IdentityRiskEvent.Read.All';              Sections = 'SOC2'                                   ; Reason = 'Entra ID Protection risk detections for SOC 2 audit evidence' }
     # -- Collaboration ---------------------------------------------------------
     @{ Name = 'SharePointTenantSettings.Read.All';       Sections = 'Collaboration'                          ; Reason = 'SharePoint and OneDrive tenant-level settings' }
     @{ Name = 'TeamSettings.Read.All';                   Sections = 'Collaboration'                          ; Reason = 'Teams tenant-level settings and policies' }
@@ -40,7 +42,7 @@ $script:RequiredGraphPermissions = @(
     @{ Name = 'Team.ReadBasic.All';                      Sections = 'Inventory'                              ; Reason = 'Enumerate all Teams' }
     @{ Name = 'TeamMember.Read.All';                     Sections = 'Inventory'                              ; Reason = 'Teams membership details' }
     @{ Name = 'Channel.ReadBasic.All';                   Sections = 'Inventory'                              ; Reason = 'Teams channels' }
-    @{ Name = 'Reports.Read.All';                        Sections = 'Inventory'                              ; Reason = 'Microsoft 365 usage reports' }
+    @{ Name = 'Reports.Read.All';                        Sections = 'Inventory, SOC2'                        ; Reason = 'Microsoft 365 usage reports' }
     @{ Name = 'Sites.Read.All';                          Sections = 'Inventory'                              ; Reason = 'SharePoint site enumeration and metadata' }
 )
 
