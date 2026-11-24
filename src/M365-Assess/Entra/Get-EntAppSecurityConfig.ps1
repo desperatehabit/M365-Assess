@@ -171,7 +171,7 @@ try {
     Write-Verbose "Fetching service principals..."
     $spUri = '/v1.0/servicePrincipals?$select=id,appId,displayName,appOwnerOrganizationId,servicePrincipalType,keyCredentials,passwordCredentials,accountEnabled&$top=999'
     $spResponse = Invoke-SafeGraphRequest -Uri $spUri
-    $allServicePrincipals = if ($spResponse -and $spResponse['value']) { @($spResponse['value']) } else { @() }
+    $allServicePrincipals = @(if ($spResponse -and $spResponse['value']) { $spResponse['value'] })
     $sw.Stop()
     Write-Verbose "Fetched $($allServicePrincipals.Count) service principals in $($sw.Elapsed.TotalSeconds.ToString('F1'))s"
 }
@@ -262,7 +262,7 @@ try {
     if ($graphSpIdValue) {
         $araUri = "/v1.0/servicePrincipals/$graphSpIdValue/appRoleAssignedTo?`$top=999"
         $araResponse = Invoke-SafeGraphRequest -Uri $araUri
-        $allAssigned = if ($araResponse -and $araResponse['value']) { @($araResponse['value']) } else { @() }
+        $allAssigned = @(if ($araResponse -and $araResponse['value']) { $araResponse['value'] })
 
         foreach ($a in $allAssigned) {
             $principalId = $a['principalId']
@@ -284,7 +284,7 @@ try {
     Write-Verbose "Fetching app registrations..."
     $appUri = "/v1.0/applications?`$select=id,appId,displayName,signInAudience,web,spa,publicClient&`$top=999"
     $appResponse = Invoke-SafeGraphRequest -Uri $appUri
-    $allAppRegistrations = if ($appResponse -and $appResponse['value']) { @($appResponse['value']) } else { @() }
+    $allAppRegistrations = @(if ($appResponse -and $appResponse['value']) { $appResponse['value'] })
     Write-Verbose "Fetched $($allAppRegistrations.Count) app registrations"
 }
 catch {
@@ -835,7 +835,7 @@ try {
         try {
             $ownersUri = "/v1.0/servicePrincipals/$($sp['id'])/owners?`$select=id,displayName"
             $ownersResp = Invoke-MgGraphRequest -Method GET -Uri $ownersUri -ErrorAction Stop
-            $owners = if ($ownersResp -and $ownersResp['value']) { @($ownersResp['value']) } else { @() }
+            $owners = @(if ($ownersResp -and $ownersResp['value']) { $ownersResp['value'] })
             if ($owners.Count -gt 0) {
                 $ownerNames = ($owners | ForEach-Object { $_['displayName'] }) -join ', '
                 $privilegedWithOwners += "$($sp['displayName']) (owners: $ownerNames)"
@@ -874,7 +874,7 @@ try {
         try {
             $ownersUri = "/v1.0/servicePrincipals/$($sp['id'])/owners?`$select=id,displayName"
             $ownersResp = Invoke-MgGraphRequest -Method GET -Uri $ownersUri -ErrorAction Stop
-            $owners = if ($ownersResp -and $ownersResp['value']) { @($ownersResp['value']) } else { @() }
+            $owners = @(if ($ownersResp -and $ownersResp['value']) { $ownersResp['value'] })
             if ($owners.Count -gt 0) {
                 $ownerNames = ($owners | ForEach-Object { $_['displayName'] }) -join ', '
                 $roleAppsWithOwners += "$($sp['displayName']) (owners: $ownerNames)"
@@ -915,7 +915,7 @@ try {
         try {
             $ownersUri = "/v1.0/servicePrincipals/$($sp['id'])/owners?`$select=id"
             $ownersResp = Invoke-MgGraphRequest -Method GET -Uri $ownersUri -ErrorAction Stop
-            $owners = if ($ownersResp -and $ownersResp['value']) { @($ownersResp['value']) } else { @() }
+            $owners = @(if ($ownersResp -and $ownersResp['value']) { $ownersResp['value'] })
             if ($owners.Count -eq 0) {
                 $orphanedApps += $sp['displayName']
             }
