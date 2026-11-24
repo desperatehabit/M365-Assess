@@ -4,7 +4,16 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-11-24
+
+Adds a per-check remediation script library, a gated remediation engine, and check coverage for every CIS Microsoft 365 v6.0.1 recommendation and 86 of 110 CMMC Level 2 practices. Also fixes a set of collector results found wrong while validating a run against a live tenant. Exchange Online and Purview certificate app-only auth now works on Linux and macOS. No breaking changes: the new parameters and parameter sets are additive, and the exported functions are unchanged. The Security and Identity sections request new Graph permissions (see below), so re-run `Grant-M365AssessConsent` after upgrading.
+
 ### Added
+- **Remediation script library** (`Remediate/Scripts/<Collector>/<CheckId>.ps1`, #13): one standalone script per scriptable registry check, covering Entra ID, Conditional Access, enterprise applications, Exchange Online, Defender, Compliance, Purview retention, SharePoint/OneDrive, Teams, Forms, Intune, DNS, Power BI, and incident readiness. Every script reads the current state, compares it, and applies the change through `ShouldProcess` (so `-WhatIf` and `-Confirm` work), then verifies the result. Checks with no write API, or that need a decision a script cannot make, are listed in `Remediate/Scripts/coverage.json` with the reason. Scripts are unvalidated against live tenants and are not wired into the gated executor; treat them as reviewed starting points.
+- **Gated remediation engine** (`Remediate/`): remediation classification with sub-number stripping (`Resolve-Remediation`), gate evaluation against an audited allowlist (`Test-RemediationGate`, `Get-RemediationAllowlist`), a 62-command validation harness that must pass before apply (`Test-RemediationCommand`), and a typed executor with `-WhatIf` and dry-run (`Invoke-RemediationAction`). A read-only guard in CI keeps collectors from calling mutating cmdlets.
+- **Portable Exchange Online and Purview certificate auth (#1009)**: `Invoke-M365Assessment` accepts `-Certificate` (an `X509Certificate2`) or `-CertificatePath` with `-CertificatePassword` (new `AppOnlyCertObject` and `AppOnlyCertFile` parameter sets), so app-only runs work on Linux and macOS, where the Windows certificate store is not available.
+- **Microsoft first-party apps are classified separately (#1001)**: the foreign-app checks (`ENTRA-ENTAPP-003/004/005/011`) no longer raise Critical findings for Microsoft first-party service principals, such as Windows Autopatch, that hold privileged Graph permissions by design.
+- **`CA-MFA-ADMIN-001` accepts an All Users MFA policy as admin coverage (#1000)**. If that policy excludes users or groups, the check returns Review, because group membership is not resolved and the exclusions could include admins.
 - **Portal: CMMC Level 2 questionnaire and System Security Plan** (`/ssp`, see `docs/user/CMMC-SSP.md`):
   - All 110 NIST SP 800-171 Rev. 2 practices. Each gets its status from the tenant's latest run (through the registry's CMMC mappings), from the consultant's recorded answer, or from Microsoft inheritance hints for practices Microsoft covers.
   - The 24 practices no check covers (physical, personnel, training, maintenance, paperwork) carry a specific question and an evidence hint.
@@ -37,6 +46,22 @@ All notable changes to M365 Assess are documented here. This project uses [Conve
   - `INTUNE-MOBILEENCRYPT-001` evaluates iOS policies on `passcodeRequired`. iOS compliance policies have no `storageRequireEncryption`, because iOS encrypts storage whenever a passcode is set.
   - `INTUNE-COMPLIANCE-001` now evaluates `secureByDefault` ("mark devices with no compliance policy as not compliant"). Before, it passed on the check-in threshold alone. A threshold over 30 days still lowers the result to Warning.
   - `SPO-SYNC-001` and `SPO-ACCESS-002` read the Graph v1.0 property `isUnmanagedSyncAppForTenantRestricted` and keep the old key as a fallback.
+- **Single-item Graph results were counted as hashtables (#30)**. `$x = if (...) { @($r['value']) } else { @() }` unrolled a one-item array to the item itself, so `.Count` returned the number of keys and `[0]` did a key lookup. With one Global Admin, `ENTRA-CLOUDADMIN-001` reported "All 4 GA accounts are cloud-only", and `ENTRA-HYBRID-001` reported "Organization data not available". 22 sites are fixed, and a Pester guard now fails on the pattern.
+- **`ENTRA-DEVICE-004` always passed (#31)**: it read a property that `deviceRegistrationPolicy` does not return. It now evaluates `azureADJoin.localAdmins.registeringUsers`: None is Pass, Selected is Review, and All is Fail.
+- **Partial, skipped, or failed collectors no longer throw (#26)**: `Write-CollectorOutcome` was called with `-Issues` instead of `-IssueList`, so a non-Complete outcome threw instead of being logged. Skipped findings now also appear in the HTML report and the XLSX.
+- **SOC 2 alert and risk-detection checks request their permissions (#26)**: the SOC 2 section now requests `SecurityAlert.Read.All` and `IdentityRiskEvent.Read.All`.
+- **Exchange Online and Purview connect to the right organization**: `-Organization` was given the tenant GUID, so 10 collectors never ran. It is now resolved to the tenant's initial `*.onmicrosoft.com` domain.
+- **Unverifiable settings return Review, not a guessed Pass or Fail**: the Forms and SharePoint collectors read both the documented and the legacy property names, and return Review when neither is present. Power BI uses the Fabric admin tenant-settings API and reports a collector-health row (`POWERBI-COLLECTOR-000`) when that read fails. Unlicensed checks are gated as NotLicensed.
+- **Authenticator fatigue and system-preferred MFA no longer fail on enforced defaults (#998, #999)**: Graph omits `numberMatchingRequiredState` once number matching is enforced tenant-wide, and omits `systemCredentialPreferences` at the default-on state. Missing values are now read as compliant.
+- **Null `grantControls` no longer stops the Conditional Access checks (#1010).**
+- **Power BI no longer writes the credential to a temporary script file.**
+- **`Grant-M365AssessConsent` works on Windows with Graph SDK 2.34+**: it signs in through WAM in a visible window. It also resumes an existing app registration from the certificate store, not only from a PFX file. Exchange role groups that are partner-managed, or still replicating to domain controllers, are now a warning instead of a failure.
+
+### Changed
+- **Every collector uses one shared `Add-Setting` (#990)**, defined in `SecurityConfigHelper.ps1`. About 34 collectors had their own copy.
+- **The orchestrator builds a `RunContext`** and passes it to `Connect-RequiredService`, which replaces script-scoped connection state. A compatibility shim keeps the old call shape working.
+- **Report: the Critical exposure section moved below Secure Score and no longer has a frameworks column (#991, #992).**
+- **Babel 8**, with the classic JSX runtime pinned, so the inlined report script still renders without a bundler (#1007).
 
 ## [2.13.0] - 2026-06-13
 
