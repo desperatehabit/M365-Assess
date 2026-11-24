@@ -693,12 +693,17 @@ try {
     Write-Verbose "Checking CA: Sign-in frequency for Intune enrollment..."
     $intuneAppId = 'd4ebce55-015a-49b5-a083-c84d1797ae8c'
     $intuneFreqPolicies = @($enabledPolicies | Where-Object {
-        $includeApps = $_['conditions']['applications']['includeApplications']
+        # Policies without an applications condition (e.g. auth-flow policies) must not throw
+        $appConditions = $_['conditions']['applications']
+        $includeApps = if ($null -ne $appConditions) { $appConditions['includeApplications'] } else { @() }
         ($includeApps -contains $intuneAppId -or $includeApps -contains 'All') -and
         $null -ne $_['sessionControls'] -and
         $null -ne $_['sessionControls']['signInFrequency'] -and
         $_['sessionControls']['signInFrequency']['isEnabled'] -eq $true -and
-        $_['sessionControls']['signInFrequency']['type'] -eq 'everyTime'
+        # Graph stores 'Every time' as frequencyInterval = 'everyTime' (type is null);
+        # 'type' is kept as a fallback for older payloads.
+        ($_['sessionControls']['signInFrequency']['frequencyInterval'] -eq 'everyTime' -or
+         $_['sessionControls']['signInFrequency']['type'] -eq 'everyTime')
     })
 
     if ($intuneFreqPolicies.Count -gt 0) {
@@ -1197,6 +1202,85 @@ try {
 }
 catch {
     Write-Warning "Could not check CA stale group references: $_"
+}
+
+# ------------------------------------------------------------------
+# CMMC SC.L2-3.13.15 / 3.13.9: session controls across all users
+# ------------------------------------------------------------------
+# These two registry checks ask for tenant-wide coverage, so unlike the CIS
+# admin-scoped checks above they require a policy that targets All users.
+function Test-TargetsAllUsers {
+    param($Policy)
+    $users = if ($Policy['conditions']) { $Policy['conditions']['users'] } else { $null }
+    return ($null -ne $users -and @($users['includeUsers']) -contains 'All')
+}
+
+# ENTRA-SESSIONAUTH-001: legacy authentication blocked for all users
+try {
+    $allUserLegacyBlock = @($enabledPolicies | Where-Object {
+        $clientApps = if ($_['conditions']) { $_['conditions']['clientAppTypes'] } else { @() }
+        (Test-TargetsAllUsers -Policy $_) -and
+        ($clientApps -contains 'exchangeActiveSync' -or $clientApps -contains 'other') -and
+        ($null -ne $_['grantControls'] -and $_['grantControls']['builtInControls'] -contains 'block')
+    })
+    $settingParams = @{
+        Category         = 'Conditional Access'
+        Setting          = 'Legacy Authentication Blocked for All Users'
+        RecommendedValue = 'An enabled policy targeting All users blocks Exchange ActiveSync and other legacy clients'
+        CheckId          = 'ENTRA-SESSIONAUTH-001'
+    }
+    if ($allUserLegacyBlock.Count -gt 0) {
+        $settingParams.CurrentValue = "Yes ($(($allUserLegacyBlock | ForEach-Object { $_['displayName'] }) -join '; '))"
+        $settingParams.Status = 'Pass'
+        $settingParams.Remediation = 'No action needed.'
+    }
+    elseif ($securityDefaultsEnabled) {
+        $settingParams.CurrentValue = 'Covered by Security Defaults'
+        $settingParams.Status = 'Info'
+        $settingParams.Remediation = 'Security Defaults blocks legacy authentication for all users. For granular control, disable Security Defaults and create Conditional Access policies.'
+    }
+    else {
+        $settingParams.CurrentValue = 'No enabled policy blocks legacy authentication for All users'
+        $settingParams.Status = 'Fail'
+        $settingParams.Remediation = 'Entra admin center > Protection > Conditional Access > New policy: Users = All users, Conditions > Client apps = Exchange ActiveSync clients + Other clients, Grant = Block access.'
+    }
+    Add-Setting @settingParams
+}
+catch {
+    Write-Warning "Could not check all-user legacy authentication block: $_"
+}
+
+# ENTRA-CA-SESSIONFREQ-001: sign-in frequency enforced for all users
+try {
+    $allUserFrequency = @($enabledPolicies | Where-Object {
+        $frequency = if ($_['sessionControls']) { $_['sessionControls']['signInFrequency'] } else { $null }
+        (Test-TargetsAllUsers -Policy $_) -and $null -ne $frequency -and $frequency['isEnabled'] -eq $true
+    })
+    $settingParams = @{
+        Category         = 'Conditional Access'
+        Setting          = 'Sign-in Frequency Enforced for All Users'
+        RecommendedValue = 'An enabled policy targeting All users sets a sign-in frequency'
+        CheckId          = 'ENTRA-CA-SESSIONFREQ-001'
+    }
+    if ($allUserFrequency.Count -gt 0) {
+        $describe = foreach ($policy in $allUserFrequency) {
+            $frequency = $policy['sessionControls']['signInFrequency']
+            $value = if ($frequency['frequencyInterval'] -eq 'everyTime') { 'every time' } else { "$($frequency['value']) $($frequency['type'])" }
+            "$($policy['displayName']) ($value)"
+        }
+        $settingParams.CurrentValue = "Yes: $($describe -join '; ')"
+        $settingParams.Status = 'Pass'
+        $settingParams.Remediation = 'No action needed.'
+    }
+    else {
+        $settingParams.CurrentValue = 'No enabled policy targeting All users sets a sign-in frequency'
+        $settingParams.Status = 'Fail'
+        $settingParams.Remediation = 'Entra admin center > Protection > Conditional Access > New policy: Users = All users, Session > Sign-in frequency (for example 8 hours; 1 hour for privileged roles).'
+    }
+    Add-Setting @settingParams
+}
+catch {
+    Write-Warning "Could not check all-user sign-in frequency: $_"
 }
 
 # ------------------------------------------------------------------

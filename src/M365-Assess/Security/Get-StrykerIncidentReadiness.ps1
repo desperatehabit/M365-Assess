@@ -557,6 +557,13 @@ catch {
 # =====================================================================
 # CHECK 8: ENTRA-BREAKGLASS-001 — Break-Glass Emergency Access Account
 # =====================================================================
+# The detection below is the single source of truth for break-glass accounts
+# (#888). CHECK 8b and 8c reuse its result: $breakGlassMembers holds the
+# detected account objects, $breakGlassConfidence the detection confidence, and
+# $breakGlassDetectionError is set when detection itself failed.
+$breakGlassMembers = @()
+$breakGlassConfidence = 'None'
+$breakGlassDetectionError = $null
 try {
     $globalAdminRoleId = '62e90394-69f5-4237-9190-012177145e10'
     $role = Get-MgDirectoryRole -Filter "roleTemplateId eq '$globalAdminRoleId'" -ErrorAction Stop
@@ -578,6 +585,7 @@ try {
             foreach ($pattern in $breakGlassPatterns) {
                 if ($member.DisplayName -match $pattern -or $member.UserPrincipalName -match $pattern) {
                     $detectedAccounts += "$($member.DisplayName) ($($member.UserPrincipalName)) [name match]"
+                    $breakGlassMembers += $member
                     $confidenceLevel = 'High'
                     break
                 }
@@ -602,11 +610,14 @@ try {
                     $admin = $members | Where-Object { $_.Id -eq $adminId }
                     if ($admin) {
                         $detectedAccounts += "$($admin.DisplayName) ($($admin.UserPrincipalName)) [CA exclusion pattern]"
+                        $breakGlassMembers += $admin
                         $confidenceLevel = 'Medium'
                     }
                 }
             }
         }
+
+        $breakGlassConfidence = $confidenceLevel
 
         # #888: threshold is 2 per Microsoft + CIS, not 1. Single-account state
         # is partial-compliance (Warning), not Pass. Microsoft's reasoning is
@@ -643,11 +654,92 @@ try {
     }
 }
 catch {
+    $breakGlassDetectionError = $_.Exception.Message
     Add-Setting -Category 'Emergency Access' -Setting 'Break-glass emergency access account' `
         -CurrentValue "Error: $($_.Exception.Message)" `
         -RecommendedValue 'At least 1 break-glass account with Global Admin role' `
         -Status 'Review' -CheckId 'ENTRA-BREAKGLASS-001' `
         -Remediation 'Ensure Directory.Read.All and Policy.Read.All permissions are granted.'
+}
+
+# =====================================================================
+# CHECK 8b: ENTRA-ADMIN-003 — Two emergency access accounts (CIS 1.1.2)
+# =====================================================================
+# Reports CIS 1.1.2 from the CHECK 8 detection rather than a second heuristic
+# (#888 removed the separate, weaker detection). CIS requires two accounts, so
+# a single account fails here even though CHECK 8 reports it as a Warning.
+$bgCount = @($breakGlassMembers).Count
+$bgAdmin003 = @{
+    Category         = 'Emergency Access'
+    Setting          = 'Two emergency access accounts defined'
+    RecommendedValue = 'At least 2 cloud-only emergency access accounts with Global Admin role'
+    CheckId          = 'ENTRA-ADMIN-003'
+}
+if ($breakGlassDetectionError) {
+    $bgAdmin003.CurrentValue = "Error: $breakGlassDetectionError"
+    $bgAdmin003.Status       = 'Review'
+    $bgAdmin003.Remediation  = 'Ensure Directory.Read.All and Policy.Read.All permissions are granted.'
+}
+elseif ($bgCount -ge 2) {
+    $bgAdmin003.CurrentValue = "$bgCount emergency access account(s) detected (confidence: $breakGlassConfidence)"
+    $bgAdmin003.Status       = if ($breakGlassConfidence -eq 'High') { 'Pass' } else { 'Warning' }
+    $bgAdmin003.Remediation  = if ($breakGlassConfidence -eq 'High') { 'No action needed.' } else { 'Confirm the detected accounts are intentional emergency access accounts (detected by CA exclusion, not by name).' }
+}
+else {
+    $bgAdmin003.CurrentValue = "$bgCount emergency access account(s) detected"
+    $bgAdmin003.Status       = 'Fail'
+    $bgAdmin003.Remediation  = 'Create two cloud-only emergency access accounts with the Global Administrator role, phishing-resistant credentials stored separately, and exclusions from Conditional Access policies.'
+}
+Add-Setting @bgAdmin003
+
+# =====================================================================
+# CHECK 8c: ENTRA-BREAKGLASS-002 — Emergency account activity monitored (CIS 2.2.1)
+# =====================================================================
+# Looks for an enabled Defender XDR custom detection rule whose query names a
+# detected break-glass account (UPN or object id). Alerts built in Azure Monitor
+# or Sentinel are not visible to this tool, so "none found" is Review, not Fail.
+$bgMonitor = @{
+    Category         = 'Emergency Access'
+    Setting          = 'Emergency access account sign-ins monitored'
+    RecommendedValue = 'An alert fires on every sign-in by an emergency access account'
+    CheckId          = 'ENTRA-BREAKGLASS-002'
+}
+$bgMonitorRemediation = 'Create an alert on every sign-in by each emergency access account: a Defender XDR custom detection on IdentityLogonEvents/AADSignInEventsBeta, or an Azure Monitor/Sentinel rule on SigninLogs filtered to the accounts'' object ids.'
+if ($breakGlassDetectionError -or $bgCount -eq 0) {
+    $bgMonitor.CurrentValue = if ($breakGlassDetectionError) { "Error: $breakGlassDetectionError" } else { 'No emergency access account detected, so monitoring cannot be verified (see ENTRA-BREAKGLASS-001)' }
+    $bgMonitor.Status       = 'Review'
+    $bgMonitor.Remediation  = $bgMonitorRemediation
+    Add-Setting @bgMonitor
+}
+else {
+    try {
+        $rulesResponse = Invoke-MgGraphRequest -Method GET -Uri '/beta/security/rules/detectionRules' -ErrorAction Stop
+        $rules = if ($rulesResponse -and $rulesResponse['value']) { @($rulesResponse['value']) } else { @() }
+        $needles = @($breakGlassMembers | ForEach-Object { $_.UserPrincipalName; $_.Id } | Where-Object { $_ })
+        $matching = @($rules | Where-Object {
+            $rule = $_
+            $enabled = $rule['isEnabled'] -ne $false
+            $query = if ($rule['queryCondition']) { [string]$rule['queryCondition']['queryText'] } else { '' }
+            $enabled -and @($needles | Where-Object { $query.IndexOf([string]$_, [System.StringComparison]::OrdinalIgnoreCase) -ge 0 }).Count -gt 0
+        })
+        if ($matching.Count -gt 0) {
+            $names = ($matching | ForEach-Object { $_['displayName'] }) -join '; '
+            $bgMonitor.CurrentValue = "Monitored by $($matching.Count) Defender XDR custom detection(s): $names"
+            $bgMonitor.Status       = 'Pass'
+            $bgMonitor.Remediation  = 'No action needed. Confirm the alert reaches an on-call responder.'
+        }
+        else {
+            $bgMonitor.CurrentValue = "No enabled Defender XDR custom detection references the $bgCount emergency access account(s). Azure Monitor and Sentinel alerts are not visible to this check."
+            $bgMonitor.Status       = 'Review'
+            $bgMonitor.Remediation  = $bgMonitorRemediation
+        }
+    }
+    catch {
+        $bgMonitor.CurrentValue = "Could not read Defender XDR custom detections: $($_.Exception.Message)"
+        $bgMonitor.Status       = 'Review'
+        $bgMonitor.Remediation  = "Grant CustomDetection.Read.All, or verify manually. $bgMonitorRemediation"
+    }
+    Add-Setting @bgMonitor
 }
 
 # =====================================================================

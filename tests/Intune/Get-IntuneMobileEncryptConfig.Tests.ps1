@@ -4,7 +4,7 @@ Describe 'Get-IntuneMobileEncryptConfig - Both platforms encrypted' {
 
         Mock Invoke-MgGraphRequest {
             return @{ value = @(
-                @{ '@odata.type' = '#microsoft.graph.iosCompliancePolicy'; storageRequireEncryption = $true; displayName = 'iOS Policy' }
+                @{ '@odata.type' = '#microsoft.graph.iosCompliancePolicy'; passcodeRequired = $true; displayName = 'iOS Policy' }
                 @{ '@odata.type' = '#microsoft.graph.androidCompliancePolicy'; storageRequireEncryption = $true; displayName = 'Android Policy' }
             ) }
         }
@@ -44,7 +44,7 @@ Describe 'Get-IntuneMobileEncryptConfig - Only iOS encrypted' {
 
         Mock Invoke-MgGraphRequest {
             return @{ value = @(
-                @{ '@odata.type' = '#microsoft.graph.iosCompliancePolicy'; storageRequireEncryption = $true; displayName = 'iOS Policy' }
+                @{ '@odata.type' = '#microsoft.graph.iosCompliancePolicy'; passcodeRequired = $true; displayName = 'iOS Policy' }
                 @{ '@odata.type' = '#microsoft.graph.androidCompliancePolicy'; storageRequireEncryption = $false; displayName = 'Android Policy' }
             ) }
         }
@@ -90,6 +90,36 @@ Describe 'Get-IntuneMobileEncryptConfig - No policies' {
 
     It 'Android sentinel CurrentValue mentions no policy found' {
         ($settings | Where-Object { $_.Setting -match 'Android' }).CurrentValue | Should -Match 'No Android compliance policy found'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-IntuneMobileEncryptConfig - iOS policy without passcode' {
+    BeforeAll {
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+
+        Mock Invoke-MgGraphRequest {
+            # iOS compliance policies have no storageRequireEncryption property; a stray
+            # value must not count as encryption when no passcode is required.
+            return @{ value = @(
+                @{ '@odata.type' = '#microsoft.graph.iosCompliancePolicy'; passcodeRequired = $false; storageRequireEncryption = $true; displayName = 'iOS Policy' }
+                @{ '@odata.type' = '#microsoft.graph.androidCompliancePolicy'; storageRequireEncryption = $true; displayName = 'Android Policy' }
+            ) }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Intune/Get-IntuneMobileEncryptConfig.ps1"
+    }
+
+    It 'iOS policy row is Fail when passcode is not required' {
+        ($settings | Where-Object { $_.Setting -match 'iOS' }).Status | Should -Be 'Fail'
+    }
+
+    It 'Android policy row is still Pass' {
+        ($settings | Where-Object { $_.Setting -match 'Android' }).Status | Should -Be 'Pass'
     }
 
     AfterAll {

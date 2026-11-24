@@ -1,0 +1,251 @@
+// The SSP as a format-neutral list of blocks. document-html.ts and
+// document-docx.ts both render this list, so the Word and HTML deliverables
+// always carry the same content.
+import {
+  SSP_FAMILIES,
+  type SspDocumentView,
+  type SspFamily,
+  type SspImplementationStatus,
+  type SspPracticeView,
+  type SspResponsibility,
+} from "@m365-assess/contracts/ssp";
+
+export type SspBlock =
+  | { readonly kind: "title"; readonly text: string; readonly subtitle: readonly string[] }
+  | { readonly kind: "heading"; readonly level: 1 | 2 | 3; readonly text: string }
+  | { readonly kind: "paragraph"; readonly text: string; readonly tone?: "normal" | "muted" | "notice" }
+  | { readonly kind: "fields"; readonly rows: readonly (readonly [string, string])[] }
+  | { readonly kind: "table"; readonly header: readonly string[]; readonly rows: readonly (readonly string[])[] }
+  | { readonly kind: "list"; readonly items: readonly string[] }
+  | { readonly kind: "pageBreak" };
+
+export const STATUS_LABELS: Readonly<Record<SspImplementationStatus | "not-assessed", string>> = {
+  implemented: "Implemented",
+  "partially-implemented": "Partially implemented",
+  planned: "Planned",
+  "not-implemented": "Not implemented",
+  "not-applicable": "Not applicable",
+  "not-assessed": "Not yet assessed",
+};
+
+export const RESPONSIBILITY_LABELS: Readonly<Record<SspResponsibility, string>> = {
+  customer: "Customer",
+  shared: "Shared (customer and Microsoft)",
+  inherited: "Inherited (Microsoft)",
+};
+
+const SOURCE_LABELS = {
+  response: "Customer questionnaire",
+  automated: "Automated M365-Assess result",
+  none: "Not yet assessed",
+} as const;
+
+const POAM_STATUSES = new Set(["partially-implemented", "planned", "not-implemented", "not-assessed"]);
+
+function orDash(value: string | null | undefined): string {
+  return value && value.trim() !== "" ? value : "—";
+}
+
+function automatedNarrative(view: SspPracticeView): string | null {
+  const { automated } = view;
+  if (automated.findings.length === 0) return null;
+  const passing = automated.findings.filter((finding) => ["pass", "info"].includes(finding.status.toLowerCase())).length;
+  return `Automated assessment of the Microsoft 365 tenant: ${passing} of ${automated.findings.length} mapped check result(s) pass. See the automated evidence below.`;
+}
+
+function practiceBlocks(view: SspPracticeView): SspBlock[] {
+  const { practice, response } = view;
+  const title = `${practice.id} ${practice.cmmcId}${practice.level1Id ? ` (Level 1: ${practice.level1Id})` : ""}`;
+  const blocks: SspBlock[] = [
+    { kind: "heading", level: 3, text: title },
+    { kind: "paragraph", text: practice.requirement, tone: "muted" },
+    {
+      kind: "fields",
+      rows: [
+        ["Status", STATUS_LABELS[view.effectiveStatus]],
+        ["Responsibility", RESPONSIBILITY_LABELS[view.effectiveResponsibility]],
+        ["Source", SOURCE_LABELS[view.statusSource]],
+        ["Owner", orDash(response?.owner)],
+        ...(response?.plannedCompletion ? [["Planned completion", response.plannedCompletion] as const] : []),
+      ],
+    },
+  ];
+  const narrative = response?.narrative?.trim() ? response.narrative : automatedNarrative(view);
+  blocks.push({
+    kind: "paragraph",
+    text: narrative ?? "No implementation statement recorded. Complete this practice in the questionnaire.",
+    tone: narrative ? "normal" : "notice",
+  });
+  if (practice.inheritanceNote && view.effectiveResponsibility !== "customer") {
+    blocks.push({ kind: "paragraph", text: `Inheritance: ${practice.inheritanceNote}`, tone: "muted" });
+  }
+  if (view.automated.findings.length > 0) {
+    blocks.push({
+      kind: "table",
+      header: ["Automated check", "Result", "Observed value"],
+      rows: view.automated.findings.map((finding) => [
+        finding.controlName ? `${finding.checkId} ${finding.controlName}` : finding.checkId,
+        finding.status,
+        orDash(finding.currentValue),
+      ]),
+    });
+  }
+  if (response && response.evidence.length > 0) {
+    blocks.push({ kind: "paragraph", text: "Evidence:", tone: "normal" }, { kind: "list", items: response.evidence });
+  }
+  return blocks;
+}
+
+function sprsBlocks(view: SspDocumentView): SspBlock[] {
+  const sprs = view.summary.sprs;
+  const notes: string[] = [];
+  if (sprs.unassessedPoints > 0) {
+    notes.push(`${sprs.unassessedPoints} of the deducted points are for practices not yet assessed; the score rises as they are answered.`);
+  }
+  if (sprs.sspMissing) {
+    notes.push("Practice 3.12.4 (system security plan) is not marked implemented. An assessment cannot be completed until the SSP is approved and 3.12.4 is recorded as implemented.");
+  }
+  if (sprs.poamIneligible.length > 0) {
+    notes.push(`CMMC Conditional Level 2 status allows only 1-point practices (and 3.13.11 at partial credit) on a POA&M. These unmet practices must be implemented first: ${sprs.poamIneligible.join(", ")}.`);
+  }
+  return [
+    { kind: "heading", level: 2, text: "3.1 SPRS score (DoD Assessment Methodology)" },
+    {
+      kind: "fields",
+      rows: [
+        ["Score", `${sprs.score} of ${sprs.maxScore}`],
+        ["Practices deducted", String(sprs.deductions.length)],
+        ["CMMC Conditional threshold", `${sprs.conditionalThreshold} (${sprs.meetsConditionalThreshold ? "met" : "not met"})`],
+      ],
+    },
+    ...notes.map((text): SspBlock => ({ kind: "paragraph", text, tone: "notice" })),
+    {
+      kind: "paragraph",
+      tone: "muted",
+      text: "Score = 110 minus the value (1, 3, or 5) of every practice not implemented. Partial and planned practices earn no credit, except 3.5.3 and 3.13.11, which deduct 3 when partially implemented. Not-applicable practices deduct nothing. Practices not yet assessed are deducted so the score is never overstated. Confirm the score with the assessor before submitting it to SPRS.",
+    },
+  ];
+}
+
+export function buildSspBlocks(view: SspDocumentView): SspBlock[] {
+  const profile = view.profile;
+  const generated = view.generatedAt.slice(0, 10);
+  const blocks: SspBlock[] = [
+    {
+      kind: "title",
+      text: "System Security Plan",
+      subtitle: [
+        profile?.organizationName?.trim() || "Organization not recorded",
+        profile?.systemName?.trim() || "System name not recorded",
+        "CMMC 2.0 Level 2 / NIST SP 800-171 Rev. 2",
+        `Generated ${generated}`,
+      ],
+    },
+    {
+      kind: "paragraph",
+      tone: "notice",
+      text: "Draft generated by M365-Assess from automated Microsoft 365 assessment results and the customer questionnaire. The system owner must review, complete, and approve this plan before it is relied on.",
+    },
+    { kind: "heading", level: 1, text: "1. System identification" },
+    {
+      kind: "fields",
+      rows: [
+        ["Organization", orDash(profile?.organizationName)],
+        ["System name", orDash(profile?.systemName)],
+        ["System owner", orDash(profile?.systemOwner)],
+        ["Security contact", orDash(profile?.securityContact)],
+        ["CUI categories", orDash(profile?.cuiCategories)],
+      ],
+    },
+    { kind: "heading", level: 1, text: "2. System description" },
+    { kind: "heading", level: 2, text: "2.1 Overview" },
+    { kind: "paragraph", text: orDash(profile?.description) },
+    { kind: "heading", level: 2, text: "2.2 Authorization boundary" },
+    { kind: "paragraph", text: orDash(profile?.boundary) },
+    { kind: "heading", level: 2, text: "2.3 Operating environment" },
+    { kind: "paragraph", text: orDash(profile?.environment) },
+    { kind: "heading", level: 2, text: "2.4 Interconnections and service providers" },
+    { kind: "paragraph", text: orDash(profile?.interconnections) },
+    { kind: "heading", level: 1, text: "3. Implementation summary" },
+    {
+      kind: "table",
+      header: ["Status", "Practices"],
+      rows: (Object.keys(STATUS_LABELS) as (keyof typeof STATUS_LABELS)[]).map((status) => [
+        STATUS_LABELS[status],
+        String(view.summary.byStatus[status]),
+      ]),
+    },
+    {
+      kind: "paragraph",
+      text: `Level 1 practices implemented: ${view.summary.level1Implemented} of ${view.summary.level1Total}. Practices with no automated result or recorded answer: ${view.summary.unanswered} of ${view.summary.total}.`,
+    },
+    ...sprsBlocks(view),
+    { kind: "pageBreak" },
+    { kind: "heading", level: 1, text: "4. Security requirements" },
+  ];
+
+  const byFamily = new Map<SspFamily, SspPracticeView[]>();
+  for (const practiceView of view.practices) {
+    const list = byFamily.get(practiceView.practice.family) ?? [];
+    list.push(practiceView);
+    byFamily.set(practiceView.practice.family, list);
+  }
+  let sectionNumber = 1;
+  for (const [family, views] of byFamily) {
+    blocks.push({ kind: "heading", level: 2, text: `4.${sectionNumber} ${SSP_FAMILIES[family]} (${family})` });
+    for (const practiceView of views) blocks.push(...practiceBlocks(practiceView));
+    sectionNumber += 1;
+  }
+
+  const poam = view.practices.filter((practiceView) => POAM_STATUSES.has(practiceView.effectiveStatus));
+  const deductionsById = new Map(view.summary.sprs.deductions.map((deduction) => [deduction.practiceId, deduction]));
+  blocks.push(
+    { kind: "pageBreak" },
+    { kind: "heading", level: 1, text: "5. Plan of action and milestones" },
+    {
+      kind: "paragraph",
+      text: poam.length === 0
+        ? "Every practice is implemented or not applicable."
+        : `${poam.length} practice(s) are not fully implemented or not yet assessed.`,
+    },
+  );
+  if (poam.length > 0) {
+    blocks.push({
+      kind: "table",
+      header: ["Practice", "Status", "SPRS points", "POA&M eligible", "Owner", "Planned completion", "Gap"],
+      rows: poam.map((practiceView) => {
+        const failing = practiceView.automated.findings
+          .filter((finding) => !["pass", "info"].includes(finding.status.toLowerCase()))
+          .map((finding) => finding.checkId);
+        const gap = practiceView.response?.narrative?.trim()
+          ? practiceView.response.narrative.trim().slice(0, 300)
+          : failing.length > 0
+            ? `Automated checks not passing: ${failing.join(", ")}`
+            : "Not yet assessed";
+        const deduction = deductionsById.get(practiceView.practice.id);
+        return [
+          practiceView.practice.cmmcId,
+          STATUS_LABELS[practiceView.effectiveStatus],
+          deduction ? `-${deduction.points}` : practiceView.practice.id === "3.12.4" ? "Required" : "0",
+          deduction ? (deduction.poamEligible ? "Yes" : "No") : "—",
+          orDash(practiceView.response?.owner),
+          orDash(practiceView.response?.plannedCompletion),
+          gap,
+        ];
+      }),
+    });
+  }
+
+  blocks.push(
+    { kind: "heading", level: 1, text: "6. Approval" },
+    {
+      kind: "table",
+      header: ["Role", "Name", "Signature", "Date"],
+      rows: [
+        ["System owner", orDash(profile?.systemOwner), "", ""],
+        ["Senior official", "", "", ""],
+      ],
+    },
+  );
+  return blocks;
+}

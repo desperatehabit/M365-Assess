@@ -2,18 +2,19 @@
 
 _Maintained by hand (last regenerated 2026-11-22; T-0909 to T-0913 added 2026-11-17;
 T-0914 to T-0916 added 2026-11-18; T-0917 to T-0939 added 2026-11-19; T-0940 and
-T-0941 added 2026-11-20; T-0943 and T-0944 added 2026-11-23; T-0945 to T-0956 added 2026-11-24;
+T-0941 added 2026-11-20; T-0943 and T-0944 added 2026-11-23; T-0945 to T-0957 added 2026-11-24;
 T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
 2026-11-22). When a ticket's `status` changes, update its row and the counts below in
 the same commit. The ticket file is the source of truth._
 
-**133 open · 462 closed**
+**134 open · 462 closed**
 
 | Status | Count |
 |---|---|
 | epic | 40 |
 | fixed-unverified | 73 |
 | open | 12 |
+| not-dispatchable | 1 |
 | closed | 8 |
 
 ## Open
@@ -138,6 +139,7 @@ the same commit. The ticket file is the source of truth._
 | [T-0947](ISSUES/T-0947.md) | medium | open | 2 | An onboarded tenant is named after the app registration |
 | [T-0952](ISSUES/T-0952.md) | medium | open | 1 | DEFENDER-ZAP-001 reports NotLicensed because it reads Teams ZAP from the wrong policy |
 | [T-0953](ISSUES/T-0953.md) | medium | open | 1 | COMPLIANCE-COMMS-001 can never run: it calls a cmdlet that does not exist |
+| [T-0957](ISSUES/parked/T-0957.md) | medium | not-dispatchable | 3 | Ingest NinjaOne endpoint data into reports and the CMMC SSP |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
 | [EPIC-041](ISSUES/epics/EPIC-041.md) | low | closed | 0 | Integrations, Copilot & Shadow AI |

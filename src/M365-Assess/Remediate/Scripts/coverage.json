@@ -117,6 +117,10 @@
       "reason": "manual",
       "note": "Investigate"
     },
+    "INTUNE-FIREWALL-001": {
+      "reason": "manual",
+      "note": "Settings catalog firewall policy; script pending live check of the setting IDs"
+    },
     "INTUNE-WIPEAUDIT-001": {
       "reason": "manual",
       "note": "Investigate"

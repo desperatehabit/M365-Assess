@@ -23,6 +23,10 @@
       "types": "./dist/alerting.d.ts",
       "import": "./dist/alerting.js"
     },
+    "./ssp": {
+      "types": "./dist/ssp.d.ts",
+      "import": "./dist/ssp.js"
+    },
     "./openapi": "./openapi/portal.v1.yaml"
   },
   "files": [

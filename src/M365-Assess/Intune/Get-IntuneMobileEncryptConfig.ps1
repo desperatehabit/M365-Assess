@@ -4,8 +4,10 @@
     iOS and Android devices.
 .DESCRIPTION
     Queries Intune device compliance policies and emits one result row per iOS
-    and Android compliance policy showing whether storageRequireEncryption is
-    enabled. If no policy exists for a platform, a Fail row is emitted for that
+    and Android compliance policy showing whether storage encryption is enforced.
+    Android policies are evaluated on storageRequireEncryption. iOS compliance
+    policies have no encryption property (iOS encrypts storage whenever a passcode
+    is set), so iOS policies are evaluated on passcodeRequired. If no policy exists for a platform, a Fail row is emitted for that
     platform. Satisfies the CMMC requirement to encrypt CUI on mobile devices.
 
     Requires an active Microsoft Graph connection with
@@ -41,7 +43,7 @@ $ctx = Initialize-SecurityConfig
 $settings = $ctx.Settings
 
 
-$remediationText = 'Intune admin center > Devices > Compliance > Create/edit iOS and Android compliance policies > Require device encryption.'
+$remediationText = 'Intune admin center > Devices > Compliance > Create/edit compliance policies. Android: System security > Require encryption of data storage on device. iOS: System security > Require a password to unlock mobile devices (iOS encrypts storage when a passcode is set).'
 
 # ------------------------------------------------------------------
 # 1. Emit one row per iOS and Android compliance policy
@@ -69,12 +71,14 @@ try {
 
         if ($odataType -match 'iosCompliancePolicy') {
             $iosCount++
-            $encrypted = $policy['storageRequireEncryption'] -eq $true
+            # iosCompliancePolicy has no storageRequireEncryption; iOS data protection
+            # (encryption) is enabled whenever a passcode is set.
+            $encrypted = $policy['passcodeRequired'] -eq $true
             $settingParams = @{
                 Category         = 'Mobile Encryption'
                 Setting          = "Storage Encryption Required (iOS) — $name"
-                CurrentValue     = if ($encrypted) { 'Encryption required' } else { 'Encryption not required' }
-                RecommendedValue = 'storageRequireEncryption: true'
+                CurrentValue     = if ($encrypted) { 'Encryption required (passcode required)' } else { 'Encryption not required (no passcode required)' }
+                RecommendedValue = 'passcodeRequired: true'
                 Status           = if ($encrypted) { 'Pass' } else { 'Fail' }
                 CheckId          = 'INTUNE-MOBILEENCRYPT-001'
                 Remediation      = $remediationText
@@ -103,7 +107,7 @@ try {
             Category         = 'Mobile Encryption'
             Setting          = 'Storage Encryption Required (iOS)'
             CurrentValue     = 'No iOS compliance policy found'
-            RecommendedValue = 'iOS compliance policy with storageRequireEncryption: true'
+            RecommendedValue = 'iOS compliance policy with passcodeRequired: true'
             Status           = 'Fail'
             CheckId          = 'INTUNE-MOBILEENCRYPT-001'
             Remediation      = $remediationText
@@ -129,7 +133,7 @@ catch {
             Category         = 'Mobile Encryption'
             Setting          = 'Storage Encryption Required on iOS and Android'
             CurrentValue     = 'Insufficient permissions or license (Intune required)'
-            RecommendedValue = 'iOS and Android compliance policies with storageRequireEncryption: true'
+            RecommendedValue = 'iOS compliance policies with passcodeRequired: true and Android compliance policies with storageRequireEncryption: true'
             Status           = 'Review'
             CheckId          = 'INTUNE-MOBILEENCRYPT-001'
             Remediation      = 'Requires DeviceManagementConfiguration.Read.All permission and Intune license.'

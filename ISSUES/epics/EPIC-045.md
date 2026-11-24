@@ -14,9 +14,10 @@ depends_on:
   - EPIC-038
   - EPIC-042
 needs_scope_review: true
-children: []
+children:
+  - T-0957
 scope_kind: "epic"
-scope_note: "Rollup for RMM Integrations (ConnectWise Automate, NinjaOne). SPEC is Drafted, not Approved; no child tickets authored yet (new children start at T-0905)."
+scope_note: "Rollup for RMM Integrations (ConnectWise Automate, NinjaOne). SPEC is Drafted, not Approved; first child: T-0957 (NinjaOne endpoint data ingestion)."
 ---
 
 # EPIC-045 — RMM Integrations (ConnectWise Automate, NinjaOne)

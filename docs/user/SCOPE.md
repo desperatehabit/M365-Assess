@@ -19,7 +19,7 @@ These sections run on every assessment unless explicitly excluded with `-Section
 | **Intune** | Managed devices, compliance policies, configuration profiles, CMMC L2 controls (encryption, port storage, app control, FIPS, removable media) |
 | **Security** | Microsoft Secure Score, Defender for Office 365, DLP policies, incident readiness (stale admins, CA exclusions, break-glass, device wipe audit) |
 | **Collaboration** | SharePoint / OneDrive sharing, Teams meeting policies, Forms data sharing, third-party app restrictions |
-| **PowerBI** | 11 CIS 9.1.x tenant settings: guest access, external sharing, publish-to-web, sensitivity labels |
+| **PowerBI** | 12 CIS 9.1.x tenant settings: guest access, external sharing, publish-to-web, sensitivity labels, service principal access |
 | **Hybrid** | Azure AD Connect / Cloud Sync configuration, drift between on-prem and cloud directory state |
 
 ---

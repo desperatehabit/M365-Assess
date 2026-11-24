@@ -107,6 +107,11 @@ export const NAV_GROUPS: readonly NavGroup[] = [
           label: "Remediation history",
           description: "Past remediation actions and their outcomes.",
         },
+        {
+          href: "/ssp",
+          label: "CMMC SSP",
+          description: "CMMC Level 2 questionnaire and System Security Plan.",
+        },
       ],
     },
     {
