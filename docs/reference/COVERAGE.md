@@ -17,8 +17,8 @@
 | Framework key | Report view | Checks mapped | Distinct controls mapped | Avg checks / control |
 |---|---|---|---|---|
 | `nist-800-53` | yes | 292 | 229 | 1.3 |
+| `soc2` | yes | 292 | 199 | 1.5 |
 | `fedramp` | yes | 291 | 153 | 1.9 |
-| `soc2` | yes | 291 | 199 | 1.5 |
 | `cmmc` | yes | 285 | 155 | 1.8 |
 | `nist-800-171` | — | 285 | 93 | 3.1 |
 | `pci-dss` | yes | 277 | 198 | 1.4 |

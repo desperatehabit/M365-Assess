@@ -88,7 +88,7 @@ function Test-PolicyAssigned {
     return @($assignments).Count -gt 0
 }
 
-function Add-ReviewOnError {
+function Write-ReviewOnError {
     param($ErrorRecord, [hashtable]$Base)
     $message = $ErrorRecord.Exception.Message
     $Base.CurrentValue = if ($message -match '403|Forbidden|Authorization') { 'Insufficient permissions or license (Intune required)' } else { "Error: $message" }
@@ -150,7 +150,7 @@ try {
     Add-Setting @encryptionBase
 }
 catch {
-    Add-ReviewOnError -ErrorRecord $_ -Base $encryptionBase
+    Write-ReviewOnError -ErrorRecord $_ -Base $encryptionBase
 }
 
 # ------------------------------------------------------------------
@@ -163,7 +163,7 @@ $mobileCodeBase = @{
     CheckId          = 'INTUNE-MOBILECODE-001'
 }
 if ($configurationPoliciesError) {
-    Add-ReviewOnError -ErrorRecord $configurationPoliciesError -Base $mobileCodeBase
+    Write-ReviewOnError -ErrorRecord $configurationPoliciesError -Base $mobileCodeBase
 }
 else {
     try {
@@ -188,7 +188,7 @@ else {
         Add-Setting @mobileCodeBase
     }
     catch {
-        Add-ReviewOnError -ErrorRecord $_ -Base $mobileCodeBase
+        Write-ReviewOnError -ErrorRecord $_ -Base $mobileCodeBase
     }
 }
 
@@ -202,7 +202,7 @@ $firewallBase = @{
     CheckId          = 'INTUNE-FIREWALL-001'
 }
 if ($configurationPoliciesError) {
-    Add-ReviewOnError -ErrorRecord $configurationPoliciesError -Base $firewallBase
+    Write-ReviewOnError -ErrorRecord $configurationPoliciesError -Base $firewallBase
 }
 else {
     try {
@@ -242,7 +242,7 @@ else {
         Add-Setting @firewallBase
     }
     catch {
-        Add-ReviewOnError -ErrorRecord $_ -Base $firewallBase
+        Write-ReviewOnError -ErrorRecord $_ -Base $firewallBase
     }
 }
 

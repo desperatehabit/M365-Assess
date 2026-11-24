@@ -160,6 +160,10 @@
       },
       "iso-27001": {
         "controlId": "8.20"
+      },
+      "soc2": {
+        "controlId": "CC6.1;CC6.6;CC6.6-POF1;CC6.6-POF4",
+        "title": "Logical Access Security Software, Infrastructure, and Architectures; Restriction of Access to System Boundaries"
       }
     },
     "impactRating": {
