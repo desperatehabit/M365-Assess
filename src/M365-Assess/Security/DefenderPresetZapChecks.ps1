@@ -91,19 +91,20 @@ catch {
 # 10. ZAP for Teams (CIS 2.4.4)
 # ------------------------------------------------------------------
 try {
-    # ZAP for Teams is a newer capability; check via Get-AtpPolicyForO365
-    $atpO365AvailableZap = Get-Command -Name Get-AtpPolicyForO365 -ErrorAction SilentlyContinue
-    if ($atpO365AvailableZap) {
-        $atpPolicyZap = Get-AtpPolicyForO365 -ErrorAction Stop
-        if ($null -ne $atpPolicyZap.ZapEnabled) {
+    # Teams ZAP is ZapEnabled on the Teams protection policy (T-0952). Get-AtpPolicyForO365
+    # has no ZapEnabled property, so reading it there always looked unlicensed.
+    $teamsProtectionAvailable = Get-Command -Name Get-TeamsProtectionPolicy -ErrorAction SilentlyContinue
+    if ($teamsProtectionAvailable) {
+        $teamsProtection = @(Get-TeamsProtectionPolicy -ErrorAction Stop) | Select-Object -First 1
+        if ($null -ne $teamsProtection -and $null -ne $teamsProtection.ZapEnabled) {
             $settingParams = @{
                 Category         = 'Zero-Hour Auto Purge'
                 Setting          = 'ZAP for Teams'
-                CurrentValue     = "$($atpPolicyZap.ZapEnabled)"
+                CurrentValue     = "ZapEnabled: $($teamsProtection.ZapEnabled)"
                 RecommendedValue = 'True'
-                Status           = if ($atpPolicyZap.ZapEnabled) { 'Pass' } else { 'Fail' }
+                Status           = if ($teamsProtection.ZapEnabled -eq $true) { 'Pass' } else { 'Fail' }
                 CheckId          = 'DEFENDER-ZAP-001'
-                Remediation      = 'Enable ZAP for Teams in Security admin center > Settings > Zero-hour auto purge > Teams.'
+                Remediation      = 'Microsoft Defender portal > Settings > Email & collaboration > Microsoft Teams protection > Zero-hour auto purge (ZAP): On. PowerShell: Set-TeamsProtectionPolicy -Identity "Teams Protection Policy" -ZapEnabled $true'
             }
             Add-Setting @settingParams
         }
@@ -111,7 +112,7 @@ try {
             $settingParams = @{
                 Category         = 'Zero-Hour Auto Purge'
                 Setting          = 'ZAP for Teams'
-                CurrentValue     = 'Property not available on current license'
+                CurrentValue     = 'No Teams protection policy returned'
                 RecommendedValue = 'Defender for Office 365 with Teams ZAP'
                 Status           = 'NotLicensed'
                 CheckId          = 'DEFENDER-ZAP-001'

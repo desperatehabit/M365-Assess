@@ -2,7 +2,8 @@
 .SYNOPSIS
     Remediates DEFENDER-ZAP-001: Ensure Zero-hour auto purge for Microsoft Teams is on
 .DESCRIPTION
-    Turns on zero-hour auto purge (ZAP) for Microsoft Teams messages.
+    Turns on zero-hour auto purge (ZAP) for Microsoft Teams messages on the Teams protection
+    policy (Set-TeamsProtectionPolicy). Get-AtpPolicyForO365 has no ZapEnabled setting.
 
     Desired state: ZapEnabled = $true
     Requires: Exchange Online (Connect-ExchangeOnline).
@@ -32,10 +33,10 @@ Assert-RemediationConnection -Service 'ExchangeOnline'
 
 $step = @{
     CheckId   = 'DEFENDER-ZAP-001'
-    Target    = 'Defender for Office 365 global settings'
+    Target    = 'Teams protection policy'
     Desired   = 'ZapEnabled = $true'
     GetState  = {
-        Get-AtpPolicyForO365
+        Get-TeamsProtectionPolicy | Select-Object -First 1
     }
     TestState = {
         param($State)
@@ -48,7 +49,7 @@ $step = @{
         $settings = @{
             ZapEnabled = $true
         }
-        Set-AtpPolicyForO365 @settings
+        Set-TeamsProtectionPolicy -Identity $State.Identity @settings
     }
 }
 Invoke-RemediationStep -Cmdlet $PSCmdlet @step

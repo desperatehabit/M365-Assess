@@ -42,9 +42,9 @@ Describe 'Get-ComplianceSecurityConfig' {
             )
         }
 
-        function Get-CommunicationCompliancePolicy {
+        function Get-SupervisoryReviewPolicyV2 {
             return @(
-                @{ Name = 'Comm Compliance Policy'; Enabled = $true }
+                [PSCustomObject]@{ Name = 'Comm Compliance Policy'; Enabled = $true }
             )
         }
 
@@ -147,6 +147,7 @@ Describe 'Get-ComplianceSecurityConfig' {
         $comms = $settings | Where-Object { $_.CheckId -like 'COMPLIANCE-COMMS-001*' }
         $comms | Should -Not -BeNullOrEmpty
         $comms.Status | Should -Be 'Pass'
+        $comms.CurrentValue | Should -Be '1 enabled policy'
     }
 
     It 'Produces settings across multiple categories' {
@@ -170,7 +171,7 @@ Describe 'Get-ComplianceSecurityConfig - Cmdlets Not Available' {
         # Other test files leave global stubs for these cmdlets behind; remove them.
         Remove-Item -Path 'Function:\Get-AdminAuditLogConfig', 'Function:\Get-DlpCompliancePolicy',
             'Function:\Get-LabelPolicy', 'Function:\Get-ProtectionAlert',
-            'Function:\Get-AutoSensitivityLabelPolicy', 'Function:\Get-CommunicationCompliancePolicy' -ErrorAction SilentlyContinue
+            'Function:\Get-AutoSensitivityLabelPolicy', 'Function:\Get-SupervisoryReviewPolicyV2' -ErrorAction SilentlyContinue
 
         # Run the collector by dot-sourcing it
         . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
@@ -186,6 +187,26 @@ Describe 'Get-ComplianceSecurityConfig - Cmdlets Not Available' {
             $s.Status | Should -Be 'Review' `
                 -Because "Setting '$($s.Setting)' should be Review when cmdlet is not available"
         }
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'Get-ComplianceSecurityConfig - no communication compliance policies (T-0953)' {
+    BeforeAll {
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+        function Get-SupervisoryReviewPolicyV2 { return @() }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Security/Get-ComplianceSecurityConfig.ps1"
+    }
+
+    It 'reports no policies configured instead of an unavailable cmdlet' {
+        $comms = $settings | Where-Object { $_.Setting -eq 'Communication Compliance Policies' }
+        $comms.Status | Should -Be 'Warning'
+        $comms.CurrentValue | Should -Be 'None configured'
     }
 
     AfterAll {

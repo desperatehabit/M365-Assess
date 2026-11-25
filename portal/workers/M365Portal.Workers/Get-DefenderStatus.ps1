@@ -159,15 +159,17 @@ function Get-DefenderEdrArea {
         $status = 'Warning'
     }
 
-    # Same EXO cmdlet the module's ZAP check assesses (DefenderPresetZapChecks.ps1).
-    $atpAvailable = Get-Command -Name Get-AtpPolicyForO365 -ErrorAction SilentlyContinue
-    if ($atpAvailable) {
+    # Same EXO cmdlet the module's ZAP check assesses (DefenderPresetZapChecks.ps1): Teams ZAP
+    # is ZapEnabled on the Teams protection policy. Get-AtpPolicyForO365 has no such property
+    # (T-0952), so reading it there reported False on every tenant.
+    $teamsProtectionAvailable = Get-Command -Name Get-TeamsProtectionPolicy -ErrorAction SilentlyContinue
+    if ($teamsProtectionAvailable) {
         try {
-            $atp = Get-AtpPolicyForO365 -ErrorAction Stop
-            $zapOn = [bool]$atp.ZapEnabled
+            $teamsProtection = @(Get-TeamsProtectionPolicy -ErrorAction Stop) | Select-Object -First 1
+            $zapOn = $null -ne $teamsProtection -and $teamsProtection.ZapEnabled -eq $true
             $findings.Add([pscustomobject]@{
                 setting          = 'ZAP for Teams'
-                currentValue     = "$($atp.ZapEnabled)"
+                currentValue     = "$($teamsProtection.ZapEnabled)"
                 recommendedValue = 'True'
                 status           = if ($zapOn) { 'Pass' } else { 'Fail' }
                 checkId          = 'DEFENDER-ZAP-001'

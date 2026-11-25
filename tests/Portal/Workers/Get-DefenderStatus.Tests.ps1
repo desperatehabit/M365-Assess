@@ -46,7 +46,7 @@ Describe 'Get-DefenderStatus worker (T-0361)' {
         It 'uses only Get-* EXO cmdlets, never tenant writes' {
             $source = Get-Content -LiteralPath $script:worker -Raw
             $source | Should -Match 'Get-MalwareFilterPolicy'
-            $source | Should -Match 'Get-AtpPolicyForO365'
+            $source | Should -Match 'Get-TeamsProtectionPolicy'
             $source | Should -Match 'Get-AntiPhishPolicy'
             $source | Should -Match 'Get-SafeLinksPolicy'
             $source | Should -Not -Match 'Invoke-Expression'
@@ -131,7 +131,7 @@ Describe 'Get-DefenderStatus worker (T-0361)' {
         }
 
         AfterEach {
-            foreach ($name in @('Get-MalwareFilterPolicy', 'Get-AntiPhishPolicy', 'Get-SafeLinksPolicy', 'Get-AtpPolicyForO365')) {
+            foreach ($name in @('Get-MalwareFilterPolicy', 'Get-AntiPhishPolicy', 'Get-SafeLinksPolicy', 'Get-AtpPolicyForO365', 'Get-TeamsProtectionPolicy')) {
                 if (Get-Command -Name $name -ErrorAction SilentlyContinue) {
                     Remove-Item -Path "Function:\$name" -ErrorAction SilentlyContinue
                 }
@@ -162,6 +162,18 @@ Describe 'Get-DefenderStatus worker (T-0361)' {
             $finding = @($result.areas[0].findings | Where-Object { $_.setting -like 'Phishing Threshold*' })[0]
             $finding | Should -Not -BeNullOrEmpty
             $finding.checkId | Should -Be 'DEFENDER-ANTIPHISH-001'
+        }
+
+        It 'reads Teams ZAP from the Teams protection policy (T-0952)' {
+            # Get-AtpPolicyForO365 has no ZapEnabled; reading it reported False on every tenant.
+            function global:Get-AtpPolicyForO365 { return [pscustomobject]@{ EnableATPForSPOTeamsODB = $true } }
+            function global:Get-TeamsProtectionPolicy { return [pscustomobject]@{ Identity = 'Teams Protection Policy'; ZapEnabled = $true } }
+
+            $result = Get-DefenderStatus -TenantId 'tenant-test' -Area 'edr'
+            $finding = @($result.areas[0].findings | Where-Object { $_.checkId -eq 'DEFENDER-ZAP-001' })[0]
+            $finding | Should -Not -BeNullOrEmpty
+            $finding.status | Should -Be 'Pass'
+            $finding.currentValue | Should -Be 'True'
         }
     }
 
