@@ -406,7 +406,8 @@ Describe 'Operator write reconciliation (T-0942)' {
         Mock Get-MgDirectoryRole {
             param($Filter)
             if ($Filter -match '29232cdf-9323-42fd-ade2-1d097af3e4de') { return [pscustomobject]@{ Id = 'dir-exchange' } }
-            if ($Filter -match '5f2222b1-57c3-48ba-8ad5-d4759f1fde6f') { return [pscustomobject]@{ Id = 'dir-ediscovery' } }
+            if ($Filter -match '5f2222b1-57c3-48ba-8ad5-d4759f1fde6f') { return [pscustomobject]@{ Id = 'dir-secop' } }
+            if ($Filter -match '17315797-102d-40b4-93e0-432062caca18') { return [pscustomobject]@{ Id = 'dir-compliance' } }
             if ($Filter -match '69091246-20e8-4a56-aa4d-066075b2a7a8') { return [pscustomobject]@{ Id = 'dir-teams' } }
             return $null
         }
@@ -474,6 +475,33 @@ Describe 'Operator write reconciliation (T-0942)' {
         $roleRemoved = @($result.OperatorDirectoryRoles | Where-Object { $_.Status -eq 'Removed' } | Select-Object -ExpandProperty Role)
         $roleRemoved | Should -Contain 'Exchange Administrator'
         @($result.OperatorRemoved).Count | Should -BeGreaterThan 0
+    }
+
+    It 'removes the Security Operator role an earlier version assigned by mistake (T-0958)' {
+        # The exchange group's old "eDiscovery Manager" entry carried the Security Operator
+        # template id. A replace run removes it even when the exchange group stays selected.
+        Mock Get-MgDirectoryRoleMemberAsServicePrincipal {
+            param($DirectoryRoleId)
+            if ($DirectoryRoleId -in 'dir-exchange', 'dir-secop') { return @([pscustomobject]@{ Id = 'operator-sp' }) }
+            return @()
+        }
+
+        $result = Grant-M365AssessConsent -TenantId 'contoso.onmicrosoft.com' `
+            -ClientId 'reader-client' -CertificateThumbprint 'THUMB' `
+            -AdminUpn 'admin@contoso.onmicrosoft.com' `
+            -IncludeWritePermissions -WritePermissionGroups @('security') -ReplaceWriteGroups `
+            -SkipExchangeRbac -SkipComplianceRoles -Force
+
+        @($script:removedDirectoryMembers | Where-Object { $_.DirectoryRoleId -eq 'dir-secop' -and $_.DirectoryObjectId -eq 'operator-sp' }) | Should -HaveCount 1
+        $roleRemoved = @($result.OperatorDirectoryRoles | Where-Object { $_.Status -eq 'Removed' } | Select-Object -ExpandProperty Role)
+        $roleRemoved | Should -Contain 'Security Operator'
+    }
+
+    It 'maps the exchange group directory roles to the right built-in templates (T-0958)' {
+        $script:OperatorDirectoryRoleTemplates['Compliance Administrator'] | Should -Be '17315797-102d-40b4-93e0-432062caca18'
+        $script:OperatorDirectoryRoleTemplates['Exchange Administrator'] | Should -Be '29232cdf-9323-42fd-ade2-1d097af3e4de'
+        $script:OperatorDirectoryRoleTemplates['Teams Administrator'] | Should -Be '69091246-20e8-4a56-aa4d-066075b2a7a8'
+        $script:OperatorDirectoryRoleTemplates.Values | Should -Not -Contain '5f2222b1-57c3-48ba-8ad5-d4759f1fde6f'
     }
 
     It 'removes an unselected managed EXO role group even when no EXO group is selected' -Skip:(-not (Get-Module -ListAvailable -Name ExchangeOnlineManagement)) {
@@ -623,7 +651,8 @@ Describe 'Operator write permissions (T-0917)' {
         $exchange = Get-M365AssessOperatorWriteSelection -Groups @('exchange')
         $exchange.ExchangeAppRoles | Should -Contain 'Exchange.ManageAsApp'
         $exchange.ExoRoleGroups | Should -Contain 'Exchange Administrator'
-        $exchange.DirectoryRoles | Should -Contain 'eDiscovery Manager'
+        $exchange.DirectoryRoles | Should -Contain 'Compliance Administrator'
+        $exchange.DirectoryRoles | Should -Not -Contain 'eDiscovery Manager'
         $exchange.DirectoryRoles | Should -Contain 'Teams Administrator'
     }
 
