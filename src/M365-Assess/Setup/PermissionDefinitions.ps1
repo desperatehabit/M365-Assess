@@ -175,7 +175,7 @@ $script:OperatorWriteGroups = [ordered]@{
         DirectoryRoles     = @()
     }
     exchange   = @{
-        Description        = 'Exchange Online and Purview writes through the Exchange Administrator, eDiscovery Manager, and Teams Administrator roles.'
+        Description        = 'Exchange Online and Purview writes through the Exchange Administrator, Compliance Administrator, and Teams Administrator roles.'
         GraphPermissions   = @()
         ExchangeAppRoles   = @(
             'Exchange.ManageAsApp'
@@ -187,7 +187,7 @@ $script:OperatorWriteGroups = [ordered]@{
         )
         DirectoryRoles     = @(
             'Exchange Administrator'
-            'eDiscovery Manager'
+            'Compliance Administrator'
             'Teams Administrator'
         )
     }
@@ -206,9 +206,17 @@ $script:OperatorDangerousPermissions = @(
 # tenants. Exchange Administrator also exists as an EXO role group; when the
 # exchange group is selected it is assigned in both surfaces.
 $script:OperatorDirectoryRoleTemplates = @{
-    'Exchange Administrator' = '29232cdf-9323-42fd-ade2-1d097af3e4de'
-    'eDiscovery Manager'     = '5f2222b1-57c3-48ba-8ad5-d4759f1fde6f'
-    'Teams Administrator'    = '69091246-20e8-4a56-aa4d-066075b2a7a8'
+    'Exchange Administrator'   = '29232cdf-9323-42fd-ade2-1d097af3e4de'
+    'Compliance Administrator' = '17315797-102d-40b4-93e0-432062caca18'
+    'Teams Administrator'      = '69091246-20e8-4a56-aa4d-066075b2a7a8'
+}
+
+# Directory roles that earlier versions assigned to the operator app by mistake (T-0958).
+# The exchange group's "eDiscovery Manager" entry carried the Security Operator template id;
+# eDiscovery Manager is a Purview role group, not an Entra directory role. A
+# -ReplaceWriteGroups run removes these from the operator app whatever is selected.
+$script:OperatorRetiredDirectoryRoleTemplates = @{
+    'Security Operator' = '5f2222b1-57c3-48ba-8ad5-d4759f1fde6f'
 }
 
 # Resolves the -WritePermissionGroups selection into the exact Graph, Exchange,
