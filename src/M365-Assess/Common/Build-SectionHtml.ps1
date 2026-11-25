@@ -58,7 +58,9 @@ $sectionData = @{
         # the same convention. DefaultDomain from the tenant CSV is authoritative; the log's
         # Domain: line is a short-form variant (e.g. 'dz9m' without TLD) so is used only as
         # a last resort fallback. TenantId (GUID) only matches hand-labelled GUID fixtures.
-        $baselinesRoot = Join-Path -Path (Split-Path -Parent $AssessmentFolder) -ChildPath 'Baselines'
+        # -BaselineRoot (from Export-AssessmentReport) overrides the default location.
+        $baselineParentFolder = if ((Get-Variable -Name BaselineRoot -ValueOnly -ErrorAction SilentlyContinue)) { $BaselineRoot } else { Split-Path -Parent $AssessmentFolder }
+        $baselinesRoot = Join-Path -Path $baselineParentFolder -ChildPath 'Baselines'
         $tenantIdForTrend = if ($tenantData -and @($tenantData).Count -gt 0 -and $tenantData[0].DefaultDomain) { $tenantData[0].DefaultDomain }
                             elseif ($reportDomainPrefix)                                                        { $reportDomainPrefix }
                             elseif ($tenantData -and @($tenantData).Count -gt 0 -and $tenantData[0].TenantId)   { $tenantData[0].TenantId }

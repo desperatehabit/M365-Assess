@@ -108,6 +108,11 @@
     Automatically saves a dated snapshot after every run and compares against
     the most recent previous auto-snapshot for this tenant. No label management
     required. Ideal for scheduled assessments and continuous drift tracking.
+.PARAMETER BaselineRoot
+    Folder that holds the Baselines subfolder used by -SaveBaseline, -CompareBaseline,
+    -AutoBaseline, -ListBaselines and the report's trend view. Defaults to -OutputFolder.
+    Point it at a stable per-tenant folder when each run writes to its own output folder
+    (as the portal does) so -AutoBaseline can find the previous run's snapshot.
 .PARAMETER ListBaselines
     Lists all saved baselines for the tenant (label, date, registry version,
     check count) and exits without running an assessment. Use -TenantId to
@@ -442,6 +447,9 @@ param(
     [switch]$ListBaselines,
 
     [Parameter()]
+    [string]$BaselineRoot,
+
+    [Parameter()]
     [switch]$IncludeTrend,
 
     # D4 #788 -- sanitized evidence package mode
@@ -712,16 +720,19 @@ if ($Section -contains 'All') {
                  'ActiveDirectory','SOC2','ValueOpportunity')
 }
 
+# Baselines live under <BaselineRoot>\Baselines; without -BaselineRoot that is the output folder.
+$baselineParent = if ($BaselineRoot) { $BaselineRoot } else { $OutputFolder }
+
 # ------------------------------------------------------------------
 # ListBaselines — display saved snapshots and exit (no assessment)
 # ------------------------------------------------------------------
 if ($ListBaselines) {
-    $baselineRoot = Join-Path -Path $OutputFolder -ChildPath 'Baselines'
-    if (-not (Test-Path -Path $baselineRoot)) {
-        Write-Host "No baselines found at '$baselineRoot'." -ForegroundColor Yellow
+    $listBaselinesRoot = Join-Path -Path $baselineParent -ChildPath 'Baselines'
+    if (-not (Test-Path -Path $listBaselinesRoot)) {
+        Write-Host "No baselines found at '$listBaselinesRoot'." -ForegroundColor Yellow
         return
     }
-    $manifests = Get-ChildItem -Path $baselineRoot -Recurse -Filter 'manifest.json' |
+    $manifests = Get-ChildItem -Path $listBaselinesRoot -Recurse -Filter 'manifest.json' |
         Where-Object { -not $TenantId -or $_.FullName -match [regex]::Escape($TenantId) }
     if ($manifests.Count -eq 0) {
         Write-Host "No baselines found$(if ($TenantId) { " for tenant '$TenantId'" })." -ForegroundColor Yellow
@@ -1573,7 +1584,7 @@ if ($SaveBaseline) {
     Write-AssessmentLog -Level INFO -Message "Saving baseline '$resolvedLabel'..."
     $savedBaselineDir = Export-AssessmentBaseline `
         -AssessmentFolder $assessmentFolder `
-        -OutputFolder $OutputFolder `
+        -OutputFolder $baselineParent `
         -Label $resolvedLabel `
         -TenantId $TenantId `
         -TenantGuid $tenantIdentity.Guid `
@@ -1588,7 +1599,7 @@ if ($SaveBaseline) {
 
 if ($CompareBaseline) {
     $baselineFolder = Resolve-BaselineFolder `
-        -OutputFolder $OutputFolder `
+        -OutputFolder $baselineParent `
         -Label $CompareBaseline `
         -TenantGuid $tenantIdentity.Guid `
         -TenantId $TenantId
@@ -1626,7 +1637,7 @@ if ($AutoBaseline) {
     $sections = @($Section | ForEach-Object { $_ })
     Export-AssessmentBaseline `
         -AssessmentFolder $assessmentFolder `
-        -OutputFolder $OutputFolder `
+        -OutputFolder $baselineParent `
         -TenantId $TenantId `
         -TenantGuid $tenantIdentity.Guid `
         -DisplayName $tenantIdentity.DisplayName `
@@ -1641,7 +1652,7 @@ if ($AutoBaseline) {
     # Compare to most recent previous auto-snapshot for this tenant. Search
     # the canonical GUID-keyed names first, then legacy TenantId names.
     $autoPattern = "^auto_.*_(?:${folderSuffix}|${legacySuffix})$"
-    $prevAuto = Get-ChildItem -Path (Join-Path $OutputFolder 'Baselines') -Directory -ErrorAction SilentlyContinue |
+    $prevAuto = Get-ChildItem -Path (Join-Path $baselineParent 'Baselines') -Directory -ErrorAction SilentlyContinue |
         Where-Object { $_.Name -match $autoPattern } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -Skip 1 -First 1
@@ -1675,6 +1686,7 @@ if (Test-Path -Path $reportScriptPath) {
 
         $reportParams = @{
             AssessmentFolder = $assessmentFolder
+            BaselineRoot     = $baselineParent
         }
         if ($ctx.Output.DomainPrefix) { $reportParams['TenantName'] = $ctx.Output.DomainPrefix }
         elseif ($TenantId)        { $reportParams['TenantName'] = $TenantId }

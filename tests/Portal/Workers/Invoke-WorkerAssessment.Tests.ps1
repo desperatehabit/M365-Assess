@@ -56,6 +56,8 @@ param(
     [switch]$QuickScan,
     [switch]$Redact,
     [switch]$EvidencePackage,
+    [switch]$AutoBaseline,
+    [string]$BaselineRoot = '',
     [switch]$NonInteractive,
     [Parameter(ValueFromRemainingArguments = $true)]
     $Remaining
@@ -67,6 +69,8 @@ New-Item -Path $OutputFolder -ItemType Directory -Force | Out-Null
     QuickScan       = ($PSBoundParameters.ContainsKey('QuickScan') -and [bool]$QuickScan)
     Redact          = ($PSBoundParameters.ContainsKey('Redact') -and [bool]$Redact)
     EvidencePackage = ($PSBoundParameters.ContainsKey('EvidencePackage') -and [bool]$EvidencePackage)
+    AutoBaseline    = ($PSBoundParameters.ContainsKey('AutoBaseline') -and [bool]$AutoBaseline)
+    BaselineRoot    = $BaselineRoot
     NonInteractive  = ($PSBoundParameters.ContainsKey('NonInteractive') -and [bool]$NonInteractive)
 } | ConvertTo-Json | Set-Content -Path (Join-Path -Path $OutputFolder -ChildPath 'probe.json') -Encoding UTF8
 '@ | Set-Content -Path $probe -Encoding UTF8
@@ -122,6 +126,29 @@ Describe 'Invoke-WorkerAssessment run options (T-0927)' {
         $seen['NonInteractive'] | Should -BeTrue
     }
 
+    It 'maps autoBaseline to -AutoBaseline with the per-tenant -BaselineRoot' {
+        $scratch = New-WorkerScratch
+        $baselineRoot = Join-Path -Path $scratch -ChildPath 'baselines/t-a'
+        $contextFile = New-OptionContextFile -Directory $scratch -Options @{
+            QuickScan    = $false
+            SkipPurview  = $false
+            Redact       = $false
+            Evidence     = $false
+            AutoBaseline = $true
+            BaselineRoot = $baselineRoot
+        }
+        $probe = New-ArgumentProbe -Directory $scratch
+        $output = Join-Path -Path $scratch -ChildPath 'tenant'
+        $ctx = Read-WorkerRunContext -ContextFile $contextFile
+
+        Invoke-WorkerAssessment -Context $ctx -OutputFolder $output -AssessmentScript $probe
+
+        $seen = Get-Content -LiteralPath (Join-Path -Path $output -ChildPath 'probe.json') -Raw | ConvertFrom-Json -AsHashtable
+        $seen['AutoBaseline'] | Should -BeTrue
+        $seen['BaselineRoot'] | Should -Be $baselineRoot
+        Test-Path -LiteralPath $baselineRoot -PathType Container | Should -BeTrue
+    }
+
     It 'maps quickScan and redact onto their assessment switches' {
         $scratch = New-WorkerScratch
         $contextFile = New-OptionContextFile -Directory $scratch -Options @{
@@ -162,5 +189,6 @@ Describe 'Invoke-WorkerAssessment run options (T-0927)' {
         $seen['QuickScan'] | Should -BeFalse
         $seen['Redact'] | Should -BeFalse
         $seen['EvidencePackage'] | Should -BeFalse
+        $seen['AutoBaseline'] | Should -BeFalse
     }
 }

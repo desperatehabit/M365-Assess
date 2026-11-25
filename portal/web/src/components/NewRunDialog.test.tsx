@@ -195,8 +195,25 @@ describe("NewRunDialog and TenantMultiSelect", () => {
           skipPurview: false,
           redact: false,
           evidence: false,
+          autoBaseline: false,
         },
       });
+    });
+
+    it("submits autoBaseline when the AutoBaseline option is checked", async () => {
+      const onSubmit = vi.fn();
+      render(<NewRunDialog initialTenantId="tenant-1" tenants={SAMPLE_TENANTS} onSubmit={onSubmit} />);
+
+      fireEvent.click(screen.getByTestId("next-step-button")); // to step 2
+      fireEvent.click(screen.getByTestId("next-step-button")); // to step 3
+      const autoBaseline = screen.getByTestId("option-auto-baseline") as HTMLInputElement;
+      expect(autoBaseline.checked).toBe(false);
+      fireEvent.click(autoBaseline);
+      fireEvent.click(screen.getByTestId("next-step-button")); // to step 4
+      fireEvent.click(screen.getByTestId("start-run-button"));
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      expect((onSubmit.mock.calls[0]![0] as NewRunFormData).options.autoBaseline).toBe(true);
     });
 
     it("calculates multi-tenant and group scope estimate accurately", () => {
@@ -311,6 +328,39 @@ describe("NewRunDialog and TenantMultiSelect", () => {
       expect((screen.getByTestId("option-quick-scan") as HTMLInputElement).checked).toBe(true);
     });
 
+    it("turns AutoBaseline on from a template and submits it", async () => {
+      const onSubmit = vi.fn();
+      const baselineTemplate = {
+        id: "builtin-full-autobaseline",
+        name: "Full run with AutoBaseline",
+        description: "A full run that saves an AutoBaseline snapshot.",
+        sections: ["Identity"],
+        options: { autoBaseline: true },
+        framework: null,
+        builtIn: true,
+      };
+      render(
+        <NewRunDialog
+          initialTenantId="tenant-1"
+          tenants={SAMPLE_TENANTS}
+          templates={[baselineTemplate]}
+          onSubmit={onSubmit}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId("template-option-builtin-full-autobaseline"));
+      fireEvent.click(screen.getByTestId("next-step-button")); // to step 2
+      fireEvent.click(screen.getByTestId("next-step-button")); // to step 3
+      expect((screen.getByTestId("option-auto-baseline") as HTMLInputElement).checked).toBe(true);
+      fireEvent.click(screen.getByTestId("next-step-button")); // to step 4
+      fireEvent.click(screen.getByTestId("start-run-button"));
+
+      await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
+      const submitted = onSubmit.mock.calls[0]![0] as NewRunFormData;
+      expect(submitted.options.autoBaseline).toBe(true);
+      expect(submitted.options.templateChanged).toBe(false);
+    });
+
     it("submits the template id, name and changed flag", async () => {
       const onSubmit = vi.fn();
       render(
@@ -343,6 +393,7 @@ describe("NewRunDialog and TenantMultiSelect", () => {
           skipPurview: false,
           redact: false,
           evidence: false,
+          autoBaseline: false,
           templateId: "builtin-quick-identity",
           templateName: "Quick identity check",
           templateChanged: false,

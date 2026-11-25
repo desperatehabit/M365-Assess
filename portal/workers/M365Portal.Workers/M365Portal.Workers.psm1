@@ -365,6 +365,16 @@ function Invoke-WorkerAssessment {
         if (Get-WorkerOptionValue -Options $runOptions -Name 'Redact') { $splat['Redact'] = $true }
         # The wizard names this option Evidence; the assessment's switch is -EvidencePackage.
         if (Get-WorkerOptionValue -Options $runOptions -Name 'Evidence') { $splat['EvidencePackage'] = $true }
+        # AutoBaseline saves a snapshot and compares it with the previous run's. The BFF sets
+        # BaselineRoot to one folder per tenant, since every run has its own output folder.
+        if (Get-WorkerOptionValue -Options $runOptions -Name 'AutoBaseline') {
+            $splat['AutoBaseline'] = $true
+            $baselineRoot = [string](Get-WorkerOptionValue -Options $runOptions -Name 'BaselineRoot')
+            if ($baselineRoot) {
+                New-Item -Path $baselineRoot -ItemType Directory -Force | Out-Null
+                $splat['BaselineRoot'] = $baselineRoot
+            }
+        }
     }
     # A service child has no one to answer prompts; a missing module must fail the run, not hang.
     $splat['NonInteractive'] = $true

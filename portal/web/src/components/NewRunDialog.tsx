@@ -55,6 +55,7 @@ export interface NewRunFormData {
     readonly skipPurview?: boolean;
     readonly redact?: boolean;
     readonly evidence?: boolean;
+    readonly autoBaseline?: boolean;
     readonly templateId?: string;
     readonly templateName?: string;
     readonly templateChanged?: boolean;
@@ -320,6 +321,7 @@ export function NewRunDialog({
   const [skipPurview, setSkipPurview] = useState(false);
   const [redact, setRedact] = useState(false);
   const [evidence, setEvidence] = useState(false);
+  const [autoBaseline, setAutoBaseline] = useState(false);
   const [trigger, setTrigger] = useState<"manual" | "schedule" | "api">("manual");
   const [submitting, setSubmitting] = useState(false);
 
@@ -345,6 +347,7 @@ export function NewRunDialog({
     setSkipPurview(template.options?.skipPurview === true);
     setRedact(template.options?.redact === true);
     setEvidence(template.options?.evidence === true);
+    setAutoBaseline(template.options?.autoBaseline === true || template.autoBaseline === true);
     setNewTemplateName("");
   };
 
@@ -355,6 +358,7 @@ export function NewRunDialog({
     setSkipPurview(false);
     setRedact(false);
     setEvidence(false);
+    setAutoBaseline(false);
   };
 
   // Whether the operator changed the template's sections/options for this run.
@@ -369,9 +373,10 @@ export function NewRunDialog({
       quickScan !== (selectedTemplate.options?.quickScan === true) ||
       skipPurview !== (selectedTemplate.options?.skipPurview === true) ||
       redact !== (selectedTemplate.options?.redact === true) ||
-      evidence !== (selectedTemplate.options?.evidence === true)
+      evidence !== (selectedTemplate.options?.evidence === true) ||
+      autoBaseline !== (selectedTemplate.options?.autoBaseline === true || selectedTemplate.autoBaseline === true)
     );
-  }, [selectedTemplate, selectedSections, quickScan, skipPurview, redact, evidence]);
+  }, [selectedTemplate, selectedSections, quickScan, skipPurview, redact, evidence, autoBaseline]);
 
   const buildFormData = (): NewRunFormData => ({
     tenantIds: selectedTenantIds,
@@ -383,6 +388,7 @@ export function NewRunDialog({
       skipPurview,
       redact,
       evidence,
+      autoBaseline,
       ...(selectedTemplate
         ? {
             templateId: selectedTemplate.id,
@@ -400,9 +406,7 @@ export function NewRunDialog({
       skipPurview,
       redact,
       evidence,
-      autoBaseline:
-        selectedTemplate?.options?.autoBaseline === true ||
-        selectedTemplate?.autoBaseline === true,
+      autoBaseline,
     },
     framework: selectedTemplate?.framework ?? null,
   });
@@ -842,6 +846,21 @@ export function NewRunDialog({
                   <div style={{ fontWeight: 500, fontSize: "14px" }}>Evidence collection</div>
                   <div style={{ fontSize: "12px", color: "var(--text-soft)", marginTop: "2px" }}>
                     Save raw configuration JSON snapshots for audit and proof.
+                  </div>
+                </div>
+              </label>
+
+              <label style={optionItemStyle}>
+                <input
+                  type="checkbox"
+                  checked={autoBaseline}
+                  onChange={(e) => setAutoBaseline(e.target.checked)}
+                  data-testid="option-auto-baseline"
+                />
+                <div>
+                  <div style={{ fontWeight: 500, fontSize: "14px" }}>AutoBaseline</div>
+                  <div style={{ fontSize: "12px", color: "var(--text-soft)", marginTop: "2px" }}>
+                    Save a snapshot of this run and report what changed since the tenant's previous AutoBaseline run.
                   </div>
                 </div>
               </label>
