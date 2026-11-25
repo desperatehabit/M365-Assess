@@ -6,6 +6,7 @@ import { ALL_TENANTS, tenantScope } from "../rbac/scope.js";
 import {
   createRunsArtifactsListRoute,
   createRunsArtifactsDownloadRoute,
+  INLINE_ARTIFACT_CSP,
   createRunsArtifactsRoutes,
   RUNS_ARTIFACTS_LIST_OPENAPI,
   RUNS_ARTIFACTS_DOWNLOAD_OPENAPI,
@@ -405,6 +406,82 @@ describe("runs-artifacts routes", () => {
         targetType: "artifact",
         targetId: "run-001/report.html",
         result: "success",
+        // audit_events.source only accepts request/schedule/remediation; "bff" made every
+        // artifact request fail with a 500 against the real database (T-0946).
+        source: "request",
+      });
+    });
+
+    describe("nested assessment folder (T-0946)", () => {
+      const folder = `${ARTIFACT_ROOT}/runs/tenant-a/run-001/Assessment_20261123_102423_tenant`;
+
+      function setup() {
+        const store = new FakeArtifactsStore();
+        const fs = new FakeArtifactFileSystem();
+        store.runs.set("run-001", createTestRun());
+        fs.files.set(`${folder}/_Assessment-Report_tenant.html`, {
+          size: 11,
+          mtime: new Date(NOW),
+          content: Buffer.from("<html></html>"),
+        });
+        fs.files.set(`${folder}/_Compliance-Matrix_tenant.xlsx`, {
+          size: 4,
+          mtime: new Date(NOW),
+          content: Buffer.from("xlsx"),
+        });
+        const route = createRunsArtifactsDownloadRoute({
+          store,
+          artifactRoot: ARTIFACT_ROOT,
+          fs,
+          resolveCaller: () => makeCaller(),
+          now: () => NOW,
+        });
+        return { store, route };
+      }
+
+      it("downloads a file inside the assessment subfolder as an attachment", async () => {
+        const { store, route } = setup();
+        const res = await route.handler(
+          makeContext({ runId: "run-001", name: "Assessment_20261123_102423_tenant/_Compliance-Matrix_tenant.xlsx" }),
+        );
+        expect(res.status).toBe(200);
+        expect(res.headers?.["Content-Disposition"]).toBe('attachment; filename="_Compliance-Matrix_tenant.xlsx"');
+        expect(res.headers?.["Content-Security-Policy"]).toBeUndefined();
+        expect(store.auditEvents[0]?.targetId).toBe(
+          "run-001/Assessment_20261123_102423_tenant/_Compliance-Matrix_tenant.xlsx",
+        );
+      });
+
+      it("serves the HTML report inline in a CSP sandbox with ?inline=1", async () => {
+        const { route } = setup();
+        const ctx = {
+          ...makeContext({ runId: "run-001", name: "Assessment_20261123_102423_tenant/_Assessment-Report_tenant.html" }),
+          query: new URLSearchParams("inline=1"),
+        };
+        const res = await route.handler(ctx);
+        expect(res.status).toBe(200);
+        expect(res.contentType).toBe("text/html; charset=utf-8");
+        expect(res.headers?.["Content-Disposition"]).toBe('inline; filename="_Assessment-Report_tenant.html"');
+        expect(res.headers?.["Content-Security-Policy"]).toBe(INLINE_ARTIFACT_CSP);
+        expect(res.headers?.["Content-Security-Policy"]).toMatch(/^sandbox /);
+        expect(res.headers?.["Content-Security-Policy"]).not.toContain("allow-same-origin");
+      });
+
+      it("ignores ?inline=1 for non-HTML artifacts", async () => {
+        const { route } = setup();
+        const ctx = {
+          ...makeContext({ runId: "run-001", name: "Assessment_20261123_102423_tenant/_Compliance-Matrix_tenant.xlsx" }),
+          query: new URLSearchParams("inline=1"),
+        };
+        const res = await route.handler(ctx);
+        expect(res.headers?.["Content-Disposition"]).toMatch(/^attachment;/);
+      });
+
+      it("rejects traversal out of the assessment subfolder with 400", async () => {
+        const { route } = setup();
+        await expect(
+          route.handler(makeContext({ runId: "run-001", name: "Assessment_20261123_102423_tenant/../../run-002/report.html" })),
+        ).rejects.toMatchObject({ code: "run.invalid_artifact_name", status: 400 });
       });
     });
   });

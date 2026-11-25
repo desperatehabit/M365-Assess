@@ -1,6 +1,9 @@
 // Run artifacts API: listing and streaming download (EPIC-003 SPEC.md §4.5, §6, §9, T-0048).
 // GET /v1/runs/:runId/artifacts: lists indexed artifacts with name, content type, size, and redacted metadata.
 // GET /v1/runs/:runId/artifacts/:name: streams artifact without buffering large files in memory.
+//   `name` is the artifact's path relative to the run's artifact path, URL-encoded as one
+//   segment (T-0946). `?inline=1` serves an HTML artifact for viewing in the browser, in a
+//   CSP sandbox so the report's scripts run in an opaque origin, not the portal's.
 // Access is strictly tenant-scoped and audited.
 
 import { randomUUID } from "node:crypto";
@@ -19,7 +22,7 @@ import {
   artifactContentType,
   indexRunArtifacts,
   resolveArtifactFilePath,
-  validateArtifactName,
+  validateArtifactPath,
   type ArtifactFileSystem,
   type ArtifactItem,
   defaultFileSystem,
@@ -36,6 +39,19 @@ export const RUN_NOT_FOUND = "run.not_found";
 export const RUN_ARTIFACT_NOT_FOUND = "run.artifact_not_found";
 export const RUN_FORBIDDEN = "auth.forbidden";
 
+/** Viewing an HTML artifact inline: scripts run, but in an opaque origin with no portal access. */
+export const INLINE_ARTIFACT_CSP = "sandbox allow-scripts allow-popups allow-downloads allow-modals";
+
+function artifactBaseName(ref: string): string {
+  const slash = ref.lastIndexOf("/");
+  return slash < 0 ? ref : ref.slice(slash + 1);
+}
+
+function isInlineViewable(fileName: string): boolean {
+  const lower = fileName.toLowerCase();
+  return lower.endsWith(".html") || lower.endsWith(".htm");
+}
+
 export interface ArtifactAuditEventInput {
   readonly id: string;
   readonly timestamp: string;
@@ -49,7 +65,8 @@ export interface ArtifactAuditEventInput {
   readonly after: Record<string, unknown> | null;
   readonly result: string;
   readonly error: string | null;
-  readonly source: string;
+  /** audit_events.source is CHECK-constrained to these values; anything else fails the insert. */
+  readonly source: "request" | "schedule" | "remediation";
   readonly correlationId: string | null;
   readonly createdAt: string;
 }
@@ -121,7 +138,7 @@ async function recordAudit(
     after: null,
     result: "success",
     error: null,
-    source: "bff",
+    source: "request",
     correlationId,
     createdAt: nowIso,
   });
@@ -236,7 +253,13 @@ export function createRunsArtifactsDownloadRoute(options: RunsArtifactsRouteOpti
       );
 
       const nameParam = ctx.params["name"];
-      const fileName = validateArtifactName(nameParam);
+      const fileName = validateArtifactPath(nameParam);
+      const baseName = artifactBaseName(fileName);
+      const inline = ctx.query?.get("inline") === "1" && isInlineViewable(baseName);
+      const disposition = `${inline ? "inline" : "attachment"}; filename="${baseName}"`;
+      const extraHeaders: Record<string, string> = inline
+        ? { "Content-Security-Policy": INLINE_ARTIFACT_CSP, "X-Content-Type-Options": "nosniff" }
+        : {};
 
       if (!run.artifactPath) {
         throw new AppError(
@@ -283,17 +306,17 @@ export function createRunsArtifactsDownloadRoute(options: RunsArtifactsRouteOpti
         now,
       );
 
-      const contentType = artifactContentType(fileName);
+      const contentType = artifactContentType(baseName);
       const stream = fsImpl.createReadStream(filePath);
       const streamCtx = ctx as RunsArtifactsRequestContext;
 
       if (streamCtx.res) {
         streamCtx.res.setHeader?.("Content-Type", contentType);
         streamCtx.res.setHeader?.("Content-Length", String(stat.size));
-        streamCtx.res.setHeader?.(
-          "Content-Disposition",
-          `attachment; filename="${fileName}"`,
-        );
+        streamCtx.res.setHeader?.("Content-Disposition", disposition);
+        for (const [key, value] of Object.entries(extraHeaders)) {
+          streamCtx.res.setHeader?.(key, value);
+        }
         if (typeof (streamCtx.res as any).on === "function") {
           stream.pipe(streamCtx.res as any);
         } else {
@@ -318,9 +341,9 @@ export function createRunsArtifactsDownloadRoute(options: RunsArtifactsRouteOpti
         status: 200,
         contentType,
         contentLength: stat.size,
-        headers: { "Content-Disposition": `attachment; filename="${fileName}"` },
+        headers: { "Content-Disposition": disposition, ...extraHeaders },
         size: stat.size,
-        name: fileName,
+        name: baseName,
         stream,
       };
 
@@ -393,7 +416,14 @@ export const RUNS_ARTIFACTS_DOWNLOAD_OPENAPI = {
           in: "path",
           required: true,
           schema: { type: "string" },
-          description: "Name of the artifact file.",
+          description: "Path of the artifact relative to the run's artifact folder, URL-encoded as one segment (for example Assessment_20261123_102423%2Freport.html).",
+        },
+        {
+          name: "inline",
+          in: "query",
+          required: false,
+          schema: { type: "string", enum: ["1"] },
+          description: "Serve an HTML artifact for viewing in the browser, in a CSP sandbox.",
         },
       ],
       responses: {
