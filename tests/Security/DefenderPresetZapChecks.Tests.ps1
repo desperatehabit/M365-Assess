@@ -9,19 +9,28 @@ Describe 'DefenderPresetZapChecks - With Preset Policies' {
         }
 
         function global:Get-AtpPolicyForO365 { }
+        function global:Get-TeamsProtectionPolicy { }
 
         Mock Get-Command {
             param($Name, $ErrorAction)
-            if ($Name -eq 'Get-AtpPolicyForO365') {
-                return [PSCustomObject]@{ Name = 'Get-AtpPolicyForO365' }
+            if ($Name -in 'Get-AtpPolicyForO365', 'Get-TeamsProtectionPolicy') {
+                return [PSCustomObject]@{ Name = $Name }
             }
             return $null
         }
 
+        # Real shapes (T-0952): Get-AtpPolicyForO365 has no ZapEnabled property; Teams ZAP
+        # is ZapEnabled on the Teams protection policy.
         Mock Get-AtpPolicyForO365 {
             return [PSCustomObject]@{
                 EnableATPForSPOTeamsODB = $true
-                ZapEnabled             = $true
+            }
+        }
+
+        Mock Get-TeamsProtectionPolicy {
+            return [PSCustomObject]@{
+                Identity   = 'Teams Protection Policy'
+                ZapEnabled = $true
             }
         }
 
@@ -105,10 +114,11 @@ Describe 'DefenderPresetZapChecks - With Preset Policies' {
         $check.Status | Should -Be 'Pass'
     }
 
-    It 'ZAP for Teams passes when ZapEnabled is true' {
+    It 'ZAP for Teams passes when ZapEnabled is true on the Teams protection policy' {
         $check = $settings | Where-Object { $_.Setting -eq 'ZAP for Teams' }
         $check | Should -Not -BeNullOrEmpty
         $check.Status | Should -Be 'Pass'
+        $check.CurrentValue | Should -Be 'ZapEnabled: True'
     }
 
     It 'All checks use DEFENDER- prefix' {
@@ -122,6 +132,7 @@ Describe 'DefenderPresetZapChecks - With Preset Policies' {
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
         Remove-Item Function:\Get-AtpPolicyForO365 -ErrorAction SilentlyContinue
+        Remove-Item Function:\Get-TeamsProtectionPolicy -ErrorAction SilentlyContinue
         Remove-Item Function:\Add-Setting -ErrorAction SilentlyContinue
     }
 }
@@ -177,10 +188,63 @@ Describe 'DefenderPresetZapChecks - No Preset Policies' {
         $check | Should -Not -BeNullOrEmpty
         $check.Status | Should -Be 'Review'
     }
+    It 'ZAP for Teams is NotLicensed when Get-TeamsProtectionPolicy is unavailable' {
+        $check = $settings | Where-Object { $_.Setting -eq 'ZAP for Teams' }
+        $check.Status | Should -Be 'NotLicensed'
+    }
 
     AfterAll {
         Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
         Remove-Item Function:\Get-AtpPolicyForO365 -ErrorAction SilentlyContinue
+        Remove-Item Function:\Add-Setting -ErrorAction SilentlyContinue
+    }
+}
+
+Describe 'DefenderPresetZapChecks - Teams ZAP disabled (T-0952)' {
+    BeforeAll {
+        function global:Update-CheckProgress { param($CheckId, $Setting, $Status) }
+        function global:Get-TeamsProtectionPolicy { }
+
+        Mock Get-Command {
+            param($Name, $ErrorAction)
+            if ($Name -eq 'Get-TeamsProtectionPolicy') { return [PSCustomObject]@{ Name = $Name } }
+            return $null
+        }
+        Mock Get-TeamsProtectionPolicy {
+            return [PSCustomObject]@{ Identity = 'Teams Protection Policy'; ZapEnabled = $false }
+        }
+
+        . "$PSScriptRoot/../../src/M365-Assess/Orchestrator/AssessmentHelpers.ps1"
+        . "$PSScriptRoot/../../src/M365-Assess/Common/SecurityConfigHelper.ps1"
+
+        $ctx            = Initialize-SecurityConfig
+        $settings       = $ctx.Settings
+        $checkIdCounter = $ctx.CheckIdCounter
+
+        function Add-Setting {
+            param([string]$Category, [string]$Setting, [string]$CurrentValue,
+                  [string]$RecommendedValue, [string]$Status,
+                  [string]$CheckId = '', [string]$Remediation = '')
+            Add-SecuritySetting -Settings $settings -CheckIdCounter $checkIdCounter `
+                -Category $Category -Setting $Setting -CurrentValue $CurrentValue `
+                -RecommendedValue $RecommendedValue -Status $Status `
+                -CheckId $CheckId -Remediation $Remediation
+        }
+
+        $script:eopRules = @()
+
+        . "$PSScriptRoot/../../src/M365-Assess/Security/DefenderPresetZapChecks.ps1"
+    }
+
+    It 'ZAP for Teams fails when ZapEnabled is false' {
+        $check = $settings | Where-Object { $_.Setting -eq 'ZAP for Teams' }
+        $check.Status | Should -Be 'Fail'
+        $check.CurrentValue | Should -Be 'ZapEnabled: False'
+    }
+
+    AfterAll {
+        Remove-Item Function:\Update-CheckProgress -ErrorAction SilentlyContinue
+        Remove-Item Function:\Get-TeamsProtectionPolicy -ErrorAction SilentlyContinue
         Remove-Item Function:\Add-Setting -ErrorAction SilentlyContinue
     }
 }
