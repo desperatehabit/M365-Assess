@@ -4,15 +4,15 @@ _Maintained by hand (last regenerated 2026-11-22; T-0909 to T-0913 added 2026-11
 T-0914 to T-0916 added 2026-11-18; T-0917 to T-0939 added 2026-11-19; T-0940 and
 T-0941 added 2026-11-20; T-0943 and T-0944 added 2026-11-23; T-0945 to T-0958 added 2026-11-24;
 T-0899/T-0906/T-0907/T-0908/T-0913 verified and closed
-2026-11-22). When a ticket's `status` changes, update its row and the counts below in
+2026-11-22; T-0958 verified and closed 2026-11-24). When a ticket's `status` changes, update its row and the counts below in
 the same commit. The ticket file is the source of truth._
 
-**135 open · 462 closed**
+**134 open · 463 closed**
 
 | Status | Count |
 |---|---|
 | epic | 40 |
-| fixed-unverified | 77 |
+| fixed-unverified | 76 |
 | open | 9 |
 | not-dispatchable | 1 |
 | closed | 8 |
@@ -64,7 +64,6 @@ the same commit. The ticket file is the source of truth._
 | [T-0950](ISSUES/T-0950.md) | high | fixed-unverified | 9 | A single-item Graph result unrolls to a hashtable, so counts and indexing are wrong |
 | [T-0951](ISSUES/T-0951.md) | high | fixed-unverified | 1 | ENTRA-DEVICE-004 always passes because it reads a property Graph does not return |
 | [T-0955](ISSUES/T-0955.md) | high | fixed-unverified | 1 | App credential checks read only service principals and miss app registration secrets and certificates |
-| [T-0958](ISSUES/T-0958.md) | high | fixed-unverified | 2 | The exchange write group assigns Security Operator instead of a Purview role |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
 | [EPIC-017](ISSUES/epics/EPIC-017.md) | medium | closed | 0 | Intune Apps & Autopilot |
@@ -623,3 +622,4 @@ the same commit. The ticket file is the source of truth._
 | [T-0907](ISSUES_CLOSED/T-0907.md) | 2026-11-22 | Fix pre-existing PowerShell lint findings in Invoke-DomainAction and Linux-only tests |
 | [T-0908](ISSUES_CLOSED/T-0908.md) | 2026-11-22 | Resolve macos-latest CI smoke job runner-quota cancellations |
 | [T-0913](ISSUES_CLOSED/T-0913.md) | 2026-11-22 | CI does not build or test the portal |
+| [T-0958](ISSUES_CLOSED/T-0958.md) | 2026-11-24 | The exchange write group assigns Security Operator instead of a Purview role |
