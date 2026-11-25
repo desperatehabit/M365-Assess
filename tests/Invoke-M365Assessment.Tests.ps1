@@ -458,3 +458,61 @@ Describe 'Invoke-M365Assessment - PowerBI child process credential handling (T-0
         $redacted | Should -Match '<redacted>'
     }
 }
+
+Describe 'Invoke-M365Assessment - -BaselineRoot (portal AutoBaseline)' {
+    # The portal gives every run its own output folder, so AutoBaseline snapshots need
+    # one stable folder per tenant for the next run to find the previous one.
+
+    It '-BaselineRoot is declared as [string]' {
+        $param = $script:ast.FindAll(
+            { param($node) $node -is [System.Management.Automation.Language.ParameterAst] },
+            $true
+        ) | Where-Object { $_.Name.VariablePath.UserPath -eq 'BaselineRoot' }
+        $param | Should -Not -BeNullOrEmpty
+        $typeAttr = $param.Attributes | Where-Object { $_ -is [System.Management.Automation.Language.TypeConstraintAst] }
+        $typeAttr.TypeName.Name | Should -Be 'string'
+    }
+
+    It 'routes every baseline path through the baseline root, never the output folder directly' {
+        $source = Get-Content -LiteralPath $script:scriptPath -Raw
+        $source | Should -Not -Match "Join-Path\s+(-Path\s+)?\`$OutputFolder\s+(-ChildPath\s+)?'Baselines'"
+        foreach ($call in 'Export-AssessmentBaseline', 'Resolve-BaselineFolder') {
+            $calls = $script:ast.FindAll({
+                    param($node)
+                    $node -is [System.Management.Automation.Language.CommandAst] -and $node.GetCommandName() -eq $call
+                }, $true)
+            $calls.Count | Should -BeGreaterThan 0
+            foreach ($c in $calls) {
+                $c.Extent.Text | Should -Match '-OutputFolder \$baselineParent' -Because "$call must receive the baseline root"
+            }
+        }
+    }
+
+    It '-ListBaselines reads snapshots from -BaselineRoot instead of the run output folder' {
+        $root = Join-Path -Path ([System.IO.Path]::GetTempPath()) -ChildPath ("baseline-root-" + [guid]::NewGuid())
+        try {
+            $snapshot = Join-Path -Path $root -ChildPath 'Baselines/auto_2026-11-24T10-00-00_contoso.onmicrosoft.com'
+            New-Item -ItemType Directory -Path $snapshot -Force | Out-Null
+            @{
+                Label             = 'auto_2026-11-24T10-00-00'
+                SavedAt           = '2026-11-24T10:00:00Z'
+                RegistryVersion   = '1'
+                AssessmentVersion = '2.14.0'
+                CheckCount        = 3
+                TenantId          = 'contoso.onmicrosoft.com'
+            } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path -Path $snapshot -ChildPath 'manifest.json')
+            $runOutput = Join-Path -Path $root -ChildPath 'runs/run-1'
+
+            Import-Module -Name (Join-Path -Path (Split-Path -Parent $script:scriptPath) -ChildPath 'M365-Assess.psd1') -Force
+            $listed = Invoke-M365Assessment -ListBaselines -TenantId 'contoso.onmicrosoft.com' -BaselineRoot $root -OutputFolder $runOutput -NonInteractive *>&1 | Out-String -Width 200
+            $default = Invoke-M365Assessment -ListBaselines -TenantId 'contoso.onmicrosoft.com' -OutputFolder $runOutput -NonInteractive *>&1 | Out-String -Width 200
+
+            $listed | Should -Match 'auto_2026-11-24T10-00-00'
+            $default | Should -Match 'No baselines found'
+        }
+        finally {
+            Remove-Module -Name 'M365-Assess' -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $root -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
+}

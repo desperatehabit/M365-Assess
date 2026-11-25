@@ -41,7 +41,7 @@ export type RunStore = RunCreateStore &
 // creation rather than silently dropped, so a new wizard option cannot be ignored by an
 // older worker. A template-started run also records which template produced the selection
 // (T-0922); those fields are provenance, not assessment switches.
-export const RUN_OPTION_KEYS = ["quickScan", "skipPurview", "redact", "evidence"] as const;
+export const RUN_OPTION_KEYS = ["quickScan", "skipPurview", "redact", "evidence", "autoBaseline"] as const;
 export type RunOptionKey = (typeof RUN_OPTION_KEYS)[number];
 
 export const RUN_TEMPLATE_OPTION_KEYS = [
@@ -370,6 +370,11 @@ export interface RunQueueAdapter {
 // up front instead of in the worker.
 const SECRET_BLOCKED_SECTIONS: ReadonlySet<string> = new Set(["Email", "Security", "Inventory", "SOC2"]);
 
+/** Per-tenant folder that holds the AutoBaseline `Baselines` subfolder, under the storage root. */
+export function tenantBaselineRoot(storageRoot: string, tenantId: string): string {
+  return path.resolve(storageRoot, "baselines", tenantId.replace(/[^A-Za-z0-9-]/g, "_"));
+}
+
 /**
  * Writes the run's context.json, then enqueues it. The context carries only the
  * non-secret credential record: certificate-thumbprint runs sign in with the
@@ -462,6 +467,13 @@ export function createRunQueue(options: RunQueueOptions): RunQueueAdapter {
           SkipPurview: assessmentOptions.skipPurview === true,
           Redact: assessmentOptions.redact === true,
           Evidence: assessmentOptions.evidence === true,
+          AutoBaseline: assessmentOptions.autoBaseline === true,
+          // Each run writes to its own output folder, so AutoBaseline snapshots live in one
+          // folder per tenant to let the next run find the previous one. Set here, never
+          // from the request.
+          ...(assessmentOptions.autoBaseline === true
+            ? { BaselineRoot: tenantBaselineRoot(storageRoot, envelope.tenantId) }
+            : {}),
         };
       }
       // Secret material is never written here; the child resolves the reference

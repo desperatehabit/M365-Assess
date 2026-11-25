@@ -18,6 +18,8 @@ import {
   parseAssessmentIssues,
   parseAssessmentSummary,
   RUN_OUTPUT_UNREADABLE,
+  tenantBaselineRoot,
+  validateRunOptions,
   withFindingsIngestion,
 } from "./runs.js";
 import { createCredentialRowStore, createTenantGroupStore, createTenantStore } from "./tenants.js";
@@ -284,8 +286,39 @@ describe("run queue (T-0821)", () => {
       SkipPurview: true,
       Redact: false,
       Evidence: true,
+      AutoBaseline: false,
     });
     expect((await store.getRunById("r-opt"))!.provenance).toMatchObject({ assessmentOptions: options });
+  });
+
+  it("passes autoBaseline with a per-tenant BaselineRoot under the storage root", async () => {
+    const { root, credentials, queue, store } = await queueSetup();
+    await credentials.upsertCredential({
+      id: "cred-a",
+      tenantId: "t-a",
+      authMethod: "certificate-thumbprint",
+      clientId: "app-1",
+      secretRef: "thumbprint://ABC",
+      thumbprint: "ABC",
+      environment: "gcc",
+      expiresOn: null,
+      lastValidated: null,
+      createdAt: "",
+      updatedAt: "",
+    });
+    await store.createRun!(run("r-base", "t-a", { options: { autoBaseline: true } }));
+
+    await queue.enqueue(envelope("t-a", "r-base"));
+
+    const context = JSON.parse(readFileSync(path.join(root, "runs/t-a/r-base/context.json"), "utf8"));
+    expect(context.Options.AutoBaseline).toBe(true);
+    // One folder per tenant, shared by every run, so the next run finds this snapshot.
+    expect(context.Options.BaselineRoot).toBe(path.resolve(root, "baselines", "t-a"));
+    expect(tenantBaselineRoot(root, "../evil")).toBe(path.resolve(root, "baselines", "___evil"));
+  });
+
+  it("accepts autoBaseline as a run option", () => {
+    expect(validateRunOptions({ autoBaseline: true })).toEqual({ autoBaseline: true });
   });
 
   it("sets Scope.QuickScan for a quick scan run", async () => {

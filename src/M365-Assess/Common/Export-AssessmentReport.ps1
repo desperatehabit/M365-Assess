@@ -32,6 +32,9 @@
     Baseline label string — retained for downstream compatibility.
 .PARAMETER DriftBaselineTimestamp
     Baseline timestamp string — retained for downstream compatibility.
+.PARAMETER BaselineRoot
+    Folder that holds the Baselines subfolder for the trend view. Defaults to the parent of
+    -AssessmentFolder.
 .PARAMETER HeadlineFramework
     Framework id(s) that headline the report's Executive Briefing first screen.
     Unknown ids are dropped with a warning (Invoke-M365Assessment validates with
@@ -77,6 +80,9 @@ param(
 
     [Parameter()]
     [switch]$IncludeTrend,
+
+    [Parameter()]
+    [string]$BaselineRoot,
 
     [Parameter()]
     [AllowEmptyCollection()]
