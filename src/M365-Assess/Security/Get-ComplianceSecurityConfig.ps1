@@ -325,9 +325,11 @@ catch {
 # ------------------------------------------------------------------
 try {
     Write-Verbose "Checking communication compliance policies..."
-    $commAvailable = Get-Command -Name Get-CommunicationCompliancePolicy -ErrorAction SilentlyContinue
+    # Communication compliance policies are read with Get-SupervisoryReviewPolicyV2 (T-0953);
+    # Security & Compliance PowerShell has no Get-CommunicationCompliancePolicy.
+    $commAvailable = Get-Command -Name Get-SupervisoryReviewPolicyV2 -ErrorAction SilentlyContinue
     if ($commAvailable) {
-        $commPolicies  = @(Get-CommunicationCompliancePolicy -ErrorAction Stop)
+        $commPolicies  = @(Get-SupervisoryReviewPolicyV2 -ErrorAction Stop)
         $enabledComm   = @($commPolicies | Where-Object { $_.Enabled -eq $true })
         if ($enabledComm.Count -gt 0) {
             $enabledCommCount = $enabledComm.Count
@@ -359,11 +361,11 @@ try {
         $settingParams = @{
             Category         = 'Communication Compliance'
             Setting          = 'Communication Compliance Policies'
-            CurrentValue     = 'Cmdlet not available'
+            CurrentValue     = 'Get-SupervisoryReviewPolicyV2 not available in this session (role or license)'
             RecommendedValue = 'At least 1 enabled'
             Status           = 'Review'
             CheckId          = 'COMPLIANCE-COMMS-001'
-            Remediation      = 'Communication compliance requires E5 Compliance licensing. Connect to Security & Compliance PowerShell to verify policy status.'
+            Remediation      = 'Communication compliance requires E5 Compliance (or Insider Risk Management) licensing and a Purview role that can read communication compliance policies. Connect to Security & Compliance PowerShell to verify policy status.'
         }
         Add-Setting @settingParams
     }

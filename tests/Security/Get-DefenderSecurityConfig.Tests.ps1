@@ -16,6 +16,7 @@ Describe 'Get-DefenderSecurityConfig' {
         function Get-SafeLinksPolicy { }
         function Get-SafeAttachmentPolicy { }
         function Get-AtpPolicyForO365 { }
+        function Get-TeamsProtectionPolicy { }
         function Get-HostedOutboundSpamFilterPolicy { }
         function Get-EOPProtectionPolicyRule { }
 
@@ -26,6 +27,7 @@ Describe 'Get-DefenderSecurityConfig' {
                 'Get-SafeLinksPolicy'         { return [PSCustomObject]@{ Name = 'Get-SafeLinksPolicy' } }
                 'Get-SafeAttachmentPolicy'    { return [PSCustomObject]@{ Name = 'Get-SafeAttachmentPolicy' } }
                 'Get-AtpPolicyForO365'        { return [PSCustomObject]@{ Name = 'Get-AtpPolicyForO365' } }
+                'Get-TeamsProtectionPolicy'   { return [PSCustomObject]@{ Name = 'Get-TeamsProtectionPolicy' } }
                 'Get-EOPProtectionPolicyRule' { return [PSCustomObject]@{ Name = 'Get-EOPProtectionPolicyRule' } }
                 'Update-CheckProgress'        { return [PSCustomObject]@{ Name = 'Update-CheckProgress' } }
                 default { return $null }
@@ -99,12 +101,16 @@ Describe 'Get-DefenderSecurityConfig' {
             })
         }
 
-        # 5b. ATP Policy for O365 (SPO/OneDrive/Teams + ZAP for Teams)
+        # 5b. ATP Policy for O365 (Safe Attachments for SPO/OneDrive/Teams)
         Mock Get-AtpPolicyForO365 {
             return [PSCustomObject]@{
                 EnableATPForSPOTeamsODB = $true
-                ZapEnabled             = $true
             }
+        }
+
+        # 5c. Teams protection policy (ZAP for Teams, T-0952)
+        Mock Get-TeamsProtectionPolicy {
+            return [PSCustomObject]@{ Identity = 'Teams Protection Policy'; ZapEnabled = $true }
         }
 
         # 6. Outbound Spam Policies

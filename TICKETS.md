@@ -12,8 +12,8 @@ the same commit. The ticket file is the source of truth._
 | Status | Count |
 |---|---|
 | epic | 40 |
-| fixed-unverified | 74 |
-| open | 11 |
+| fixed-unverified | 76 |
+| open | 9 |
 | not-dispatchable | 1 |
 | closed | 8 |
 
@@ -137,8 +137,8 @@ the same commit. The ticket file is the source of truth._
 | [T-0942](ISSUES/T-0942.md) | medium | fixed-unverified | 20 | Manage portal write access for an already-onboarded tenant |
 | [T-0946](ISSUES/T-0946.md) | medium | open | 3 | Run artifacts list is empty because the assessment writes into a subfolder |
 | [T-0947](ISSUES/T-0947.md) | medium | open | 2 | An onboarded tenant is named after the app registration |
-| [T-0952](ISSUES/T-0952.md) | medium | open | 1 | DEFENDER-ZAP-001 reports NotLicensed because it reads Teams ZAP from the wrong policy |
-| [T-0953](ISSUES/T-0953.md) | medium | open | 1 | COMPLIANCE-COMMS-001 can never run: it calls a cmdlet that does not exist |
+| [T-0952](ISSUES/T-0952.md) | medium | fixed-unverified | 1 | DEFENDER-ZAP-001 reports NotLicensed because it reads Teams ZAP from the wrong policy |
+| [T-0953](ISSUES/T-0953.md) | medium | fixed-unverified | 1 | COMPLIANCE-COMMS-001 can never run: it calls a cmdlet that does not exist |
 | [T-0957](ISSUES/parked/T-0957.md) | medium | not-dispatchable | 3 | Ingest NinjaOne endpoint data into reports and the CMMC SSP |
 | [EPIC-023](ISSUES/epics/EPIC-023.md) | low | epic | 0 | Contacts & Resources |
 | [EPIC-035](ISSUES/epics/EPIC-035.md) | low | epic | 0 | Backup & Restore |
