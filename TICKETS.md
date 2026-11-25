@@ -12,8 +12,8 @@ the same commit. The ticket file is the source of truth._
 | Status | Count |
 |---|---|
 | epic | 40 |
-| fixed-unverified | 73 |
-| open | 12 |
+| fixed-unverified | 74 |
+| open | 11 |
 | not-dispatchable | 1 |
 | closed | 8 |
 
@@ -63,7 +63,7 @@ the same commit. The ticket file is the source of truth._
 | [T-0945](ISSUES/T-0945.md) | high | fixed-unverified | 3 | Run detail and report builder show only the first 100 findings |
 | [T-0950](ISSUES/T-0950.md) | high | fixed-unverified | 9 | A single-item Graph result unrolls to a hashtable, so counts and indexing are wrong |
 | [T-0951](ISSUES/T-0951.md) | high | fixed-unverified | 1 | ENTRA-DEVICE-004 always passes because it reads a property Graph does not return |
-| [T-0955](ISSUES/T-0955.md) | high | open | 1 | App credential checks read only service principals and miss app registration secrets and certificates |
+| [T-0955](ISSUES/T-0955.md) | high | fixed-unverified | 1 | App credential checks read only service principals and miss app registration secrets and certificates |
 | [EPIC-010](ISSUES/epics/EPIC-010.md) | medium | epic | 0 | Baselines & Rollouts |
 | [EPIC-014](ISSUES/epics/EPIC-014.md) | medium | epic | 0 | Groups |
 | [EPIC-017](ISSUES/epics/EPIC-017.md) | medium | closed | 0 | Intune Apps & Autopilot |
