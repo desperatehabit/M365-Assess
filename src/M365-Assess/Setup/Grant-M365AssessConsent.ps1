@@ -2064,9 +2064,14 @@ function Grant-M365AssessConsent {
             # --- Reconciliation of managed directory roles ---
             if ($ReplaceWriteGroups) {
                 Write-Step 'Reconciling operator directory roles to the selected write groups...'
-                foreach ($roleName in @($script:OperatorDirectoryRoleTemplates.Keys)) {
+                # Managed roles that are not selected, plus roles an earlier version assigned
+                # by mistake, which are always removed (T-0958).
+                $reconcileRoles = @{}
+                foreach ($entry in $script:OperatorDirectoryRoleTemplates.GetEnumerator()) { $reconcileRoles[$entry.Key] = $entry.Value }
+                foreach ($entry in $script:OperatorRetiredDirectoryRoleTemplates.GetEnumerator()) { $reconcileRoles[$entry.Key] = $entry.Value }
+                foreach ($roleName in @($reconcileRoles.Keys)) {
                     if (@($operatorSelection.DirectoryRoles) -contains $roleName) { continue }
-                    $templateId = $script:OperatorDirectoryRoleTemplates[$roleName]
+                    $templateId = $reconcileRoles[$roleName]
                     $dirRole = Get-MgDirectoryRole -Filter "roleTemplateId eq '$templateId'" -ErrorAction SilentlyContinue
                     if (-not $dirRole) { continue }
                     $existingMembers = @(
