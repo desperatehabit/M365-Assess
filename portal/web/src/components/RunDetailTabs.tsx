@@ -164,6 +164,36 @@ export function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Artifact names are paths relative to the run's artifact folder; the assessment's outputs
+// sit in an Assessment_* subfolder (T-0946).
+export function artifactBaseName(name: string): string {
+  const slash = name.lastIndexOf("/");
+  return slash < 0 ? name : name.slice(slash + 1);
+}
+
+export function artifactFolder(name: string): string {
+  const slash = name.lastIndexOf("/");
+  return slash < 0 ? "" : name.slice(0, slash);
+}
+
+export function isHtmlArtifact(name: string): boolean {
+  return /\.html?$/i.test(name);
+}
+
+/** The assessment's HTML report, if the run published one. */
+export function findReportArtifact(artifacts: readonly RunArtifactDetail[]): RunArtifactDetail | undefined {
+  return (
+    artifacts.find((a) => /^_Assessment-Report.*\.html?$/i.test(artifactBaseName(a.name))) ??
+    artifacts.find((a) => isHtmlArtifact(a.name))
+  );
+}
+
+/** Download URL for an artifact; `inline` opens an HTML artifact in the browser (sandboxed by the BFF). */
+export function artifactUrl(baseUrl: string, runId: string, name: string, inline = false): string {
+  const url = `${baseUrl}/v1/runs/${encodeURIComponent(runId)}/artifacts/${encodeURIComponent(name)}`;
+  return inline ? `${url}?inline=1` : url;
+}
+
 export function formatTimestamp(isoString?: string | null): string {
   if (!isoString) return "—";
   try {
@@ -2085,6 +2115,52 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
               No artifacts published for this run.
             </div>
           ) : (
+            <>
+            {(() => {
+              const report = findReportArtifact(artifacts);
+              if (!report) return null;
+              return (
+                <div
+                  data-testid="artifact-report-bar"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: "12px",
+                    flexWrap: "wrap",
+                    padding: "12px 16px",
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "var(--radius, 8px)",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: "14px", color: "var(--text)" }}>Assessment report</div>
+                    <div style={{ fontSize: "12px", color: "var(--muted)", wordBreak: "break-all" }}>
+                      {artifactBaseName(report.name)}
+                    </div>
+                  </div>
+                  <a
+                    href={artifactUrl(baseUrl, run.id, report.name, true)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    data-testid="open-report"
+                    style={{
+                      padding: "6px 12px",
+                      fontSize: "13px",
+                      fontWeight: 600,
+                      background: "var(--accent)",
+                      color: "var(--on-accent)",
+                      border: "1px solid var(--accent)",
+                      borderRadius: "var(--radius, 6px)",
+                      textDecoration: "none",
+                    }}
+                  >
+                    Open report
+                  </a>
+                </div>
+              );
+            })()}
             <div
               style={{
                 display: "grid",
@@ -2094,7 +2170,8 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
             >
               {artifacts.map((artifact) => {
                 const isRedacted = artifact.isRedacted || artifact.redacted;
-                const downloadUrl = `${baseUrl}/v1/runs/${encodeURIComponent(run.id)}/artifacts/${encodeURIComponent(artifact.name)}`;
+                const downloadUrl = artifactUrl(baseUrl, run.id, artifact.name);
+                const folder = artifactFolder(artifact.name);
 
                 return (
                   <div
@@ -2129,7 +2206,7 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                             wordBreak: "break-all",
                           }}
                         >
-                          {artifact.name}
+                          {artifactBaseName(artifact.name)}
                         </span>
                         {isRedacted && (
                           <span
@@ -2159,6 +2236,11 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                           fontFamily: "var(--font-mono, monospace)",
                         }}
                       >
+                        {folder && (
+                          <span data-testid={`artifact-folder-${artifact.name}`} style={{ wordBreak: "break-all" }}>
+                            Folder: {folder}
+                          </span>
+                        )}
                         <span data-testid={`artifact-content-type-${artifact.name}`}>
                           Type: {artifact.contentType}
                         </span>
@@ -2166,9 +2248,32 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                       </div>
                     </div>
 
+                    <div style={{ display: "flex", gap: "8px" }}>
+                    {isHtmlArtifact(artifact.name) && (
+                      <a
+                        href={artifactUrl(baseUrl, run.id, artifact.name, true)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        data-testid={`open-artifact-${artifact.name}`}
+                        style={{
+                          flex: 1,
+                          padding: "6px 12px",
+                          fontSize: "13px",
+                          fontWeight: 600,
+                          background: "transparent",
+                          color: "var(--accent-text)",
+                          border: "1px solid var(--accent)",
+                          borderRadius: "var(--radius, 6px)",
+                          textDecoration: "none",
+                          textAlign: "center",
+                        }}
+                      >
+                        Open
+                      </a>
+                    )}
                     <a
                       href={downloadUrl}
-                      download={artifact.name}
+                      download={artifactBaseName(artifact.name)}
                       data-testid={`download-artifact-${artifact.name}`}
                       onClick={(e) => {
                         if (onDownloadArtifact) {
@@ -2188,14 +2293,17 @@ export function RunDetailTabs(props: RunDetailTabsProps): ReactElement {
                         textAlign: "center",
                         cursor: "pointer",
                         display: "inline-block",
+                        flex: 1,
                       }}
                     >
                       Download
                     </a>
+                    </div>
                   </div>
                 );
               })}
             </div>
+            </>
           )}
         </div>
       )}

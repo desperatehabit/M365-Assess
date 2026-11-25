@@ -4182,10 +4182,14 @@ function App() {
     document.documentElement.dataset.mode = mode;
     document.documentElement.dataset.density = density;
     document.documentElement.dataset.textScale = textScale;
-    localStorage.setItem('m365-theme', theme);
-    localStorage.setItem('m365-mode', mode);
-    localStorage.setItem('m365-density', density);
-    localStorage.setItem('m365-text-scale', textScale);
+    // Storage can be unavailable (sandboxed portal view, blocked site data); a throw here
+    // would unmount the whole report.
+    try {
+      localStorage.setItem('m365-theme', theme);
+      localStorage.setItem('m365-mode', mode);
+      localStorage.setItem('m365-density', density);
+      localStorage.setItem('m365-text-scale', textScale);
+    } catch {}
   }, [theme, mode, density, textScale]);
 
   useEffect(() => {

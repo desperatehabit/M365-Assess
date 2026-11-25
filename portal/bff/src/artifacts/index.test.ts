@@ -6,6 +6,7 @@ import {
   isArtifactRedacted,
   resolveArtifactFilePath,
   validateArtifactName,
+  validateArtifactPath,
   type ArtifactFileSystem,
   type FileStatLike,
 } from "./index.js";
@@ -118,7 +119,72 @@ describe("artifacts indexing and resolution", () => {
     });
   });
 
+  describe("validateArtifactPath (T-0946)", () => {
+    it("accepts a plain name and a path into the assessment subfolder", () => {
+      expect(validateArtifactPath("report.html")).toBe("report.html");
+      expect(validateArtifactPath("Assessment_20261123_102423_tenant/report.html")).toBe(
+        "Assessment_20261123_102423_tenant/report.html",
+      );
+      expect(validateArtifactPath("Assessment_x/Evidence/data.json")).toBe("Assessment_x/Evidence/data.json");
+    });
+
+    it("rejects traversal, absolute paths, backslashes, empty segments, and deep paths", () => {
+      for (const bad of [
+        "../secret.txt",
+        "Assessment_x/../../secret.txt",
+        "Assessment_x/..",
+        "/etc/passwd",
+        "Assessment_x\\report.html",
+        "Assessment_x//report.html",
+        "Assessment_x/",
+        ".hidden/report.html",
+        "a/b/c/d.txt",
+        "",
+      ]) {
+        expect(() => validateArtifactPath(bad), bad).toThrow();
+      }
+    });
+
+    it("resolves a nested path under the run's artifact path", () => {
+      expect(resolveArtifactFilePath("/var/data/artifacts", "runs/t1/r1", "Assessment_x/report.html")).toBe(
+        "/var/data/artifacts/runs/t1/r1/Assessment_x/report.html",
+      );
+      expect(() => resolveArtifactFilePath("/var/data/artifacts", "runs/t1/r1", "../r2/report.html")).toThrow();
+    });
+  });
+
   describe("indexRunArtifacts", () => {
+    it("indexes the assessment subfolder with relative names, report and matrix first (T-0946)", async () => {
+      const fs = new FakeFileSystem();
+      const mtime = new Date("2026-11-24T10:00:00.000Z");
+      const run = "/artifacts/runs/t1/r1";
+      const folder = `${run}/Assessment_20261123_102423_tenant`;
+      fs.files.set(`${run}/result.json`, { size: 10, mtime });
+      fs.files.set(folder, { size: 0, mtime, isDir: true });
+      fs.files.set(`${folder}/_Assessment-Log_tenant.txt`, { size: 20, mtime });
+      fs.files.set(`${folder}/_Compliance-Matrix_tenant.xlsx`, { size: 30, mtime });
+      fs.files.set(`${folder}/_Assessment-Report_tenant.html`, { size: 40, mtime });
+      fs.files.set(`${folder}/Evidence`, { size: 0, mtime, isDir: true });
+      fs.files.set(`${folder}/Evidence/e.json`, { size: 50, mtime });
+      // Four levels deep: beyond MAX_ARTIFACT_DEPTH, so not indexed.
+      fs.files.set(`${folder}/Evidence/deep`, { size: 0, mtime, isDir: true });
+      fs.files.set(`${folder}/Evidence/deep/too-deep.txt`, { size: 60, mtime });
+
+      const items = await indexRunArtifacts({ artifactRoot: "/artifacts", artifactPath: "runs/t1/r1", fs });
+
+      expect(items.map((i) => i.name)).toEqual([
+        "Assessment_20261123_102423_tenant/_Assessment-Report_tenant.html",
+        "Assessment_20261123_102423_tenant/_Compliance-Matrix_tenant.xlsx",
+        "Assessment_20261123_102423_tenant/_Assessment-Log_tenant.txt",
+        "Assessment_20261123_102423_tenant/Evidence/e.json",
+        "result.json",
+      ]);
+      expect(items[0]!.contentType).toBe("text/html; charset=utf-8");
+      for (const item of items) {
+        expect(() => validateArtifactPath(item.name)).not.toThrow();
+      }
+    });
+
     it("returns empty array when artifact directory does not exist", async () => {
       const fs = new FakeFileSystem();
       const items = await indexRunArtifacts({

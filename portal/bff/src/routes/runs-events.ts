@@ -44,7 +44,8 @@ export interface RunAuditEventInput {
   readonly after: Record<string, unknown> | null;
   readonly result: string;
   readonly error: string | null;
-  readonly source: string;
+  /** audit_events.source is CHECK-constrained to these values; anything else fails the insert. */
+  readonly source: "request" | "schedule" | "remediation";
   readonly correlationId: string | null;
   readonly createdAt: string;
 }
@@ -151,7 +152,7 @@ export function createRunsEventsRoute(options: RunsEventsRouteOptions): Route {
           after: null,
           result: "success",
           error: null,
-          source: "bff",
+          source: "request",
           correlationId: ctx.correlationId,
           createdAt: nowIso,
         });

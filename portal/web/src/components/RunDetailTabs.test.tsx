@@ -420,6 +420,51 @@ describe("RunDetailTabs", () => {
       expect(handleDownload).toHaveBeenCalledWith(SAMPLE_RUN_SUCCESS.id, "assessment-report.html");
     });
 
+    it("shows nested assessment artifacts by file name with an Open report link (T-0946)", () => {
+      const folder = "Assessment_20261123_102423_tenant";
+      const nested: RunArtifactDetail[] = [
+        { name: `${folder}/_Assessment-Report_tenant.html`, contentType: "text/html; charset=utf-8", size: 1000 },
+        {
+          name: `${folder}/_Compliance-Matrix_tenant.xlsx`,
+          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          size: 2000,
+        },
+      ];
+
+      render(<RunDetailTabs run={SAMPLE_RUN_SUCCESS} artifacts={nested} defaultTab="artifacts" streamEvents={false} />);
+
+      const runPath = `/v1/runs/${encodeURIComponent(SAMPLE_RUN_SUCCESS.id)}/artifacts/`;
+      const report = screen.getByTestId("open-report");
+      expect(report.getAttribute("href")).toBe(
+        `${runPath}${encodeURIComponent(`${folder}/_Assessment-Report_tenant.html`)}?inline=1`,
+      );
+      expect(report.getAttribute("target")).toBe("_blank");
+      expect(report.getAttribute("rel")).toContain("noopener");
+
+      const card = screen.getByTestId(`artifact-card-${folder}/_Compliance-Matrix_tenant.xlsx`);
+      expect(card.textContent).toContain("_Compliance-Matrix_tenant.xlsx");
+      expect(screen.getByTestId(`artifact-folder-${folder}/_Compliance-Matrix_tenant.xlsx`).textContent).toContain(folder);
+
+      const download = screen.getByTestId(`download-artifact-${folder}/_Compliance-Matrix_tenant.xlsx`);
+      expect(download.getAttribute("href")).toBe(`${runPath}${folder}%2F_Compliance-Matrix_tenant.xlsx`);
+      expect(download.getAttribute("download")).toBe("_Compliance-Matrix_tenant.xlsx");
+      // Only HTML artifacts get an inline Open link.
+      expect(screen.queryByTestId(`open-artifact-${folder}/_Compliance-Matrix_tenant.xlsx`)).toBeNull();
+      expect(screen.getByTestId(`open-artifact-${folder}/_Assessment-Report_tenant.html`)).toBeDefined();
+    });
+
+    it("has no Open report bar when the run published no HTML report", () => {
+      render(
+        <RunDetailTabs
+          run={SAMPLE_RUN_SUCCESS}
+          artifacts={[{ name: "bridge-output.json", contentType: "application/json; charset=utf-8", size: 10 }]}
+          defaultTab="artifacts"
+          streamEvents={false}
+        />,
+      );
+      expect(screen.queryByTestId("open-report")).toBeNull();
+    });
+
     it("renders Issues tab with error messages and stack traces", () => {
       render(
         <RunDetailTabs

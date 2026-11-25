@@ -1196,3 +1196,45 @@ describe("EPIC-017 package routes with a secret (T-0844)", () => {
     }
   });
 });
+
+describe("run artifacts against the real database (T-0946)", () => {
+  // The route tests use a fake store; this exercises the SQLite audit insert, whose
+  // CHECK constraint rejected the routes' old source value and turned every request into a 500.
+  it("lists and downloads the assessment subfolder's files and opens the report sandboxed", async () => {
+    const { api, root, cleanup } = await reportsApp();
+    try {
+      const folder = path.join(root, "runs", "t-a", "run-1", "Assessment_20261123_102423_tenant");
+      mkdirSync(folder, { recursive: true });
+      writeFileSync(path.join(folder, "_Assessment-Report_tenant.html"), "<html><body>report</body></html>");
+      writeFileSync(path.join(folder, "_Compliance-Matrix_tenant.xlsx"), "xlsx");
+
+      const list = await api.get("/v1/runs/run-1/artifacts");
+      expect(list.status).toBe(200);
+      const { items } = (await list.json()) as { items: { name: string }[] };
+      expect(items.map((i) => i.name)).toEqual([
+        "Assessment_20261123_102423_tenant/_Assessment-Report_tenant.html",
+        "Assessment_20261123_102423_tenant/_Compliance-Matrix_tenant.xlsx",
+      ]);
+
+      const matrix = await api.get(
+        `/v1/runs/run-1/artifacts/${encodeURIComponent("Assessment_20261123_102423_tenant/_Compliance-Matrix_tenant.xlsx")}`,
+      );
+      expect(matrix.status).toBe(200);
+      expect(matrix.headers.get("content-disposition")).toBe('attachment; filename="_Compliance-Matrix_tenant.xlsx"');
+      expect(await matrix.text()).toBe("xlsx");
+
+      const report = await api.get(
+        `/v1/runs/run-1/artifacts/${encodeURIComponent("Assessment_20261123_102423_tenant/_Assessment-Report_tenant.html")}?inline=1`,
+      );
+      expect(report.status).toBe(200);
+      expect(report.headers.get("content-disposition")).toMatch(/^inline;/);
+      expect(report.headers.get("content-security-policy")).toMatch(/^sandbox /);
+      expect(await report.text()).toContain("report");
+
+      const traversal = await api.get(`/v1/runs/run-1/artifacts/${encodeURIComponent("../run-2/x.html")}`);
+      expect(traversal.status).toBe(400);
+    } finally {
+      cleanup();
+    }
+  });
+});

@@ -168,6 +168,8 @@ describe("runs-events route (GET /v1/runs/:runId/events)", () => {
       targetType: "run",
       targetId: RUN_ID,
       result: "success",
+      // audit_events.source is CHECK-constrained; "bff" failed the insert on a real database.
+      source: "request",
     });
   });
 
