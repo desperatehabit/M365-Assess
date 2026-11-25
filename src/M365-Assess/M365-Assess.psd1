@@ -3,7 +3,7 @@
     # Generated: 2026-03-08
 
     RootModule        = 'M365-Assess.psm1'
-    ModuleVersion     = '2.13.0'
+    ModuleVersion     = '2.14.0'
     GUID              = 'f7e3b2a1-4c5d-6e8f-9a0b-1c2d3e4f5a6b'
     Author            = 'Galvnyz'
     CompanyName       = 'Community'
@@ -512,7 +512,7 @@
             IconUri      = 'https://raw.githubusercontent.com/Galvnyz/M365-Assess/main/src/M365-Assess/assets/m365-assess-logo.png'
             LicenseUri   = 'https://github.com/Galvnyz/M365-Assess/blob/main/LICENSE'
             ProjectUri   = 'https://github.com/Galvnyz/M365-Assess'
-            ReleaseNotes = 'v2.13.0 - Sovereign Cloud. Verified end-to-end against a GCC High tenant. FIXED (sovereign cloud): PIM role-policy checks now use the v1.0 roleManagementPolicyAssignments API (filtered by roleDefinitionId) instead of a beta call that 400d in GCC High, returning real Pass/Fail (#978); Power BI routes to the USGovHigh environment with M365Environment threaded into the isolated child process, clearing the WAM redirect-URI error - no portal change needed (#943); Forms and the two beta Teams endpoints (teamsClientConfiguration, teamsMeetingPolicy) have no v1.0 equivalent in GCC High and now emit Skipped for their dependent checks instead of vanishing silently (#941, #940); the Teams license gate recognizes sovereign service plans (TEAMS_GOV/AR_GCCHIGH/AR_DOD) so Teams checks run on government tenants (#940); the compliance licensing overlay uses real service-plan names so DLP/labels/communication-compliance checks no longer false-skip (#980); hardcoded graph.microsoft.com URIs replaced with relative paths (#945); Secure Score confirmed working in GCC High (#939). FIXED (report): the Posture score card no longer renders NaN when Secure Score data is absent (#967); the no-op License-Adjusted scoring tab is removed (#966); the Critical exposure section is revived and the Stryker codename dropped (#968). DOCS: new GCC High setup guide (#944); README trimmed to a landing page with detail moved to RUN.md (#923); architecture diagrams refreshed to current code (#918). No breaking API changes.'
+            ReleaseNotes = 'v2.14.0 - ADDED: per-check remediation script library (Remediate/Scripts, one -WhatIf-capable script per scriptable check); gated remediation engine (classification, audited allowlist gate, 62-command validation harness, typed executor); checks for every CIS Microsoft 365 v6.0.1 recommendation; CMMC L2 automated coverage 77 -> 86 of 110 practices (new Intune endpoint hardening and Microsoft 365 Backup collectors); portable Exchange Online / Purview certificate auth on Linux and macOS (-Certificate, -CertificatePath); Microsoft first-party apps classified separately in the foreign-app checks. FIXED: single-item Graph results counted as hashtables (ENTRA-CLOUDADMIN-001, ENTRA-HYBRID-001); ENTRA-DEVICE-004 always passing; non-Complete collector outcomes throwing; EXO/Purview -Organization given the tenant GUID; seven checks that could not pass after remediation; enforced MFA defaults reported as failures. New Graph permissions for Security, Identity, and SOC2: re-run Grant-M365AssessConsent. Full notes: CHANGELOG.md.'
         }
     }
 }
