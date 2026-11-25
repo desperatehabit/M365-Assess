@@ -41,13 +41,21 @@ Both shipped because no human ran the assessment against a real tenant before ta
 
 ### The verification checklist
 
-The user runs each step. The agent does NOT have credentials for a live tenant — the agent waits.
+The user runs each step and validates the output by eye. Agent-run verification (for example with the reader certificate) is useful while fixing bugs but does not replace this.
 
-1. **Run** `Invoke-M365Assessment -TenantId <tenant>` with the parameter set that exercises the new feature(s) being released. For releases with baseline / drift / report changes, **always include `-AutoBaseline`** — that path historically hides bugs that fixture tests miss
-2. **Open the HTML report** in a browser. Click through the sections that changed. Confirm new components render and old ones still work. **A black or blank screen is a runtime React error** — open dev tools console to see the stack
+**The run can be done entirely from the portal.** A portal run counts as the live test when the portal is on the release branch's code (restart `node scripts/dev.mjs` after pulling, so the BFF rebuilds). The terminal is an equivalent alternative, not a requirement.
+
+1. **Run** the assessment with the options that exercise the new feature(s) being released. For releases with baseline / drift / report changes, **always include AutoBaseline**, and run twice so the second run compares against the first. That path historically hides bugs that fixture tests miss
+   - Portal: **New run**, choose the sections, tick **AutoBaseline**
+   - Terminal: `Invoke-M365Assessment -TenantId <tenant> -AutoBaseline`
+2. **Open the HTML report** and click through the sections that changed. Confirm new components render and old ones still work. **A black or blank screen is a runtime React error**: open the dev tools console to see the stack
+   - Portal: **Open report** on the run page
 3. **Validate the XLSX** if matrix changes shipped: open it, look at the new sheets, confirm framework-mapping columns still display and counts make sense
-4. **Inspect the assessment folder** for unexpected absence of files. The v2.9.0 baseline bug manifested as "no HTML, only CSVs" — only visible by listing the folder
-5. **Read the `_Assessment-Log_*.txt`** for any WARN-level entries that indicate something silently failed. The orchestrator catches and logs rather than aborts; silent failures hide in the log
+   - Portal: download it from the run's **Artifacts** tab
+4. **Inspect the assessment folder** for unexpected absence of files. The v2.9.0 baseline bug manifested as "no HTML, only CSVs", visible only by listing the folder
+   - Portal: the **Artifacts** tab lists every file, including the assessment subfolder
+5. **Read the `_Assessment-Log_*.txt`** for WARN-level entries that indicate something silently failed. The orchestrator catches and logs rather than aborts; silent failures hide in the log
+   - Portal: download it from **Artifacts**, and check the run's **Issues** tab
 
 ### When the live test fails
 
