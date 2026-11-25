@@ -12,8 +12,8 @@ the same commit. The ticket file is the source of truth._
 | Status | Count |
 |---|---|
 | epic | 40 |
-| fixed-unverified | 76 |
-| open | 9 |
+| fixed-unverified | 77 |
+| open | 8 |
 | not-dispatchable | 1 |
 | closed | 8 |
 
@@ -135,7 +135,7 @@ the same commit. The ticket file is the source of truth._
 | [T-0937](ISSUES/T-0937.md) | medium | fixed-unverified | 10 | Collectors that skipped or failed are logged as `Complete` |
 | [T-0941](ISSUES/T-0941.md) | medium | open | 6 | Prove the runbook W rows with the operator app |
 | [T-0942](ISSUES/T-0942.md) | medium | fixed-unverified | 20 | Manage portal write access for an already-onboarded tenant |
-| [T-0946](ISSUES/T-0946.md) | medium | open | 3 | Run artifacts list is empty because the assessment writes into a subfolder |
+| [T-0946](ISSUES/T-0946.md) | medium | fixed-unverified | 3 | Run artifacts list is empty because the assessment writes into a subfolder |
 | [T-0947](ISSUES/T-0947.md) | medium | open | 2 | An onboarded tenant is named after the app registration |
 | [T-0952](ISSUES/T-0952.md) | medium | fixed-unverified | 1 | DEFENDER-ZAP-001 reports NotLicensed because it reads Teams ZAP from the wrong policy |
 | [T-0953](ISSUES/T-0953.md) | medium | fixed-unverified | 1 | COMPLIANCE-COMMS-001 can never run: it calls a cmdlet that does not exist |
